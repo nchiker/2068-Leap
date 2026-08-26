@@ -1751,12 +1751,12 @@ fuse --machine ts2068 --rom-ts2068-0 test_basic.bin --rom-ts2068-1 exrom.bin
 ```
 
 Type `SAVE "name"` then `LOAD "name"` (or `LOAD ""` for the wildcard
-form) interactively — there is no automated regression fixture for this
-module currently (the old one tested the archived design's own contract
-and doesn't apply here); testing means a real tape round-trip in Fuse,
-tape actually playing (Fuse only auto-starts playback via its ROM-trap
-mechanism, which doesn't apply to this non-standard loader, so press
-Play in Fuse's tape browser yourself).
+form) interactively. The confirmed `export/verify` Direct Recording TZX
+is decoded and validated by `tools/check_tape_fixture.py` during `make
+check`, but live receiver timing still requires a real tape round-trip in
+Fuse with the tape actually playing (Fuse only auto-starts playback via
+its ROM-trap mechanism, which doesn't apply to this non-standard loader,
+so press Play in Fuse's tape browser yourself).
 
 **Status**: SAVE and LOAD are confirmed working in real Fuse round-trips
 with both `LOAD ""` and `LOAD "verify"`. SAVE produced a valid Direct

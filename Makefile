@@ -13,6 +13,7 @@ check:
 	python3 tools/check_asm.py
 	python3 tools/check_docs.py
 	python3 tools/check_storage_contract.py
+	python3 tools/check_tape_fixture.py
 
 test: all
 	tools/run_all_tests.sh
