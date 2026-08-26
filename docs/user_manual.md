@@ -751,7 +751,6 @@ text, not a new statement.
 | Message | Meaning |
 |---|---|
 | `SAVED` / `LOADED` | Success |
-| `LOADED - N BLOCK(S) LOST` | Partial recovery from a noisy tape |
 | `LOAD FAILED` | Unreadable tape, or name mismatch |
 | `SAVE FAILED - TOO LARGE` | Program too big to save |
 | `INVALID FILENAME` | Bad `SAVE`/`LOAD` filename |

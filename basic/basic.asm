@@ -1881,18 +1881,12 @@ BASIC_DO_SAVE:
 ; string) is the Sinclair wildcard convention, accepting whatever
 ; header is found with no name check.
 ;
-; On success (including a PARTIAL success — some data blocks lost
-; even after both redundant copies, but the header and most/all of
-; the program arrived), replaces the program the same way NEW does
+; On success, replaces the program the same way NEW does
 ; (full reset: variables cleared, cursor/view/error-count back to
 ; fresh, screen cleared, border/text-attribute defaults restored).
 ; Additionally rebuilds the label table (BASIC_SCAN_LABELS) and
-; forces a full redraw (BASIC_RESET_ROW_SHADOW). A partial load still
-; gets the full reset+redraw treatment — whatever was recovered
-; becomes the new program, with STORAGE_OP_STATE already set to show
-; LOADED WITH ERRORS rather than plain LOADED, so the user sees a
-; clear warning without the whole load being discarded over a
-; recoverable gap.
+; forces a full redraw (BASIC_RESET_ROW_SHADOW). A failed data block
+; is never accepted as a partial program.
 ;
 ; In:  HL = text right after "LOAD " (same convention as BASIC_DO_SAVE)
 ; Out: carry set = malformed syntax (same INVALID FILENAME path as
@@ -1920,7 +1914,7 @@ BASIC_DO_LOAD:
     cp   '"'
     jr   z, .closed
     or   a
-    jr    z, .malformed
+    jp    z, .malformed
     inc  hl
     inc  b
     jr   .scan
@@ -1939,7 +1933,7 @@ BASIC_DO_LOAD:
     ; DE = filename pointer, B = filename length (0 = wildcard)
     ld   a, b
     or   a
-    jr   z, .load_wildcard                ; B=0 (LOAD "") — pass
+    jp   z, .load_wildcard                ; B=0 (LOAD "") — pass
                                          ; through unchanged, no
                                          ; padding needed for a
                                          ; wildcard match
@@ -1954,8 +1948,7 @@ BASIC_DO_LOAD:
     ; attempted, regardless of whether the name genuinely matched what
     ; was on tape. Found via a debug.bin dump after a LOAD FAILED
     ; report against a tape independently verified byte-perfect
-    ; (all four blocks, header and data, both redundant copies,
-    ; checksums confirmed correct) — the failure was purely this
+    ; (header and data blocks, checksums confirmed correct) — the failure was purely this
     ; missing padding step, not a signal or receive-logic problem.
     ex   de, hl                          ; HL = real scan pointer
                                          ; (was in DE)
@@ -2029,9 +2022,7 @@ BASIC_DO_LOAD:
                                          ; 6) — see this routine's own
                                          ; header. On carry clear, DE =
                                          ; actual data length received
-                                         ; (A = STORAGE_BLOCKS_LOST, not
-                                         ; needed here — the status
-                                         ; bar already reflects it)
+                                         ; (A = 0 on success)
     jr   c, .load_failed
 
     ; success — DE = actual data length received
@@ -2085,7 +2076,16 @@ BASIC_DO_LOAD:
 
 .load_failed:
     ; STORAGE_LOAD already set STORAGE_OP_STATE=6 (LOAD FAILED) —
-    ; BASIC_DRAW_STATUS_LINE shows it on its own next run
+    ; BASIC_DRAW_STATUS_LINE shows it on its own next run. A=$FF means
+    ; reception wrote into PROG_AREA before failing, so the former
+    ; program is no longer trustworthy. Reset it to empty; failures
+    ; before any destination write preserve the current program.
+    inc  a                               ; $FF -> 0 only for dirty failure
+    jr   nz, .load_failed_clean
+    call MEM_INIT
+    call BASIC_RESET_EDIT_STATE
+    call BASIC_RESET_ROW_SHADOW
+.load_failed_clean:
     or   a                               ; clear carry — the typed
                                          ; syntax itself was fine;
                                          ; only the receive failed,

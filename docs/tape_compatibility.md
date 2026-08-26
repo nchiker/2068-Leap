@@ -42,11 +42,13 @@ array state through the established reset path, resets editor/view/error
 state, restores default display state, rebuilds labels, and forces a full
 redraw. On failure it does not update `PROG_END` or run the success reset.
 
-The decoder currently receives directly into the program area. Therefore
-a data block that fails only at its trailing checksum may have overwritten
-bytes below the unchanged `PROG_END`. Eliminating that limitation requires
-a full-size staging area or a streaming rollback mechanism and is outside
-the framing migration.
+The decoder receives directly into the program area because a stock 48K
+machine has no spare region large enough to stage every valid program.
+If reception fails before writing a program byte, the current program is
+preserved. If one or more bytes were written before failure, LOAD resets
+the program to empty rather than expose or execute a corrupt hybrid under
+the old `PROG_END`. Full rollback to the former program would require
+additional memory or a different streaming/storage design.
 
 ## Compatibility limits
 

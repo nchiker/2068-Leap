@@ -66,6 +66,13 @@ def main() -> int:
     assert "push hl" in load_setup and "pop  hl" in load_setup, (
         "named LOAD must preserve its filename pointer during max-length calculation"
     )
+    assert "STORAGE_LOAD_DATA_TOUCHED" in source
+    assert "cp   h" in code.split(".data_failed:", 1)[1].split(
+        ".total_failure:", 1
+    )[0], "data failure must distinguish untouched from overwritten destination"
+    assert "inc  a" in load_command.split(".load_failed:", 1)[1], (
+        "BASIC_DO_LOAD must clear a program made untrustworthy by failed reception"
+    )
 
     # Independent checksum sanity check for the documented header layout.
     name = b"test      "

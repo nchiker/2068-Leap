@@ -93,16 +93,12 @@ to just use instead.
     before writing `$F4`/`$FF`, `EI` only after Home paging is fully restored —
     mirroring `OPDFIL`'s own discipline around its bank-sensitive stack/UDG moves,
     not assumed safe without it.
-  - Not yet done: lowering `PROG_AREA_MAX` (currently `$FF00`, in `include/sysvars.
-    inc`) to `$C000` to formally reserve chunk 6 — the two live-editing growth paths
-    (`MEM_LINE_INSERT`/`MEM_LINE_STORE`) already check against this constant
-    correctly, so this is mostly a one-line change. Found along the way: 
-    `STORAGE_LOAD` writes incoming tape data growing from `PROG_AREA_START` with
-    **no length ceiling check at all** during the write itself — a real, pre-existing
-    gap (today it could already overwrite the stack on an oversized/corrupt load),
-    made more likely to actually bite once the ceiling moves down to $C000. Needs a
-    decision on sequencing before the chunk-6 reservation is made real, not just
-    documented.
+  - **Completed:** `PROG_AREA_MAX` is `$C000`, formally reserving chunk 6.
+    Program editing grows only up to the live `VARS_START` boundary, which itself
+    cannot exceed that ceiling. `BASIC_DO_LOAD` passes the same live maximum length
+    to `STORAGE_LOAD`; the header length is rejected before the data block starts if
+    it would cross the boundary. An oversized or corrupt header therefore cannot
+    overwrite EXROM's Home-side window or the machine stack.
 - AY-3-8912 sound chip: accessed via its standard TS2068 port pair; kernel-owned driver
   in `kernel/sound` (not yet written) exposes register-write and note-table APIs to
   `sound/` and `basic/` — BASIC never writes AY ports directly.
@@ -135,4 +131,3 @@ purpose, cross-referenced from the Programmer's Reference.
   inherited without being separately reasoned about (the sysvar-start-address
   history above is one confirmed example) — separate from, and doesn't block,
   any work already done or in progress.
-

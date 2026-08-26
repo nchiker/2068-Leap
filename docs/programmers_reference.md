@@ -821,7 +821,7 @@ roundtrip1`, and one fixture each from `arr`/`cf`/`err`/`io`/`math`/
 **One real downstream break found and fixed**: `tools/
 fuse_load_inject.py`'s `read_equ()` regex-scraped `NAME EQU $HEX`
 straight out of `sysvars.inc`'s source text to get `PROG_AREA_START`/
-`STORAGE_OP_STATE`/`STORAGE_PROGRESS_PCT`/`STORAGE_BLOCKS_LOST` for its
+`STORAGE_OP_STATE`/`STORAGE_PROGRESS_PCT` for its
 Fuse debugger-injection script — silently stale now that those
 addresses no longer appear as literal hex in the source. Fixed by
 having it assemble a throwaway stub (`ORG $0000` + `INCLUDE "include/

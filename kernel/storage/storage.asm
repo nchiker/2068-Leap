@@ -120,6 +120,8 @@ STORAGE_HEADER_AUTOSTART_OFF EQU 13
 STORAGE_HEADER_PROGLEN_OFF   EQU 15
 STORAGE_HEADER_PAYLOAD_LEN   EQU 17
 STORAGE_PROGRAM_TYPE         EQU 0
+STORAGE_LOAD_DATA_TOUCHED    EQU $FF     ; failure return marker: at least
+                                         ; one destination byte was written
 STORAGE_NO_AUTOSTART         EQU $8000
 
     ASSERT STORAGE_HEADER_NAME_OFF + STORAGE_HEADER_FILENAME_LEN = STORAGE_HEADER_LENGTH_OFF
@@ -680,10 +682,11 @@ STORAGE_SAVE:
 ; In:  IX = destination pointer, HL = filename pointer, B = filename
 ;      length (0 = wildcard, LOAD ""), DE = max allowed data length
 ; Out: DE = actual data length received (only meaningful if carry
-;          clear), A = 0 on success
+;          clear), A = 0 on success or a clean failure,
+;          STORAGE_LOAD_DATA_TOUCHED on failure after destination writes
 ;      Carry set = total failure (no matching header, or header's own
-;          claimed length exceeds the caller's bound, or both data
-;          copies failed)
+;          claimed length exceeds the caller's bound, or the data block
+;          failed). A distinguishes whether destination bytes were written.
 ; Destroys: AF, BC, DE, HL, IX
 ; ============================================================================
 STORAGE_LOAD:
@@ -862,9 +865,26 @@ STORAGE_LOAD:
     ret
 
 .data_failed:
-    pop  de
+    ; DE is the receiver's remaining byte count; the stack holds the
+    ; original length. If they differ, part (or all) of the destination
+    ; has already been overwritten and the caller must not retain the old
+    ; program as though it were still trustworthy.
+    pop  hl
     pop  ix
+    ld   a, d
+    cp   h
+    jr   nz, .data_touched
+    ld   a, e
+    cp   l
+    jr   nz, .data_touched
 .total_failure:
+    xor  a                               ; clean failure: no program bytes
+                                         ; were written
+    jr   .report_failure
+.data_touched:
+    ld   a, STORAGE_LOAD_DATA_TOUCHED
+.report_failure:
+    push af                              ; preserve clean/dirty result marker
     ld   a, 6
     ld   (STORAGE_OP_STATE), a            ; LOAD FAILED
     call STORAGE_REPORT_PROGRESS          ; without this, LOAD FAILED
@@ -872,6 +892,7 @@ STORAGE_LOAD:
                                          ; the screen — see STORAGE_
                                          ; SAVE's own matching comment
                                          ; for why
+    pop  af
     scf
     ret
 
