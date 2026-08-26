@@ -1959,7 +1959,11 @@ BASIC_DO_LOAD:
     ; missing padding step, not a signal or receive-logic problem.
     ex   de, hl                          ; HL = real scan pointer
                                          ; (was in DE)
-    ld   de, DETOK_BUF
+    ; DETOK_BUF is shared redraw/parser scratch and can be overwritten by
+    ; STORAGE_LOAD's initial progress-hook redraw before header matching.
+    ; EDIT_LABEL_COPY is retained text storage and is idle for this
+    ; blocking immediate command.
+    ld   de, EDIT_LABEL_COPY
     ld   c, STORAGE_HEADER_FILENAME_LEN
 .pad_copy:
     ld   a, b
@@ -1976,7 +1980,7 @@ BASIC_DO_LOAD:
     inc  de
     dec  c
     jr   nz, .pad_copy
-    ld   hl, DETOK_BUF                   ; HL = the now-padded name
+    ld   hl, EDIT_LABEL_COPY             ; HL = the retained padded name
     ld   b, STORAGE_HEADER_FILENAME_LEN  ; B = 10, matching what
                                          ; STORAGE_LOAD's own check
                                          ; requires
@@ -1996,12 +2000,15 @@ BASIC_DO_LOAD:
     ; VARS_START header) minus PROG_AREA_START. Can't be the compile-
     ; time constant it used to be now that the ceiling is a runtime
     ; value. STORAGE_LOAD's own bound, see its header + STORAGE_MAX_LEN
-    ; in sysvars.inc; B/HL above (filename) are untouched by this
+    ; in sysvars.inc. Preserve HL: it carries the filename pointer
+    ; required by STORAGE_LOAD after this size calculation.
+    push hl
     ld   hl, (VARS_START)
     ld   de, PROG_AREA_START
     or   a
     sbc  hl, de
     ex   de, hl
+    pop  hl
     ld   ix, PROG_AREA_START
     call BASIC_LOAD_EXROM                 ; STORAGE_LOAD now lives in
                                          ; EXROM (rom/exrom_storage.

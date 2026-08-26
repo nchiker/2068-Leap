@@ -21,6 +21,7 @@ def equ(text: str, name: str) -> int:
 def main() -> int:
     source = SOURCE.read_text()
     code = re.sub(r";[^\n]*", "", source)
+    basic_source = (ROOT / "basic" / "basic.asm").read_text()
 
     # The real LD-EDGE-2 is CALL LD-EDGE-1 / RET NC and then deliberately
     # falls through into LD-EDGE-1 again. A RET inserted here was the root
@@ -50,6 +51,21 @@ def main() -> int:
     save_body = code.split("STORAGE_SAVE:", 1)[1].split("STORAGE_LOAD:", 1)[0]
     sends = len(re.findall(r"\bcall\s+STORAGE_SEND_BLOCK\b", save_body, re.I))
     assert sends == 2, f"stock framing requires two SAVE blocks, found {sends}"
+
+    load_command = basic_source.split("\nBASIC_DO_LOAD:\n", 1)[1].split(
+        "\nBASIC_DETOKENIZE_TO_BUF:\n", 1
+    )[0]
+    assert "ld   de, EDIT_LABEL_COPY" in load_command
+    assert "ld   hl, EDIT_LABEL_COPY" in load_command
+    assert "ld   de, DETOK_BUF" not in load_command, (
+        "named LOAD must not retain its padded name in redraw scratch"
+    )
+    load_setup = load_command.split(".load_call:", 1)[1].split(
+        "call BASIC_LOAD_EXROM", 1
+    )[0]
+    assert "push hl" in load_setup and "pop  hl" in load_setup, (
+        "named LOAD must preserve its filename pointer during max-length calculation"
+    )
 
     # Independent checksum sanity check for the documented header layout.
     name = b"test      "
