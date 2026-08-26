@@ -1,0 +1,4 @@
+BORDER 5
+N = FREE()
+DIM A(N)
+BORDER 2

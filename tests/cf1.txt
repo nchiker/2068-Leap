@@ -1,0 +1,8 @@
+BORDER 4
+X = 5
+IF X = 5 THEN
+Y = 1
+ELSE
+Y = 2
+END IF
+IF Y <> 1 THEN BORDER 2

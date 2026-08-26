@@ -1,0 +1,2 @@
+BORDER 4
+IF CHR$(65) <> "A" THEN BORDER 2

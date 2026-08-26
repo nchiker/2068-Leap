@@ -1,0 +1,22 @@
+;; Sprite demo — draws a small block, GRABs it into slot 0, then
+;; SHOWs/HIDEs it moving left to right across the screen.
+;;
+;; Worth noting: the inner delay loop nests inside the outer position
+;; loop, so this is also the FIRST real exercise of nested FOR/NEXT on
+;; hardware — the mechanism was built for nesting (FOR_STACK_MAX=8)
+;; but hadn't actually been tried nested until this program.
+CLS
+PRINT "SPRITE DEMO"
+INK 2
+BLOCK 8,8 TO 15,15
+SPRITE GRAB 0,1,1,1,1
+INK 7
+CLS
+PRINT "SPRITE DEMO"
+FOR i = 0 TO 20
+SPRITE SHOW 0,10,i
+FOR d = 1 TO 300
+NEXT d
+SPRITE HIDE 0
+NEXT i
+PRINT "DONE"

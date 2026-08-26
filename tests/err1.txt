@@ -1,0 +1,4 @@
+BORDER 5
+DIM A(3)
+X = A(10)
+BORDER 2

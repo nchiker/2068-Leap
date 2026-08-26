@@ -1,0 +1,3 @@
+BORDER 4
+A$ = "hello world"
+IF LEN(A$) <> 11 THEN BORDER 2

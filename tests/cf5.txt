@@ -1,0 +1,6 @@
+BORDER 4
+X = 0
+GOTO skip
+X = 99
+skip:
+IF X <> 0 THEN BORDER 2

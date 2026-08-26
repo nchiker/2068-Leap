@@ -1,0 +1,6 @@
+BORDER 4
+S = 0
+FOR I = 1 TO 5
+S = S + I
+NEXT I
+IF S <> 15 THEN BORDER 2

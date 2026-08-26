@@ -1,0 +1,12 @@
+;; Verifies the GFX_FILL fix: draws a solid box, then FILLs it with a
+;; DIFFERENT color. Before the fix, this erased the box's pixels
+;; (XOR-toggled them off) while still writing the new attribute,
+;; leaving a blank/paper-colored gap. After the fix, the box should
+;; stay solid and simply change color, no gap.
+CLS
+PRINT "FILL RECOLOR FIX TEST"
+INK 3
+BLOCK 100,100 TO 150,150
+INK 6
+FILL 120,120
+PRINT "BOX SHOULD BE SOLID YELLOW"

@@ -1,0 +1,11 @@
+;; Second isolation: same box, but preceded by the same CIRCLE call
+;; v2 had before it (still no FILL). If the box is missing HERE but
+;; showed up in isolate_block3.txt, the CIRCLE-then-BLOCK sequence
+;; is the trigger. If it's missing in both, sequence doesn't matter.
+CLS
+PRINT "BOX AFTER CIRCLE TEST"
+INK 6
+CIRCLE 190,220,15
+INK 3
+BLOCK 210,180 TO 250,255
+PRINT "DONE"

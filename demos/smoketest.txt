@@ -1,0 +1,8 @@
+BORDER 4
+PRINT "HELLO FROM THE INJECTED DEMO"
+x = 1
+loop:
+PRINT x
+x = x + 1
+IF x <= 3 THEN GOTO loop
+PRINT "DONE"

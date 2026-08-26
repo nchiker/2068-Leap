@@ -1,0 +1,31 @@
+;; Statement-handler consolidation test v2 — corrected. v1 used
+;; values like 300/400 expecting them to hit the y-clamp, but only
+;; the LOW BYTE of the evaluated expression ever reaches the clamp
+;; (screen y is 8-bit) — 300 & 0xFF = 44, well under 192, so those
+;; sites never actually reached BASIC_CLAMP_Y191 at all. Every value
+;; below is a genuine single-byte 192-255 value, so it really
+;; exercises the clamp instead of silently wrapping past it.
+;; Expected: PLOT/LINE/BLOCK/CIRCLE all pin to the bottom row (191)
+;; instead of the values given. The final box+FILL should recolor
+;; cleanly and stay CONTAINED inside the box — if it floods past the
+;; box edges, the FILL clamp positioned the seed wrong.
+CLS
+PRINT "CLAMP TEST V2"
+INK 2
+PLOT 10,191
+PLOT 20,192
+PLOT 30,255
+INK 4
+LINE 40,191 TO 60,220
+LINE 70,220 TO 90,191
+INK 5
+BLOCK 100,170 TO 130,255
+BLOCK 140,200 TO 160,230
+INK 6
+CIRCLE 190,220,15
+INK 3
+BLOCK 210,180 TO 250,255
+INK 6
+FILL 220,192
+INK 7
+PRINT "DONE - BOX SHOULD BE SOLID"

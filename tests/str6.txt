@@ -1,0 +1,2 @@
+BORDER 4
+IF INKEY$() <> "" THEN BORDER 2

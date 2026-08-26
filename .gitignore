@@ -1,0 +1,21 @@
+# Reproducible assembler outputs
+/*.bin
+/*.lst
+/rom/*.bin
+/rom/*.lst
+/rom/*.sym
+/build/
+
+# Emulator/debug output
+/export/debug.bin
+/export/Screenshots/
+
+# Local tool state
+__pycache__/
+*.pyc
+/.claude/settings.local.json
+
+# Reference ROMs and manuals may have redistribution restrictions.
+# Keep them available locally, but do not add them accidentally.
+/OfficalROM/
+/Resource Docs/

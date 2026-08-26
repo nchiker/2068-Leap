@@ -1,0 +1,4 @@
+BORDER 4
+F = FREE()
+DIM A(9)
+IF F - FREE() <> 28 THEN BORDER 2

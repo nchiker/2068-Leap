@@ -1,0 +1,11 @@
+;; Isolates the v2 mystery: does BLOCK 210,180 TO 250,255 draw at all
+;; on its own, with nothing before it but CLS and nothing after it
+;; (no CIRCLE, no FILL)? If this box shows up, the bug is in FILL's
+;; interaction with it (or in running after CIRCLE). If it doesn't
+;; show up even here, the bug is in BLOCK/GFX_BLOCK itself for this
+;; x-range.
+CLS
+PRINT "ISOLATED BOX TEST"
+INK 3
+BLOCK 210,180 TO 250,255
+PRINT "DONE"

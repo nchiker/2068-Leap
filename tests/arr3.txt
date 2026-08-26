@@ -1,0 +1,6 @@
+BORDER 4
+DIM A(5)
+DIM B(2)
+B(0) = 1
+A(B(0)) = 99
+IF A(1) <> 99 THEN BORDER 2

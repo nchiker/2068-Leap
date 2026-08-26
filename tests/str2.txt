@@ -1,0 +1,3 @@
+BORDER 4
+A$ = "hello world"
+IF LEFT$(A$,5) <> "hello" THEN BORDER 2

@@ -1,0 +1,24 @@
+;; Statement-handler consolidation test — exercises the new shared
+;; BASIC_CLAMP_Y191 routine at all 7 call sites it replaced (PLOT,
+;; FILL, LINE y0+y1, BLOCK y0+y1, CIRCLE), including the exact
+;; 191/192 clamp boundary. Nothing here should crash, wrap to y=0,
+;; or produce garbage — every out-of-range y below should clamp to
+;; the bottom row (191) instead.
+CLS
+PRINT "CLAMP CONSOLIDATION TEST"
+INK 2
+PLOT 10,191
+PLOT 20,192
+PLOT 30,255
+INK 4
+LINE 40,191 TO 60,300
+LINE 70,300 TO 90,191
+INK 5
+BLOCK 100,170 TO 130,400
+BLOCK 140,300 TO 160,320
+INK 6
+CIRCLE 190,300,15
+INK 3
+FILL 190,192
+INK 7
+PRINT "DONE - CHECK BOTTOM ROW"

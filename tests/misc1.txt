@@ -1,0 +1,5 @@
+BORDER 4
+A$ = "AB"
+B$ = "CD"
+C$ = A$ + B$
+IF C$ <> "ABCD" THEN BORDER 2

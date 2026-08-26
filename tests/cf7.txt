@@ -1,0 +1,9 @@
+BORDER 4
+A = 0
+CALL addone
+IF A <> 1 THEN BORDER 2
+GOTO fin
+addone:
+A = A + 1
+RETURN
+fin:

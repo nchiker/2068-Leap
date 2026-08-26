@@ -1,0 +1,3 @@
+BORDER 4
+A$ = "hello world"
+IF CODE(A$) <> 104 THEN BORDER 2
