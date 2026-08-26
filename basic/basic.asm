@@ -4574,6 +4574,8 @@ BASIC_EVAL_NOT:
 ; Destroys: AF, BC, DE, HL
 ; ----------------------------------------------------------------------
 BASIC_EVAL_RHS_AND_COMPARE:
+    ; check-asm: allow-early-pop — audited return-address/left-value
+    ; stack swap described in this routine's contract above.
     ld   hl, (EXPR_PARSE_PTR)
     call BASIC_EVAL_EXPR                    ; DE = right value
     jr   c, .fail

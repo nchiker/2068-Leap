@@ -4119,12 +4119,10 @@ printed `5` and returned cleanly, no crash.
 of this debugging session, specifically to catch this class of bug
 proactively next time — its stack-ordering fingerprint check flags any
 routine that pops something before pushing anything of its own, which
-is exactly this bug's shape. Run against the fixed
-`BASIC_EVAL_RHS_AND_COMPARE`, it correctly flags the routine's own
-first instruction (`pop bc`, now a deliberate, correct part of the
-fix) for manual review — a demonstration that the check is a "look
-here" signal, not a guarantee of a bug, since a routine legitimately
-retrieving its own earlier push is completely fine.
+is exactly this bug's shape. The fixed `BASIC_EVAL_RHS_AND_COMPARE`
+now carries the checker's explicit `allow-early-pop` audit marker: its
+return-address/left-value swap has been traced on both exits, while any
+new, unreviewed early-pop pattern will still be reported.
 
 ### INK / PAPER / FLASH / INVERSE / OVER
 

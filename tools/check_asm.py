@@ -46,9 +46,9 @@ Checks performed, and which real bug each one guards against:
    bug survived extensive hand-tracing and a full byte-for-byte
    listing-file audit; it was only found by single-stepping the real
    build in an emulator debugger. A flag from this check doesn't
-   necessarily mean a bug — a routine legitimately popping its OWN
-   earlier push before doing anything else is fine — but it's exactly
-   the shape worth a manual second look every time.
+   necessarily mean a bug — an intentionally audited stack protocol may
+   use `; check-asm: allow-early-pop` in that routine to suppress the
+   warning — but it's exactly the shape worth a manual second look.
 """
 
 import re
@@ -144,6 +144,8 @@ def check_stack_ordering_fingerprint(lines):
     warnings = []
     for name, start, end in routines:
         body_lines = lines[start:end]
+        if any("check-asm: allow-early-pop" in line for line in body_lines):
+            continue
         for j, line in enumerate(body_lines[1:15]):
             stripped = line.split(';', 1)[0].strip()
             if not stripped:
