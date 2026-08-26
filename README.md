@@ -1758,12 +1758,13 @@ tape actually playing (Fuse only auto-starts playback via its ROM-trap
 mechanism, which doesn't apply to this non-standard loader, so press
 Play in Fuse's tape browser yourself).
 
-**Status**: SAVE and LOAD are confirmed working in a real Fuse
-round-trip. SAVE produced a valid Direct Recording TZX; LOAD displayed
-the matching program name and restored its three-statement listing. The
-decisive fix was restoring the stock LD-EDGE-2 control flow: it must
-fall through into a second LD-EDGE-1 measurement rather than return
-after one half-pulse.
+**Status**: SAVE and LOAD are confirmed working in real Fuse round-trips
+with both `LOAD ""` and `LOAD "verify"`. SAVE produced a valid Direct
+Recording TZX and LOAD restored its three-statement listing. The receiver
+depends on stock LD-EDGE-2 control flow (a second LD-EDGE-1 measurement),
+and named LOAD also retains its padded filename and preserves that
+pointer through command setup. `tools/check_storage_contract.py` guards
+these structural invariants.
 
 The tape container now uses the stock TS2068/Sinclair 17-byte BASIC
 header followed by one data block. The data block intentionally remains

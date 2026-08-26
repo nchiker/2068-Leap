@@ -70,8 +70,11 @@ and 100% after the data block has completed.
 
 ## Confirmed result
 
-On 2026-08-26, a real Fuse round-trip was confirmed: the redesigned ROM
-saved a three-statement program to a Direct Recording TZX, then loaded the
-same recording by name, displayed the program name, and restored the
-program listing. The decisive receiver fix was restoring LD-EDGE-2's
-stock fall-through into a second LD-EDGE-1 measurement.
+On 2026-08-26, real Fuse round-trips were confirmed with both `LOAD ""`
+and `LOAD "verify"`: the redesigned ROM saved a three-statement program
+to a Direct Recording TZX and restored its listing. The receiver required
+the stock LD-EDGE-2 fall-through into a second LD-EDGE-1 measurement.
+Named loading additionally requires its padded comparison name to remain
+outside redraw scratch and its HL pointer to survive the maximum-length
+calculation before entering `STORAGE_LOAD`; both invariants are guarded by
+`tools/check_storage_contract.py`.

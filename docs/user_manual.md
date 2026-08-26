@@ -196,14 +196,6 @@ PRESS ANY KEY TO RETURN
 
 ## 3. Loading and saving with Fuse
 
-**Currently unavailable (2026-08-24):** `SAVE`/`LOAD` report `SAVE/LOAD
-NOT AVAILABLE` on the status line right now. The from-scratch tape
-protocol this section describes ran into real, repeated timing bugs
-under real Fuse tape testing and has been archived (`kernel/storage/
-archive/README.md`) in favor of adapting the real TS2068 ROM's own
-tape routines instead — this section will be rewritten once that
-lands. Left below for reference on the eventual target behavior.
-
 `SAVE "<name>"` and `LOAD "<name>"` transfer the current program to and
 from tape, using the same EAR/MIC cassette ports every Spectrum-family
 machine uses for tape I/O — so in Fuse, this means the same **tape
@@ -211,13 +203,11 @@ deck** you'd use for any Spectrum program (Fuse's own Media/Tape menu:
 open or record a tape file, then `SAVE`/`LOAD` from BASIC drives it, the
 same relationship as a real cassette recorder).
 
-**Important**: this is a from-scratch protocol built for this project,
-**not** a byte-for-byte reproduction of the real Sinclair tape format.
-A tape this ROM saves can only be read back by this same ROM — it isn't
-interchangeable with a real Spectrum's own `SAVE`/`LOAD`, or with
-another emulator's stock ROM. The reasoning and full protocol design are
-in `docs/programmers_reference.md`'s "kernel/storage" section, for
-anyone curious; you don't need any of that to use it.
+The tape uses the stock TS2068/Sinclair 17-byte program header and
+two-block transport framing. The saved program data is still this ROM's
+own plain-text representation, not stock tokenized Sinclair BASIC. Stock
+tools can recognize the container and header, but a stock ROM cannot run
+the payload. See `docs/tape_compatibility.md` for the exact contract.
 
 - **`SAVE "name"`** — saves the whole current program under that name
   (up to 10 characters).
@@ -233,7 +223,8 @@ milestones: 0%, 10% after the header, and 100% after the program block.
 On success it shows `SAVED 100%` or `LOADED 100%`. An unreadable or empty
 tape reports `LOAD FAILED`.
 
-SAVE and LOAD have been confirmed together in a real Fuse round-trip.
+Both named `LOAD "name"` and wildcard `LOAD ""` have been confirmed in
+real Fuse round-trips.
 Fuse does not automatically start this custom ROM's loader, so open the
 tape and press Play manually after entering `LOAD`.
 
