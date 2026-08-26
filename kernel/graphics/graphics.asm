@@ -1,8 +1,10 @@
 ; ============================================================================
 ; kernel/graphics/graphics.asm — text-mode character output
 ;
-; NOT YET ASSEMBLED — written without access to sjasmplus in the
-; authoring environment.
+; CURRENT STATUS: assembled into the working ROM and exercised under
+; Fuse by the automated graphics and language regression tests. Glyph
+; appearance still ultimately requires visual judgment; the addressing
+; and drawing paths have executable coverage.
 ;
 ; CONFIDENCE LEVELS DIFFER within this file, worth being explicit about:
 ;   - Screen ADDRESSING (ROW_BASE_TABLE, GFX_PUTCHAR's address math) was

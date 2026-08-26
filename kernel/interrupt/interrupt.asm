@@ -1,10 +1,11 @@
 ; ============================================================================
 ; kernel/interrupt/interrupt.asm — real-time keyboard scan/debounce/repeat
 ;
-; NOT YET ASSEMBLED OR VERIFIED — written without access to sjasmplus in
-; the authoring environment, and not yet run through tools/z80sim either.
-; Needs the project's normal verification pass (z80sim, then real
-; hardware) before being trusted, same as any other new module here.
+; CURRENT STATUS: assembled into the working ROM and exercised under
+; Fuse through normal editor/keyboard operation and the automated suite.
+; Timing constants still need confirmation on physical TS2068 hardware;
+; that limitation is documented below rather than conflated with build
+; or emulator status.
 ;
 ; WHY THIS EXISTS: kernel/io's old IO_READ_KEY did its own scanning,
 ; entirely inside a blocking busy-wait, called once per EDITOR_LOOP

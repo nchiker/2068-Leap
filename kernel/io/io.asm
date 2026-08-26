@@ -1,8 +1,9 @@
 ; ============================================================================
 ; kernel/io/io.asm — keyboard scanning
 ;
-; NOT YET ASSEMBLED — written without access to sjasmplus in the
-; authoring environment. The matrix-scan mechanism itself (IO_KEY_SCAN_ROW,
+; CURRENT STATUS: assembled into the working ROM and exercised under
+; Fuse, including interactive keyboard use and automated language I/O
+; coverage. The matrix-scan mechanism itself (IO_KEY_SCAN_ROW,
 ; IO_KEY_SCAN_ALL) is standard, well-established Spectrum-family hardware
 ; behaviour and I'm confident in it electrically — the ULA's 8x5 keyboard
 ; matrix, read via port $FE with the row selected by the value in A at
@@ -51,9 +52,8 @@
 ; This file still owns the matrix-scan primitive and the decode
 ; tables/logic (IO_FIND_KEY/IO_DECODE_KEY), which KBD_ISR_TICK calls
 ; into every tick; IO_READ_KEY itself is now just a thin consumer of
-; the ISR's latched KBD_LASTK/KBD_KEYHIT state. NOT YET VERIFIED via
-; z80sim or real hardware — this is a same-session rewrite, needs the
-; project's normal verification pass before being trusted.
+; the ISR's latched KBD_LASTK/KBD_KEYHIT state. Physical TS2068 hardware
+; verification remains separate from the confirmed Fuse behavior.
 ;
 ; CAPS SHIFT+ENTER (KEY_INSERT_LINE, see keys.inc) is a project-specific
 ; combo. Unlike the digit-row combos above (which DO have documented

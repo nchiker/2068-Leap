@@ -1,8 +1,9 @@
 ; ============================================================================
 ; kernel/math/math.asm — general-purpose 16-bit integer arithmetic
 ;
-; NOT YET ASSEMBLED — written without access to sjasmplus in the
-; authoring environment. Both algorithms below were verified via a
+; CURRENT STATUS: assembled into the working ROM and exercised under
+; Fuse by the automated math and language regression tests. Both
+; foundational algorithms were also verified via a
 ; Python simulation mirroring the exact planned Z80 register steps —
 ; MATH_UMUL16 against 32,720 signed multiply cases (as its signed
 ; wrapper) and MATH_UDIV16 against 16,165 unsigned divide/remainder
@@ -10,7 +11,7 @@
 ; matching this project's established discipline for tricky arithmetic
 ; (the screen address formula, the ink/paper bit-swap, DIV10 itself).
 ; That verifies the ALGORITHMS; it doesn't substitute for running the
-; actual assembled code, which hasn't happened yet.
+; actual assembled-code coverage now complements that algorithm check.
 ;
 ; Owns: multiply and divide, which Z80 has no hardware instructions
 ; for. Built specifically to support basic/'s expression evaluator,

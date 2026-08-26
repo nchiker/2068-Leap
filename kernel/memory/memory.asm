@@ -1,15 +1,10 @@
 ; ============================================================================
 ; kernel/memory/memory.asm — line storage, program iterator, label table
 ;
-; NOT YET ASSEMBLED — written without access to sjasmplus in the
-; authoring environment. All routines below are implemented (no stubs
-; remaining) and hand-traced against concrete addresses. MEM_INIT,
-; MEM_FILL_ZERO/MEM_FILL, MEM_LINE_FIRST, MEM_SHIFT_UP/MEM_SHIFT_DOWN,
-; and MEM_LABEL_LOOKUP/ADD/REMOVE are confirmed on real Fuse/TS2068
-; emulation via rom/test_memory.asm. MEM_LINE_STORE/MEM_LINE_DELETE_RANGE
-; now have tests in that same harness too, using multi-statement
-; fixtures so the shift math is actually exercised — but those two
-; haven't been run yet, so treat them as hand-traced-only until they are.
+; CURRENT STATUS: assembled into the working ROM and exercised under
+; Fuse by the automated language/memory regression suite. The core fill,
+; shift, line-storage, iterator, and label-table paths are implemented;
+; remaining feature gaps are called out at their individual routines.
 ;
 ; Owns:
 ;   - The BASIC program area's on-disk/in-RAM format (line storage, no
