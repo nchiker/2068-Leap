@@ -507,7 +507,7 @@ separate**:
 | `GFX_CHAR_SETUP` | Shared address computation for `GFX_PUTCHAR`/`GFX_PUTCHAR_BOLD` | Implemented (internal, not in `kernel_api.inc`) |
 | `GFX_PUTCHAR` | Plot one character at (row, col) | Implemented, address math verified numerically |
 | `GFX_PUTCHAR_BOLD` | Plot one character, synthesized bold (widened strokes) | Implemented, bold technique verified numerically against representative font bytes |
-| `GFX_PRINT_STRING` | Print a null-terminated string | Implemented; no line-wrap or scroll (`TODO`) |
+| `GFX_PRINT_STRING` | Print a null-terminated string | Implemented as clipped low-level output for editor/help layouts; `GFX_PRINT_STRING_ATTR`, used by BASIC `PRINT`, wraps and scrolls all 24 output rows |
 | `GFX_PRINT_STRING_ATTR` | Print a null-terminated string, also setting the attribute cell under each character to a given byte | Implemented; built for `basic/`'s `INK`/`PAPER`/`FLASH`/`INVERSE` support — kept as a separate routine from `GFX_PRINT_STRING` rather than adding a parameter to it, so HELP screens/error messages/the editor (which must stay at the plain default attribute) don't need to change |
 | `GFX_INVERT_ATTR` | Swap ink/paper + set hardware FLASH at one cell (blinking cursor indicator) | Implemented, bit-swap verified numerically against all 256 attribute values |
 | `GFX_INVERT_ATTR_STATIC` | Swap ink/paper at one cell, no FLASH (static highlight, e.g. a status bar) | Implemented, shares `GFX_ATTR_SWAP` with `GFX_INVERT_ATTR` |
@@ -4188,12 +4188,13 @@ intervening call via a `push af`/`pop af` pair rather than a bare
 register, same "value must survive a call" reasoning as everywhere
 else in this project.
 
-`OVER <n>` is honestly incomplete: `CURRENT_OVER` is stored and
-validated but not yet consulted anywhere. Real `OVER 1` XOR-plots text
-onto the existing bitmap instead of overwriting it, which needs a new
-`GFX_PUTCHAR` variant that doesn't exist yet — documented as a known
-gap (same pattern as AND/OR's non-short-circuit evaluation) rather
-than silently pretended to work.
+`OVER <n>` was initially stored but not applied to text. It is now complete:
+`GFX_PUTCHAR_OVER` XORs each glyph scanline with the destination bitmap and
+`GFX_PRINT_STRING_ATTR` selects it when `CURRENT_OVER` is set. Ordinary
+editor/help/status text continues through opaque `GFX_PUTCHAR`, so BASIC's
+graphics state cannot leak into interface rendering. `tests/gfx8.txt`
+verifies a normal `A` bitmap byte and then confirms that printing the same
+glyph at the same position under `OVER 1` restores that byte to zero.
 
 `CURRENT_INK`/`CURRENT_PAPER`/`CURRENT_FLASH`/`CURRENT_INVERSE`/
 `CURRENT_OVER` are reset to defaults (INK 0, PAPER 7, everything else

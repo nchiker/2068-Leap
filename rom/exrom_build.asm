@@ -92,5 +92,11 @@
                                          ; $C090 entry stub above
                                          ; already points here
 
-    DS   $E000 - $, $FF                  ; pad to a full 8K image
-    SAVEBIN "exrom.bin", $C000, $2000
+    IFDEF EDITOR_TEST_EXROM
+        INCLUDE "rom/exrom_editor_test_payload.asm"
+        DS   $E000 - $, $FF
+        SAVEBIN "exrom_editor_test.bin", $C000, $2000
+    ELSE
+        DS   $E000 - $, $FF              ; pad to a full 8K image
+        SAVEBIN "exrom.bin", $C000, $2000
+    ENDIF

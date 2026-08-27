@@ -10,12 +10,12 @@ ROM — while still fitting a stock 48K machine and staying instant-on.
 Working integrated ROM: full-screen editor, structured BASIC, graphics,
 sound, EXROM banking, and TS2068-framed SAVE/LOAD are assembled and tested
 under Fuse. The automated language regression suite currently contains
-63 passing fixtures. Use `make budget`, `make check`, and `make test` for
+65 passing fixtures. Use `make budget`, `make check`, and `make test` for
 the current reproducible build and validation entry points. `make check`
 also assembles seven standalone boot/kernel smoke ROMs; `make smoke-build`
 runs that build-only compatibility check directly. `make test` executes
 the deterministic memory and math smoke ROMs in Fuse before running the
-63-fixture integrated language suite; the other smoke ROMs remain visual,
+65-fixture integrated language suite; the other smoke ROMs remain visual,
 keyboard, or tape-interactive checks.
 
 ## Layout
@@ -36,6 +36,18 @@ docs/       Programmer's Reference, BASIC Language Reference (labels/control
             (started — keyboard layout confirmed)
 examples/   sample BASIC/assembly programs once there's something to run
 ```
+
+## Manuals and showcase
+
+- `docs/user_manual.md` is the maintained, example-driven user manual.
+- `docs/TS2068_BASIC_Users_Manual_Formatted.docx` is its styled Word edition;
+  rebuild it with `make manual`.
+- `docs/technical_overview.md` is the shareable architectural and feature
+  overview for people interested in how the redesigned ROM differs.
+- `demos/showcase.txt` demonstrates structured flow, High Resolution Graphics,
+  ULAplus, arrays, sprites and collision, AY sound, strings, and text XOR. Run
+  it interactively with `tools/run_demo.sh showcase`; its timed completion is
+  checked by `tools/validate_showcase.sh`.
 
 ## Recommended build order
 
@@ -321,7 +333,7 @@ examples/   sample BASIC/assembly programs once there's something to run
    afterward skipped redrawing rows that clear had just wiped blank.
    Both fixed with `BASIC_RESET_ROW_SHADOW`, called once at cold boot
    and once right after `BASIC_RUN`'s own clear.
-7. Current expansion candidates: `EDITOR_SEARCH`, text-mode `OVER`,
+7. Current expansion candidates: a user-facing program search command,
    procedures/functions, and the remaining structured-control forms.
    `IF`, `GOSUB`, `FOR`, graphics, sound, sprites, strings, arrays, and
    commit-time whole-program checking are implemented; use the manuals'
@@ -979,9 +991,9 @@ RUN            (A prints cyan-on-red — swapped; B prints back to
 ```
 `FLASH 1` sets the hardware flash bit on subsequently printed text
 (visible on real hardware/Fuse, not distinguishable from a static
-screenshot). `OVER <n>` is accepted and validated (0/1) but doesn't
-yet change how text is plotted — see `docs/programmers_reference.md`
-for why. `NEW` resets all five back to defaults (INK 0, PAPER 7,
+screenshot). `OVER 1` XOR-plots subsequent text, so printing the same
+glyph twice at the same position restores the original bitmap. `NEW`
+resets all five back to defaults (INK 0, PAPER 7,
 FLASH/INVERSE/OVER 0):
 ```
 INK 2

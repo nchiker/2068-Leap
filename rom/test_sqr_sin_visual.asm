@@ -214,6 +214,7 @@ SHOW_ROW:
     ld   a, $38                      ; ink 0 / paper 7 — same default
                                     ; byte BASIC_COMPUTE_PRINT_ATTR
                                     ; produces for INK 0/PAPER 7
+    ld   d, 0
     call GFX_PRINT_STRING_ATTR
     ld   a, (CUR_ROW)
     inc  a

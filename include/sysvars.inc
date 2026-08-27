@@ -852,16 +852,9 @@ CURRENT_INVERSE:     DEFS 1           ; 1 byte, 0/1, default 0 — swaps ink/
                                  ; ink/paper values survive INVERSE
                                  ; being toggled back off later
 CURRENT_OVER:        DEFS 1           ; 1 byte, 0/1, default 0 — stored for
-                                 ; forward compatibility and static-
-                                 ; checker validation, but not yet
-                                 ; consulted by any print routine: real
-                                 ; OVER 1 means XOR-plotting text onto
-                                 ; the existing bitmap instead of
-                                 ; overwriting it, which needs a new
-                                 ; GFX_PUTCHAR variant that doesn't
-                                 ; exist yet. TODO, same honest-
-                                 ; limitation pattern as AND/OR's non-
-                                 ; short-circuit evaluation.
+                                 ; static-checker validation and consumed
+                                 ; by BASIC's PRINT path: OVER 1 XOR-plots
+                                 ; glyph pixels onto the existing bitmap.
 
 ; ---- AT/TAB cursor positioning ----
 BASIC_OUTPUT_COL:    DEFS 1           ; 1 byte, 0-31, default 0 — column
@@ -917,6 +910,8 @@ PRINT_ATTR_SCRATCH:  DEFS 1           ; 1 byte — GFX_PRINT_STRING_ATTR's own
                                  ; byte gap left before PROG_AREA_START
                                  ; by BASIC_OUTPUT_COL above; 3 bytes
                                  ; remain ($6095-$6097)
+PRINT_OVER_SCRATCH:  DEFS 1           ; GFX_PRINT_STRING_ATTR's OVER flag;
+                                 ; survives per-character graphics calls
 
 ; ---- LIST / EDIT <label> / DELETE <range> ----
 DELETE_START:        DEFS 2           ; 2 bytes — BASIC_DO_DELETE's own

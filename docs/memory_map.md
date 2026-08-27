@@ -124,7 +124,8 @@ purpose, cross-referenced from the Programmer's Reference.
   control-flow features; the current editor, BASIC, fill, and GOSUB stacks
   are allocated and tested.
 - Reclaim or relocate additional cold code before expanding the language;
-  the measured margin is currently 107 Home-ROM bytes and 422 EXROM bytes.
+  after text XOR and output scrolling, the measured margin is currently
+  3 Home-ROM bytes and 422 EXROM bytes.
 - **Label table**: the current top-level implementation is working and
   checked on every commit and before `RUN`. Revisit its fixed capacity when
   procedures introduce nested scopes.

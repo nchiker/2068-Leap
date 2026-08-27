@@ -15,6 +15,25 @@ yet. Anything described here as working has been checked against the code
 that implements it. See "Known limitations" at the end for what's
 deliberately left out.
 
+### What this ROM improves
+
+This is not simply the stock TS2068 BASIC with a few extra commands. Its
+programming model has been redesigned around the machine's unique hardware:
+
+- A persistent full-screen, word-wrapping editor replaces line-number entry.
+- Labels, block `IF`, `FOR`/`NEXT`, `GOSUB`/`RETURN`, and colon-separated
+  statements provide structured control flow.
+- Errors are checked after each committed edit and again before `RUN`; bad
+  lines are highlighted in place and have next/previous-error navigation.
+- Numeric arrays, scalar strings, string functions, pixel graphics, sprites,
+  collision detection, AY sound, High Resolution Graphics colour, and
+  ULAplus palettes are accessible directly from BASIC.
+- `SAVE` and `LOAD` retain standard TS2068 two-block tape framing while
+  carrying this ROM's native program, with progress shown in the status bar.
+
+ULAplus is program-scoped: every exit path restores the normal palette before
+the editor reappears.
+
 ## Contents
 
 1. [Getting started](#1-getting-started)
@@ -61,6 +80,21 @@ to the program (see [Immediate commands](#14-immediate-commands)).
 
 A blank ENTER (nothing typed) does nothing — it's not an error, it's a
 no-op.
+
+Here is a small first program using several improvements together:
+
+```basic
+INK 6
+DIM S(5)
+FOR I = 0 TO DIMN(S)-1
+S(I) = I*I
+NEXT I
+PRINT "LAST SQUARE=" + STR$(S(4))
+IF S(4) = 16 THEN BORDER 4
+```
+
+Type `RUN` on the next blank editor line. It prints `LAST SQUARE=16` and
+turns the border green.
 
 ## 2. The editor
 
@@ -464,6 +498,11 @@ way in any expression, not just inside `IF`.
 
 ## 8. Screen output
 
+Text wraps automatically at column 31. When output passes the bottom of the
+24-row screen, the display scrolls upward by one text row and printing
+continues on the cleared bottom row. This applies to strings that cross the
+right edge as well as to successive `PRINT` statements.
+
 | Statement | Effect |
 |---|---|
 | `PRINT <expr>` | Print one string or numeric expression at the current row/column, then advance to the next row |
@@ -476,7 +515,7 @@ way in any expression, not just inside `IF`.
 | `FLASH <n>` | Flashing text, `0`/`1` |
 | `BRIGHT <n>` | Bright variant of the current colours, `0`/`1` |
 | `INVERSE <n>` | Swap ink/paper for the next `PRINT`(s), `0`/`1` — doesn't change the underlying `INK`/`PAPER` values |
-| `OVER <n>` | Accepted and stored, but does **not** currently affect how `PRINT` draws text (it *does* affect `PLOT`/`LINE`/`BLOCK`/`CIRCLE` — see [Graphics](#9-graphics)) |
+| `OVER <n>` | `0` draws normally; `1` XOR-plots subsequent text and graphics, allowing the same glyph or shape to erase itself when drawn twice at one position |
 
 **`PRINT` takes exactly one expression** — there is currently no
 `;`/`,` multi-item list the way classic BASIC's `PRINT A; B; C` works.
@@ -817,7 +856,8 @@ Worth knowing before you go looking for something that isn't there:
 - **No `DATA`/`RESTORE`/`READ`** — use a `DIM`'d array instead.
 - **No string arrays, no multi-dimensional arrays.**
 - **No `INPUT` for strings, and no prompt-string form.**
-- **`OVER` doesn't affect `PRINT`**, only the graphics statements.
+- **`OVER 1` XOR-plots both text and graphics.** Printing or plotting the
+  same shape twice at the same position restores the original bitmap.
 - **`COS`/`TAN`/`EXP`/`LN`/`LOG10`/`INSTR`/`FILL$` are not implemented.**
 - **`SAVE`/`LOAD` uses TS2068 tape framing but this ROM's native program
   payload.** A stock ROM cannot execute that non-Sinclair BASIC payload.

@@ -3,7 +3,7 @@
 set -e
 cd "$(dirname "$0")/.."
 
-sjasmplus rom/exrom_build.asm
+sjasmplus -DEDITOR_TEST_EXROM rom/exrom_build.asm
 sjasmplus --sym=build/test_editor_auto.sym rom/test_editor_auto.asm
 python3 tools/fuse_editor_inject.py build/test_editor_auto.sym /tmp/editor_auto.dbg
 
@@ -11,7 +11,7 @@ pkill -9 -f fuse 2>/dev/null || true
 sleep 1
 DISPLAY=:1 nohup fuse --machine ts2068 \
     --rom-ts2068-0 test_editor_auto.bin \
-    --rom-ts2068-1 exrom.bin \
+    --rom-ts2068-1 exrom_editor_test.bin \
     --debugger-command "$(< /tmp/editor_auto.dbg)" \
     > /tmp/fuse_editor_auto.log 2>&1 &
 disown

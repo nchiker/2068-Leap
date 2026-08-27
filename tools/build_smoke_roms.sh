@@ -12,6 +12,7 @@ sources=(
     rom/test_graphics.asm
     rom/test_io.asm
     rom/test_editor.asm
+    rom/test_editor_ops.asm
     rom/test_port_monitor.asm
     rom/test_ulaplus.asm
 )
@@ -23,6 +24,7 @@ outputs=(
     test_graphics.bin
     test_io.bin
     test_editor.bin
+    test_editor_ops.bin
     test_port_monitor.bin
     test_ulaplus.bin
 )

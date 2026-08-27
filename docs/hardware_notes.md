@@ -79,19 +79,18 @@ above) that this project's flat one-key-to-one-character table has no
 way to represent; this BASIC's own parser reads those as two typed
 characters in sequence anyway (`<` then `=`, etc.), so nothing is lost
 by leaving these three unmapped rather than building multi-character
-key output just for them. `X`, `I`, `U`, `Y`, `H` have no
-confirmed mapping either way — left unmapped rather than guessed.
-`C`=`?` is now confirmed and mapped.
+key output just for them. The stock-ROM table identifies the remaining
+letter combinations as keyword tokens or characters this dialect does not
+consume (`£` and `^`). They remain unmapped by design: inserting a one-byte
+stock token into this editor's ASCII buffer would be incompatible with its
+plain-text model. `C`=`?` is confirmed and mapped.
 
 ## Still open
 - BREAK key's exact matrix position (or confirmation it's just the
   standard SHIFT+SPACE combo under a different keycap).
-- SYMBOL SHIFT's remaining unconfirmed keys (see table above) — `A`-`G`
-  are keyword tokens on real hardware and may not need an equivalent in
-  this project's own BASIC at all, given it doesn't use that keyword-
-  entry-mode system; `Q`, `W`, `E` are deliberately not implemented (see
-  above, not merely unconfirmed); the individual unconfirmed letters
-  (`X`, `I`, `U`, `Y`, `H`) are genuinely open.
+- Stock keyword-token and compound-token shortcuts remain deliberately
+  outside this ROM's plain-text editor model; type the keyword or comparison
+  characters normally.
 - AY-3-8912 sound port pair — see `include/hardware.inc`'s `TODO` on
   `PORT_AY_REG`/`PORT_AY_DATA`.
 - TS2068 Home/Exrom banking port behaviour — see `include/hardware.inc`'s

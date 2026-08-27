@@ -1,4 +1,4 @@
-.PHONY: all build check smoke-build test budget clean
+.PHONY: all build check smoke-build test budget manual clean
 
 all: check build
 
@@ -15,6 +15,7 @@ check:
 	python3 tools/check_docs.py
 	python3 tools/check_storage_contract.py
 	python3 tools/check_tape_fixture.py
+	python3 tools/check_commit_validation.py
 	tools/build_smoke_roms.sh
 
 smoke-build:
@@ -27,6 +28,9 @@ test: all
 
 budget: build
 	python3 tools/report_budget.py build/test_basic.lst build/exrom.lst build/test_basic.sym
+
+manual:
+	python3 tools/build_user_manual_docx.py
 
 clean:
 	rm -rf build

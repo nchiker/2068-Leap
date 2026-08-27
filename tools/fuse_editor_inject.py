@@ -17,8 +17,19 @@ def main():
     table = symbols(Path(sys.argv[1]))
     inject = table["INJECT_POINT"]
     queue = table["TEST_KEY_QUEUE"]
+    queue_pos = table["TEST_QUEUE_POS"]
+    verified = table["TEST_VERIFIED_FLAG"]
+    last_key = table["KBD_LASTK"]
     keys = [ord("A")] * 33 + [0]
-    pokes = "\n".join(f"set 0x{queue + i:04x} {value}" for i, value in enumerate(keys))
+    values = [(queue + i, value) for i, value in enumerate(keys)]
+    values += [
+        (queue_pos, queue & 0xFF),
+        (queue_pos + 1, queue >> 8),
+        (verified, 0),
+        (last_key, 0),
+        (last_key + 1, 0),
+    ]
+    pokes = "\n".join(f"set 0x{address:04x} {value}" for address, value in values)
     Path(sys.argv[2]).write_text(
         f"breakpoint 0x{inject:04x}\ncommands 1\n{pokes}\ncontinue\nend\n"
     )

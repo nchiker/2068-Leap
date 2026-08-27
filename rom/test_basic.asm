@@ -61,7 +61,7 @@
 ;                        repeatedly, not just once. No way to break
 ;                        out short of resetting the emulator/hardware.
 ;                        Screen clears and restarts from the top every
-;                        24 lines — RUN's output has no true scrolling,
+;                        24 lines — RUN output scrolls all 24 rows,
 ;                        so this is the safe way it handles running
 ;                        past the bottom of the screen, not a bug.)
 ;
@@ -244,7 +244,7 @@
 ; edge. Unlike BORDER, INK/PAPER/FLASH/INVERSE actually change what
 ; PRINT draws - see docs/programmers_reference.md's "INK / PAPER /
 ; FLASH / INVERSE / OVER" section for how the attribute byte is
-; computed. OVER is stored/validated but doesn't affect drawing yet
+; computed. OVER is stored/validated and XOR-plots text and graphics
 ; (documented gap). NEW/cold boot now reset all five back to defaults
 ; the same way they already reset BORDER.
 ;

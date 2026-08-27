@@ -145,18 +145,47 @@ RST_38:
     ASSERT $ <= KTAB_END
     DB   KTAB_MAGIC
 
+; Test-only ISR body uses the otherwise empty tail of the vector page.
+TEST_KEY_INJECT_TICK:
+    push af
+    push hl
+    ld   a, (TEST_VERIFIED_FLAG)
+    or   a
+    jr   nz, .maybe_inject
+    ld   hl, (TEST_QUEUE_POS)
+    ld   a, (hl)
+    or   a
+    jr   nz, .maybe_inject
+    ld   a, (KBD_KEYHIT)
+    or   a
+    jr   nz, .maybe_inject
+    call $DF00                    ; test-only EXROM verifier
+    ld   (TEST_VERIFIED_FLAG), a
+.maybe_inject:
+    ld   a, (KBD_KEYHIT)
+    or   a
+    jr   nz, .done
+    ld   hl, (TEST_QUEUE_POS)
+    ld   a, (hl)
+    or   a
+    jr   z, .done
+    ld   (KBD_LASTK), a
+    ld   a, $FF
+    ld   (KBD_KEYHIT), a
+    inc  hl
+    ld   (TEST_QUEUE_POS), hl
+.done:
+    pop  hl
+    pop  af
+    ret
+    ASSERT $ <= $0100
+
     DS   $0100 - $, $FF
 
 COLD_START:
     ld   sp, $FF00
 
     call MEM_INIT
-
-    ld   hl, 0
-    ld   (KBD_LASTK), hl          ; adjacent KBD_LASTK/KBD_KEYHIT pair
-    ld   (TEST_VERIFIED_FLAG), hl ; extra cleared byte at $F003 is unused
-    ld   hl, TEST_KEY_QUEUE
-    ld   (TEST_QUEUE_POS), hl
 
 INJECT_POINT:
     ; Fuse breaks here (stable label address, read via --sym) and pokes
@@ -173,104 +202,6 @@ INJECT_POINT:
                                      ; verification happens from inside
                                      ; TEST_KEY_INJECT_TICK once the
                                      ; queue drains
-
-; ============================================================================
-; TEST_KEY_INJECT_TICK
-; Replaces kernel/interrupt's KBD_ISR_TICK for this harness only (see
-; file header for the full design). Every tick: if the queue's next
-; byte is the 0 sentinel AND the previous injected key has already been
-; consumed (KBD_KEYHIT==0) AND verification hasn't run yet, run it once
-; — this is the moment EDITOR_LOOP is guaranteed parked in IO_READ_KEY's
-; busy-wait with EDIT_LINE_BUF/EDIT_BUF_OFFSET stable (see header for
-; why no ENTER is ever queued). Otherwise, inject the next queued key
-; exactly like the real ISR would (only when the previous one has been
-; consumed — same pacing discipline, one key per "previous one already
-; read").
-; ============================================================================
-TEST_KEY_INJECT_TICK:
-    push af
-    push hl
-
-    ld   a, (TEST_VERIFIED_FLAG)
-    or   a
-    jr   nz, .maybe_inject
-
-    ld   hl, (TEST_QUEUE_POS)
-    ld   a, (hl)
-    or   a
-    jr   nz, .maybe_inject          ; queue not drained yet
-
-    ld   a, (KBD_KEYHIT)
-    or   a
-    jr   nz, .maybe_inject          ; last injected key not consumed yet
-
-    call TEST_VERIFY
-    ld   (TEST_VERIFIED_FLAG), a   ; TEST_VERIFY leaves its nonzero
-                                   ; green/red verdict in A
-
-.maybe_inject:
-    ld   a, (KBD_KEYHIT)
-    or   a
-    jr   nz, .done                  ; previous key still unconsumed
-
-    ld   hl, (TEST_QUEUE_POS)
-    ld   a, (hl)
-    or   a
-    jr   z, .done                   ; queue drained, nothing to inject
-
-    ld   (KBD_LASTK), a
-    ld   a, $FF
-    ld   (KBD_KEYHIT), a
-    inc  hl
-    ld   (TEST_QUEUE_POS), hl
-
-.done:
-    pop  hl
-    pop  af
-    ret
-
-; ============================================================================
-; TEST_VERIFY
-; The two checks described in this file's header. Sets BORDER
-; green/red. Destroys AF, BC, DE, HL — safe, this only ever runs once,
-; from inside the injector, with the caller (TEST_KEY_INJECT_TICK)
-; itself already saving/restoring its own AF/HL around the call.
-; ============================================================================
-TEST_VERIFY:
-    ; Check 1: EDIT_LINE_BUF == 33 'A' + null
-    ld   hl, EDIT_LINE_BUF
-    ld   b, 33
-.check_loop:
-    ld   a, (hl)
-    cp   "A"
-    jr   nz, .fail
-    inc  hl
-    djnz .check_loop
-    ld   a, (hl)
-    or   a
-    jr   nz, .fail
-
-    ; Check 2: the real production wrap/rowcol call path (see basic/
-    ; basic.asm's BASIC_REDRAW_PROGRAM .draw_cursor) returns row=1,
-    ; col=1 for offset 33 — EDIT_WRAP_START/LEN/COUNT are already
-    ; fresh from the last real keystroke's own redraw, no need to
-    ; re-run EDITOR_WRAP_CALC here
-    call BASIC_EDITOR_WRAP_OFFSET_TO_ROWCOL_EXROM   ; B=row, C=col
-    ld   a, b
-    cp   1
-    jr   nz, .fail
-    ld   a, c
-    cp   1
-    jr   nz, .fail
-
-    ld   a, 4                        ; green — both checks passed
-    out  (PORT_ULA), a
-    ret
-
-.fail:
-    ld   a, 2                        ; red — at least one check failed
-    out  (PORT_ULA), a
-    ret
 
     INCLUDE "basic/basic.asm"
     INCLUDE "kernel/memory/memory.asm"

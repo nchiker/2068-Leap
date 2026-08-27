@@ -6550,9 +6550,8 @@ BASIC_FLOAT_TO_STRING:
 
 ; ============================================================================
 ; BASIC_ADVANCE_OUTPUT_ROW
-; Advances BASIC_OUTPUT_ROW by one, wrapping back to row 0 (with a
-; screen clear) if that would exceed the last valid row (23) —
-; kernel/graphics's ROW_BASE_TABLE only has 24 entries.
+; Advances BASIC_OUTPUT_ROW by one, scrolling all 24 output rows up if
+; that would exceed the last valid row (23).
 ;
 ; Fixes a real, confirmed bug: both BASIC_STMT_PRINT and
 ; BASIC_STMT_INPUT used to increment BASIC_OUTPUT_ROW with no bounds
@@ -6568,15 +6567,9 @@ BASIC_FLOAT_TO_STRING:
 ; garbled columns and stale "33" values in the wrong places, rather
 ; than an obvious hang.
 ;
-; RUN's output has no true scrolling (see kernel/graphics's own notes
-; on why basic/'s full-redraw-every-keypress approach never needed
-; hardware scroll primitives for the EDITING view — but RUN's output
-; is a genuinely different, incremental case, one line added at a
-; time, not a full redraw). Clearing and restarting from row 0 once
-; the screen fills is the safe choice here, not real scrolling — a
-; reasonable tradeoff given RUN has no pause between lines anyway, so
-; a long-running loop would already be moving faster than anyone could
-; read each line individually.
+; RUN output is incremental rather than editor-shadow rendered. It uses the
+; dedicated 24-row scroll primitive; the editor's sibling primitive protects
+; row 23 because that row is its status bar.
 ;
 ; Also resets BASIC_OUTPUT_COL to 0 — added alongside AT/TAB support:
 ; a new line always starts back at the left margin, matching real
@@ -6600,8 +6593,8 @@ BASIC_ADVANCE_OUTPUT_ROW:
     cp   24
     jr   c, .no_wrap
 
-    call GFX_CLS
-    xor  a
+    call GFX_SCROLL_OUTPUT_UP
+    ld   a, 23
     ld   (BASIC_OUTPUT_ROW), a
     ret
 
@@ -6753,8 +6746,12 @@ BASIC_STMT_PRINT:
     ld   a, (BASIC_OUTPUT_COL)
     ld   c, a
     pop  af                              ; A = attribute byte again
+    ld   e, a
+    ld   a, (CURRENT_OVER)
+    ld   d, a
+    ld   a, e                            ; D = CURRENT_OVER, A = attribute
     call GFX_PRINT_STRING_ATTR
-    jr   .advance_row
+    jr   .printed
 
 .print_str_expr:
     pop  hl                          ; restore the original start
@@ -6803,8 +6800,15 @@ BASIC_STMT_PRINT:
     ld   a, (BASIC_OUTPUT_COL)
     ld   c, a
     pop  af
+    ld   e, a
+    ld   a, (CURRENT_OVER)
+    ld   d, a
+    ld   a, e                            ; D = CURRENT_OVER, A = attribute
     call GFX_PRINT_STRING_ATTR
 
+.printed:
+    ld   a, b
+    ld   (BASIC_OUTPUT_ROW), a
 .advance_row:
     jp   BASIC_ADVANCE_OUTPUT_ROW
 
@@ -7022,9 +7026,9 @@ BASIC_STMT_MASKED_EXPR_COMMON:
 ; ============================================================================
 ; BASIC_COMPUTE_PRINT_ATTR
 ; Builds the attribute byte PRINT should write at each printed cell
-; from the current INK/PAPER/FLASH/INVERSE state (OVER is not
-; consulted here — see CURRENT_OVER's own sysvars.inc comment for why
-; it isn't applied yet). Matches the same bit layout GFX_CLS's
+; from the current INK/PAPER/FLASH/INVERSE state. OVER is a bitmap
+; operation rather than an attribute bit and is passed separately to
+; GFX_PRINT_STRING_ATTR. Matches the same bit layout GFX_CLS's
 ; ATTR_DEFAULT already assumes: bit 7 = FLASH, bits 5-3 = PAPER, bits
 ; 2-0 = INK (bit 6/BRIGHT unused, same as everywhere else in this
 ; project). INVERSE swaps ink/paper at THIS read time rather than

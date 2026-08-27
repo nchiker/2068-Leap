@@ -242,6 +242,23 @@ GFX_SCROLL_TEXT_UP:
     jr   c, .row_loop
     ret
 
+; Scroll all 24 program-output rows up, then clear the new bottom row.
+; The editor primitive above deliberately protects its status row, so reuse
+; it for rows 0-21 and finish the additional row here.
+GFX_SCROLL_OUTPUT_UP:
+    call GFX_SCROLL_TEXT_UP
+    ld   a, 22
+    ld   (GFX_SCROLL_DST_ROW), a
+    ld   a, 23
+    ld   (GFX_SCROLL_SRC_ROW), a
+    call GFX_COPY_ROW_BITMAP
+    ld   hl, ATTR_ADDR + 23*32
+    ld   de, ATTR_ADDR + 22*32
+    ld   bc, 32
+    ldir
+    ld   b, 23
+    jp   GFX_CLEAR_ROW
+
 ; ============================================================================
 ; GFX_SCROLL_TEXT_DOWN
 ; Mirror of GFX_SCROLL_TEXT_UP: scrolls rows 0-22 DOWN by one text row
@@ -610,6 +627,24 @@ GFX_PUTCHAR:
     djnz .scanline_loop
     ret
 
+; XOR-plots a glyph instead of replacing the destination bytes. Kept
+; separate so every existing editor/status/help caller retains ordinary
+; opaque text semantics; BASIC PRINT selects this only for OVER 1.
+GFX_PUTCHAR_OVER:
+    call GFX_CHAR_SETUP
+    ret  c
+    ld   b, 8
+.scanline_loop:
+    ld   a, (hl)
+    ex   de, hl
+    xor  (hl)
+    ld   (hl), a
+    inc  h
+    ex   de, hl
+    inc  hl
+    djnz .scanline_loop
+    ret
+
 ; ============================================================================
 ; GFX_PUTCHAR_BOLD
 ; Plots one character with a synthesized bold effect: each scanline
@@ -679,8 +714,9 @@ GFX_PRINT_STRING:
 
 ; ============================================================================
 ; GFX_PRINT_STRING_ATTR
-; Same as GFX_PRINT_STRING (prints a null-terminated string, one column
-; per character, no wrap/scroll), but also sets the attribute cell
+; Prints a null-terminated string with BASIC-style attributes. At column 32
+; it wraps; past row 23 it scrolls all 24 output rows and continues on the
+; newly cleared bottom row. It also sets the attribute cell
 ; under each character to a given byte — built for basic/'s INK/PAPER/
 ; FLASH/INVERSE support, which needs printed text to actually carry
 ; the current attribute state, unlike every other caller of
@@ -711,19 +747,30 @@ GFX_PRINT_STRING:
 ; docs/programmers_reference.md's "INK / PAPER / FLASH / INVERSE /
 ; OVER" section for the full writeup.
 ; In:  HL = pointer to null-terminated string, B = row, C = column,
-;      A = attribute byte to set at every printed cell
-; Out: none
+;      A = attribute byte to set at every printed cell, D = OVER flag
+; Out: B/C = row/column immediately after the final character
 ; Destroys: AF, BC, DE, HL
 ; ============================================================================
 GFX_PRINT_STRING_ATTR:
     ld   (PRINT_ATTR_SCRATCH), a
+    ld   a, d
+    ld   (PRINT_OVER_SCRATCH), a
 .loop:
     ld   a, (hl)
     or   a
     ret  z
     push hl
     push bc                  ; GFX_PUTCHAR destroys BC entirely
+    ld   a, (PRINT_OVER_SCRATCH)
+    or   a
+    jr   z, .opaque
+    ld   a, (hl)
+    call GFX_PUTCHAR_OVER
+    jr   .glyph_done
+.opaque:
+    ld   a, (hl)
     call GFX_PUTCHAR
+.glyph_done:
     pop  bc
     push bc                  ; GFX_SET_ATTR also destroys BC — needs
                              ; its own save/restore, same row/column
@@ -733,6 +780,19 @@ GFX_PRINT_STRING_ATTR:
     pop  hl
     inc  hl
     inc  c
+    ld   a, c
+    cp   32
+    jr   c, .loop
+    ld   c, 0
+    inc  b
+    ld   a, b
+    cp   24
+    jr   c, .loop
+    push hl
+    call GFX_SCROLL_OUTPUT_UP
+    pop  hl
+    ld   b, 23
+    ld   c, 0
     jr   .loop
 
 ; ============================================================================
