@@ -10,12 +10,12 @@ ROM — while still fitting a stock 48K machine and staying instant-on.
 Working integrated ROM: full-screen editor, structured BASIC, graphics,
 sound, EXROM banking, and TS2068-framed SAVE/LOAD are assembled and tested
 under Fuse. The automated language regression suite currently contains
-59 passing fixtures. Use `make budget`, `make check`, and `make test` for
+63 passing fixtures. Use `make budget`, `make check`, and `make test` for
 the current reproducible build and validation entry points. `make check`
 also assembles seven standalone boot/kernel smoke ROMs; `make smoke-build`
 runs that build-only compatibility check directly. `make test` executes
 the deterministic memory and math smoke ROMs in Fuse before running the
-59-fixture integrated language suite; the other smoke ROMs remain visual,
+63-fixture integrated language suite; the other smoke ROMs remain visual,
 keyboard, or tape-interactive checks.
 
 ## Layout
@@ -321,13 +321,12 @@ examples/   sample BASIC/assembly programs once there's something to run
    afterward skipped redrawing rows that clear had just wiped blank.
    Both fixed with `BASIC_RESET_ROW_SHADOW`, called once at cold boot
    and once right after `BASIC_RUN`'s own clear.
-7. `sound/`, extended `graphics/` modes, remaining `EDITOR_SEARCH` /
-   `EDITOR_BLOCK_DELETE` bodies, `IF` (the natural next step now that
-   both expressions and GOTO exist — a conditional needs something to
-   compare, and needs somewhere to jump to on failure), `GOSUB`
-   (deferred alongside procedures/functions, since both need a real
-   return-address stack rather than being built as a GOTO-only special
-   case)
+7. Current expansion candidates: `EDITOR_SEARCH`, text-mode `OVER`,
+   procedures/functions, and the remaining structured-control forms.
+   `IF`, `GOSUB`, `FOR`, graphics, sound, sprites, strings, arrays, and
+   commit-time whole-program checking are implemented; use the manuals'
+   current feature matrix rather than this historical build order as a
+   live todo list.
 
 **`kernel/bank` (EXROM paging trampoline) and the RST $28 calculator
 engine** — previously undocumented here; see `docs/
@@ -1616,22 +1615,13 @@ EXROM boundary bug. For that, see the automated harness just below.
 
 ## Automated (non-interactive) editor/typing regression test
 
-**Currently NOT runnable (2026-08-23)**: after the Phase 4 dynamic-
-scalar-pool migration (see `docs/programmers_reference.md`), this
-harness's own extra content no longer fits Home ROM's 16K alongside
-`basic.asm` — it's 111 bytes over even after moving its key queue out
-to Fuse-debugger-injected RAM (`rom/test_editor_auto.asm`'s own header
-has the full accounting). Needs a `basic.asm` size-audit + EXROM move
-(same method used for `SPRITE`) before it can assemble again; not yet
-done. The commands below are what running it will look like once that
-lands — kept for reference, not currently usable as written.
+**Automated and runnable (2026-08-27)**: the harness now fits exactly
+within its 16K test image, its key queue is injected into RAM, and the
+runner derives every address from the assembler symbol file. It is part
+of `make test` and can also be run directly:
 
 ```
-sjasmplus rom/exrom_build.asm        (build first — this harness links
-                                      against the real, unmodified
-                                      exrom.bin)
-sjasmplus rom/test_editor_auto.asm
-fuse --machine ts2068 --rom-ts2068-0 test_editor_auto.bin --rom-ts2068-1 exrom.bin
+tools/run_editor_auto_test.sh
 ```
 
 **Non-interactive, no keyboard/X11 involved** — added 2026-08-23 after
@@ -1659,7 +1649,7 @@ non-trivial cold-boot init rather than hand-rolled — run 100%
 unmodified, through the real KTAB boundary and the real, shipped
 `exrom.bin`, exactly as a human typing would drive them.
 
-Current test case: types 33 'A' characters (one more than one screen
+The first test case types 33 'A' characters (one more than one screen
 row's 32-column width, no space anywhere for word-wrap to break on,
 forcing `EDITOR_WRAP_CALC`'s hard-break path) and checks (1) the typed
 buffer holds exactly what was typed, and (2) re-running the same

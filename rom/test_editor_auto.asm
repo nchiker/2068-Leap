@@ -114,14 +114,9 @@
 ;                                         links against the real,
 ;                                         unmodified exrom.bin)
 ;   sjasmplus rom/test_editor_auto.asm --sym=rom/test_editor_auto.sym
-; Run: NOT YET RUNNABLE (2026-08-23) — see "ROM budget" above; this
-; harness currently fails to assemble within Home ROM's 16K. Once a
-; basic.asm size-audit closes the gap, run needs a Fuse debugger
-; script poking TEST_KEY_QUEUE at INJECT_POINT (no such script or
-; wrapper exists yet — build one mirroring tools/fuse_suite_inject.py/
-; tools/run_suite_test.sh once this actually assembles):
-;   fuse --machine ts2068 --rom-ts2068-0 test_editor_auto.bin \
-;        --rom-ts2068-1 exrom.bin --debugger-command "$(cat X.dbg)"
+; Run (builds both ROMs, injects the queue, launches Fuse, and checks
+; the border verdict):
+;   tools/run_editor_auto_test.sh
 ; ============================================================================
 
     INCLUDE "include/hardware.inc"
@@ -157,10 +152,9 @@ COLD_START:
 
     call MEM_INIT
 
-    xor  a
-    ld   (KBD_LASTK), a
-    ld   (KBD_KEYHIT), a
-    ld   (TEST_VERIFIED_FLAG), a
+    ld   hl, 0
+    ld   (KBD_LASTK), hl          ; adjacent KBD_LASTK/KBD_KEYHIT pair
+    ld   (TEST_VERIFIED_FLAG), hl ; extra cleared byte at $F003 is unused
     ld   hl, TEST_KEY_QUEUE
     ld   (TEST_QUEUE_POS), hl
 
@@ -211,8 +205,8 @@ TEST_KEY_INJECT_TICK:
     jr   nz, .maybe_inject          ; last injected key not consumed yet
 
     call TEST_VERIFY
-    ld   a, 1
-    ld   (TEST_VERIFIED_FLAG), a
+    ld   (TEST_VERIFIED_FLAG), a   ; TEST_VERIFY leaves its nonzero
+                                   ; green/red verdict in A
 
 .maybe_inject:
     ld   a, (KBD_KEYHIT)
@@ -227,7 +221,6 @@ TEST_KEY_INJECT_TICK:
     ld   (KBD_LASTK), a
     ld   a, $FF
     ld   (KBD_KEYHIT), a
-    ld   hl, (TEST_QUEUE_POS)
     inc  hl
     ld   (TEST_QUEUE_POS), hl
 

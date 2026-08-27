@@ -208,8 +208,9 @@ without `kernel/editor` needing to know statements or BASIC exist at
 all — the hook just says "the user wants to move; you decide what that
 means for whatever's in `EDIT_LINE_BUF`."
 
-**Still genuinely not done**: `EDITOR_SEARCH` (stub), and line-wrap for
-lines longer than 32 characters. `kernel/editor`'s OWN built-in
+**Still genuinely not done**: `EDITOR_SEARCH` (stub). Lines longer than
+32 characters now use the production EXROM editor's word-wrap table,
+including correct cursor mapping across physical rows. `kernel/editor`'s OWN built-in
 `MOVE_CURSOR` `UP`/`DOWN` remain no-ops by design, not an oversight —
 real vertical navigation now exists, but it lives in `basic/` via the
 nav hook rather than here, since "moving to a different line" requires
@@ -449,11 +450,12 @@ way and report unmapped (`0`).
   — a project-specific one-keystroke "delete whole line" command, the
   same way `CAPS SHIFT+ENTER` and `SYMBOL SHIFT+A`/`S` are repurposed
   elsewhere rather than left unmapped.
-- **BREAK key** — position unconfirmed, see `docs/hardware_notes.md`.
-- **Debounce is crude**: `IO_READ_KEY` waits for *all* keys to release,
-  not specifically the one it just read. Holding a second key down while
-  releasing the first delays the return. Not a correctness bug, just a
-  known UX rough edge, left alone per "correctness before optimization."
+- **Physical BREAK keycap** — its separate matrix position remains
+  unconfirmed, but the standard CAPS SHIFT+SPACE BREAK combination is
+  implemented and polled during program execution.
+- **Keyboard sampling is interrupt-driven**: `KBD_ISR_TICK` performs the
+  scan/debounce continuously and `IO_READ_KEY` consumes the latched event,
+  allowing ordinary two-key rollover while editor redraw work is active.
 
 ### Testing
 
@@ -2828,14 +2830,11 @@ file header for the exact scope statement. What exists:
 
 ### Explicitly not implemented yet
 
-`GOSUB` (return-address stack doesn't exist yet — needed for
-procedures/functions too, natural to build alongside those rather than
-as a `GOTO`-only special case), `REPeat`/`FOR`/`SELect`/`DEFine
-PROCedure`/`FuNction`/`WHEN ERRor` (IF is now done — see "IF/ELSEIF/
-ELSE/END IF" below), multi-statement lines (multiple statements on one
-typed line via `:` — this is why IF's single-line short form can only
-ever hold ONE trailing statement, not a colon-chained sequence),
-string variables, and the rest of `docs/basic_language_reference.md`.
+`REPeat`/`SELect`/`DEFine PROCedure`/`FuNction`/`WHEN ERRor`, string
+arrays, multidimensional arrays, and the remaining deliberately deferred
+items in `docs/basic_language_reference.md`. `GOSUB`/`RETURN`, `FOR`/`NEXT`,
+multi-statement `:` lines, numeric arrays, and scalar string variables are
+implemented.
 
 **Runtime error reporting exists now**, split into two deliberately
 separate steps: detecting a problem (`BASIC_SET_PENDING_ERROR`,

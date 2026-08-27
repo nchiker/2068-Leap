@@ -120,14 +120,14 @@ gets: symbolic name (in `include/sysvars.inc`), fixed address, size, and one-lin
 purpose, cross-referenced from the Programmer's Reference.
 
 ## Open questions / TODO
-- Decide stack budget for full-screen editor (block delete, search) vs. BASIC interpreter's own stack use.
-- Confirm ROM1 (banked) budget before graphics/sound APIs are designed, so kernel/basic split stays clean.
-- **Label table** (see docs/basic_language_reference.md and
-  docs/programmers_reference.md's kernel/memory section): format is now
-  concrete — `[count: 2 bytes]` + entries of `[name_len: 1][name][position: 2]`,
-  per scope. Size budget still open: `LABEL_TABLE_MAXLEN` in
-  `include/sysvars.inc` is a placeholder (128 bytes, top-level scope only),
-  not a considered budget.
+- Re-evaluate stack budget before adding editor search or deeper structured
+  control-flow features; the current editor, BASIC, fill, and GOSUB stacks
+  are allocated and tested.
+- Reclaim or relocate additional cold code before expanding the language;
+  the measured margin is currently 107 Home-ROM bytes and 422 EXROM bytes.
+- **Label table**: the current top-level implementation is working and
+  checked on every commit and before `RUN`. Revisit its fixed capacity when
+  procedures introduce nested scopes.
 - [stated] intends to eventually audit past decisions across the whole project
   for other places convention from the original 2068 ROM/memory map got
   inherited without being separately reasoned about (the sysvar-start-address

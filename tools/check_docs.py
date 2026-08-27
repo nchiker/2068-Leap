@@ -37,6 +37,10 @@ Checks performed, and which real staleness bug each guards against:
    silently unmentioned in the docs gets flagged rather than
    discovered later. A no-op today.
 
+4. Integrated fixture count — the current count quoted in README.md is
+   checked against tests/*.txt so adding a regression cannot silently leave
+   the project status stale again.
+
 None of this checks prose accuracy or design intent — only that
 specific numbers/names quoted in docs still match the tables they're
 quoting.
@@ -194,11 +198,36 @@ def check_sysvar_declared_sizes():
             )
 
 
+def check_integrated_fixture_count():
+    actual = len(list((ROOT / "tests").glob("*.txt")))
+    text = read(README)
+    mentions = {
+        int(value)
+        for value in re.findall(
+            r"(\d+)[ -](?:passing fixtures|fixture integrated language suite)",
+            text,
+        )
+    }
+    if not mentions:
+        issues.append(
+            "check_integrated_fixture_count: README.md has no current fixture "
+            "count to validate."
+        )
+        return
+    for documented in mentions:
+        if documented != actual:
+            issues.append(
+                "check_integrated_fixture_count: README.md says "
+                f"{documented} fixtures, but tests/*.txt contains {actual}."
+            )
+
+
 def main():
     check_font_glyph_count()
     check_punctuation_count()
     check_help_topics_documented()
     check_sysvar_declared_sizes()
+    check_integrated_fixture_count()
 
     if issues:
         print(f"check_docs.py: {len(issues)} issue(s) found:\n")

@@ -22,6 +22,7 @@ smoke-build:
 
 test: all
 	tools/run_smoke_rom_tests.sh
+	tools/run_editor_auto_test.sh
 	tools/run_all_tests.sh
 
 budget: build
