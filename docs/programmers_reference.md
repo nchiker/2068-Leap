@@ -5888,18 +5888,17 @@ a real second port write; (c) nothing this project's sysvars use lives
 in chunk 6, so keeping it paged to EXROM for a potentially minutes-long
 editing session doesn't disturb anything else.
 
-**`kernel/editor/editor.asm` itself is kept, unchanged**, as a
-standalone-testable reference copy — `rom/test_editor.asm` (this
-project's own documented `kernel/editor` test target) and dozens of
-older ad-hoc `rom/test_*.asm` harnesses still `INCLUDE` it directly and
-still build/run as a Home-only module in isolation. `rom/exrom_editor.
-asm` is a hand-adapted copy (external calls routed through `KTAB_*`
-instead of called directly), not generated from it — the same "two
-copies to keep in sync by hand" risk `include/checker_keywords.inc`'s
-own header already warns about for *data* tables, now also true for
-this one piece of *code*, with no automated tripwire built for it yet.
-Any future logic change to the editor needs both files touched and
-both re-verified.
+**Single editor source established 2026-08-27**: the original migration
+left `kernel/editor/editor.asm` and `rom/exrom_editor.asm` as two manually
+maintained copies. They had already drifted, meaning the standalone editor
+test could exercise older logic than production. `rom/exrom_editor.asm` is
+now canonical. `kernel/editor/editor.asm` is a small compatibility adapter
+that aliases the production body's eight `KTAB_*` external-call names to
+their direct Home routines, then includes that same body. Existing Home-only
+test harnesses therefore keep building, but production and test editor logic
+can no longer diverge. A future new external dependency also fails the
+standalone build until its alias is deliberately added, providing the
+automated tripwire the original migration lacked.
 
 **Verified in the emulator, interactively** (synthetic X11 keystrokes
 via `python-xlib`'s XTest extension, sent to the real Fuse window —
@@ -6055,12 +6054,13 @@ Both bugs directly above were found via live X11-synthetic-keystroke
 testing, then confirmed fixed the same way — but that method needs a
 human-equivalent keyboard driver and was explicitly retired mid-session
 ("can you not load up programs anymore via python?"), and neither
-`rom/test_editor.asm` (interactive, drives `kernel/editor/editor.asm`'s
-standalone Home-only copy — same-file `call`, no trampoline/register-
-survival risk, so it structurally can't exercise the boundary either
-bug lived in) nor a same-file unit test of `rom/exrom_editor.asm` in
-isolation would ever cross the real Home<->EXROM boundary these bugs
-were actually in. `rom/test_editor_auto.asm` closes that gap: a
+`rom/test_editor.asm` (interactive, assembles the canonical editor body
+through `kernel/editor/editor.asm`'s direct-call compatibility adapter —
+no trampoline/register-survival risk, so it structurally can't exercise
+the boundary either bug lived in) nor a same-file unit test of
+`rom/exrom_editor.asm` in isolation would ever cross the real Home<->EXROM
+boundary these bugs were actually in. `rom/test_editor_auto.asm` closes
+that gap: a
 non-interactive harness that replaces `RST_38`'s target with a small
 injector writing `KBD_LASTK`/`KBD_KEYHIT` from a fixed key queue
 instead of a real matrix scan (same single-writer contract

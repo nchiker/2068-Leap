@@ -1,26 +1,24 @@
 ; ============================================================================
 ; rom/exrom_editor.asm — full-screen program editor (EXROM-resident)
 ;
-; Migrated whole from kernel/editor/editor.asm (2026-08-22), a ROM-
-; shrink pass forced by the string-functions feature alone still
-; leaving Home ROM hundreds of bytes over its 16K cap even after every
-; other realistic saving was applied (dropping FILL$/INSTR, sharing
-; duplicated argument-parsing code). kernel/editor/editor.asm itself
-; still exists and still documents the module's own design in full —
-; this file is a straight copy of its routine bodies with EXTERNAL
-; calls (to kernel/graphics, kernel/io, kernel/memory) routed through
-; the KTAB_* jump table (include/exrom_jumptable.inc) instead of
-; calling those Home routines directly by label, since EXROM and Home
-; are separate compilation units with no linker between them — see
-; that include file's own header for why. Every call between routines
+; Migrated from kernel/editor/editor.asm (2026-08-22) in a ROM-shrink
+; pass. This is now the editor's single canonical implementation.
+; kernel/editor/editor.asm is only a standalone-test compatibility
+; adapter: it maps the KTAB_* external names below to direct Home
+; routines and includes this exact file, so test and production editor
+; logic cannot drift apart. Production external calls (to kernel/
+; graphics, kernel/io, kernel/memory) route through the KTAB_* jump
+; table because EXROM and Home are separate compilation units with no
+; linker between them — see include/exrom_jumptable.inc. Every call
+; between routines
 ; DEFINED IN THIS FILE (EDITOR_REDRAW_SCREEN, EDITOR_SCAN_LEN,
 ; EDITOR_MOVE_CURSOR, EDITOR_INSERT_CHAR, EDITOR_DELETE_CHAR, EDITOR_
 ; BACKSPACE, EDITOR_WRAP_TABLE_ADDR, EDITOR_EXIT) is UNCHANGED — still
 ; a plain call/jp, since they're all in this same EXROM image now.
 ;
-; SEVEN entry points basic/basic.asm calls from Home: EDITOR_INIT,
-; EDITOR_ENTER, EDITOR_WRAP_CALC, EDITOR_WRAP_TABLE_ADDR, EDITOR_WRAP_
-; OFFSET_TO_ROWCOL, EDITOR_WRAP_ROWCOL_TO_OFFSET, EDITOR_BLOCK_DELETE —
+; SIX entry points basic/basic.asm calls from Home: EDITOR_INIT,
+; EDITOR_ENTER, EDITOR_WRAP_CALC, EDITOR_WRAP_OFFSET_TO_ROWCOL,
+; EDITOR_WRAP_ROWCOL_TO_OFFSET, EDITOR_BLOCK_DELETE —
 ; each has its own fixed stub in rom/exrom_checker.asm ($C060-$C089)
 ; and its own thin BASIC_EDITOR_*_EXROM wrapper on the Home side
 ; (basic/basic.asm, near the other _EXROM wrappers). EDITOR_EXIT/

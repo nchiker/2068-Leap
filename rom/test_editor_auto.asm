@@ -10,10 +10,11 @@
 ; OFFSET_TO_ROWCOL, called through basic/basic.asm's BASIC_EDITOR_WRAP_
 ; *_EXROM wrappers). Neither rom/test_editor.asm (real-keyboard
 ; interactive, never actually run against real hardware per its own
-; header) nor kernel/editor/editor.asm's standalone Home-only copy
-; (bypasses the EXROM boundary entirely — same-file `call`, no
-; trampoline/register-survival risk at all) would have caught either
-; bug. This harness drives the REAL, unmodified, shipped exrom.bin
+; header) nor kernel/editor/editor.asm's Home-call compatibility build
+; of the canonical editor body (bypasses the EXROM boundary entirely —
+; same-file `call`, no trampoline/register-survival risk at all) would
+; have caught either bug. This harness drives the REAL, unmodified,
+; shipped exrom.bin
 ; through that exact boundary, with no keyboard/X11/human involved —
 ; per-the-user's own instruction to stop using synthetic X11 keystrokes
 ; for testing (2026-08-22ish, this session).
