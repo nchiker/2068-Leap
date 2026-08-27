@@ -10,12 +10,12 @@ ROM — while still fitting a stock 48K machine and staying instant-on.
 Working integrated ROM: full-screen editor, structured BASIC, graphics,
 sound, EXROM banking, and TS2068-framed SAVE/LOAD are assembled and tested
 under Fuse. The automated language regression suite currently contains
-65 passing fixtures. Use `make budget`, `make check`, and `make test` for
+67 passing fixtures. Use `make budget`, `make check`, and `make test` for
 the current reproducible build and validation entry points. `make check`
 also assembles seven standalone boot/kernel smoke ROMs; `make smoke-build`
 runs that build-only compatibility check directly. `make test` executes
 the deterministic memory and math smoke ROMs in Fuse before running the
-65-fixture integrated language suite; the other smoke ROMs remain visual,
+67-fixture integrated language suite; the other smoke ROMs remain visual,
 keyboard, or tape-interactive checks.
 
 ## Layout
@@ -1385,7 +1385,8 @@ this time self-inflicted. Fixed by pushing the letter onto the real
 stack instead in all three places that need it to survive a recursive
 call — confirmed against a genuinely nested case too (`A(B(0)) = 99`).
 Cost: ~551 bytes Home ROM (847 -> 290 bytes free), ~114 bytes EXROM
-(1691 -> 1577 free). String arrays remain out of scope — see
+(1691 -> 1577 free). String arrays were added later as fixed 31-character
+elements (`DIM A$(n)`) — see
 `docs/programmers_reference.md`'s "Numeric arrays" section for the
 full writeup, including all three runtime errors (`SUBSCRIPT OUT OF
 RANGE`/`ARRAY NOT DIMENSIONED`/`ARRAY ALREADY DIMENSIONED`) verified

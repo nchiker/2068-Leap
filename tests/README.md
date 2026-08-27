@@ -84,7 +84,8 @@ than one comprehensive program, matching this project's own existing
 - `cf1.txt`–`cf7.txt` — control flow: `IF`/`ELSE`/`END IF`,
   `IF`/`ELSEIF`/`ELSE`/`END IF`, `FOR`/`NEXT`, `EXIT FOR`,
   `GOTO`/labels, `GOSUB`/`RETURN`, `CALL`/`RETURN`
-- `arr1.txt`–`arr5.txt` — `DIM`, array read/write, arithmetic over
+- `arr1.txt`–`arr6.txt` — `DIM`, numeric and fixed-length string array
+  read/write, arithmetic over
   array elements, array-indexed-by-array (`A(B(0)) = 99`), `DIMN`
 - `io1.txt`–`io4.txt` — `INK`/`PAPER`/`AT` and `BRIGHT`/`FLASH`
   (verified against the real screen-attribute byte via `PEEK`, not
@@ -163,7 +164,9 @@ is watching for. `err1.txt` is the first test using this pattern.
   design. `DIMN` alone survived, simplified to `DIMN(name)` (single
   argument — no "which dimension" left to ask about). `arr5.txt` is
   the first test covering it. A real bug was caught along the way: the
-  first `DIMN` draft had no `BASIC_CHECK_ONLY` guard at all, so it
+  `arr6.txt` additionally covers `DIM A$(n)`, string expression
+  assignment/read, and `DIMN(A$)`. The first `DIMN` draft had no
+  `BASIC_CHECK_ONLY` guard at all, so it
   called the real array lookup during the static whole-program check
   too — a program using `DIMN` correctly still failed its own check
   with a spurious `ARRAY NOT DIMENSIONED` (screenshot-confirmed

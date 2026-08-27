@@ -1,0 +1,10 @@
+BORDER 4
+DIM A$(3)
+A$(0) = "RED"
+A$(1) = UPPER$("blue")
+A$(2) = A$(0) + "!"
+IF A$(0) <> "RED" THEN BORDER 2
+IF A$(1) <> "BLUE" THEN BORDER 2
+IF A$(2) <> "RED!" THEN BORDER 2
+IF LEN(A$(2)) <> 4 THEN BORDER 2
+IF DIMN(A$) <> 3 THEN BORDER 2

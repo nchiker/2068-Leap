@@ -26,7 +26,7 @@ and spending ROM and a key binding on it ranks below input and array support.
 | Sprites | Distinctive and capable, but among the largest EXROM modules | Keep behavior; size-audit repeated validation, error tails, and coordinate parsing |
 | String functions | Useful and dispatched through one bank entry | Keep. `INSTR` is the best future addition and more broadly useful than editor FIND |
 | Editor | Canonical implementation and redraw hooks are structurally sound | Keep navigation/redraw design. FIND stub removed; defer editor-only expansion |
-| Arrays | Numeric 1D is sound and `DIMN` is banked; the prior 2D version exceeded ROM | Evolve the record format once for string arrays and optional 2D metadata |
+| Arrays | Numeric and fixed-length string 1D arrays are implemented; `DIM`/`DIMN` are banked; the prior 2D version exceeded ROM | Keep 1D stable; revisit 2D only after a larger ROM-space win |
 | Highlighting | Appropriate in EXROM after settled-line caching | Keep; it no longer runs for every cursor-cell move |
 | INPUT | Was an unchecked Home-resident numeric-only loop | Moved to EXROM; now accepts numeric or 31-character string scalars and bounds numeric input |
 
@@ -57,7 +57,8 @@ Use one record evolution rather than a string-array bolt-on:
 - measure whether hot reads/writes stay Home-side while cold `DIM` allocation
   and metadata move to EXROM.
 
-Deliver string arrays first, then measure. Restore 2D only if the shared work
+String arrays have now shipped using kind 3 records and fixed 32-byte
+length-prefixed elements. Restore 2D only if the shared work
 makes its marginal cost fit. The earlier verified 2D prototype exceeded Home
 by about 26 bytes (or EXROM by about 69 bytes with `DIM` banked) in its old
 layout, so affordability must be measured again rather than assumed.

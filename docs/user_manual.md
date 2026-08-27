@@ -10,7 +10,7 @@ This manual covers what actually works today, verified against the real
 source (`basic/basic.asm`, `kernel/`, `rom/exrom_*.asm`) — not the design
 notes in `docs/basic_language_reference.md`, which also describes several
 planned features (`REPeat`, `SELect ON`, `DEFine PROCedure`/`FuNction`,
-`DATA`/`RESTORE`/`READ`, `WHEN ERRor`, string arrays) that aren't built
+`DATA`/`RESTORE`/`READ`, `WHEN ERRor`) that aren't built
 yet. Anything described here as working has been checked against the code
 that implements it. See "Known limitations" at the end for what's
 deliberately left out.
@@ -25,7 +25,7 @@ programming model has been redesigned around the machine's unique hardware:
   statements provide structured control flow.
 - Errors are checked after each committed edit and again before `RUN`; bad
   lines are highlighted in place and have next/previous-error navigation.
-- Numeric arrays, scalar strings, string functions, pixel graphics, sprites,
+- Numeric and string arrays, scalar strings, string functions, pixel graphics, sprites,
   collision detection, AY sound, High Resolution Graphics colour, and
   ULAplus palettes are accessible directly from BASIC.
 - `SAVE` and `LOAD` retain standard TS2068 two-block tape framing while
@@ -455,8 +455,17 @@ PRINT scores(0) + 1
 ```
 
 `DIM name(n)` declares a **numeric** array of `n` zero-initialized
-elements, indexed **0 to n-1** (0-based, not classic BASIC's 1-based).
-`name(i)` reads or writes one element, and can nest (`A(B(0)) = 99`).
+elements. `DIM name$(n)` declares up to 31 string elements, each able
+to hold 31 characters. Both are indexed **0 to n-1** (0-based, not
+classic BASIC's 1-based). `name(i)` or `name$(i)` reads or writes one
+element, and numeric references can nest (`A(B(0)) = 99`).
+
+```basic
+DIM colour$(3)
+colour$(0) = "RED"
+colour$(1) = UPPER$("blue")
+PRINT colour$(1)
+```
 
 A name can only be `DIM`'d once per `RUN` — re-`DIM`ing it without a
 fresh `RUN` raises `ARRAY ALREADY DIMENSIONED`. Using an array before
@@ -464,15 +473,14 @@ fresh `RUN` raises `ARRAY ALREADY DIMENSIONED`. Using an array before
 `SUBSCRIPT OUT OF RANGE`. A bad `DIM` size raises `INVALID ARRAY SIZE`,
 and running out of room while allocating it raises `OUT OF MEMORY`.
 
-`DIMN(name)` returns an array's declared size — useful for looping over
-it without hardcoding the length: `FOR i = 0 TO DIMN(scores)-1`.
+`DIMN(name)` returns a numeric array's declared size; use `DIMN(name$)`
+for a string array.
 
 Arrays live in a genuinely dynamic memory region (not a fixed slot
 table like the scalars above), so their capacity is limited only by
 free RAM, reflected in `FREE()`.
 
-There's no `DIM name$(n)` string-array support yet, and no
-multi-dimensional (`DIM name(rows,cols)`) support.
+There is no multi-dimensional (`DIM name(rows,cols)`) support.
 
 ## 7. Expressions and operators
 
@@ -854,7 +862,7 @@ Worth knowing before you go looking for something that isn't there:
   ERRor`** — designed in `docs/basic_language_reference.md` but not
   built. Use `GOTO`/`GOSUB`/`IF`/`FOR` for everything today.
 - **No `DATA`/`RESTORE`/`READ`** — use a `DIM`'d array instead.
-- **No string arrays, no multi-dimensional arrays.**
+- **No multi-dimensional arrays.** Numeric and string arrays are one-dimensional.
 - **No prompt-string form for `INPUT`.** Print a prompt immediately before
   `INPUT` instead.
 - **`OVER 1` XOR-plots both text and graphics.** Printing or plotting the

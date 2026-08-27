@@ -5555,14 +5555,15 @@ string scalars/concatenation are unaffected.
 **Cost**: ~551 bytes Home ROM (847 -> 290 bytes free — the largest
 single language-feature cost of Phase 3, larger than the earlier
 471-byte estimate mostly because of the stack-based letter fix above),
-~114 bytes EXROM (1691 -> 1577 free). String arrays (`DIM name$(n)`)
-remain out of scope — deferred per the project's own original Phase 3
-plan ("simplest MVP is integer-only, single-dimension").
+~114 bytes EXROM (1691 -> 1577 free). This was the numeric-array cost at
+the time; string arrays were subsequently added as kind-3 records with
+fixed 32-byte length-prefixed elements.
 
 ### DIMN(name) (2026-08-22)
 
 Returns an array's declared size — `DIMN(A)` after `DIM A(5)` returns
-`5`. Lets a procedure loop over an array without hardcoding its size,
+`5`, while `DIMN(A$)` queries a string array. Lets a procedure loop over
+an array without hardcoding its size,
 e.g. `FOR i = 0 TO DIMN(A)-1`. Shares `FUNCTION_TABLE`'s dispatch shape
 via a new sentinel, `ARGC_ARRAYNAME` (101, one higher than the existing
 `ARGC_STR1` sentinel LEN/CODE/VAL use) — needed because `DIMN`'s own

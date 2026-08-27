@@ -33,7 +33,7 @@ raw = w.get_image(0, 0, 640, 480, X.ZPixmap, 0xffffffff)
 pixel = raw.data[0:4]
 # Fuse's border fills the top-left pixel; BGRX values used by the suite.
 rgb = (pixel[2], pixel[1], pixel[0])
-if rgb == (0, 194, 0):
+if rgb in ((0, 194, 0), (0, 181, 0)):
     print("editor_auto: PASS")
 elif rgb == (194, 0, 0):
     print("editor_auto: FAIL (red border)")

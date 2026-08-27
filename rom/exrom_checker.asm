@@ -564,6 +564,11 @@ EXROM_ENTRY_INPUT:
     jp   BASIC_STMT_INPUT_EXROM
 
     ORG $C0BA
+EXROM_ENTRY_DIM:
+    call EXROM_VERIFY_KTAB_MAGIC
+    jp   BASIC_STMT_DIM_EXROM
+
+    ORG $C0C0
 
 ; ============================================================================
 ; EXROM_VERIFY_KTAB_MAGIC
@@ -712,6 +717,17 @@ BASIC_CHECK_STR_ASSIGNMENT:
     push hl
     call KTAB_BASIC_DETECT_STRVAR
     jp   c, .strassign_fail
+    ld   a, (hl)
+    cp   "("
+    jr   nz, .strassign_skip1
+    inc  hl
+    call KTAB_BASIC_EVAL_EXPR
+    jr   c, .strassign_fail
+    call KTAB_BASIC_SKIP_SPACES
+    ld   a, (hl)
+    cp   ")"
+    jr   nz, .strassign_fail
+    inc  hl
 .strassign_skip1:
     ld   a, (hl)
     cp   " "
@@ -730,6 +746,7 @@ BASIC_CHECK_STR_ASSIGNMENT:
     jr   .strassign_skip2
 .strassign_value:
     ld   de, STR_EXPR_SCRATCH + 1
+    ld   c, 31
     call KTAB_BASIC_EVAL_STR_EXPR
     jr   c, .strassign_fail
     call KTAB_BASIC_EXPECT_STATEMENT_END
@@ -1356,6 +1373,11 @@ BASIC_CHECK_STATEMENT_CONTENT:
     jp   c, .syntax_fail
     inc  hl
     ld   a, (hl)
+    cp   "$"
+    jr   nz, .check_dim_open
+    inc  hl
+    ld   a, (hl)
+.check_dim_open:
     cp   "("
     jp   nz, .syntax_fail
     inc  hl

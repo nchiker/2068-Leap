@@ -51,12 +51,21 @@ ARRAY_EXROM_DIMN:
     push af                              ; the array letter — survives
                                          ; the ")" check below
     inc  hl
+    ld   c, ARRAY_KIND_NUM
+    ld   a, (hl)
+    cp   "$"
+    jr   nz, .dimn_after_kind
+    ld   c, ARRAY_KIND_STR
+    inc  hl
+.dimn_after_kind:
+    push bc                              ; kind survives syntax checks
     call KTAB_BASIC_SKIP_SPACES
     ld   a, (hl)
     cp   ")"
     jp   nz, .dimn_fail_pop
     inc  hl
     ld   (EXPR_PARSE_PTR), hl
+    pop  bc                              ; C = requested array kind
     pop  af                              ; A = array letter (restored)
 
     ; BASIC_CHECK_ONLY-guarded, same reasoning basic.asm's own
@@ -70,19 +79,13 @@ ARRAY_EXROM_DIMN:
     ; fine). Grammar (the letter, the closing paren) is still fully
     ; validated above regardless of check mode; only the real lookup
     ; is skipped here.
-    ld   c, a                            ; stash the letter past the
+    ld   b, a                            ; stash the letter past the
                                          ; BASIC_CHECK_ONLY read below
     ld   a, (BASIC_CHECK_ONLY)
     or   a
     jr   nz, .dimn_check_only
 
-    ld   a, c
-    ld   c, ARRAY_KIND_NUM                ; DIMN only ever means a
-                                         ; numeric array — see BASIC_
-                                         ; ARRAY_FIND's own header for
-                                         ; why kind is now part of the
-                                         ; lookup (scalars share this
-                                         ; same pool/routine now too)
+    ld   a, b
     call KTAB_BASIC_ARRAY_FIND            ; HL = data, DE = count;
                                          ; carry set if the name isn't
                                          ; DIM'd at all
@@ -102,6 +105,7 @@ ARRAY_EXROM_DIMN:
     scf
     ret
 .dimn_fail_pop:
+    pop  bc                              ; discard kind stash
     pop  af                              ; discard the letter stash
 .dimn_syntax_fail:
     ld   hl, MSG_SYNTAX_ERROR

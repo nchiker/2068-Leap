@@ -688,8 +688,9 @@ Home ROM, confirming the ~40-60 byte estimate made once string
 scalars' own real cost was known — see `docs/programmers_reference.
 md`'s `basic/` "String concatenation" section for the implementation.
 
-**Numeric arrays — implemented (2026-08-22)**: `DIM name(n)` declares
-an array of `n` zero-initialized elements, indices **0 to n-1**
+**Arrays — implemented**: `DIM name(n)` declares a numeric array of `n`
+zero-initialized elements, and `DIM name$(n)` declares a string array
+whose elements hold up to 31 characters. Both use indices **0 to n-1**
 (0-based — a deliberate simplification, not real Sinclair BASIC's
 1-based convention). `name(i)` reads or (as an assignment target)
 writes one element — `A(3) = 5`, `B = A(3) + 1`, even nested (`A(B(0))
@@ -710,14 +711,11 @@ for the full design (including a real nested-scratch-clobbering bug
 found and fixed before this ever reached the emulator).
 
 **`DIMN(name)` — implemented (2026-08-22)**: returns an array's
-declared size, e.g. `FOR i = 0 TO DIMN(A)-1` to loop over `A` without
-hardcoding its length.
+declared size. Use `DIMN(A)` for numeric arrays and `DIMN(A$)` for
+string arrays. String arrays are limited to 31 elements, each stored
+as the same 32-byte length-prefixed value used by scalar strings.
 
-**Not yet implemented**: string arrays (`DIM name$(n)`) — deferred per
-this project's own original Phase 3 plan ("simplest MVP is integer-
-only, single-dimension"). The record format numeric arrays use already
-reserves a `kind` byte for this, so adding it later extends rather than
-replaces the existing lookup mechanism. Multi-dimensional arrays (`DIM
+**Not yet implemented**: Multi-dimensional arrays (`DIM
 name(rows,cols)`) were built and verified in full the same day as
 `DIMN`, then archived for Home ROM budget once actually measured — see
 `docs/programmers_reference.md`'s "Multi-dimensional arrays (archived)"

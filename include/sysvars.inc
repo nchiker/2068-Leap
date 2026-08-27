@@ -2402,6 +2402,7 @@ ARRAY_ASSIGN_VALUE:  DEFS 2           ; 2 bytes — array assignment's own
 ARRAY_KIND_NUM       EQU 0    ; numeric array (existing, Phase 3)
 VAR_KIND_NUM         EQU 1    ; numeric scalar
 VAR_KIND_STR         EQU 2    ; string scalar
+ARRAY_KIND_STR       EQU 3    ; string array, 32 bytes per element
 VAR_NUM_UNITS        EQU 1    ; numeric scalar data = 1*2 = 2 bytes
 VAR_STR_UNITS        EQU 16   ; string scalar data = 16*2 = 32 bytes
 VARS_START:          DEFS 2           ; 2 bytes — scalar pool's own
@@ -2415,6 +2416,12 @@ POOL_SCAN_END:       DEFS 2           ; 2 bytes — BASIC_ARRAY_FIND's own
                                 ; MAX), re-read fresh every loop
                                 ; iteration since DE is busy holding
                                 ; each record's own count field
+POOL_RECORD_KIND:    DEFS 1           ; current record kind during scan
+ARRAY_DIM_KIND:      DEFS 1           ; DIM allocator's requested kind
+ARRAY_ALLOC_BYTES:   DEFS 2           ; DIM's computed data-byte count
+STR_ASSIGN_KIND:     DEFS 1           ; 0=scalar, nonzero=string array
+STR_ASSIGN_LETTER:   DEFS 1           ; target survives nested RHS parsing
+STR_ASSIGN_INDEX:    DEFS 2           ; target index survives RHS parsing
 VAR_CHECK_SCRATCH:   DEFS 32          ; 32 bytes — BASIC_VAR_FIND_OR_
                                 ; CREATE's dummy return address during
                                 ; a BASIC_CHECK_ONLY whole-program check

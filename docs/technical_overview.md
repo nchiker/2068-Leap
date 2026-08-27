@@ -129,7 +129,7 @@ This is not a compatibility clone of stock Sinclair BASIC. It intentionally
 has no line-numbered program model, does not tokenize keywords during keyboard
 entry, and stores a native program payload. The 512×192 64-column and dual-
 screen modes are not exposed. Procedures, functions, `REPEAT`, `SELECT`,
-string arrays, and exception handling remain future work rather than partial
+and exception handling remain future work rather than partial
 or undocumented implementations.
 
 Physical ROM capacity is the governing constraint. Features used only while a

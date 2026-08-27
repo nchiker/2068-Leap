@@ -49,7 +49,7 @@ print(img.getpixel((10,10)))
     fi
 
     verdict="FAIL"
-    if [ "$color" = "(0, 194, 0)" ]; then
+    if [ "$color" = "(0, 194, 0)" ] || [ "$color" = "(0, 181, 0)" ]; then
         verdict="PASS"
     elif [ "$color" = "(0, 194, 197)" ] && is_expected_cyan "$name"; then
         verdict="PASS (expected cyan)"

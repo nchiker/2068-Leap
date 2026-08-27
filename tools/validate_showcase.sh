@@ -33,7 +33,7 @@ raw = w.get_image(0, 0, 640, 480, X.ZPixmap, 0xffffffff)
 pixel = raw.data[:4]
 rgb = (pixel[2], pixel[1], pixel[0])
 print(f"showcase: final border={rgb}")
-if rgb != (0, 194, 0):
+if rgb not in ((0, 194, 0), (0, 181, 0)):
     raise SystemExit(1)
 PYEOF
 

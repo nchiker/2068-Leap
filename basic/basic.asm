@@ -5307,7 +5307,7 @@ BASIC_EVAL_STR_PRIMARY:
                                         ; way a function call does
     pop  bc
     pop  de
-    jr   nc, BASIC_EVAL_STR_FUNCTION_CALL  ; tail call — its own In/Out
+    jp   nc, BASIC_EVAL_STR_FUNCTION_CALL  ; tail call — its own In/Out
                                            ; contract is exactly what
                                            ; this routine's own caller
                                            ; needs back (HL/DE/C in;
@@ -5351,6 +5351,11 @@ BASIC_EVAL_STR_PRIMARY:
     jr   .done
 
 .var_ref:
+    ld   b, a
+    ld   a, (hl)
+    cp   "("
+    jr   z, .array_ref
+    ld   a, b
     ; A = uppercased letter, HL already advanced past "X$" — stash it,
     ; BASIC_STR_ADDR needs HL as its own scratch for the slot address.
     ; DE (the caller's destination pointer) must ALSO survive the
@@ -5420,6 +5425,53 @@ BASIC_EVAL_STR_PRIMARY:
                                       ; untouched (only POP AF affects
                                       ; flags) — already set from
                                       ; BASIC_STR_ADDR's own failure
+
+.array_ref:
+    push bc                           ; B=array letter, C=budget
+    inc  hl                           ; consume "("
+    push de
+    call BASIC_ARRAY_PARSE_SUBSCRIPTS
+    jr   c, .array_ref_parse_fail
+    ld   a, (BASIC_CHECK_ONLY)
+    or   a
+    jr   nz, .array_ref_check_only
+    pop  de
+    pop  bc
+    ld   a, b
+    push hl                           ; parsed text pointer
+    push de                           ; destination
+    push bc                           ; budget
+    ld   c, ARRAY_KIND_STR
+    call BASIC_ARRAY_FIND
+    jr   c, .array_ref_not_dimmed
+    call BASIC_STR_ARRAY_ELEMENT_ADDR
+    jr   c, .array_ref_runtime_fail
+    pop  bc
+    pop  de
+    ld   a, (hl)
+    cp   c
+    jr   c, .var_ref_within_budget
+    ld   a, c
+    jp   .var_ref_within_budget       ; common length/clamped copy tail
+.array_ref_check_only:
+    pop  de
+    pop  bc
+    ld   b, 0
+    or   a
+    ret
+.array_ref_parse_fail:
+    pop  de
+    pop  bc
+    ret
+.array_ref_not_dimmed:
+    ld   hl, MSG_ARRAY_NOT_DIMMED
+    call BASIC_SET_PENDING_ERROR
+.array_ref_runtime_fail:
+    pop  bc
+    pop  de
+    pop  hl
+    scf
+    ret
 
 ; ============================================================================
 ; BASIC_EVAL_STR_FUNCTION_CALL
@@ -5961,7 +6013,10 @@ BASIC_ARRAY_FIND:
                                    ; own scratch for the kind comparison
     ld   a, c
     cp   ARRAY_KIND_NUM
+    jr   z, .array_bounds
+    cp   ARRAY_KIND_STR
     jr   nz, .scalar_bounds
+.array_bounds:
     ld   hl, (PROG_END)
     ld   de, (ARRAYS_END)
     jr   .bounds_done
@@ -5979,6 +6034,7 @@ BASIC_ARRAY_FIND:
     jr   nc, .not_found             ; HL >= end boundary — scanned every
                                     ; record, no match
     ld   a, (hl)                    ; kind byte
+    ld   (POOL_RECORD_KIND), a
     inc  hl
     cp   c
     jr   nz, .skip_name              ; kind mismatch — A still holds the
@@ -6009,6 +6065,22 @@ BASIC_ARRAY_FIND:
     ; mismatch — advance HL past this record's data (count*2 bytes,
     ; since HL is already a real address and DE already holds count,
     ; adding it twice is exactly + count*2)
+    ld   a, (POOL_RECORD_KIND)
+    cp   ARRAY_KIND_STR
+    jr   nz, .skip_numeric
+    sla  e
+    rl   d
+    sla  e
+    rl   d
+    sla  e
+    rl   d
+    sla  e
+    rl   d
+    sla  e
+    rl   d                           ; string count * 32 bytes
+    add  hl, de
+    jr   .scan_loop
+.skip_numeric:
     add  hl, de
     add  hl, de
     jr   .scan_loop
@@ -6234,6 +6306,30 @@ BASIC_ARRAY_ELEMENT_ADDR:
     scf
     ret
 
+; String-array sibling: same bounds contract, but fixed 32-byte elements.
+BASIC_STR_ARRAY_ELEMENT_ADDR:
+    push hl
+    ld   hl, (ARRAY_INDEX)
+    or   a
+    sbc  hl, de
+    jr   nc, .str_oob
+    ld   hl, (ARRAY_INDEX)
+    add  hl, hl
+    add  hl, hl
+    add  hl, hl
+    add  hl, hl
+    add  hl, hl
+    pop  de
+    add  hl, de
+    or   a
+    ret
+.str_oob:
+    pop  de
+    ld   hl, MSG_ARRAY_SUBSCRIPT_RANGE
+    call BASIC_SET_PENDING_ERROR
+    scf
+    ret
+
 ; ============================================================================
 ; BASIC_STMT_DIM
 ; DIM <letter>(<n>) — declares a numeric array of n zero-initialized
@@ -6269,6 +6365,25 @@ BASIC_ARRAY_ELEMENT_ADDR:
 ; recurses into another expression evaluation.
 ; ============================================================================
 BASIC_STMT_DIM:
+    call BASIC_CALL_EXROM_INLINE
+    DW   $C0BA
+    or   a
+    ret  z
+    dec  a
+    jp   z, BASIC_RAISE_SYNTAX_ERROR
+    dec  a
+    ld   hl, MSG_INVALID_ARRAY_SIZE
+    jr   z, .dim_set_error
+    dec  a
+    ld   hl, MSG_ARRAY_ALREADY_DIMMED
+    jr   z, .dim_set_error
+    ld   hl, MSG_ARRAY_OUT_OF_MEMORY
+.dim_set_error:
+    call BASIC_SET_PENDING_ERROR
+    scf
+    ret
+
+    IF 0
     call BASIC_SKIP_SPACES
     ld   a, (hl)
     call BASIC_VALIDATE_VAR_LETTER
@@ -6401,6 +6516,7 @@ BASIC_STMT_DIM:
 .dim_bad_syntax_pop:
     pop  af                              ; balance the letter stash
     jp   BASIC_RAISE_SYNTAX_ERROR
+    ENDIF
 
 ; ============================================================================
 ; BASIC_ARRAY_DIMN_EXROM
@@ -9895,10 +10011,21 @@ BASIC_TRY_STR_ASSIGNMENT:
     push hl                          ; save start position, for restore
                                      ; on failure
     call BASIC_DETECT_STRVAR
-    jr   c, .fail                    ; HL already restored — BASIC_
+    jp   c, .fail                    ; HL already restored — BASIC_
                                      ; DETECT_STRVAR's own contract
-    ld   (CUR_VAR_LETTER), a         ; reused from the numeric path —
-                                     ; never live at the same time
+    ld   (STR_ASSIGN_LETTER), a
+    xor  a
+    ld   (STR_ASSIGN_KIND), a
+    ld   a, (hl)
+    cp   "("
+    jr   nz, .skip_spaces1
+    inc  hl
+    call BASIC_ARRAY_PARSE_SUBSCRIPTS
+    jr   c, .fail
+    ld   de, (ARRAY_INDEX)
+    ld   (STR_ASSIGN_INDEX), de
+    ld   a, ARRAY_KIND_STR
+    ld   (STR_ASSIGN_KIND), a
 .skip_spaces1:
     ld   a, (hl)
     cp   " "
@@ -9930,21 +10057,28 @@ BASIC_TRY_STR_ASSIGNMENT:
                                       ; parsed length) survives
     jr   c, .fail
 
-    pop  af                          ; discard saved start position —
-                                     ; success, don't need it
     ld   a, b                         ; A = parsed length
     ld   (STR_EXPR_SCRATCH), a
-    push bc                           ; B must survive BASIC_STR_ADDR
-                                      ; (destroys AF, DE, HL — see that
-                                      ; routine's own header)
-    ld   a, (CUR_VAR_LETTER)
-    call BASIC_STR_ADDR                ; HL = destination slot
-    jr   c, .str_addr_oom              ; pool exhausted — error already
-                                       ; recorded; unwind the pushed B
-                                       ; and the saved start position
-                                       ; below before propagating
-    pop  bc
-    ld   (hl), b                       ; store the length byte
+    ld   a, (STR_ASSIGN_KIND)
+    or   a
+    jr   nz, .array_destination
+    ld   a, (STR_ASSIGN_LETTER)
+    call BASIC_STR_ADDR
+    jr   c, .fail
+    jr   .destination_ready
+.array_destination:
+    ld   de, (STR_ASSIGN_INDEX)
+    ld   (ARRAY_INDEX), de
+    ld   a, (STR_ASSIGN_LETTER)
+    ld   c, ARRAY_KIND_STR
+    call BASIC_ARRAY_FIND
+    jr   c, .array_not_dimmed
+    call BASIC_STR_ARRAY_ELEMENT_ADDR
+    jr   c, .fail
+.destination_ready:
+    ld   a, (STR_EXPR_SCRATCH)
+    ld   b, a
+    ld   (hl), a                       ; store the length byte
     inc  hl
     ld   a, b
     or   a
@@ -9957,21 +10091,17 @@ BASIC_TRY_STR_ASSIGNMENT:
     inc  de
     djnz .copy_loop
 .copy_done:
+    pop  af                            ; discard saved start position
     or   a
     ret
+.array_not_dimmed:
+    ld   hl, MSG_ARRAY_NOT_DIMMED
+    call BASIC_SET_PENDING_ERROR
+    jr   .fail
 .fail:
     pop  hl                          ; restore original position
     scf
     ret
-
-.str_addr_oom:
-    pop  bc                          ; discard — B (parsed length) is
-                                     ; moot, this statement is failing
-    pop  hl                          ; restore original position, same
-                                     ; contract .fail's own comment gives
-    ret                              ; carry already set (BASIC_STR_ADDR
-                                     ; own failure) — POP doesn't touch
-                                     ; flags
 
 ; ============================================================================
 ; BASIC_TRY_ARRAY_ASSIGNMENT

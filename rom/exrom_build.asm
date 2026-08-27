@@ -89,6 +89,8 @@
                                          ; here
     INCLUDE "rom/exrom_input.asm"         ; numeric/string INPUT — the
                                          ; $C0B4 entry stub points here
+    INCLUDE "rom/exrom_dim.asm"           ; DIM allocator — the $C0BA
+                                         ; entry stub points here
     INCLUDE "rom/exrom_highlight.asm"     ; multi-keyword bold-
                                          ; highlighting scan — the
                                          ; $C090 entry stub above
