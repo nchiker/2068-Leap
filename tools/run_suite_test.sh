@@ -31,9 +31,10 @@ if [ -z "$name" ]; then
     exit 1
 fi
 
-if [ ! -f rom/test_suite_inject.bin ] || [ ! -f rom/test_suite_inject.sym ]; then
-    sjasmplus rom/test_suite_inject.asm --sym=rom/test_suite_inject.sym
-fi
+# Always rebuild: the binary and its symbol table include the live product
+# sources/sysvar layout, and stale cached outputs can make address-sensitive
+# fixtures test yesterday's ROM instead of today's build.
+sjasmplus rom/test_suite_inject.asm --sym=rom/test_suite_inject.sym
 
 python3 tools/fuse_suite_inject.py "tests/${name}.txt" "/tmp/suite_${name}.dbg"
 

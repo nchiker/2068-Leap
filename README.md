@@ -13,7 +13,10 @@ under Fuse. The automated language regression suite currently contains
 59 passing fixtures. Use `make budget`, `make check`, and `make test` for
 the current reproducible build and validation entry points. `make check`
 also assembles seven standalone boot/kernel smoke ROMs; `make smoke-build`
-runs that build-only compatibility check directly.
+runs that build-only compatibility check directly. `make test` executes
+the deterministic memory and math smoke ROMs in Fuse before running the
+59-fixture integrated language suite; the other smoke ROMs remain visual,
+keyboard, or tape-interactive checks.
 
 ## Layout
 

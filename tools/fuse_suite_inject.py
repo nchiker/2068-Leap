@@ -38,7 +38,9 @@ Usage:
 
 <program.txt>: same plain-text format preload_gen.py/fuse_load_inject.py
 take (one BASIC statement per line, blank lines and ';;'-prefixed lines
-skipped).
+skipped). `@SYMBOL@` placeholders are replaced with the current decimal
+value from the harness symbol table before encoding, so tests can inspect
+sysvars without freezing their addresses into the fixture.
 
 Output:
     <out.dbg> — pass to Fuse via --debugger-command "$(cat <out.dbg>)".
@@ -82,6 +84,17 @@ def harness_symbols():
     return symbols
 
 
+def expand_symbols(line, symbols):
+    """Replace @NAME@ with the live assembler value in decimal form."""
+    def replace(match):
+        name = match.group(1)
+        if name not in symbols:
+            raise ValueError(f"unknown fixture symbol @{name}@")
+        return str(symbols[name])
+
+    return re.sub(r"@([A-Za-z_][A-Za-z0-9_]*)@", replace, line)
+
+
 def main():
     if len(sys.argv) != 3:
         print(__doc__)
@@ -92,9 +105,10 @@ def main():
         lines = [l.rstrip('\n') for l in f]
     lines = [l for l in lines if l.strip() and not l.strip().startswith(';;')]
 
+    syms = harness_symbols()
+    lines = [expand_symbols(line, syms) for line in lines]
     data = encode_program(lines)
 
-    syms = harness_symbols()
     inject_point = syms['INJECT_POINT']
     prog_area_start = syms['PROG_AREA_START']
     prog_end_addr = syms['PROG_END']
