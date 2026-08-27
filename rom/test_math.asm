@@ -42,77 +42,77 @@ COLD_START:
     ld   sp, $FF00
 
     call TEST_MULTIPLY_POS_POS
-    jr   c, FAIL
+    jp   c, FAIL
     call TEST_MULTIPLY_NEG_POS
-    jr   c, FAIL
+    jp   c, FAIL
     call TEST_MULTIPLY_NEG_NEG
-    jr   c, FAIL
+    jp   c, FAIL
     call TEST_MULTIPLY_ZERO
-    jr   c, FAIL
+    jp   c, FAIL
     call TEST_MULTIPLY_BOUNDARY
-    jr   c, FAIL
+    jp   c, FAIL
     call TEST_DIVIDE_POS_POS
-    jr   c, FAIL
+    jp   c, FAIL
     call TEST_DIVIDE_NEG_POS_TRUNC
-    jr   c, FAIL
+    jp   c, FAIL
     call TEST_DIVIDE_NEG_NEG
-    jr   c, FAIL
+    jp   c, FAIL
     call TEST_DIVIDE_BY_ZERO
-    jr   c, FAIL
+    jp   c, FAIL
     call TEST_COMPARE_EQUAL
-    jr   c, FAIL
+    jp   c, FAIL
     call TEST_COMPARE_GREATER
-    jr   c, FAIL
+    jp   c, FAIL
     call TEST_COMPARE_LESS
-    jr   c, FAIL
+    jp   c, FAIL
     call TEST_COMPARE_NEG_POS
-    jr   c, FAIL
+    jp   c, FAIL
     call TEST_COMPARE_BOUNDARY
-    jr   c, FAIL
+    jp   c, FAIL
     call TEST_ADD_BASIC
-    jr   c, FAIL
+    jp   c, FAIL
     call TEST_SUB_BASIC
-    jr   c, FAIL
+    jp   c, FAIL
     call TEST_NEGATE_BOUNDARY
-    jr   c, FAIL
+    jp   c, FAIL
     call TEST_ABS_POS
-    jr   c, FAIL
+    jp   c, FAIL
     call TEST_ABS_NEG
-    jr   c, FAIL
+    jp   c, FAIL
     call TEST_ABS_BOUNDARY
-    jr   c, FAIL
+    jp   c, FAIL
     call TEST_SGN_POS
-    jr   c, FAIL
+    jp   c, FAIL
     call TEST_SGN_NEG
-    jr   c, FAIL
+    jp   c, FAIL
     call TEST_SGN_ZERO
-    jr   c, FAIL
+    jp   c, FAIL
     call TEST_MOD_BASIC
-    jr   c, FAIL
+    jp   c, FAIL
     call TEST_MOD_NEG_DIVIDEND
-    jr   c, FAIL
+    jp   c, FAIL
     call TEST_MOD_NEG_DIVISOR
-    jr   c, FAIL
+    jp   c, FAIL
     call TEST_MOD_BY_ZERO
-    jr   c, FAIL
+    jp   c, FAIL
     call TEST_SQRT_PERFECT
-    jr   c, FAIL
+    jp   c, FAIL
     call TEST_SQRT_NONPERFECT
-    jr   c, FAIL
+    jp   c, FAIL
     call TEST_SQRT_ZERO
-    jr   c, FAIL
+    jp   c, FAIL
     call TEST_SQRT_NEGATIVE
-    jr   c, FAIL
+    jp   c, FAIL
     call TEST_SQRT_BOUNDARY
-    jr   c, FAIL
+    jp   c, FAIL
     call TEST_RND_RANGE
-    jr   c, FAIL
+    jp   c, FAIL
     call TEST_RND_ZERO
-    jr   c, FAIL
+    jp   c, FAIL
     call TEST_RND_NEGATIVE
-    jr   c, FAIL
+    jp   c, FAIL
     call TEST_RND_ONE
-    jr   c, FAIL
+    jp   c, FAIL
 
 PASS:
     ld   a, 4                ; green

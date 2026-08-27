@@ -59,6 +59,7 @@ COLD_START:
     INCLUDE "kernel/memory/memory.asm"
     INCLUDE "kernel/io/io.asm"
     INCLUDE "kernel/graphics/graphics.asm"
+    INCLUDE "kernel/math/math.asm"      ; graphics LINE/CIRCLE helpers
 
     DS   $4000 - $, $FF
 

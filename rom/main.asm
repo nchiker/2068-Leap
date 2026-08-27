@@ -64,15 +64,11 @@ RST_20:
 
     DS   $0028 - $, $FF
 RST_28:
-    ; Calculator engine entry point (matches the real Spectrum ROM's own
-    ; RST $28 convention). MUST be a bare `jp`, not `call`: RST pushed
-    ; the byte immediately after this instruction (the literal-op stream
-    ; that follows every RST $28 call site) as the return address, and
-    ; CALC_ENTRY_TRAMPOLINE/the calculator itself need that exact value
-    ; sitting untouched on top of the stack — a `call` here would push a
-    ; second address on top of it and corrupt the mechanism. See basic/
-    ; basic.asm's CALC_ENTRY_TRAMPOLINE header for the full chain.
-    jp   CALC_ENTRY_TRAMPOLINE
+    ret                     ; deliberately unallocated in this standalone
+                            ; Milestone-0 boot harness. The product ROM's
+                            ; RST $28 calculator trampoline belongs to
+                            ; rom/test_basic.asm, not this dependency-free
+                            ; border/stack smoke test.
 
     DS   $0030 - $, $FF
 RST_30:

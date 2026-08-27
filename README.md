@@ -11,7 +11,9 @@ Working integrated ROM: full-screen editor, structured BASIC, graphics,
 sound, EXROM banking, and TS2068-framed SAVE/LOAD are assembled and tested
 under Fuse. The automated language regression suite currently contains
 59 passing fixtures. Use `make budget`, `make check`, and `make test` for
-the current reproducible build and validation entry points.
+the current reproducible build and validation entry points. `make check`
+also assembles seven standalone boot/kernel smoke ROMs; `make smoke-build`
+runs that build-only compatibility check directly.
 
 ## Layout
 

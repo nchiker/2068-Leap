@@ -1,4 +1,4 @@
-.PHONY: all build check test budget clean
+.PHONY: all build check smoke-build test budget clean
 
 all: check build
 
@@ -14,6 +14,10 @@ check:
 	python3 tools/check_docs.py
 	python3 tools/check_storage_contract.py
 	python3 tools/check_tape_fixture.py
+	tools/build_smoke_roms.sh
+
+smoke-build:
+	tools/build_smoke_roms.sh
 
 test: all
 	tools/run_all_tests.sh
