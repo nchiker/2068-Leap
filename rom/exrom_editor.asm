@@ -155,9 +155,53 @@ EDITOR_LOOP:
 .move_right:
     ld   a, EDIR_RIGHT
 .do_move:
+    ; Cursor-only fast path: the text, wrap table, active screen row, view,
+    ; and status are all unchanged by LEFT/RIGHT. Save the old physical
+    ; cursor cell, move the buffer offset, restore that old cell's normal
+    ; attribute, then map/draw only the new cursor. This avoids routing a
+    ; cursor key through BASIC_REDRAW_PROGRAM's complete visible-program
+    ; traversal. EDITOR_WRAP_OFFSET_TO_ROWCOL reads EDIT_BUF_OFFSET directly
+    ; and the wrap table is guaranteed current from the preceding redraw.
+    push af
+    call EDITOR_WRAP_OFFSET_TO_ROWCOL   ; B=old sub-row, C=old column
+    ld   a, (BASIC_ACTIVE_ROW)
+    add  a, b
+    ld   b, a                           ; B=old physical row
+    pop  af
+    push bc
     call EDITOR_MOVE_CURSOR
-    call EDITOR_REDRAW_SCREEN
+    pop  bc
+    call .clear_cursor_attr
+    call EDITOR_WRAP_OFFSET_TO_ROWCOL   ; B=new sub-row, C=new column
+    ld   a, (BASIC_ACTIVE_ROW)
+    add  a, b
+    ld   b, a                           ; B=new physical row
+    call KTAB_GFX_INVERT_ATTR
     jp   EDITOR_LOOP
+
+; Restores a cursor cell to the active editor line's known base attribute.
+; BASIC_REDRAW_PROGRAM clears active-line rows through GFX_CLEAR_ROW before
+; drawing, so ATTR_DEFAULT is exactly what sits underneath the cursor. A
+; direct RAM write also clears FLASH; applying GFX_INVERT_ATTR twice would
+; swap the colors back but incorrectly leave FLASH set. Attribute RAM stays
+; visible while EXROM occupies chunk 6, so no Home callback is needed.
+; In: B = physical row, C = column
+; Destroys: AF, DE, HL
+.clear_cursor_attr:
+    ld   h, 0
+    ld   l, b
+    add  hl, hl
+    add  hl, hl
+    add  hl, hl
+    add  hl, hl
+    add  hl, hl                       ; HL = row * 32
+    ld   de, ATTR_ADDR
+    add  hl, de
+    ld   d, 0
+    ld   e, c
+    add  hl, de
+    ld   (hl), %00111000                 ; paper 7, ink 0, no FLASH
+    ret
 
 .move_up:
     ld   a, EDIR_UP

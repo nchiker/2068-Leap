@@ -2811,6 +2811,21 @@ file header for the exact scope statement. What exists:
   index, so program-size changes cannot produce a false hit. Measured ROM cost:
   31 Home bytes (138 -> 107 free). Full 63-case Fuse suite remained green.
 
+- **Cursor-only redraw fast path (2026-08-27):** LEFT/RIGHT previously called
+  the same complete redraw hook as a text edit. A path audit showed that each
+  cursor key therefore performed scroll-fit calculation, a visible-program
+  walk, settled-row detokenization/shadow checks, active-line clear/reprint,
+  wrap recomputation, cursor drawing, and status evaluation even though only
+  the cursor offset changed. The canonical EXROM editor now maps the old
+  cursor through the already-current wrap table, restores that one attribute
+  cell directly (including clearing FLASH), moves the offset, maps the new
+  cell, and draws the cursor there. Text edits and vertical/structural
+  navigation still use the full redraw path. Cost: 42 EXROM bytes, no Home or
+  RAM bytes; measured margin is Home 107 / EXROM 422 bytes free. Static and
+  build checks pass. Synthetic X11 keys did not reach Fuse in the validation
+  session, so direct wrapped-line LEFT/RIGHT confirmation remains required
+  despite the broader automated regression suite.
+
 ### Explicitly not implemented yet
 
 `GOSUB` (return-address stack doesn't exist yet — needed for
