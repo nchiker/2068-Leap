@@ -6410,9 +6410,8 @@ BASIC_STMT_DIM:
 ; In/Out/Destroys: identical to ARRAY_EXROM_DIMN's own contract.
 ; ============================================================================
 BASIC_ARRAY_DIMN_EXROM:
-    call BANK_PAGE_EXROM_IN
-    call $C08A
-    jp   BASIC_EXROM_EXIT_PROTECTED
+    call BASIC_CALL_EXROM_INLINE
+    DW   $C08A
 
 ; ============================================================================
 ; DIV10
@@ -6517,9 +6516,8 @@ BASIC_PARSE_NUMBER:
 ; Destroys: AF, BC, DE, HL
 ; ============================================================================
 BASIC_NUM_TO_STRING:
-    call BANK_PAGE_EXROM_IN
-    call $C09C
-    jp   BASIC_EXROM_EXIT_PROTECTED
+    call BASIC_CALL_EXROM_INLINE
+    DW   $C09C
 
 ; ============================================================================
 ; BASIC_FLOAT_TO_STRING
@@ -6547,9 +6545,8 @@ BASIC_NUM_TO_STRING:
 ; Destroys: AF, BC, DE, HL.
 ; ============================================================================
 BASIC_FLOAT_TO_STRING:
-    call BANK_PAGE_EXROM_IN
-    call $C0A8
-    jp   BASIC_EXROM_EXIT_PROTECTED
+    call BASIC_CALL_EXROM_INLINE
+    DW   $C0A8
 
 ; ============================================================================
 ; BASIC_ADVANCE_OUTPUT_ROW
@@ -9142,9 +9139,8 @@ BASIC_STMT_EXIT:
 ; Destroys: AF, BC, DE, HL
 ; ============================================================================
 BASIC_SPRITE_EXROM:
-    call BANK_PAGE_EXROM_IN
-    call $C054
-    jp   BASIC_EXROM_EXIT_PROTECTED
+    call BASIC_CALL_EXROM_INLINE
+    DW   $C054
 
 ; ============================================================================
 ; BASIC_SPRITE_HIT_EXROM
@@ -9160,9 +9156,8 @@ BASIC_SPRITE_EXROM:
 ; Destroys: AF, BC, DE, HL
 ; ============================================================================
 BASIC_SPRITE_HIT_EXROM:
-    call BANK_PAGE_EXROM_IN
-    call $C096
-    jp   BASIC_EXROM_EXIT_PROTECTED
+    call BASIC_CALL_EXROM_INLINE
+    DW   $C096
 
 ; ============================================================================
 ; BASIC_SCAN_LABELS_EXROM / BASIC_FULL_CHECK_EXROM /
@@ -9212,18 +9207,14 @@ BASIC_SPRITE_HIT_EXROM:
 ; (BASIC_CHECK_STATEMENT_EXROM's real argument) passes through
 ; untouched in every case.
 ;
-; CODE-SIZE REVIEW (2026-08-19): BASIC_CHECK_STATEMENT_EXROM below and
-; both BASIC_SAVE_EXROM/BASIC_LOAD_EXROM further down used to each
-; carry their own identical 4-instruction "protect AF across page-out"
-; tail (push af / call BANK_PAGE_EXROM_OUT / pop af / ret) — the exact
-; kind of duplication this project actively hunts down. Consolidated
-; into the shared BASIC_EXROM_EXIT_PROTECTED tail-jump target below,
-; same style BASIC_SCAN_LABELS_EXROM/BASIC_FULL_CHECK_EXROM already
-; use for their own (unprotected) tail-jump to BANK_PAGE_EXROM_OUT
-; directly. Net: 3 duplicated tails (6 bytes each = 18) become 1
-; shared tail (6 bytes) + 3 x `jp` (3 bytes each = 9) = 15 bytes,
-; saving 3 bytes — small, but free, and it's one less place a future
-; edit to the protection logic could drift out of sync across copies.
+; CODE-SIZE REVIEW (updated 2026-08-27): ordinary wrappers now use
+; BASIC_CALL_EXROM_INLINE's five-byte CALL+DW form rather than repeating
+; page-in/call/page-out at every entry. Twenty-four wrappers share that
+; trampoline, recovering a measured 74 Home-ROM bytes after its own cost
+; (64 -> 138 bytes free). BASIC_FULL_CHECK_EXROM and BASIC_CHECK_STATEMENT_
+; EXROM remain explicit because they have Home-side state work after the
+; EXROM call; CALC_ENTRY_TRAMPOLINE remains explicit because its RST $28
+; literal-stream stack protocol cannot tolerate an ordinary call shape.
 ; ============================================================================
 BASIC_SCAN_LABELS_EXROM:
     xor  a                               ; invalidate the status-line
@@ -9232,15 +9223,8 @@ BASIC_SCAN_LABELS_EXROM:
                                         ; label rebuild (see sysvars.
                                         ; inc's own comment on these
                                         ; three fields)
-    call BANK_PAGE_EXROM_IN
-    call $C000
-    jp   BANK_PAGE_EXROM_OUT             ; tail call fine here — this
-                                        ; wrapper's own callers already
-                                        ; never rely on flags surviving
-                                        ; (BASIC_SCAN_LABELS' own
-                                        ; original contract was
-                                        ; "Destroys: AF, BC, DE, HL",
-                                        ; same as this)
+    call BASIC_CALL_EXROM_INLINE
+    DW   $C000
 
 BASIC_FULL_CHECK_EXROM:
     xor  a                               ; invalidate — same reasoning
@@ -9341,14 +9325,12 @@ BASIC_CHECK_STATEMENT_EXROM:
 ; no-op, not removed.
 ; ============================================================================
 BASIC_SAVE_EXROM:
-    call BANK_PAGE_EXROM_IN
-    call $C012
-    jp   BASIC_EXROM_EXIT_PROTECTED
+    call BASIC_CALL_EXROM_INLINE
+    DW   $C012
 
 BASIC_LOAD_EXROM:
-    call BANK_PAGE_EXROM_IN
-    call $C018
-    jp   BASIC_EXROM_EXIT_PROTECTED
+    call BASIC_CALL_EXROM_INLINE
+    DW   $C018
 
 ; ============================================================================
 ; BASIC_SOUND_EXROM
@@ -9364,9 +9346,8 @@ BASIC_LOAD_EXROM:
 ; Destroys: AF
 ; ============================================================================
 BASIC_SOUND_EXROM:
-    call BANK_PAGE_EXROM_IN
-    call $C048
-    jp   BASIC_EXROM_EXIT_PROTECTED
+    call BASIC_CALL_EXROM_INLINE
+    DW   $C048
 
 ; Shared wrapper for ULAPLUS (B=0) and PALETTE (B=1).
 BASIC_ULAPLUS_EXROM:
@@ -9394,9 +9375,8 @@ BASIC_ULAPLUS_EXROM:
 ; Destroys: whatever STRFUNC_EXROM's own contract defines, plus AF
 ; ============================================================================
 BASIC_STRFUNC_EXROM:
-    call BANK_PAGE_EXROM_IN
-    call $C05A
-    jr   BASIC_EXROM_EXIT_PROTECTED
+    call BASIC_CALL_EXROM_INLINE
+    DW   $C05A
 
 ; ============================================================================
 ; BASIC_EDITOR_*_EXROM (2026-08-22)
@@ -9422,19 +9402,16 @@ BASIC_STRFUNC_EXROM:
 ; counter bump, not a real port write).
 ; ============================================================================
 BASIC_EDITOR_INIT_EXROM:
-    call BANK_PAGE_EXROM_IN
-    call $C060
-    jr   BASIC_EXROM_EXIT_PROTECTED
+    call BASIC_CALL_EXROM_INLINE
+    DW   $C060
 
 BASIC_EDITOR_ENTER_EXROM:
-    call BANK_PAGE_EXROM_IN
-    call $C066
-    jr   BASIC_EXROM_EXIT_PROTECTED
+    call BASIC_CALL_EXROM_INLINE
+    DW   $C066
 
 BASIC_EDITOR_WRAP_CALC_EXROM:
-    call BANK_PAGE_EXROM_IN
-    call $C06C
-    jr   BASIC_EXROM_EXIT_PROTECTED
+    call BASIC_CALL_EXROM_INLINE
+    DW   $C06C
 
 ; BASIC_EDITOR_WRAP_TABLE_ADDR_EXROM removed (2026-08-23) — its one
 ; caller (BASIC_PRINT_LINE_WRAPPED_COMMON) now inlines the same
@@ -9448,19 +9425,16 @@ BASIC_EDITOR_WRAP_CALC_EXROM:
 ; every fixed entry address after it for a 6-byte EXROM saving.
 
 BASIC_EDITOR_WRAP_OFFSET_TO_ROWCOL_EXROM:
-    call BANK_PAGE_EXROM_IN
-    call $C078
-    jr   BASIC_EXROM_EXIT_PROTECTED
+    call BASIC_CALL_EXROM_INLINE
+    DW   $C078
 
 BASIC_EDITOR_WRAP_ROWCOL_TO_OFFSET_EXROM:
-    call BANK_PAGE_EXROM_IN
-    call $C07E
-    jr   BASIC_EXROM_EXIT_PROTECTED
+    call BASIC_CALL_EXROM_INLINE
+    DW   $C07E
 
 BASIC_EDITOR_BLOCK_DELETE_EXROM:
-    call BANK_PAGE_EXROM_IN
-    call $C084
-    jr   BASIC_EXROM_EXIT_PROTECTED
+    call BASIC_CALL_EXROM_INLINE
+    DW   $C084
 
 ; ============================================================================
 ; BASIC_SHOW_HELP_EXROM
@@ -9489,9 +9463,8 @@ BASIC_EDITOR_BLOCK_DELETE_EXROM:
 ; Destroys: AF, BC, DE, HL
 ; ============================================================================
 BASIC_SHOW_HELP_EXROM:
-    call BANK_PAGE_EXROM_IN
-    call $C01E
-    jp   BANK_PAGE_EXROM_OUT
+    call BASIC_CALL_EXROM_INLINE
+    DW   $C01E
 
 ; ============================================================================
 ; BASIC_FORMAT_STORAGE_STATUS_EXROM
@@ -9525,9 +9498,8 @@ BASIC_SHOW_HELP_EXROM:
 ;      survives regardless). Destroys: AF, BC, DE, HL.
 ; ============================================================================
 BASIC_FORMAT_STORAGE_STATUS_EXROM:
-    call BANK_PAGE_EXROM_IN
-    call $C042
-    jp   BANK_PAGE_EXROM_OUT
+    call BASIC_CALL_EXROM_INLINE
+    DW   $C042
 
 ; ============================================================================
 ; CALC_INT_TO_FP_HOME / CALC_FP_TO_INT_HOME
@@ -9557,14 +9529,12 @@ BASIC_FORMAT_STORAGE_STATUS_EXROM:
 ; Both: Destroys AF, BC, DE, HL — identical to the routines they wrap.
 ; ============================================================================
 CALC_INT_TO_FP_HOME:
-    call BANK_PAGE_EXROM_IN
-    call $C02A
-    jp   BANK_PAGE_EXROM_OUT
+    call BASIC_CALL_EXROM_INLINE
+    DW   $C02A
 
 CALC_FP_TO_INT_HOME:
-    call BANK_PAGE_EXROM_IN
-    call $C030
-    jp   BANK_PAGE_EXROM_OUT
+    call BASIC_CALL_EXROM_INLINE
+    DW   $C030
 
 ; ============================================================================
 ; CALC_PUSH_PI_HOME / CALC_PUSH_FP_RAW_HOME
@@ -9587,14 +9557,12 @@ CALC_FP_TO_INT_HOME:
 ; CALC_INT_TO_FP_HOME's own HL argument.
 ; ============================================================================
 CALC_PUSH_PI_HOME:
-    call BANK_PAGE_EXROM_IN
-    call $C036
-    jp   BANK_PAGE_EXROM_OUT
+    call BASIC_CALL_EXROM_INLINE
+    DW   $C036
 
 CALC_PUSH_FP_RAW_HOME:
-    call BANK_PAGE_EXROM_IN
-    call $C03C
-    jp   BANK_PAGE_EXROM_OUT
+    call BASIC_CALL_EXROM_INLINE
+    DW   $C03C
 
 ; ============================================================================
 ; CALC_ENTRY_TRAMPOLINE / CALC_EXIT_TRAMPOLINE
@@ -9672,6 +9640,45 @@ BASIC_EXROM_EXIT_PROTECTED:
     push af
     call BANK_PAGE_EXROM_OUT
     pop  af
+    ret
+
+; ==========================================================================
+; BASIC_CALL_EXROM_INLINE
+; Shared ordinary Home-to-EXROM call trampoline. The caller places the
+; fixed EXROM entry address in the two bytes immediately after CALL:
+;
+;     call BASIC_CALL_EXROM_INLINE
+;     DW   $C0xx
+;
+; The CALL return address points at that word. The trampoline removes it,
+; decodes the target with the otherwise-unused alternate BC/DE/HL register
+; set, and constructs this stack chain:
+;
+;     EXROM target -> BASIC_EXROM_EXIT_PROTECTED -> original caller
+;
+; Thus the inline word is data, never executed, and every primary register
+; reaches the EXROM entry exactly as it did through the former wrappers.
+; This project and its interrupt handler do not use EXX anywhere else;
+; alternate BC/DE/HL are explicitly scratch here. If that changes, this
+; contract must be revisited.
+;
+; In/Out: defined by the selected EXROM entry
+; Destroys: alternate BC/DE/HL, plus whatever the selected entry destroys
+; ==========================================================================
+BASIC_CALL_EXROM_INLINE:
+    ; check-asm: allow-early-pop -- intentionally consumes this routine's
+    ; own CALL return address, which points at the inline DW above.
+    exx
+    pop  hl                             ; inline target-word address;
+                                        ; original caller is now on top
+    ld   e, (hl)
+    inc  hl
+    ld   d, (hl)                        ; DE' = fixed EXROM target
+    ld   hl, BASIC_EXROM_EXIT_PROTECTED
+    push hl                             ; target returns to protected OUT
+    push de                             ; trampoline RET enters target
+    exx
+    call BANK_PAGE_EXROM_IN
     ret
 
 
@@ -11400,9 +11407,8 @@ BASIC_DETECT_KEYWORD_PREFIX:
     ld   hl, KEYWORD_HILITE_TABLE
     ld   (HILITE_TABLE_PTR), hl
     pop  hl
-    call BANK_PAGE_EXROM_IN
-    call $C090
-    jp   BASIC_EXROM_EXIT_PROTECTED
+    call BASIC_CALL_EXROM_INLINE
+    DW   $C090
 
 ; ============================================================================
 ; BASIC_KW_OFFSET_BOLD
@@ -13354,9 +13360,8 @@ BASIC_PRINT_STATUS_TEXT:
 ; Destroys: AF, BC, DE, HL
 ; ============================================================================
 BASIC_APPEND_STR:
-    call BANK_PAGE_EXROM_IN
-    call $C0A2
-    jp   BASIC_EXROM_EXIT_PROTECTED
+    call BASIC_CALL_EXROM_INLINE
+    DW   $C0A2
 
 STATUS_NEW_TEXT:    DB "NEW LINE", 0
 STATUS_PREFIX_TEXT: DB "LINE ", 0
