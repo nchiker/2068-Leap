@@ -2799,6 +2799,18 @@ file header for the exact scope statement. What exists:
   range and display as a negative number — needs its own unsigned
   conversion before it's added, not folded into this pass.
 
+  **Normal-status work cache (2026-08-27):** a deterministic path audit
+  found that every cursor-only redraw rebuilt an unchanged `LINE n/m` by
+  walking the complete statement list and performing two decimal conversions;
+  only the final screen-text comparison avoided the physical redraw. The
+  normal line path now recognizes an already displayed `LINE` status and the
+  same `CUR_EDIT_INDEX`, returning before that work. It reuses
+  `STATUS_TOTAL_TMP` as the between-redraw index key, costs no RAM, and still
+  falls through to the existing final string comparison on every miss.
+  Structural changes invalidate `LAST_STATUS_TEXT`, while append advances the
+  index, so program-size changes cannot produce a false hit. Measured ROM cost:
+  31 Home bytes (138 -> 107 free). Full 63-case Fuse suite remained green.
+
 ### Explicitly not implemented yet
 
 `GOSUB` (return-address stack doesn't exist yet — needed for

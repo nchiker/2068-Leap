@@ -13140,7 +13140,7 @@ BASIC_DRAW_STATUS_LINE:
                                            ; entirely
 
     ld   hl, (PENDING_ERROR_MSG)
-    jr   BASIC_PRINT_STATUS_TEXT
+    jp   BASIC_PRINT_STATUS_TEXT
 
 .status_check_defensive:
     jr   .show_count                        ; leave the cache exactly
@@ -13186,6 +13186,28 @@ BASIC_DRAW_STATUS_LINE:
     jr   BASIC_PRINT_STATUS_TEXT
 
 .show_line_number:
+    ; Redraw work-count optimization (2026-08-27): cursor movement and
+    ; character typing reach this path on every keystroke. Previously each
+    ; one walked the entire program through BASIC_COUNT_STATEMENTS and ran
+    ; two integer-to-string conversions, only for BASIC_PRINT_STATUS_TEXT's
+    ; final text comparison to discover that the same LINE n/m was already
+    ; visible. LAST_STATUS_TEXT beginning with "LI" proves the last status
+    ; was the normal line indicator (no other status message uses that
+    ; prefix), and STATUS_TOTAL_TMP is repurposed between redraws as the
+    ; index for which it was built. Structural edits reset LAST_STATUS_TEXT;
+    ; appending advances CUR_EDIT_INDEX. Both therefore miss safely.
+    ld   hl, (LAST_STATUS_TEXT)         ; first two cached characters
+    ld   de, $494C                     ; little-endian "LI"
+    or   a
+    sbc  hl, de
+    jr   nz, .line_status_changed
+    ld   hl, (STATUS_TOTAL_TMP)         ; cached CUR_EDIT_INDEX
+    ld   de, (CUR_EDIT_INDEX)
+    or   a
+    sbc  hl, de
+    ret  z                              ; identical LINE n/m already shown
+
+.line_status_changed:
     call BASIC_COUNT_STATEMENTS          ; DE = total
     ld   (STATUS_TOTAL_TMP), de
 
@@ -13208,6 +13230,8 @@ BASIC_DRAW_STATUS_LINE:
     call BASIC_NUM_TO_STRING
     call BASIC_APPEND_STR
 
+    ld   de, (CUR_EDIT_INDEX)
+    ld   (STATUS_TOTAL_TMP), de          ; cache key for the fast path above
     ld   hl, STATUS_BUF
 
 ; ============================================================================
