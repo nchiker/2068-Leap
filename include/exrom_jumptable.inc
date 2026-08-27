@@ -333,16 +333,20 @@ KTAB_INDEX: DEFL KTAB_INDEX + 1
                                         ; like any other) on every call,
                                         ; and the EXROM-side table walk
                                         ; starts from THAT instead
+    KTAB_ENTRY BASIC_INPUT_SERVICE,             KTAB_BASIC_INPUT_SERVICE
+                                        ; one selector-dispatched gateway
+                                        ; for INPUT's EXROM migration;
+                                        ; avoids five fixed KTAB entries
     ENDM
 
-KTAB_COUNT      EQU 44
+KTAB_COUNT      EQU 45
 KTAB_END        EQU KTAB_BASE + 3*KTAB_COUNT   ; must be <= $0100
 KTAB_MAGIC_ADDR EQU KTAB_END                    ; where Home stamps
                                                 ; KTAB_MAGIC — see
                                                 ; EXROM_VERIFY_KTAB_
                                                 ; MAGIC (rom/exrom_
                                                 ; checker.asm)
-KTAB_MAGIC      EQU 13  ; bump by 1 any time KTAB_LIST's entry COUNT
+KTAB_MAGIC      EQU 14  ; bump by 1 any time KTAB_LIST's entry COUNT
                         ; or ORDER changes — its only job is to change
                         ; when the table shape changes, so a stale
                         ; binary pairing gets caught at runtime; the

@@ -547,24 +547,6 @@ EDITOR_MOVE_CURSOR:
     ret
 
 ; ============================================================================
-; EDITOR_SEARCH
-; Finds the next occurrence of a search string starting just after the
-; cursor, wrapping to the top of the program once. Moves the cursor to
-; the match on success.
-; In:  HL = pointer to null-terminated search string
-; Out: carry clear + cursor moved on match, carry set if not found
-; Destroys: AF, BC, DE, HL
-; ============================================================================
-EDITOR_SEARCH:
-    ; TODO: substring scan over program text, walking statements via
-    ; MEM_LINE_FIRST/MEM_LINE_NEXT (kernel/memory — iterator exists now,
-    ; scan loop itself doesn't yet). Documented stub for now. Not
-    ; called from basic/basic.asm yet either, so no EXROM entry stub
-    ; exists for this one — see this file's own header.
-    scf
-    ret
-
-; ============================================================================
 ; EDITOR_BLOCK_DELETE
 ; Deletes every program line in the inclusive range [HL, DE], addressed by
 ; editor line position (0-based index into the visible/logical program,

@@ -46,7 +46,8 @@ conversion functions.
 
 Scalar variables and arrays share a dynamic RAM pool with program text rather
 than reserving large fixed tables. Numeric arrays are zero-based and report
-their size through `DIMN()`. Strings provide 26 fixed-capacity scalar slots,
+their size through `DIMN()`. String scalars are allocated on demand from the
+same two-ended dynamic pool and hold up to 31 characters. Strings support
 concatenation, comparisons, case conversion, slicing, `CHR$`, `STR$`, `LEN`,
 `CODE`, and `VAL`.
 
@@ -74,8 +75,9 @@ Eight fixed sprite slots can capture up to 32×32 pixels, show while preserving
 the background, move, hide, and test rectangular collision with `HIT()`.
 Sprite implementation is banked because it is large and cold during editing.
 
-`BEEP` drives the internal speaker. `SOUND` exposes AY-3-8912 registers, and
-`PLAY` provides a compact note-string interface.
+`BEEP` drives the internal speaker and `SOUND` exposes AY-3-8912 registers.
+A higher-level music sequencer remains a future opportunity; there is no
+`PLAY` statement in the current ROM.
 
 `SAVE` and `LOAD` use the stock TS2068/Sinclair 17-byte header plus data-block
 framing and stock-derived pulse transport. The payload is this BASIC's native

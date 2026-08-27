@@ -7866,97 +7866,32 @@ BASIC_STMT_CIRCLE:
 
 ; ============================================================================
 ; BASIC_STMT_INPUT
-; Parses INPUT <variable>, then blocks reading digits (and an optional
-; leading '-') from the keyboard, echoing each one, until ENTER —
-; storing the result into the named variable. No backspace/delete
-; support yet (TODO) — DELETE is silently ignored during input, same
-; as any other unrecognized key.
+; Home-side wrapper for the EXROM-resident INPUT implementation. INPUT
+; is a cold blocking statement and moving it whole recovered Home-ROM
+; space for its new string-variable form without duplicating parsing
+; logic on both sides. See rom/exrom_input.asm.
 ; In:  HL = pointer just past the INPUT keyword
 ; Out: none
 ; Destroys: AF, BC, DE, HL
 ; ============================================================================
 BASIC_STMT_INPUT:
-.skip_spaces:
-    ld   a, (hl)
-    cp   " "
-    jr   nz, .after_spaces
-    inc  hl
-    jr   .skip_spaces
-.after_spaces:
-    ld   a, (hl)
-    call BASIC_VALIDATE_VAR_LETTER
-    ret  c                          ; not a variable letter — TODO,
-                                    ; silently do nothing
-    ld   (CUR_VAR_LETTER), a
-    inc  hl
-    call BASIC_EXPECT_STATEMENT_END    ; BASIC_EXPECT_STATEMENT_END fix
-                                       ; — INPUT takes exactly one
-                                       ; variable letter; anything
-                                       ; trailing it (e.g. "INPUT xy")
-                                       ; is malformed
-    ret  c                             ; error already recorded
+    call BASIC_CALL_EXROM_INLINE
+    DW   $C0B4
 
-    ld   hl, INPUT_BUF
-.read_loop:
-    call IO_READ_KEY
-    cp   KEY_ENTER
-    jr   z, .read_done
-    cp   "-"
-    jr   z, .accept_char
-    cp   "0"
-    jr   c, .read_loop                ; ignore anything else, including
-                                      ; DELETE ($08, < '0') — no
-                                      ; backspace support yet
-    cp   "9" + 1
-    jr   nc, .read_loop
-.accept_char:
-    ld   (hl), a
-    ; echo at column = (current write position - INPUT_BUF), same row
-    ; PRINT output uses — shares the row rather than getting its own,
-    ; a known rough edge same spirit as PRINT's own row-only tracking
-    push hl
-    push af
-    ld   de, INPUT_BUF
-    or   a
-    sbc  hl, de
-    ld   c, l                        ; C = column (fits in one byte —
-                                     ; INPUT_BUF is only 8 bytes)
-    ld   a, (BASIC_OUTPUT_ROW)
-    ld   b, a
-    pop  af
-    call GFX_PUTCHAR
-    pop  hl
-    inc  hl
-    jr   .read_loop
-.read_done:
-    xor  a
-    ld   (hl), a                       ; null-terminate INPUT_BUF
-
-    ld   hl, INPUT_BUF
-    call BASIC_PARSE_NUMBER
-    jr   c, .no_value                    ; nothing valid was typed —
-                                        ; TODO, silently leave the
-                                        ; variable unchanged
-
-    ld   a, (CUR_VAR_LETTER)
-    push de                          ; DE = the parsed value — BASIC_
-                                     ; VAR_ADDR destroys it now (Phase
-                                     ; 4, dynamic scalar pool), where
-                                     ; the old fixed-table version left
-                                     ; it alone
-    call BASIC_VAR_ADDR
-    jr   c, .input_oom                ; pool exhausted — error already
-                                      ; recorded; unwind the push above
-    pop  de
-    ld   (hl), e
-    inc  hl
-    ld   (hl), d
-.no_value:
-    jp   BASIC_ADVANCE_OUTPUT_ROW
-
-.input_oom:
-    pop  de
-    ret
+; EXROM INPUT callback gateway. D selects a Home-resident service:
+; 1=parse number, 2=numeric scalar address, 3=string scalar address,
+; 4=advance output row, 5=draw one character. Each target already
+; destroys D or does not consume it, so the selector countdown is safe.
+BASIC_INPUT_SERVICE:
+    dec  d
+    jp   z, BASIC_PARSE_NUMBER
+    dec  d
+    jp   z, BASIC_VAR_ADDR
+    dec  d
+    jp   z, BASIC_STR_ADDR
+    dec  d
+    jp   z, BASIC_ADVANCE_OUTPUT_ROW
+    jp   GFX_PUTCHAR
 
 ; ============================================================================
 ; BASIC_STMT_GOTO

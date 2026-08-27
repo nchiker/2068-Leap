@@ -96,7 +96,6 @@ compiled" for every routine name below.
 | `EDITOR_INSERT_CHAR`   | Insert one char at the cursor.                       |
 | `EDITOR_DELETE_CHAR`   | Delete the char at the cursor.                       |
 | `EDITOR_MOVE_CURSOR`   | Move cursor one step, or jump (home/end/top/bottom). |
-| `EDITOR_SEARCH`        | Find next match of a search string.                  |
 | `EDITOR_BLOCK_DELETE`  | Delete a contiguous range of program lines, by editor position. |
 
 ### No line numbers
@@ -208,7 +207,9 @@ without `kernel/editor` needing to know statements or BASIC exist at
 all — the hook just says "the user wants to move; you decide what that
 means for whatever's in `EDIT_LINE_BUF`."
 
-**Still genuinely not done**: `EDITOR_SEARCH` (stub). Lines longer than
+**Deliberately omitted**: FIND/search. The never-wired `EDITOR_SEARCH`
+stub was removed on 2026-08-27; editor ROM and interaction budget is being
+spent on language and showcase features instead. Lines longer than
 32 characters now use the production EXROM editor's word-wrap table,
 including correct cursor mapping across physical rows. `kernel/editor`'s OWN built-in
 `MOVE_CURSOR` `UP`/`DOWN` remain no-ops by design, not an oversight —
@@ -2679,17 +2680,16 @@ file header for the exact scope statement. What exists:
   every print after that corrupted whatever it landed on rather than
   crashing outright, which is why the symptom looked like scattered
   garbled columns and stale values rather than an obvious hang. Fixed
-  with a single shared routine (replacing both duplicated copies):
-  wraps back to row 0 with a `GFX_CLS` once advancing would exceed row
-  23, rather than true scrolling — a deliberate tradeoff, not a
-  shortcut: `RUN` has no pause between statements, so a long enough
-  loop would already be moving faster than anyone could read each line
-  individually, and true scrolling wasn't judged worth building for
-  this specific case.
-- **`BASIC_STMT_INPUT`** — blocking read of a number from the keyboard
-  (optional leading `-`, digits, ENTER), echoing as typed, stored into
-  a variable. No backspace/delete support yet — `DELETE` is silently
-  ignored during input, same as any other unrecognized key (`TODO`).
+  with a single shared routine (replacing both duplicated copies), now
+  backed by the real 24-row output scroll primitive.
+- **`BASIC_STMT_INPUT`** — moved whole to EXROM on 2026-08-27 and
+  extended to accept either a numeric scalar (`INPUT A`) or a string
+  scalar (`INPUT A$`, up to 31 printable characters). Numeric input is
+  now explicitly bounded to its seven-byte payload buffer rather than
+  being able to overwrite the following sysvars. No backspace/delete
+  support yet — `DELETE` is ignored like any other unrecognized key.
+  Five initially separate Home callbacks were consolidated behind one
+  selector gateway, saving four fixed jump-table slots.
 - **`BASIC_RUN`** / **`BASIC_EXEC_STATEMENT`** — walks the program via
   `MEM_LINE_FIRST`/`MEM_LINE_NEXT`, now recognizing `PRINT`, `INPUT`,
   assignment, and `END`/`STOP` (still treated identically — see that

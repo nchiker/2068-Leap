@@ -159,7 +159,7 @@ TEST_KEY_INJECT_TICK:
     ld   a, (KBD_KEYHIT)
     or   a
     jr   nz, .maybe_inject
-    call $DF00                    ; test-only EXROM verifier
+    call $DFC0                    ; test-only EXROM verifier
     ld   (TEST_VERIFIED_FLAG), a
 .maybe_inject:
     ld   a, (KBD_KEYHIT)

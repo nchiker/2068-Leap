@@ -594,12 +594,12 @@ writes with `:` instead: `SOUND 8,15 : SOUND 0,200`.
 
 | Statement/function | Effect |
 |---|---|
-| `INPUT <var>` | Blocks, echoing digits (and an optional leading `-`) as you type, until ENTER, then stores the number into a **numeric** variable. No backspace during input yet — an unrecognized key (including DELETE) is silently ignored |
+| `INPUT <var>` | Reads a numeric scalar or string scalar. `INPUT N` accepts digits and an optional `-`; `INPUT N$` accepts up to 31 printable characters. ENTER commits the value. Unrecognized keys (including DELETE) are ignored |
 | `INKEY$()` | Function — the currently-pressed key as a one-character string, or `""` if nothing is pressed. Doesn't wait — call it every loop iteration to poll: `IF INKEY$() = "Q" THEN END` |
 | `STICK(device)` | Function — reads a joystick through the AY-3-8912's I/O port. `device` is `1` or `2`; anything else raises `INVALID ARGUMENT`. Device 1 returns a 4-bit direction value; device 2 (a real hardware asymmetry, not a design choice here) only returns a single bit |
 
-`INPUT` currently only reads into a plain numeric variable — no string
-`INPUT`, no prompt-string form (`INPUT "Name: "; A$`).
+`INPUT` reads either a numeric or string scalar. A prompt-string form
+(`INPUT "Name: "; A$`) is not yet implemented; print the prompt first.
 
 ## 13. Memory and machine code
 
@@ -855,7 +855,8 @@ Worth knowing before you go looking for something that isn't there:
   built. Use `GOTO`/`GOSUB`/`IF`/`FOR` for everything today.
 - **No `DATA`/`RESTORE`/`READ`** — use a `DIM`'d array instead.
 - **No string arrays, no multi-dimensional arrays.**
-- **No `INPUT` for strings, and no prompt-string form.**
+- **No prompt-string form for `INPUT`.** Print a prompt immediately before
+  `INPUT` instead.
 - **`OVER 1` XOR-plots both text and graphics.** Printing or plotting the
   same shape twice at the same position restores the original bitmap.
 - **`COS`/`TAN`/`EXP`/`LN`/`LOG10`/`INSTR`/`FILL$` are not implemented.**

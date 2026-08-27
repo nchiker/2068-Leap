@@ -559,6 +559,11 @@ EXROM_ENTRY_ULAPLUS:
     jp   BASIC_STMT_ULAPLUS_EXROM
 
     ORG $C0B4
+EXROM_ENTRY_INPUT:
+    call EXROM_VERIFY_KTAB_MAGIC
+    jp   BASIC_STMT_INPUT_EXROM
+
+    ORG $C0BA
 
 ; ============================================================================
 ; EXROM_VERIFY_KTAB_MAGIC
@@ -1452,15 +1457,19 @@ BASIC_CHECK_STATEMENT_CONTENT:
     ld   a, (hl)
     call KTAB_BASIC_VALIDATE_VAR_LETTER
     jr   c, .input_fail
-    inc  hl                                ; advance past the letter —
+    inc  hl                                ; advance past the letter
+    ld   a, (hl)
+    cp   "$"                              ; INPUT accepts numeric or
+    jr   nz, .input_target_done            ; string scalar targets
+    inc  hl
+.input_target_done:
                                            ; needed for the end-check
                                            ; below, same as BASIC_STMT_
                                            ; INPUT's own Home-side fix
     call KTAB_BASIC_EXPECT_STATEMENT_END     ; BASIC_EXPECT_STATEMENT_END
                                            ; fix — "INPUT xy" is
-                                           ; malformed, one variable
-                                           ; letter is the whole
-                                           ; grammar here
+                                           ; malformed; one scalar
+                                           ; variable is the whole grammar
     jr   c, .input_fail
     jp   .ok
 .input_fail:

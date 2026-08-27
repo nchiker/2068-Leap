@@ -1,6 +1,6 @@
 ; Test-only verifier at a stable high EXROM address. Not shipped.
-    ASSERT $ <= $DF00
-    ORG $DF00
+    ASSERT $ <= $DFC0
+    ORG $DFC0
 
 TEST_EXROM_VERIFY:
     ld   hl, EDIT_LINE_BUF
