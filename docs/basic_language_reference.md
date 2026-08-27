@@ -1,4 +1,4 @@
-# BASIC Language Reference
+# 2068 Leap BASIC Language Reference
 
 Status: DRAFT — starting with the one decision everything else depends on:
 how the language is structured without line numbers. Grows alongside

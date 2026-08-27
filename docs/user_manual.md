@@ -1,7 +1,7 @@
-# TS2068 BASIC — User's Manual
+# 2068 Leap — User's Manual
 
-This is the manual for the redesigned Timex Sinclair 2068 ROM in this
-project: a structured BASIC (no line numbers — labels and `GOTO` instead),
+2068 Leap is a redesigned Timex Sinclair 2068 ROM: a structured BASIC
+(no line numbers — labels and `GOTO` instead),
 a full-screen editor, AY-3-8912 sound, and TS2068-specific graphics, built
 from scratch as documented Z80 modules rather than a copy of the original
 ROM.
@@ -843,6 +843,33 @@ corresponding combos above.
 | SYMBOL SHIFT + V | `/` | SYMBOL SHIFT + B | `*` |
 | SYMBOL SHIFT + R | `<` | SYMBOL SHIFT + T | `>` |
 | SYMBOL SHIFT + C | `?` | | |
+
+### Block-graphics characters
+
+The TS2068 number keys carry block-graphics legends. 2068 Leap can render
+the corresponding 16 two-by-two mosaic characters, but its current keyboard
+decoder does **not** yet enter them directly from those key combinations.
+In BASIC, print them with `CHR$(128+n)`, where `n` is the quadrant mask:
+
+- bit 0 = top right
+- bit 1 = top left
+- bit 2 = bottom right
+- bit 3 = bottom left
+
+| Code | Filled quadrants | Code | Filled quadrants |
+|---:|---|---:|---|
+| 128 | none (blank) | 136 | bottom left |
+| 129 | top right | 137 | top right, bottom left |
+| 130 | top left | 138 | left half |
+| 131 | top half | 139 | top half, bottom left |
+| 132 | bottom right | 140 | bottom half |
+| 133 | right half | 141 | top right, bottom half |
+| 134 | top left, bottom right | 142 | top left, bottom half |
+| 135 | top half, bottom right | 143 | all (solid) |
+
+For example, `PRINT CHR$(133)` prints a solid right-half block. `CPLOT`
+uses the same quadrant idea with coarse coordinates, without requiring
+character codes.
 
 A handful of SYMBOL SHIFT letter combos (`X`, `I`, `U`, `Y`, `H`) have no
 mapping in this ROM yet. `Q`/`W`/`E` (which give the two-character

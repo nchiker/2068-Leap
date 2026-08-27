@@ -1,8 +1,8 @@
-# TS2068 Redesigned ROM — Technical Overview
+# 2068 Leap — Technical Overview
 
 ## Purpose
 
-This project asks what the Timex Sinclair 2068 ROM might have looked like if
+2068 Leap asks what the Timex Sinclair 2068 ROM might have looked like if
 its software had been redesigned around the machine rather than remaining a
 close relative of the 48K Spectrum ROM. The result is a working 16K Home ROM
 plus an 8K banked EXROM, still instant-on and usable on a stock 48K TS2068,

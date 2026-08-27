@@ -16,7 +16,7 @@ from docx.shared import Inches, Pt, RGBColor
 
 ROOT = Path(__file__).resolve().parent.parent
 SOURCE = ROOT / "docs" / "user_manual.md"
-OUTPUT = ROOT / "docs" / "TS2068_BASIC_Users_Manual_Formatted.docx"
+OUTPUT = ROOT / "docs" / "2068_Leap_Users_Manual.docx"
 
 
 def shade(cell_or_paragraph, fill):

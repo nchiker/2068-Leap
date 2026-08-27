@@ -1,4 +1,4 @@
-# TS2068 Custom ROM — Memory Map
+# 2068 Leap — Memory Map
 
 Status: DRAFT — living document, updated alongside code.
 

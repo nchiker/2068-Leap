@@ -1,6 +1,6 @@
-# TS2068 Redesigned ROM
+# 2068 Leap
 
-An alternate-history ROM for the Timex Sinclair 2068: structured BASIC, a
+2068 Leap is an alternate-history ROM for the Timex Sinclair 2068: structured BASIC, a
 real full-screen editor, AY sound, and TS2068-specific graphics, built as
 documented kernel modules instead of the tangled monolith of the original
 ROM — while still fitting a stock 48K machine and staying instant-on.
@@ -40,7 +40,7 @@ examples/   sample BASIC/assembly programs once there's something to run
 ## Manuals and showcase
 
 - `docs/user_manual.md` is the maintained, example-driven user manual.
-- `docs/TS2068_BASIC_Users_Manual_Formatted.docx` is its styled Word edition;
+- `docs/2068_Leap_Users_Manual.docx` is its styled Word edition;
   rebuild it with `make manual`.
 - `docs/technical_overview.md` is the shareable architectural and feature
   overview for people interested in how the redesigned ROM differs.
