@@ -11045,7 +11045,7 @@ BASIC_RUN:
     ld   hl, (CHECK_ERROR_COUNT)
     ld   a, h
     or   l
-    jp   nz, .finish                    ; something failed — leave the
+    jp   nz, .return_to_editor          ; something failed — leave the
                                         ; CURRENT editor screen exactly
                                         ; as it was; BASIC_DRAW_STATUS_
                                         ; LINE picks up CHECK_ERROR_
@@ -11110,7 +11110,7 @@ BASIC_RUN:
 .loop:
     ld   a, h
     or   l
-    jp   z, .finish                   ; HL=0: end of program, stop
+    jp   z, .return_to_editor         ; HL=0: end of program, stop
 
     push hl                            ; save this statement's pointer —
                                       ; BASIC_EXEC_STATEMENT clobbers HL,
@@ -11139,7 +11139,7 @@ BASIC_RUN:
                                         ; already set to the statement
                                         ; BREAK was caught before
                                         ; executing
-    jr   .finish
+    jr   .return_to_editor
 .no_break:
     ld   hl, (CUR_EXEC_STMT)            ; REAL BUG FOUND AND FIXED
                                         ; ([stated]-reported, screenshot:
@@ -11200,19 +11200,20 @@ BASIC_RUN:
     ld   hl, (PENDING_ERROR_MSG)
     ld   a, h
     or   l
-    jr   z, .finish                     ; a plain END/STOP — no error
+    jr   z, .return_to_editor           ; a plain END/STOP — no error
                                         ; was recorded, nothing to show
 
     call BASIC_REPORT_ERROR             ; HL is already the pending
                                         ; message, loaded just above
-.finish:
+.return_to_editor:
     ; ULAplus is deliberately a program-only display facility.  A
     ; program may leave its palette enabled for as long as it runs,
     ; but every route back to the editor (normal exhaustion, END/STOP,
     ; BREAK, a runtime error, or even a rejected pre-run check) must
     ; restore the stock ULA display.  Keeping this at BASIC_RUN's one
     ; exit boundary means future statements cannot accidentally bypass
-    ; the lifecycle rule.
+    ; the lifecycle rule.  Every future BASIC_RUN exit must branch here
+    ; rather than returning directly.
     call BASIC_ULAPLUS_DISABLE
     ret
 
