@@ -2822,9 +2822,9 @@ file header for the exact scope statement. What exists:
   cell, and draws the cursor there. Text edits and vertical/structural
   navigation still use the full redraw path. Cost: 42 EXROM bytes, no Home or
   RAM bytes; measured margin is Home 107 / EXROM 422 bytes free. Static and
-  build checks pass. Synthetic X11 keys did not reach Fuse in the validation
-  session, so direct wrapped-line LEFT/RIGHT confirmation remains required
-  despite the broader automated regression suite.
+  build checks pass, the full 63-case Fuse suite remains green, and direct
+  LEFT/RIGHT movement across a wrapped line was manually user-confirmed on
+  2026-08-27 with no stale cursor, wrapping, or redraw problem observed.
 
 ### Explicitly not implemented yet
 
