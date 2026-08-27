@@ -29,6 +29,20 @@ for name in "${tests[@]}"; do
 
     win="$(DISPLAY=:1 xwininfo -root -tree 2>/dev/null | grep -oP '0x[0-9a-f]+(?= "Fuse)' | head -1 || true)"
     if [ -z "$win" ]; then
+        # SDL2/X11 can expose a mapped Fuse surface without a WM title.
+        # Fall back to the emulator's exact configured 640x480 window.
+        win="$(DISPLAY=:1 python3 - <<'PYEOF'
+from Xlib import display, X
+d = display.Display()
+for w in d.screen().root.query_tree().children:
+    g = w.get_geometry()
+    if w.get_attributes().map_state == X.IsViewable and (g.width, g.height) == (640, 480):
+        print(hex(w.id))
+        break
+PYEOF
+)"
+    fi
+    if [ -z "$win" ]; then
         echo "${name}: no Fuse window found -> FAIL"
         fail=$((fail + 1))
         kill -9 "$fuse_pid" 2>/dev/null || true

@@ -106,9 +106,11 @@ to just use instead.
   values and hardware behavior confirmed against the manual (see `docs/programmers_
   reference.md`'s Tier 3 writeup). `MODE 0`/`1` are implemented; `PLOT`/`LINE`/`BLOCK`/
   `CIRCLE`/`CPLOT` all draw correctly in both. Dual Screen mode itself is not
-  implemented at all. (64-Column mode and `PALETTE` existed briefly and were
+  implemented at all. (64-Column mode and its SCLD palette selector existed briefly and were
   removed 2026-08-20 — real overhead versus value; see `docs/programmers_
-  reference.md` and `docs/basic_language_reference.md` for the writeup.)
+  reference.md` and `docs/basic_language_reference.md` for the writeup.) The
+  later ULAplus `ULAPLUS`/`PALETTE index,value` interface is independent and
+  consumes no RAM palette table.
 
 ## System variables block (kernel-owned)
 

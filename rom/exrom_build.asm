@@ -70,6 +70,8 @@
     INCLUDE "rom/exrom_sound.asm"        ; SOUND_EXROM — the $C048
                                          ; entry stub above already
                                          ; points here
+    INCLUDE "rom/exrom_ulaplus.asm"      ; ULAPLUS/PALETTE — the shared
+                                         ; $C0AE entry stub points here
     INCLUDE "rom/exrom_sprite.asm"        ; BASIC_STMT_SPRITE and
                                          ; everything it depends on —
                                          ; the $C054 entry stub above

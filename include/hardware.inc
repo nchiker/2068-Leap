@@ -9,6 +9,10 @@
 ; ---- ULA / display ----
 PORT_ULA            EQU $FE     ; border/EAR/MIC, keyboard read (Spectrum-compatible)
 
+PORT_ULAPLUS_SELECT EQU $BF3B   ; ULAplus register select (16-bit port)
+PORT_ULAPLUS_DATA   EQU $FF3B   ; ULAplus register data (16-bit port)
+ULAPLUS_MODE_GROUP EQU 64       ; bit 0 enables the standard palette
+
 ; ---- AY-3-8912 sound (TS2068 port pair) ----
 ; Confirmed 2026-08-22 from the real ROM disassembly's own SOUND command
 ; routine (M2127): register number OUT to $F5, data byte OUT to $F6 —

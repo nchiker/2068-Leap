@@ -554,6 +554,11 @@ EXROM_ENTRY_FLOAT_TO_STRING:
     jp   BASIC_FLOAT_TO_STRING_EXROM
 
     ORG $C0AE
+EXROM_ENTRY_ULAPLUS:
+    call EXROM_VERIFY_KTAB_MAGIC
+    jp   BASIC_STMT_ULAPLUS_EXROM
+
+    ORG $C0B4
 
 ; ============================================================================
 ; EXROM_VERIFY_KTAB_MAGIC
@@ -1029,6 +1034,14 @@ BASIC_CHECK_STATEMENT_CONTENT:
                                          ; validates grammar, not
                                          ; values" split DIVISION BY
                                          ; ZERO already has)
+
+    ld   de, KW_ULAPLUS
+    call KTAB_BASIC_MATCH_KEYWORD_BOUNDARY
+    jp   nc, .check_border
+
+    ld   de, KW_PALETTE
+    call KTAB_BASIC_MATCH_KEYWORD_BOUNDARY
+    jp   nc, .check_at
 
     call KTAB_BASIC_MATCH_ENDIF
     jp   nc, .ok                       ; END IF takes no argument

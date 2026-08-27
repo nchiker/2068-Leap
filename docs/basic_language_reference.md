@@ -536,12 +536,20 @@ gives `OVER` for `PLOT`/`DRAW`/`CIRCLE`, not just `PRINT`).
 | `POINT(x,y)` | Function — `1` if that pixel is currently set, `0` if not; implemented, via `kernel/graphics`'s `GFX_READ_PIXEL`. QL-named deliberately (`GFX_READ_PIXEL` is the write-side's read-back counterpart, `PLOT` stays the imperative Sinclair-flavored write) |
 | `CPLOT <cx>,<cy>` | Coarse 2x2-per-cell block-graphics plot — implemented, via `kernel/graphics`'s `GFX_CPLOT`. `cx` is 0-63, `cy` is 0-47 (both clamped — unlike `PLOT`'s `x`, neither is a full byte's natural range). Mode-aware in Normal and High Resolution Graphics mode (colors one attribute per touched scanline in the latter) |
 | `MODE <n>` | Switch video mode — implemented, via `kernel/graphics`'s `GFX_SET_MODE`. `n` is `0` (Normal) or `1` (High Resolution Graphics — same 256x192 bitmap, finer 8x1 attribute resolution); anything else is a runtime `INVALID MODE` error, not silently clamped |
+| `ULAPLUS <n>` | Enable (`1`) or disable (`0`) the ULAplus palette extension. Other values produce `INVALID ARGUMENT`. |
+| `PALETTE <index>,<value>` | Write ULAplus palette register 0-63 with a value from 0-255 in `GGGRRRBB` format. Out-of-range values produce `INVALID ARGUMENT`. |
+
+ULAplus is deliberately program-scoped. The palette remains active while a
+program runs, but every return from `RUN`—normal completion, `END`/`STOP`, a
+runtime error, or `BREAK`—disables ULAplus before the editor is shown again.
+Palette register values remain programmed, so a later `ULAPLUS 1` can reuse
+them without issuing the `PALETTE` statements again.
 
 `BLOCK` and `CIRCLE` (like `PLOT`/`LINE`) color their pixels using the
 current `INK`/`PAPER`/`FLASH`/`INVERSE`/`OVER` state — see the shared
 paragraph above. `CPLOT` does too.
 
-**Mode 2 (64-Column) and the `PALETTE` statement were removed
+**Mode 2 (64-Column) and its original TS2068 palette selector were removed
 2026-08-20** — real overhead versus value: a genuinely wider pixel
 space (512x192 instead of 256x192, spanning two physical display
 files) with no per-pixel color at all, but it added roughly 750-950
@@ -549,7 +557,8 @@ bytes of Home ROM across `kernel/graphics`/`basic.asm` (six dedicated
 kernel routines plus a mode-dispatch branch in every statement that
 touched it) for a feature most programs wouldn't use, at the direct
 expense of ROM budget for core language features (procedures, string
-variables, SOUND). `MODE`'s validation narrowed back to 0-1.
+variables, SOUND). `MODE`'s validation narrowed back to 0-1. The current
+two-argument `PALETTE` statement is the later ULAplus register interface.
 
 Not yet built: true Dual Screen mode. Everything else from the wider graphics design discussion — `COPY`
 (rectangle blit), `SCREEN`/`SHOW` (dual-screen flip), `WAIT FRAME`

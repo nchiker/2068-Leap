@@ -1073,6 +1073,13 @@ has between grammar-checking and value-checking.
 see the dedicated section below for how and when that got picked back
 up.
 
+**ULAplus support was later added as an independent extension.**
+`ULAPLUS 0|1` selects register 64 through `$BF3B` and writes its enable
+bit through `$FF3B`; `PALETTE index,value` writes registers 0-63 through
+the same port pair using `GGGRRRBB` values. Both commands share one
+EXROM entry and require no RAM palette mirror. The raw-port probe was
+verified in ZEsarUX 13.0; the installed Fuse 1.9.1 lacks ULAplus.
+
 New sysvars: `GFX_MODE` (1 byte, this project's own friendly 0/1
 numbering, not the raw port `$FF` value) and `PORT_FF_SHADOW` (1
 byte) — `PROG_AREA_START` moved `$84AD`->`$84AF`, 168 sysvars, zero

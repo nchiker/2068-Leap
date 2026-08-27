@@ -8,6 +8,7 @@ build:
 	cp test_basic.bin build/test_basic.bin
 	sjasmplus --sym=build/exrom.sym --lst=build/exrom.lst rom/exrom_build.asm
 	cp exrom.bin build/exrom.bin
+	sjasmplus rom/zesarux_combined.asm
 
 check:
 	python3 tools/check_asm.py

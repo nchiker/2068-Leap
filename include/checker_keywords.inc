@@ -77,6 +77,8 @@ KW_CIRCLE:  DB "CIRCLE", 0
 KW_CPLOT:   DB "CPLOT", 0
 KW_FILL:    DB "FILL", 0
 KW_MODE:    DB "MODE", 0
+KW_ULAPLUS: DB "ULAPLUS", 0
+KW_PALETTE: DB "PALETTE", 0
 KW_TO:      DB "TO", 0            ; connector keyword within LINE's own
                                  ; grammar (and FOR's own) only, same
                                  ; non-statement-leading role as

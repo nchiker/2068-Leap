@@ -19,7 +19,7 @@
 set -u
 cd "$(dirname "$0")/.."
 
-EXPECTED_CYAN="err1 mem2 snd3"
+EXPECTED_CYAN="err1 mem2 snd3 ulaplus_bad_mode ulaplus_bad_index ulaplus_bad_value"
 
 is_expected_cyan() {
     local name="$1"

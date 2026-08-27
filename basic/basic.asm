@@ -9366,7 +9366,19 @@ BASIC_LOAD_EXROM:
 BASIC_SOUND_EXROM:
     call BANK_PAGE_EXROM_IN
     call $C048
-    jr   BASIC_EXROM_EXIT_PROTECTED
+    jp   BASIC_EXROM_EXIT_PROTECTED
+
+; Shared wrapper for ULAPLUS (B=0) and PALETTE (B=1).
+BASIC_ULAPLUS_EXROM:
+    call BANK_PAGE_EXROM_IN
+    call $C0AE
+    push af
+    jr   nc, .ulaplus_result_ready
+    ld   hl, MSG_INVALID_ARGUMENT
+    call BASIC_SET_PENDING_ERROR
+.ulaplus_result_ready:
+    pop  af
+    jp   BASIC_EXROM_EXIT_PROTECTED
 
 ; ============================================================================
 ; BASIC_STRFUNC_EXROM
@@ -10352,6 +10364,14 @@ BASIC_EXEC_STATEMENT_CONTENT:
     call BASIC_MATCH_KEYWORD_BOUNDARY
     jp   nc, .do_mode
 
+    ld   de, KW_ULAPLUS
+    call BASIC_MATCH_KEYWORD_BOUNDARY
+    jp   nc, .do_ulaplus
+
+    ld   de, KW_PALETTE
+    call BASIC_MATCH_KEYWORD_BOUNDARY
+    jp   nc, .do_palette
+
     call BASIC_MATCH_ENDIF
     jp   nc, .done                    ; END IF is a pure no-op —
                                       ; whether reached by ordinary
@@ -10445,7 +10465,7 @@ BASIC_EXEC_STATEMENT_CONTENT:
     jp   nc, .done                    ; string assignment handled it
 
     call BASIC_TRY_ARRAY_ASSIGNMENT
-    jr   nc, .done                    ; array-element assignment
+    jp   nc, .done                    ; array-element assignment
                                       ; handled it — tried before the
                                       ; plain scalar assignment below,
                                       ; same reasoning: "A(3) = 5"
@@ -10556,6 +10576,12 @@ BASIC_EXEC_STATEMENT_CONTENT:
 .do_mode:
     jp BASIC_STMT_MODE  ; propagate carry — same
                                        ; reasoning as .do_print
+.do_ulaplus:
+    ld   b, 0
+    jp   BASIC_ULAPLUS_EXROM
+.do_palette:
+    ld   b, 1
+    jp   BASIC_ULAPLUS_EXROM
 .do_beep:
     jp BASIC_STMT_BEEP  ; propagate carry — same
                                        ; reasoning as .do_print
@@ -11019,7 +11045,7 @@ BASIC_RUN:
     ld   hl, (CHECK_ERROR_COUNT)
     ld   a, h
     or   l
-    ret  nz                             ; something failed — leave the
+    jp   nz, .finish                    ; something failed — leave the
                                         ; CURRENT editor screen exactly
                                         ; as it was; BASIC_DRAW_STATUS_
                                         ; LINE picks up CHECK_ERROR_
@@ -11084,7 +11110,7 @@ BASIC_RUN:
 .loop:
     ld   a, h
     or   l
-    ret  z                            ; HL=0: end of program, stop
+    jp   z, .finish                   ; HL=0: end of program, stop
 
     push hl                            ; save this statement's pointer —
                                       ; BASIC_EXEC_STATEMENT clobbers HL,
@@ -11113,7 +11139,7 @@ BASIC_RUN:
                                         ; already set to the statement
                                         ; BREAK was caught before
                                         ; executing
-    ret
+    jr   .finish
 .no_break:
     ld   hl, (CUR_EXEC_STMT)            ; REAL BUG FOUND AND FIXED
                                         ; ([stated]-reported, screenshot:
@@ -11174,11 +11200,33 @@ BASIC_RUN:
     ld   hl, (PENDING_ERROR_MSG)
     ld   a, h
     or   l
-    ret  z                              ; a plain END/STOP — no error
+    jr   z, .finish                     ; a plain END/STOP — no error
                                         ; was recorded, nothing to show
 
     call BASIC_REPORT_ERROR             ; HL is already the pending
                                         ; message, loaded just above
+.finish:
+    ; ULAplus is deliberately a program-only display facility.  A
+    ; program may leave its palette enabled for as long as it runs,
+    ; but every route back to the editor (normal exhaustion, END/STOP,
+    ; BREAK, a runtime error, or even a rejected pre-run check) must
+    ; restore the stock ULA display.  Keeping this at BASIC_RUN's one
+    ; exit boundary means future statements cannot accidentally bypass
+    ; the lifecycle rule.
+    call BASIC_ULAPLUS_DISABLE
+    ret
+
+; Select the ULAplus mode register and clear its enable bit.  This is
+; kept in Home ROM because BASIC_RUN can return while EXROM is paged
+; out, and paging a bank merely to write two ports would be larger and
+; more fragile than the direct operation.
+BASIC_ULAPLUS_DISABLE:
+    ld   a, ULAPLUS_MODE_GROUP
+    ld   bc, PORT_ULAPLUS_SELECT
+    out  (c), a
+    xor  a
+    ld   bc, PORT_ULAPLUS_DATA
+    out  (c), a
     ret
 
 ; ============================================================================
@@ -13615,6 +13663,7 @@ KEYWORD_HILITE_TABLE:
     DW   KW_INK, KW_PAPER, KW_FLASH, KW_BRIGHT, KW_INVERSE, KW_OVER
     DW   KW_AT, KW_TAB
     DW   KW_PLOT, KW_LINE, KW_BLOCK, KW_CIRCLE, KW_CPLOT, KW_FILL, KW_MODE
+    DW   KW_ULAPLUS, KW_PALETTE
     DW   KW_POKE, KW_PAUSE, KW_RANDOMISE
     DW   KW_GOSUB, KW_RETURN, KW_CALL
     DW   KW_BEEP, KW_SOUND, KW_DIM
