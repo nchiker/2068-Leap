@@ -1,0 +1,432 @@
+From 75fb0da6f9f4eaf8238ceeb211422d5014a6aa3a Mon Sep 17 00:00:00 2001
+From: charlie day <nchiker35@gmail.com>
+Date: Thu, 27 Aug 2026 13:18:22 -0400
+Subject: [PATCH] Add ULAplus support for Timex machines
+
+---
+ display.c                        |  38 ++++++++++++
+ fuse.c                           |   2 +
+ infrastructure/startup_manager.h |   1 +
+ machines/machines_periph.c       |   3 +
+ periph.h                         |   1 +
+ peripherals/Makefile.am          |   2 +
+ peripherals/ulaplus.c            | 103 +++++++++++++++++++++++++++++++
+ peripherals/ulaplus.h            |  16 +++++
+ ui/gtk3/gtkdisplay.c             |  15 ++++-
+ ui/sdl2/sdl2_display.c           |  23 ++++++-
+ 10 files changed, 200 insertions(+), 4 deletions(-)
+ create mode 100644 peripherals/ulaplus.c
+ create mode 100644 peripherals/ulaplus.h
+
+diff --git a/display.c b/display.c
+index f0ab033f..36288555 100644
+--- a/display.c
++++ b/display.c
+@@ -35,6 +35,7 @@
+ #include "machine.h"
+ #include "movie.h"
+ #include "peripherals/scld.h"
++#include "peripherals/ulaplus.h"
+ #include "rectangle.h"
+ #include "screenshot.h"
+ #include "settings.h"
+@@ -42,6 +43,12 @@
+ #include "ui/ui.h"
+ #include "ui/uidisplay.h"
+ 
++#ifdef DISPLAYTEST
++int ulaplus_available;
++int ulaplus_palette_enabled;
++libspectrum_byte ulaplus_palette[ ULAPLUS_CLUT_MAX_COLOURS ];
++#endif
++
+ /* Set once we have initialised the UI */
+ int display_ui_initialised = 0;
+ 
+@@ -728,6 +735,18 @@ void
+ display_parse_attr( libspectrum_byte attr,
+ 		    libspectrum_byte *ink, libspectrum_byte *paper )
+ {
++  static const libspectrum_byte normal_map[16] = {
++    0, 2, 20, 22, 160, 162, 180, 182,
++    0, 3, 28, 31, 224, 227, 252, 255
++  };
++
++  if( ulaplus_available && ulaplus_palette_enabled ) {
++    libspectrum_byte base = ( ( attr >> 6 ) & 3 ) << 4;
++    *ink = ulaplus_palette[ base + ( attr & 7 ) ];
++    *paper = ulaplus_palette[ base + ( ( attr >> 3 ) & 7 ) + 8 ];
++    return;
++  }
++
+   if( (attr & 0x80) && display_flash_reversed ) {
+     *ink  = (attr & ( 0x0f << 3 ) ) >> 3;
+     *paper= (attr & 0x07) + ( (attr & 0x40) >> 3 );
+@@ -735,6 +754,11 @@ display_parse_attr( libspectrum_byte attr,
+     *ink= (attr & 0x07) + ( (attr & 0x40) >> 3 );
+     *paper= (attr & ( 0x0f << 3 ) ) >> 3;
+   }
++
++  if( ulaplus_available ) {
++    *ink = normal_map[ *ink ];
++    *paper = normal_map[ *paper ];
++  }
+ }
+ 
+ static void
+@@ -776,6 +800,13 @@ check_border_change( void )
+ void
+ display_set_lores_border( int colour )
+ {
++  static const libspectrum_byte normal_map[16] = {
++    0, 2, 20, 22, 160, 162, 180, 182,
++    0, 3, 28, 31, 224, 227, 252, 255
++  };
++  if( ulaplus_available )
++    colour = ulaplus_palette_enabled ? ulaplus_palette[ colour | 8 ]
++                                     : normal_map[ colour & 15 ];
+   if( display_lores_border != colour ) {
+     display_lores_border = colour;
+   }
+@@ -785,6 +816,13 @@ display_set_lores_border( int colour )
+ void
+ display_set_hires_border( int colour )
+ {
++  static const libspectrum_byte normal_map[16] = {
++    0, 2, 20, 22, 160, 162, 180, 182,
++    0, 3, 28, 31, 224, 227, 252, 255
++  };
++  if( ulaplus_available )
++    colour = ulaplus_palette_enabled ? ulaplus_palette[ colour | 8 ]
++                                     : normal_map[ colour & 15 ];
+   if( display_hires_border != colour ) {
+     display_hires_border = colour;
+   }
+diff --git a/fuse.c b/fuse.c
+index 95217862..95a4a1c5 100644
+--- a/fuse.c
++++ b/fuse.c
+@@ -86,6 +86,7 @@
+ #include "peripherals/multiface.h"
+ #include "peripherals/printer.h"
+ #include "peripherals/scld.h"
++#include "peripherals/ulaplus.h"
+ #include "peripherals/sound/uspeech.h"
+ #include "peripherals/speccyboot.h"
+ #include "peripherals/spectranet.h"
+@@ -346,6 +347,7 @@ run_startup_manager( int *argc, char ***argv )
+   ttx2000s_register_startup();
+   timer_register_startup();
+   ula_register_startup();
++  ulaplus_register_startup();
+   usource_register_startup();
+   uspeech_register_startup();
+   z80_register_startup();
+diff --git a/infrastructure/startup_manager.h b/infrastructure/startup_manager.h
+index 5dda9526..520b50e8 100644
+--- a/infrastructure/startup_manager.h
++++ b/infrastructure/startup_manager.h
+@@ -75,6 +75,7 @@ typedef enum startup_manager_module {
+   STARTUP_MANAGER_MODULE_TTX2000S,
+   STARTUP_MANAGER_MODULE_TIMER,
+   STARTUP_MANAGER_MODULE_ULA,
++  STARTUP_MANAGER_MODULE_ULAPLUS,
+   STARTUP_MANAGER_MODULE_USOURCE,
+   STARTUP_MANAGER_MODULE_USPEECH,
+   STARTUP_MANAGER_MODULE_Z80,
+diff --git a/machines/machines_periph.c b/machines/machines_periph.c
+index ae7745df..bd0fc8e8 100644
+--- a/machines/machines_periph.c
++++ b/machines/machines_periph.c
+@@ -256,6 +256,9 @@ machines_periph_timex( void )
+   /* SCLD always present */
+   periph_set_present( PERIPH_TYPE_SCLD, PERIPH_PRESENT_ALWAYS );
+ 
++  /* ULAplus is available on the Timex machines. */
++  periph_set_present( PERIPH_TYPE_ULAPLUS, PERIPH_PRESENT_ALWAYS );
++
+   /* AY chip with joystick always present */
+   periph_set_present( PERIPH_TYPE_AY_TIMEX_WITH_JOYSTICK, PERIPH_PRESENT_ALWAYS );
+ 
+diff --git a/periph.h b/periph.h
+index 09a05077..60530ad5 100644
+--- a/periph.h
++++ b/periph.h
+@@ -74,6 +74,7 @@ typedef enum periph_type {
+   PERIPH_TYPE_TTX2000S,       /* Volex TTX2000S */
+   PERIPH_TYPE_ULA,            /* Standard ULA */
+   PERIPH_TYPE_ULA_FULL_DECODE,/* Standard ULA responding only to 0xfe */
++  PERIPH_TYPE_ULAPLUS,        /* ULAplus 64-colour palette */
+   PERIPH_TYPE_UPD765,         /* +3 uPD765 FDC */
+   PERIPH_TYPE_USOURCE,        /* Currah uSource interface */
+   PERIPH_TYPE_USPEECH,        /* Currah uSpeech interface */
+diff --git a/peripherals/Makefile.am b/peripherals/Makefile.am
+index a47ad63b..b9eb5d4f 100644
+--- a/peripherals/Makefile.am
++++ b/peripherals/Makefile.am
+@@ -32,6 +32,7 @@ fuse_SOURCES += \
+                 peripherals/speccyboot.c \
+                 peripherals/spectranet.c \
+                 peripherals/ula.c \
++                peripherals/ulaplus.c \
+                 peripherals/usource.c \
+                 peripherals/ttx2000s.c \
+                 peripherals/sound/ay.c \
+@@ -84,6 +85,7 @@ noinst_HEADERS += \
+                   peripherals/speccyboot.h \
+                   peripherals/spectranet.h \
+                   peripherals/ula.h \
++                  peripherals/ulaplus.h \
+                   peripherals/usource.h \
+                   peripherals/ttx2000s.h \
+                   peripherals/sound/ay.h \
+diff --git a/peripherals/ulaplus.c b/peripherals/ulaplus.c
+new file mode 100644
+index 00000000..878c9b24
+--- /dev/null
++++ b/peripherals/ulaplus.c
+@@ -0,0 +1,103 @@
++/* ULAplus palette device, ported from Fuse's 2014 ULAplus branch. */
++#include "config.h"
++
++#include <string.h>
++
++#include "compat.h"
++#include "display.h"
++#include "infrastructure/startup_manager.h"
++#include "module.h"
++#include "periph.h"
++#include "peripherals/ula.h"
++#include "peripherals/ulaplus.h"
++
++int ulaplus_available;
++int ulaplus_palette_enabled;
++libspectrum_byte ulaplus_palette[ ULAPLUS_CLUT_MAX_COLOURS ];
++static libspectrum_byte current_register;
++
++static void
++ulaplus_reset( int hard_reset GCC_UNUSED )
++{
++  ulaplus_available = periph_is_active( PERIPH_TYPE_ULAPLUS );
++  ulaplus_palette_enabled = 0;
++  current_register = 0;
++  memset( ulaplus_palette, 0, sizeof( ulaplus_palette ) );
++}
++
++static void
++register_write( libspectrum_word port GCC_UNUSED, libspectrum_byte value )
++{
++  current_register = value;
++}
++
++static libspectrum_byte
++data_read( libspectrum_word port GCC_UNUSED, libspectrum_byte *attached )
++{
++  *attached = 0xff;
++  if( current_register < 64 ) return ulaplus_palette[ current_register ];
++  if( current_register == 64 ) return ulaplus_palette_enabled;
++  return 0xff;
++}
++
++static void
++data_write( libspectrum_word port GCC_UNUSED, libspectrum_byte value )
++{
++  if( current_register < 64 ) {
++    if( ulaplus_palette[ current_register ] == value ) return;
++    display_update_critical( 0, 0 );
++    ulaplus_palette[ current_register ] = value;
++    if( ulaplus_palette_enabled ) display_refresh_main_screen();
++    return;
++  }
++
++  if( current_register == 64 ) {
++    int enabled = value & 1;
++    if( enabled == ulaplus_palette_enabled ) return;
++    display_update_critical( 0, 0 );
++    ulaplus_palette_enabled = enabled;
++    display_refresh_all();
++    display_set_lores_border( ula_last_byte() & 7 );
++  }
++}
++
++static module_info_t module_info = {
++  ulaplus_reset, NULL, NULL, NULL, NULL
++};
++
++static const periph_port_t ports[] = {
++  { 0xffff, 0xbf3b, NULL, register_write },
++  { 0xffff, 0xff3b, data_read, data_write },
++  { 0, 0, NULL, NULL }
++};
++
++static const periph_t peripheral = { NULL, ports, 0, NULL };
++
++static int
++ulaplus_init( void *context GCC_UNUSED )
++{
++  module_register( &module_info );
++  periph_register( PERIPH_TYPE_ULAPLUS, &peripheral );
++  return 0;
++}
++
++void
++ulaplus_register_startup( void )
++{
++  startup_manager_module dependencies[] = { STARTUP_MANAGER_MODULE_SETUID };
++  startup_manager_register( STARTUP_MANAGER_MODULE_ULAPLUS, dependencies,
++                            ARRAY_SIZE( dependencies ), ulaplus_init, NULL,
++                            NULL );
++}
++
++void
++ulaplus_parse_colour( int colour, int *red, int *green, int *blue, int *grey )
++{
++  int g = ( colour >> 5 ) & 7;
++  int r = ( colour >> 2 ) & 7;
++  int b = ( ( colour & 3 ) << 1 ) | ( ( colour & 2 ) >> 1 ) | ( colour & 1 );
++  *green = ( g << 5 ) | ( g << 2 ) | ( g >> 1 );
++  *red = ( r << 5 ) | ( r << 2 ) | ( r >> 1 );
++  *blue = ( b << 5 ) | ( b << 2 ) | ( b >> 1 );
++  *grey = ( 299 * *red + 587 * *green + 114 * *blue + 500 ) / 1000;
++}
+diff --git a/peripherals/ulaplus.h b/peripherals/ulaplus.h
+new file mode 100644
+index 00000000..09529f09
+--- /dev/null
++++ b/peripherals/ulaplus.h
+@@ -0,0 +1,16 @@
++#ifndef FUSE_ULAPLUS_H
++#define FUSE_ULAPLUS_H
++
++#include "libspectrum.h"
++
++#define ULAPLUS_CLUT_MAX_COLOURS 64
++
++extern int ulaplus_available;
++extern int ulaplus_palette_enabled;
++extern libspectrum_byte ulaplus_palette[ ULAPLUS_CLUT_MAX_COLOURS ];
++
++void ulaplus_register_startup( void );
++void ulaplus_parse_colour( int colour, int *red, int *green, int *blue,
++                           int *grey );
++
++#endif
+diff --git a/ui/gtk3/gtkdisplay.c b/ui/gtk3/gtkdisplay.c
+index ef3a5be5..d0a01827 100644
+--- a/ui/gtk3/gtkdisplay.c
++++ b/ui/gtk3/gtkdisplay.c
+@@ -39,6 +39,7 @@
+ #include "display.h"
+ #include "fuse.h"
+ #include "gtkinternals.h"
++#include "peripherals/ulaplus.h"
+ #include "screenshot.h"
+ #include "ui/ui.h"
+ #include "ui/uidisplay.h"
+@@ -95,6 +96,8 @@ static const guchar rgb_colours[16][3] = {
+ /* And the colours (and black and white 'colours') in 32-bit format */
+ libspectrum_dword gtkdisplay_colours[16];
+ static libspectrum_dword bw_colours[16];
++static libspectrum_dword ulaplus_colours[256];
++static libspectrum_dword bw_ulaplus_colours[256];
+ 
+ /* Colour format for the back buffer in endianess-order */
+ typedef enum {
+@@ -184,6 +187,13 @@ init_colours( colour_format_t format )
+ 
+   }
+ 
++  for( i = 0; i < 256; i++ ) {
++    int red, green, blue, grey;
++    ulaplus_parse_colour( i, &red, &green, &blue, &grey );
++    ulaplus_colours[i] = gtkdisplay_map_RGB( format, red, green, blue );
++    bw_ulaplus_colours[i] = gtkdisplay_map_RGB( format, grey, grey, grey );
++  }
++
+   return 0;
+ }
+ 
+@@ -354,7 +364,10 @@ uidisplay_area( int x, int y, int w, int h )
+ 
+   scaled_x = scale * x; scaled_y = scale * y;
+ 
+-  palette = settings_current.bw_tv ? bw_colours : gtkdisplay_colours;
++  if( ulaplus_available )
++    palette = settings_current.bw_tv ? bw_ulaplus_colours : ulaplus_colours;
++  else
++    palette = settings_current.bw_tv ? bw_colours : gtkdisplay_colours;
+ 
+   /* Create the RGB image */
+   for( yy = y; yy < y + h; yy++ ) {
+diff --git a/ui/sdl2/sdl2_display.c b/ui/sdl2/sdl2_display.c
+index a7edb5ce..793981e1 100644
+--- a/ui/sdl2/sdl2_display.c
++++ b/ui/sdl2/sdl2_display.c
+@@ -16,6 +16,7 @@
+ #include "display.h"
+ #include "fuse.h"
+ #include "machine.h"
++#include "peripherals/ulaplus.h"
+ #include "settings.h"
+ #include "ui/ui.h"
+ #include "ui/scaler/scaler.h"
+@@ -47,6 +48,8 @@ static int sdl2_status_updated;
+ 
+ static Uint32 colour_values[ 16 ];
+ static Uint32 bw_values[ 16 ];
++static Uint32 ulaplus_values[ 256 ];
++static Uint32 bw_ulaplus_values[ 256 ];
+ 
+ static SDL_Rect updated_rects[ 300 ];
+ static int num_rects;
+@@ -134,6 +137,14 @@ sdl2display_allocate_colours( void )
+     colour_values[i] = SDL_MapRGB( tmp_screen->format, red, green, blue );
+     bw_values[i] = SDL_MapRGB( tmp_screen->format, grey, grey, grey );
+   }
++
++  for( i = 0; i < 256; i++ ) {
++    int red, green, blue, grey;
++    ulaplus_parse_colour( i, &red, &green, &blue, &grey );
++    ulaplus_values[i] = SDL_MapRGB( tmp_screen->format, red, green, blue );
++    bw_ulaplus_values[i] =
++      SDL_MapRGB( tmp_screen->format, grey, grey, grey );
++  }
+ }
+ 
+ static int
+@@ -677,7 +688,9 @@ void
+ uidisplay_putpixel( int x, int y, int colour )
+ {
+   libspectrum_word *dest_base, *dest;
+-  Uint32 *palette_values = settings_current.bw_tv ? bw_values : colour_values;
++  Uint32 *palette_values = ulaplus_available ?
++    ( settings_current.bw_tv ? bw_ulaplus_values : ulaplus_values ) :
++    ( settings_current.bw_tv ? bw_values : colour_values );
+   Uint32 palette_colour = palette_values[ colour ];
+ 
+   if( machine_current->timex ) {
+@@ -708,7 +721,9 @@ uidisplay_plot8( int x, int y, libspectrum_byte data,
+                  libspectrum_byte ink, libspectrum_byte paper )
+ {
+   libspectrum_word *dest;
+-  Uint32 *palette_values = settings_current.bw_tv ? bw_values : colour_values;
++  Uint32 *palette_values = ulaplus_available ?
++    ( settings_current.bw_tv ? bw_ulaplus_values : ulaplus_values ) :
++    ( settings_current.bw_tv ? bw_values : colour_values );
+   Uint32 palette_ink = palette_values[ ink ];
+   Uint32 palette_paper = palette_values[ paper ];
+ 
+@@ -772,7 +787,9 @@ uidisplay_plot16( int x, int y, libspectrum_word data,
+ {
+   libspectrum_word *dest_base, *dest;
+   int i;
+-  Uint32 *palette_values = settings_current.bw_tv ? bw_values : colour_values;
++  Uint32 *palette_values = ulaplus_available ?
++    ( settings_current.bw_tv ? bw_ulaplus_values : ulaplus_values ) :
++    ( settings_current.bw_tv ? bw_values : colour_values );
+   Uint32 palette_ink = palette_values[ ink ];
+   Uint32 palette_paper = palette_values[ paper ];
+ 
+-- 
+2.43.0
+

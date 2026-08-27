@@ -113,7 +113,7 @@ High Resolution Graphics.
 - Standalone smoke ROMs exercise memory, math, and canonical editor operations.
 - A production editor harness injects keys through the real interrupt latch
   and crosses the real Home↔EXROM trampoline.
-- The integrated Fuse suite contains 65 fixtures covering control flow,
+- The integrated Fuse suite contains 67 fixtures covering control flow,
   expressions, memory, arrays, strings, graphics, sound, sprites, I/O,
   ULAplus, errors, and machine-code entry.
 - `make budget` reports exact Home ROM, EXROM, and RAM margins; assembler

@@ -1,0 +1,20 @@
+name: Source checks
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build pinned SjASMPlus
+        run: |
+          git clone --branch v1.23.1 --depth 1 --recurse-submodules --shallow-submodules https://github.com/z00m128/sjasmplus.git /tmp/sjasmplus
+          make -C /tmp/sjasmplus
+          echo "/tmp/sjasmplus" >> "$GITHUB_PATH"
+      - name: Run source and build checks
+        run: make check
+      - name: Build production ROMs and report capacity
+        run: make budget

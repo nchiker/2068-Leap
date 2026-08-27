@@ -81,7 +81,8 @@ outside redraw scratch and its HL pointer to survive the maximum-length
 calculation before entering `STORAGE_LOAD`; both invariants are guarded by
 `tools/check_storage_contract.py`.
 
-The confirmed Direct Recording TZX is retained as `export/verify`.
+The confirmed Direct Recording TZX is retained as
+`tests/fixtures/storage_verify.tzx`.
 `tools/check_tape_fixture.py` deterministically decodes its sample-level
 pulses during `make check` and verifies the `verify` header, native
 three-statement payload, declared lengths, and both XOR checksums. This is

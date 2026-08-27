@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 tools/fuse_load_inject.py — Track A of the SAVE/LOAD reliability plan
-(see /home/charlie.day/.claude/plans/replicated-crunching-deer.md):
+(see the archived SAVE/LOAD reliability design notes):
 generates a Fuse debugger script that makes `LOAD` deterministic while
 developing/testing under Fuse, by short-circuiting the real pulse-timing
 receive code entirely — no tape, no timing, zero ROM changes.

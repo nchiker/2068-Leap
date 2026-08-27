@@ -555,7 +555,7 @@ for either:
   `PO-GR-1` shape in the original 48K ROM), not a guess from first
   principles, but it's still one derived step removed from "read
   straight off the page," unlike the block-graphics/UDG facts recorded
-  earlier in `/home/charlie.day/.claude/plans/noble-painting-owl.md`.
+  elsewhere in the project's original private development notes.
 - **UDGs (144-164, 21 slots)** are plain RAM, POKE-defined, on real
   hardware — no font data ships for them at all, by design. `UDG_TABLE`
   (`include/sysvars.inc`, 168 bytes) reserves the RAM; `GFX_CHAR_TO_
@@ -785,7 +785,8 @@ as that migration's real risk concentration: relocating `VAR_TABLE`/
 address shifts, and until this change that meant hand-recomputing and
 retyping ~285 hex `EQU` values by hand, exactly the "stray wrong
 address" bug class `check_asm.py` exists to catch and this project's
-own single most expensive debugging arc to date (per `CLAUDE.md`).
+own single most expensive debugging arc to date (as recorded in the
+project's development history).
 
 Every `NAME EQU $HEX` address declaration in `sysvars.inc` (285 of
 them — everything from `EDIT_CURSOR_ROW` through `PROG_AREA_START`,
@@ -845,7 +846,8 @@ asm` fails to assemble (`Label not found: STORAGE_MATH_MULTIPLY16`/
 `test_graphics.asm` had before its own fix (see that section above).
 `rom/test_editor_auto.asm` has a `warning[shortblock]: init data ...
 truncated to length: 0` — the razor-thin 16K test-binary margin
-`CLAUDE.md` already flags as a known issue. Neither was in scope here;
+the project development notes already flag as a known issue. Neither was in
+scope here;
 noted so they aren't mistaken for something this change introduced.
 
 Next step: the scalar migration itself (`VAR_TABLE`/`STR_TABLE` ->
@@ -966,7 +968,7 @@ spotted) turned out to be provably redundant — both are only ever
 reached via a zero-init loop's own `or e` check, which already clears
 carry, and nothing between there and the `ret` touches flags again.
 
-**Testing infrastructure had to be overhauled to keep up** — see `CLAUDE.md`'s
+**Testing infrastructure had to be overhauled to keep up** — see the project's
 own build/test section and this file's `kernel/storage` section's Track
 A material for the mechanism (`rom/test_suite_inject.asm` + `tools/
 fuse_suite_inject.py`, Fuse-debugger injection instead of baking test

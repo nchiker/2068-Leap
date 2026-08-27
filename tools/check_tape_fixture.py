@@ -8,7 +8,7 @@ import sys
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_FIXTURE = ROOT / "export" / "verify"
+DEFAULT_FIXTURE = ROOT / "tests" / "fixtures" / "storage_verify.tzx"
 EXPECTED_PROGRAM = (
     b"\x0b\x00PRINT -123\r"
     b"\x10\x00PRINT str$(456)\r"

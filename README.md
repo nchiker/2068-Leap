@@ -5,6 +5,10 @@ real full-screen editor, AY sound, and TS2068-specific graphics, built as
 documented kernel modules instead of the tangled monolith of the original
 ROM — while still fitting a stock 48K machine and staying instant-on.
 
+The project is open source under the [MIT License](LICENSE). It is an
+independent community project and is not affiliated with Timex, Sinclair,
+Fuse, ZEsarUX, or the ULAplus project.
+
 ## Status
 
 Working integrated ROM: full-screen editor, structured BASIC, graphics,
@@ -12,11 +16,40 @@ sound, EXROM banking, and TS2068-framed SAVE/LOAD are assembled and tested
 under Fuse. The automated language regression suite currently contains
 67 passing fixtures. Use `make budget`, `make check`, and `make test` for
 the current reproducible build and validation entry points. `make check`
-also assembles seven standalone boot/kernel smoke ROMs; `make smoke-build`
+also assembles nine standalone boot/kernel smoke ROMs; `make smoke-build`
 runs that build-only compatibility check directly. `make test` executes
 the deterministic memory and math smoke ROMs in Fuse before running the
 67-fixture integrated language suite; the other smoke ROMs remain visual,
 keyboard, or tape-interactive checks.
+
+## Quick start
+
+The source build requires GNU Make, Python 3, and
+[SjASMPlus 1.23.1](https://github.com/z00m128/sjasmplus/releases/tag/v1.23.1)
+or a compatible newer release. Install SjASMPlus from its official release
+or follow its source-build instructions, then run:
+
+```sh
+make check
+make budget
+```
+
+The production images are written to `build/test_basic.bin` (Home ROM),
+`build/exrom.bin` (EXROM slot 6), and `build/ts2068rom_zesarux.bin` (combined
+image for ZEsarUX). Generated ROMs are deliberately not committed;
+ready-to-run binaries should be attached to tagged GitHub releases.
+
+For full emulator-driven testing, install Fuse plus `python3-xlib` and
+Pillow, provide an X11 display, and run `make test`. Upstream Fuse 1.9.1 does
+not expose ULAplus on the TS2068; the complete ROM can instead be run in
+ZEsarUX 13 with ULAplus enabled. An optional patch for Fuse based on
+`fuse-1.9.1-21-gdd48d9fc` is included at
+[`patches/0001-Add-ULAplus-support-for-Timex-machines.patch`](patches/0001-Add-ULAplus-support-for-Timex-machines.patch).
+Apply it from a compatible Fuse source tree with `git am <patch-file>`, then
+build and install Fuse normally.
+
+This is pre-1.0 software. Keep backups of programs saved with development
+builds because the native program payload may still evolve.
 
 ## Layout
 
@@ -48,6 +81,12 @@ examples/   sample BASIC/assembly programs once there's something to run
   ULAplus, arrays, sprites and collision, AY sound, strings, and text XOR. Run
   it interactively with `tools/run_demo.sh showcase`; its timed completion is
   checked by `tools/validate_showcase.sh`.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Changes should preserve both ROM
+budgets and pass `make check`; BASIC changes should include a fixture in
+`tests/`.
 
 ## Recommended build order
 
@@ -1759,7 +1798,7 @@ fuse --machine ts2068 --rom-ts2068-0 test_basic.bin --rom-ts2068-1 exrom.bin
 ```
 
 Type `SAVE "name"` then `LOAD "name"` (or `LOAD ""` for the wildcard
-form) interactively. The confirmed `export/verify` Direct Recording TZX
+form) interactively. The confirmed `tests/fixtures/storage_verify.tzx`
 is decoded and validated by `tools/check_tape_fixture.py` during `make
 check`, but live receiver timing still requires a real tape round-trip in
 Fuse with the tape actually playing (Fuse only auto-starts playback via

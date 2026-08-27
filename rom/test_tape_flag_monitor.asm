@@ -1,5 +1,5 @@
 ; ============================================================================
-; LD-BYTES header probe. Green = the complete known header in export/test
+; LD-BYTES header probe. Green = the complete known test header
 ; decodes correctly; red = pilot/sync worked but a header byte differs.
 ; ============================================================================
     INCLUDE "include/hardware.inc"
