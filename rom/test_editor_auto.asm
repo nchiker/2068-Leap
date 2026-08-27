@@ -79,10 +79,11 @@
 ;      wrapper crossing the real EXROM boundary, same one basic/'s own
 ;      cursor-drawing code calls (see basic/basic.asm's BASIC_REDRAW_
 ;      PROGRAM `.draw_cursor`) — returns row=1, col=1 for offset 33.
-;      Reuses EDIT_WRAP_START/LEN/COUNT exactly as the last real
-;      keystroke's own redraw (via the BASIC_REDRAW_PROGRAM hook) left
-;      them, rather than re-running EDITOR_WRAP_CALC a second time —
-;      those tables are already fresh, nothing invalidated them since.
+;      Rebuilds EDIT_WRAP_START/LEN/COUNT from the verified final buffer
+;      before checking. The synthetic ISR can run after IO_READ_KEY clears
+;      KBD_KEYHIT but while the final redraw is still updating that table;
+;      recalculating removes that test-harness race while exercising the
+;      same production wrap routines and EXROM boundary.
 ;      Hand-computed from EDITOR_WRAP_CALC's own documented algorithm:
 ;      33 chars, no spaces, row 0 hard-breaks at column 32 (content len
 ;      32, consumed 32), remaining 1 char is the whole of row 1 (last

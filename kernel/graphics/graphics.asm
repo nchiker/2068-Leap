@@ -838,25 +838,8 @@ GFX_PRINT_STRING_ATTR:
 ; Destroys: AF, BC, DE, HL
 ; ============================================================================
 GFX_ATTR_SWAP:
-    ld   a, b
-    cp   24
-    jr   nc, .out_of_range
-    ld   a, c
-    cp   32
-    jr   nc, .out_of_range
-
-    ld   h, 0
-    ld   l, b
-    add  hl, hl                 ; x2
-    add  hl, hl                 ; x4
-    add  hl, hl                 ; x8
-    add  hl, hl                 ; x16
-    add  hl, hl                 ; x32 -> row*32
-    ld   de, ATTR_ADDR
-    add  hl, de
-    ld   d, 0
-    ld   e, c
-    add  hl, de                  ; HL = ATTR_ADDR + row*32 + col
+    call GFX_CELL_ATTR_ADDR
+    ret  c
 
     ld   a, (hl)
     ld   b, a                     ; B = original attribute byte
@@ -886,10 +869,6 @@ GFX_ATTR_SWAP:
                                              ; out for anyone reading
                                              ; this contract without
                                              ; re-deriving it
-    ret
-
-.out_of_range:
-    scf
     ret
 
 ; ============================================================================
@@ -995,44 +974,14 @@ GFX_INVERT_ATTR_STATIC:
 ; changes anywhere else, unlike GFX_CHAR_SETUP's carry-flag fix.
 ; ============================================================================
 GFX_SET_ATTR:
-    ld   d, a                    ; stash the attribute byte — A is
-                                 ; about to be scratch for the bounds
-                                 ; check, same pattern GFX_CHAR_SETUP
-                                 ; already uses for its own character
-                                 ; parameter (caught this exact mistake
-                                 ; in my own first draft of this fix
-                                 ; before it shipped: A holds the
-                                 ; caller's real attribute byte at
-                                 ; entry, and using it as bare scratch
-                                 ; without stashing first would have
-                                 ; silently written the wrong value on
-                                 ; every successful call, not just the
-                                 ; out-of-range ones)
-    ld   a, b
-    cp   24
-    ret  nc
-    ld   a, c
-    cp   32
-    ret  nc
-    ld   a, d                    ; restore the attribute byte
-
-    push af                     ; save the desired attribute value —
-                                ; the address math below needs A as
-                                ; scratch
-    ld   h, 0
-    ld   l, b
-    add  hl, hl                  ; x2
-    add  hl, hl                  ; x4
-    add  hl, hl                  ; x8
-    add  hl, hl                  ; x16
-    add  hl, hl                  ; x32 -> row*32
-    ld   de, ATTR_ADDR
-    add  hl, de
-    ld   d, 0
-    ld   e, c
-    add  hl, de                   ; HL = ATTR_ADDR + row*32 + col
+    push af
+    call GFX_CELL_ATTR_ADDR
+    jr   c, .discard_attr
     pop  af
     ld   (hl), a
+    ret
+.discard_attr:
+    pop  af
     ret
 
 ; ============================================================================
@@ -2762,17 +2711,19 @@ GFX_CELL_BITMAP_ADDR:
 
 ; ============================================================================
 ; GFX_CELL_ATTR_ADDR
-; Row/col -> attribute byte address. Exactly the same row*32+col+
-; ATTR_ADDR math GFX_SET_ATTR already uses and has hardware-confirmed —
-; factored out as its own routine for the same reason GFX_CELL_BITMAP_
-; ADDR is above (GFX_SET_ATTR's own body is left untouched rather than
-; refactored to call this, to avoid touching already-confirmed,
-; register-sensitive code for this feature).
-; In:  B = row (0-23), C = col (0-31) — not bounds-checked here
-; Out: HL = attribute byte address
+; Row/col -> attribute byte address. Shared by GFX_ATTR_SWAP, GFX_SET_ATTR,
+; and the sprite paths so the bounds and address formula have one owner.
+; In:  B = row (0-23), C = col (0-31)
+; Out: carry clear + HL = attribute byte address; carry set if out of range
 ; Destroys: AF, DE
 ; ============================================================================
 GFX_CELL_ATTR_ADDR:
+    ld   a, b
+    cp   24
+    jr   nc, .out_of_range
+    ld   a, c
+    cp   32
+    jr   nc, .out_of_range
     ld   h, 0
     ld   l, b
     add  hl, hl                      ; x2
@@ -2785,6 +2736,9 @@ GFX_CELL_ATTR_ADDR:
     ld   d, 0
     ld   e, c
     add  hl, de                       ; HL = ATTR_ADDR + row*32 + col
+    ret
+.out_of_range:
+    scf
     ret
 
 ; ============================================================================

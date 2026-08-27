@@ -90,6 +90,8 @@ than one comprehensive program, matching this project's own existing
 - `io1.txt`–`io4.txt` — `INK`/`PAPER`/`AT` and `BRIGHT`/`FLASH`
   (verified against the real screen-attribute byte via `PEEK`, not
   just smoke-tested), `RANDOMISE`/`RND` determinism, `PAUSE`/`CLS`
+- `gfx1.txt`–`gfx10.txt` — pixel/block/line/circle/fill graphics,
+  `POINT`, and direct attribute reads through `ATTR(row,col)`
 - `err1.txt` — a runtime error (`SUBSCRIPT OUT OF RANGE`) correctly
   halting execution and reaching the status-line error display,
   verified via a marker border color (see "Verdict convention for

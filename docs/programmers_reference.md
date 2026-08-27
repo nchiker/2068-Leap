@@ -516,6 +516,7 @@ separate**:
 | `GFX_PIXEL_ADDR_SETUP` | Shared address computation for `GFX_WRITE_PIXEL`/`GFX_READ_PIXEL` | Implemented (internal, not in `kernel_api.inc`) — same "one shared computation, not duplicated in every caller" pattern as `GFX_CHAR_SETUP`/`GFX_ATTR_SWAP` above |
 | `GFX_WRITE_PIXEL` | Set/XOR-toggle one pixel, colour its covering attribute cell | Implemented — PLOT's mechanism; address math verified numerically two independent ways (see below) |
 | `GFX_READ_PIXEL` | Test whether a pixel is set | Implemented — POINT's mechanism |
+| `GFX_CELL_ATTR_ADDR` | Bounds-check a character row/column and return its normal-screen attribute address | Implemented — shared by attribute writes, cursor inversion, sprites, and BASIC `ATTR()` |
 | `GFX_LINE` | Draw a line between two absolute points (Bresenham) | Implemented — LINE's mechanism; algorithm verified via Python simulation against a reference implementation before any Z80 was written (see below) |
 | `GFX_PLOT_CLIPPED` | Bounds-checked wrapper around `GFX_WRITE_PIXEL` | Implemented (internal) — CIRCLE's off-screen points get silently skipped here rather than wrapped onto the wrong edge |
 | `GFX_BLOCK` | Fill a rectangle | Implemented — BLOCK's mechanism, one pixel at a time via `GFX_WRITE_PIXEL` |

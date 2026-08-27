@@ -557,6 +557,7 @@ coarser 32×24 character view of the same physical screen.
 | `CIRCLE x,y,r` | Draw a circle outline centred at `x,y` with radius `r`; a circle that would extend past the edge is simply clipped there |
 | `FILL x,y` | Flood-fill the connected region starting at that pixel |
 | `POINT(x,y)` | Function — `1` if that pixel is currently set, `0` if not |
+| `ATTR(row,col)` | Function — normal-screen attribute byte at character row 0-23, column 0-31; returns `0` outside that grid |
 | `CPLOT cx,cy` | Coarse 2×2-per-cell block-graphics plot; `cx` is 0-63, `cy` is 0-47 |
 | `MODE n` | `0` = Normal, `1` = High Resolution Graphics (same 256×191 bitmap, finer per-scanline colour). Anything else raises `INVALID MODE` |
 
@@ -693,6 +694,7 @@ that as the new deterministic seed — useful when you want the same
 | `PEEK(addr)` | One byte at `addr` |
 | `USR(addr)` | Runs machine code at `addr`, `HL` result |
 | `POINT(x,y)` | `1`/`0` — is that pixel set |
+| `ATTR(row,col)` | Attribute byte at a normal-screen character cell, or `0` out of range |
 | `INKEY$()` | Currently-pressed key, or `""` |
 | `STICK(device)` | Joystick reading |
 | `HIT(slot1,slot2)` | `1`/`0` — do two shown sprites overlap |

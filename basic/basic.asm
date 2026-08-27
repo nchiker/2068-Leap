@@ -3570,6 +3570,25 @@ BASIC_EVAL_PRIMARY:
     scf
     ret
 
+.call_attr:
+    ; ATTR(row,col) reads the normal 32x24 attribute grid. Invalid
+    ; coordinates return 0, matching POINT's deliberately forgiving
+    ; screen-query behavior and keeping static checking value-agnostic.
+    ld   a, h
+    or   d
+    jr   nz, .attr_zero
+    ld   b, l
+    ld   c, e
+    call GFX_CELL_ATTR_ADDR
+    jr   c, .attr_zero
+    ld   a, (hl)
+    ld   l, a
+    ld   h, 0
+    jp   .function_done
+.attr_zero:
+    ld   hl, 0
+    jp   .function_done
+
 .dispatch:
     ; Cleared here, unconditionally, before any of the cases below run
     ; — one shared reset point rather than one per case, since every
@@ -3590,6 +3609,11 @@ BASIC_EVAL_PRIMARY:
                                               ; the (possibly still-
                                               ; clobbered) FUNC_CALL_ID
                                               ; sysvar directly
+    cp   FUNC_ID_ATTR
+    jr   z, .call_attr                         ; deliberately adjacent
+                                              ; above; JR saves the byte
+                                              ; the injected suite harness
+                                              ; also needs to fit
     cp   FUNC_ID_ABS
     jr   z, .call_abs
     cp   FUNC_ID_SGN
@@ -13509,6 +13533,8 @@ FUNCTION_TABLE:
     DB   FUNC_ID_RND, 1
     DW   KW_FN_POINT
     DB   FUNC_ID_POINT, 2
+    DW   KW_FN_ATTR
+    DB   FUNC_ID_ATTR, 2
     DW   KW_FN_SIN
     DB   FUNC_ID_SIN, 1
     DW   KW_FN_PEEK
@@ -13587,6 +13613,8 @@ FUNC_ID_HIT EQU 23    ; HIT(slot1,slot2), 2026-08-23 — sprite collision
                       ; exrom_sprite.asm's own BASIC_SPRITE_HIT) since
                       ; it needs BASIC_SPRITE_SLOT_FLAG_ADDR, already
                       ; EXROM-resident
+FUNC_ID_ATTR EQU 24   ; ATTR(row,col), direct read of the normal screen's
+                      ; attribute byte through GFX_CELL_ATTR_ADDR
 ARGC_ARRAYNAME EQU 101   ; sentinel FUNC_CALL_ARGC value: DIMN's own
                          ; one argument is a bare array-name LETTER,
                          ; never evaluated as an expression at all,
@@ -13603,6 +13631,7 @@ KW_FN_DIV: DB "DIV", 0
 KW_FN_INT: DB "INT", 0
 KW_FN_RND: DB "RND", 0
 KW_FN_POINT: DB "POINT", 0
+KW_FN_ATTR: DB "ATTR", 0
 KW_FN_SIN: DB "SIN", 0
 KW_FN_PEEK: DB "PEEK", 0
 KW_FN_FREE: DB "FREE", 0
