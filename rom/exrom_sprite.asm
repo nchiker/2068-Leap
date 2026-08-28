@@ -45,8 +45,8 @@
 ; Grammar:
 ;   SPRITE GRAB <slot>,<row>,<col>,<w>,<h>  — capture whatever's on
 ;     screen at that cell rectangle into slot <slot>'s own image
-;     buffer. Can be re-GRABbed any time, whether or not currently
-;     shown (doesn't touch the shown state).
+;     buffer. A shown slot must be hidden before GRAB can replace its
+;     image and dimensions, preserving its saved-background invariant.
 ;   SPRITE SHOW <slot>,<row>,<col>          — GRAB must have happened
 ;     for this slot already. Captures the background at the new
 ;     position, draws the sprite there. Refuses (SPRITE ALREADY SHOWN)
@@ -118,6 +118,9 @@ BASIC_STMT_SPRITE:
 BASIC_SPRITE_PARSE_SLOT:
     call KTAB_BASIC_EVAL_EXPR
     jp   c, SPRITE_RAISE_SYNTAX_ERROR
+    ld   a, d
+    or   a
+    jp   nz, .bad_slot
     ld   a, e
     cp   SPRITE_SLOT_MAX
     jp   nc, .bad_slot
@@ -183,11 +186,19 @@ BASIC_SPRITE_ADD_SLOT_OFFSET:
 ; Destroys: AF
 ; ============================================================================
 BASIC_SPRITE_CHECK_ROW:
+    ld   a, d
+    or   a
+    jp   nz, BASIC_SPRITE_RANGE_FAIL
+    ld   a, e
     cp   24
     jp   nc, BASIC_SPRITE_RANGE_FAIL
     or   a
     ret
 BASIC_SPRITE_CHECK_COL:
+    ld   a, d
+    or   a
+    jp   nz, BASIC_SPRITE_RANGE_FAIL
+    ld   a, e
     cp   32
     jp   nc, BASIC_SPRITE_RANGE_FAIL
     or   a
@@ -199,6 +210,10 @@ BASIC_SPRITE_RANGE_FAIL:
     ret
 
 BASIC_SPRITE_CHECK_WH:
+    ld   a, d
+    or   a
+    jp   nz, .size_fail
+    ld   a, e
     or   a
     jp   z, .size_fail                  ; 0 is invalid
     cp   SPRITE_CELL_MAX + 1
@@ -226,34 +241,40 @@ BASIC_STMT_SPRITE_GRAB:
 
     call KTAB_BASIC_EXPECT_COMMA_EXPR
     ret  c
-    ld   a, e
     call BASIC_SPRITE_CHECK_ROW
     ret  c
     ld   (SPRITE_ARG_ROW), a
 
     call KTAB_BASIC_EXPECT_COMMA_EXPR
     ret  c
-    ld   a, e
     call BASIC_SPRITE_CHECK_COL
     ret  c
     ld   (SPRITE_ARG_COL), a
 
     call KTAB_BASIC_EXPECT_COMMA_EXPR
     ret  c
-    ld   a, e
     call BASIC_SPRITE_CHECK_WH
     ret  c
     ld   (SPRITE_ARG_W), a
 
     call KTAB_BASIC_EXPECT_COMMA_EXPR
     ret  c
-    ld   a, e
     call BASIC_SPRITE_CHECK_WH
     ret  c
     ld   (SPRITE_ARG_H), a
 
     call KTAB_BASIC_EXPECT_STATEMENT_END
     ret  c
+
+    ; A shown slot still owns a background saved with its old dimensions.
+    ; Replacing those dimensions would make a later HIDE restore the wrong
+    ; rectangle, so use the same explicit HIDE-first rule as SHOW.
+    ld   a, (SPRITE_ARG_SLOT)
+    ld   hl, SPRITE_SLOT_SHOWN
+    call BASIC_SPRITE_SLOT_FLAG_ADDR
+    ld   a, (hl)
+    or   a
+    jp   nz, .already_shown
 
     call BASIC_SPRITE_SLOT_IMG_ADDR         ; HL = this slot's image
                                             ; buffer — untouched by the
@@ -291,6 +312,11 @@ BASIC_STMT_SPRITE_GRAB:
 
 .out_of_range:
     ld   hl, MSG_SPRITE_OUT_OF_RANGE
+    call KTAB_BASIC_SET_PENDING_ERROR
+    scf
+    ret
+.already_shown:
+    ld   hl, MSG_SPRITE_ALREADY_SHOWN
     call KTAB_BASIC_SET_PENDING_ERROR
     scf
     ret
@@ -499,14 +525,12 @@ BASIC_STMT_SPRITE_SHOW:
 
     call KTAB_BASIC_EXPECT_COMMA_EXPR
     ret  c
-    ld   a, e
     call BASIC_SPRITE_CHECK_ROW
     ret  c
     ld   (SPRITE_ARG_ROW), a
 
     call KTAB_BASIC_EXPECT_COMMA_EXPR
     ret  c
-    ld   a, e
     call BASIC_SPRITE_CHECK_COL
     ret  c
     ld   (SPRITE_ARG_COL), a
@@ -606,11 +630,8 @@ BASIC_STMT_SPRITE_MOVE:
     call BASIC_SPRITE_PARSE_SLOT
     ret  c
 
-    ; same register-survival discipline SHOW's own header documents in
-    ; detail: HL holds the live parse pointer here, and BASIC_SPRITE_
-    ; SLOT_FLAG_ADDR (reached via every helper below) clobbers it, so
-    ; it's pushed once, up front, and only popped back once the erase
-    ; step is done with it.
+    ; Check state without losing the live parse pointer.  Nothing on screen
+    ; is changed until the complete destination has parsed and validated.
     push hl
     ld   a, (SPRITE_ARG_SLOT)
     ld   hl, SPRITE_SLOT_SHOWN
@@ -619,28 +640,15 @@ BASIC_STMT_SPRITE_MOVE:
     or   a
     jp   z, .not_shown_pop
 
-    ; erase: restore the background at this slot's OLD position
-    call BASIC_SPRITE_LOAD_OLD_POS
-    call BASIC_SPRITE_RESTORE_BG
-    jp   c, .out_of_range_pop         ; can't happen (SHOW/MOVE already
-                                      ; accepted this exact rectangle)
-                                      ; but handled anyway
-
-    pop  hl                              ; restore the real parse
-                                         ; pointer — nothing between
-                                         ; here and the comma-expr
-                                         ; parses below touches it
-                                         ; again
+    pop  hl
     call KTAB_BASIC_EXPECT_COMMA_EXPR
     ret  c
-    ld   a, e
     call BASIC_SPRITE_CHECK_ROW
     ret  c
     ld   (SPRITE_ARG_ROW), a
 
     call KTAB_BASIC_EXPECT_COMMA_EXPR
     ret  c
-    ld   a, e
     call BASIC_SPRITE_CHECK_COL
     ret  c
     ld   (SPRITE_ARG_COL), a
@@ -648,7 +656,25 @@ BASIC_STMT_SPRITE_MOVE:
     call KTAB_BASIC_EXPECT_STATEMENT_END
     ret  c
 
-    ; put the sprite down at the new position
+    call BASIC_SPRITE_LOAD_WH
+    call BASIC_SPRITE_CHECK_FIT
+    jr   c, .out_of_range
+
+    ; Preserve the validated destination while loading/restoring the old
+    ; rectangle through the shared SPRITE_ARG_* scratch.
+    ld   a, (SPRITE_ARG_ROW)
+    ld   b, a
+    ld   a, (SPRITE_ARG_COL)
+    ld   c, a
+    push bc
+    call BASIC_SPRITE_LOAD_OLD_POS
+    call BASIC_SPRITE_RESTORE_BG
+    pop  bc
+    jr   c, .out_of_range
+    ld   a, b
+    ld   (SPRITE_ARG_ROW), a
+    ld   a, c
+    ld   (SPRITE_ARG_COL), a
     call BASIC_SPRITE_LOAD_WH
     call BASIC_SPRITE_CAPTURE_AND_SHOW
     ret  nc                              ; carry already clear on
@@ -670,9 +696,25 @@ BASIC_STMT_SPRITE_MOVE:
     call KTAB_BASIC_SET_PENDING_ERROR
     scf
     ret
-.out_of_range_pop:
-    pop  hl
-    jr   .out_of_range
+
+; Validate the complete rectangle in SPRITE_ARG_* without touching the
+; screen.  This makes MOVE's failure paths transactional.
+BASIC_SPRITE_CHECK_FIT:
+    ld   a, (SPRITE_ARG_ROW)
+    ld   hl, SPRITE_ARG_H
+    add  a, (hl)
+    cp   25
+    jr   nc, .fail
+    ld   a, (SPRITE_ARG_COL)
+    ld   hl, SPRITE_ARG_W
+    add  a, (hl)
+    cp   33
+    jr   nc, .fail
+    or   a
+    ret
+.fail:
+    scf
+    ret
 
 ; ============================================================================
 ; BASIC_SPRITE_HIT
@@ -690,6 +732,9 @@ BASIC_STMT_SPRITE_MOVE:
 ; Destroys: AF, BC, DE, HL
 ; ============================================================================
 BASIC_SPRITE_HIT:
+    ld   a, h
+    or   d
+    jp   nz, .no_hit
     ld   a, l
     cp   SPRITE_SLOT_MAX
     jp   nc, .no_hit                     ; JP not JR — .no_hit is well

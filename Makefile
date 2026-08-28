@@ -17,6 +17,8 @@ check:
 	python3 tools/check_tape_fixture.py
 	python3 tools/check_commit_validation.py
 	python3 tools/z80sim/test_calc_dispatcher.py
+	python3 tools/z80sim/test_sprite_driver.py
+	python3 tools/z80sim/test_sprite_basic_driver.py
 	tools/build_smoke_roms.sh
 
 smoke-build:

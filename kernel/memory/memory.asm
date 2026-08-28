@@ -67,8 +67,8 @@ LABEL_POS_SIZE      EQU 2
 ; In:  none
 ; Out: PROG_END = PROG_AREA_START; ARRAYS_END = PROG_END (no arrays
 ;      exist yet); VARS_START = PROG_AREA_MAX (no scalars exist yet);
-;      LABEL_TABLE_TOP's count = 0
-; Destroys: AF, HL
+;      LABEL_TABLE_TOP's count = 0; all sprite slots undefined/unshown
+; Destroys: AF, BC, DE, HL
 ; ============================================================================
 MEM_INIT:
     ld   hl, PROG_AREA_START
@@ -95,6 +95,9 @@ MEM_INIT:
                                        ; evaluation should always leave
                                        ; this at 0 anyway (see sysvars.
                                        ; inc's own STR_FUNC_POOL header)
+    ld   hl, SPRITE_SLOT_DEFINED
+    ld   bc, SPRITE_SLOT_MAX * 2        ; DEFINED and SHOWN are contiguous
+    call MEM_FILL_ZERO
     jr MEM_LABEL_TABLE_CLEAR
 
 ; ============================================================================

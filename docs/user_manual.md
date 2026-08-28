@@ -618,7 +618,7 @@ cells (32×32 pixels).
 
 | Statement/function | Effect |
 |---|---|
-| `SPRITE GRAB slot,row,col,w,h` | Capture whatever's currently on screen at that cell rectangle into `slot`'s own image buffer. Doesn't draw anything yet — can be re-`GRAB`bed any time, shown or not |
+| `SPRITE GRAB slot,row,col,w,h` | Capture whatever's currently on screen at that cell rectangle into `slot`'s own image buffer. Doesn't draw anything yet. A shown slot must be `HIDE`d before it can be re-`GRAB`bed |
 | `SPRITE SHOW slot,row,col` | Draw a previously-`GRAB`bed sprite at a screen position, saving what was there first so it can be restored later. Refuses with `SPRITE ALREADY SHOWN` if that slot is already shown — `HIDE` it first |
 | `SPRITE HIDE slot` | Restore the background a `SHOW`/`MOVE` saved, and stop drawing that sprite. Refuses with `SPRITE NOT SHOWN` if it isn't currently shown |
 | `SPRITE MOVE slot,row,col` | Reposition an already-shown sprite in one step: restores the old background, then shows it at the new position — same net effect as `HIDE` then `SHOW`, just one statement. Also refuses with `SPRITE NOT SHOWN` if it isn't shown yet |
@@ -629,6 +629,11 @@ cells (32×32 pixels).
 `GRAB`/`SHOW` rectangle that doesn't fit the screen, raises `BAD SPRITE
 SLOT`, `SPRITE TOO LARGE`, or `SPRITE OUT OF RANGE` as appropriate;
 using a slot that was never `GRAB`bed raises `SPRITE NOT DEFINED`.
+
+Sprites use independent save-under backgrounds rather than a compositor.
+Overlapping sprites can be detected with `HIT()`, but they must be hidden in
+reverse display order; moving or hiding a lower sprite while another overlaps
+it can disturb the upper sprite's pixels.
 
 ## 11. Sound
 

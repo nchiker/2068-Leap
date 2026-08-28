@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 test_sprite_basic_driver.py — real-instruction z80sim verification for
-the 2026-08-19 BASIC-level Sprites feature (SPRITE GRAB/SHOW/HIDE,
-basic/basic.asm). Scripts BASIC_EVAL_EXPR/BASIC_MATCH_KEYWORD_BOUNDARY/
+the BASIC-level Sprites feature (SPRITE GRAB/SHOW/HIDE/MOVE/HIT,
+rom/exrom_sprite.asm). Scripts BASIC_EVAL_EXPR/BASIC_MATCH_KEYWORD_BOUNDARY/
 BASIC_EXPECT_COMMA_EXPR/BASIC_EXPECT_STATEMENT_END/BASIC_SKIP_SPACES/
 GFX_SPRITE_CAPTURE/GFX_SPRITE_DRAW (all already independently verified
 or hardware-confirmed elsewhere) so this test focuses on what's
@@ -20,21 +20,21 @@ import sys
 sys.path.insert(0, 'tools/z80sim')
 import sim
 
-sim.SYSVARS['SPRITE_ARG_SLOT'] = 0x99F8
-sim.SYSVARS['SPRITE_ARG_ROW'] = 0x99F9
-sim.SYSVARS['SPRITE_ARG_COL'] = 0x99FA
-sim.SYSVARS['SPRITE_ARG_W'] = 0x99FB
-sim.SYSVARS['SPRITE_ARG_H'] = 0x99FC
+sim.SYSVARS['SPRITE_ARG_SLOT'] = 0x9F00
+sim.SYSVARS['SPRITE_ARG_ROW'] = 0x9F01
+sim.SYSVARS['SPRITE_ARG_COL'] = 0x9F02
+sim.SYSVARS['SPRITE_ARG_W'] = 0x9F03
+sim.SYSVARS['SPRITE_ARG_H'] = 0x9F04
 sim.SYSVARS['SPRITE_SLOT_DEFINED'] = 0x9560
-sim.SYSVARS['SPRITE_SLOT_SHOWN'] = 0x9564
-sim.SYSVARS['SPRITE_SLOT_W'] = 0x9568
-sim.SYSVARS['SPRITE_SLOT_H'] = 0x956C
-sim.SYSVARS['SPRITE_SLOT_ROW'] = 0x9570
-sim.SYSVARS['SPRITE_SLOT_COL'] = 0x9574
-sim.SYSVARS['SPRITE_SLOT_IMG_BUF'] = 0x9578
-sim.SYSVARS['SPRITE_SLOT_BG_BUF'] = 0x97B8
+sim.SYSVARS['SPRITE_SLOT_SHOWN'] = 0x9568
+sim.SYSVARS['SPRITE_SLOT_W'] = 0x9570
+sim.SYSVARS['SPRITE_SLOT_H'] = 0x9578
+sim.SYSVARS['SPRITE_SLOT_ROW'] = 0x9580
+sim.SYSVARS['SPRITE_SLOT_COL'] = 0x9588
+sim.SYSVARS['SPRITE_SLOT_IMG_BUF'] = 0x9590
+sim.SYSVARS['SPRITE_SLOT_BG_BUF'] = 0x9A10
 sim.SYSVARS['SPRITE_SLOT_BYTES'] = 144
-sim.SYSVARS['SPRITE_SLOT_MAX'] = 4
+sim.SYSVARS['SPRITE_SLOT_MAX'] = 8
 sim.SYSVARS['SPRITE_CELL_MAX'] = 4
 sim.SYSVARS['MSG_SPRITE_BAD_SLOT'] = 0x7300
 sim.SYSVARS['MSG_SPRITE_TOO_LARGE'] = 0x7310
@@ -47,6 +47,7 @@ sim.SYSVARS['PENDING_ERROR_MSG'] = 0x82EE
 sim.SYSVARS['KW_GRAB'] = 0x7400
 sim.SYSVARS['KW_SHOW'] = 0x7410
 sim.SYSVARS['KW_HIDE'] = 0x7420
+sim.SYSVARS['KW_MOVE'] = 0x7430
 
 FAILURES = []
 def check(label, got, want):
@@ -57,8 +58,8 @@ def check(label, got, want):
 # (not stubbed) BASIC_SET_PENDING_ERROR/BASIC_RAISE_SYNTAX_ERROR ------
 import subprocess
 block = subprocess.run(
-    ['python3', 'tools/z80sim/extract_routine.py', 'basic/basic.asm',
-     'BASIC_STMT_SPRITE', 'BASIC_SCAN_LABELS_EXROM'],
+    ['python3', 'tools/z80sim/extract_routine.py', 'rom/exrom_sprite.asm',
+     'BASIC_STMT_SPRITE', 'SPRITE_BASIC_TEST_END'],
     capture_output=True, text=True, check=True).stdout
 tail = subprocess.run(
     ['python3', 'tools/z80sim/extract_routine.py', 'basic/basic.asm',
@@ -69,6 +70,19 @@ with open('/tmp/sprite_basic_combined.asm', 'w') as f:
     f.write(block)
     f.write('\n')
     f.write(tail)
+    f.write('\nKTAB_BASIC_SET_PENDING_ERROR:\n')
+    f.write('    jp BASIC_SET_PENDING_ERROR\n')
+    for ktab, target in (
+            ('KTAB_BASIC_EVAL_EXPR', 'BASIC_EVAL_EXPR'),
+            ('KTAB_BASIC_SKIP_SPACES', 'BASIC_SKIP_SPACES'),
+            ('KTAB_BASIC_MATCH_KEYWORD_BOUNDARY',
+             'BASIC_MATCH_KEYWORD_BOUNDARY'),
+            ('KTAB_BASIC_EXPECT_COMMA_EXPR', 'BASIC_EXPECT_COMMA_EXPR'),
+            ('KTAB_BASIC_EXPECT_STATEMENT_END',
+             'BASIC_EXPECT_STATEMENT_END'),
+            ('KTAB_GFX_SPRITE_CAPTURE', 'GFX_SPRITE_CAPTURE'),
+            ('KTAB_GFX_SPRITE_DRAW', 'GFX_SPRITE_DRAW')):
+        f.write(f'{ktab}:\n    call {target}\n    ret\n')
 
 def new_interp():
     prog = sim.Program()
@@ -93,7 +107,7 @@ NOMATCH = ({}, {'C': 1})
 # 1. Slot/buffer address arithmetic (BASIC_SPRITE_SLOT_IMG_ADDR/
 #    BG_ADDR/ADD_SLOT_OFFSET, BASIC_SPRITE_SLOT_FLAG_ADDR)
 # =====================================================================
-for slot in range(4):
+for slot in range(8):
     prog, interp = new_interp()
     interp.sim.wb(sim.SYSVARS['SPRITE_ARG_SLOT'], slot)
     run(prog, interp, 'BASIC_SPRITE_SLOT_IMG_ADDR')
@@ -108,7 +122,7 @@ for slot in range(4):
     want = sim.SYSVARS['SPRITE_SLOT_BG_BUF'] + slot * sim.SYSVARS['SPRITE_SLOT_BYTES']
     check(f'BG_ADDR slot {slot}', got, want)
 
-for slot in range(4):
+for slot in range(8):
     prog, interp = new_interp()
     interp.sim.wb(sim.SYSVARS['SPRITE_ARG_SLOT'], slot)
     interp.sim.regs['A'] = slot
@@ -129,7 +143,8 @@ for slot in range(4):
 def check_range_routine(label, good_vals, bad_vals):
     for v in good_vals:
         prog, interp = new_interp()
-        interp.sim.regs['A'] = v
+        interp.sim.regs['D'] = (v >> 8) & 0xFF
+        interp.sim.regs['E'] = v & 0xFF
         interp.sim.push(('HALT',))
         try:
             interp.run(label, None)
@@ -139,7 +154,8 @@ def check_range_routine(label, good_vals, bad_vals):
         check(f'{label}({v}) accepted', interp.sim.flags['C'], 0)
     for v in bad_vals:
         prog, interp = new_interp()
-        interp.sim.regs['A'] = v
+        interp.sim.regs['D'] = (v >> 8) & 0xFF
+        interp.sim.regs['E'] = v & 0xFF
         interp.sim.push(('HALT',))
         try:
             interp.run(label, None)
@@ -151,6 +167,9 @@ def check_range_routine(label, good_vals, bad_vals):
 check_range_routine('BASIC_SPRITE_CHECK_ROW', [0, 23], [24, 255])
 check_range_routine('BASIC_SPRITE_CHECK_COL', [0, 31], [32, 255])
 check_range_routine('BASIC_SPRITE_CHECK_WH', [1, 4], [0, 5, 255])
+check_range_routine('BASIC_SPRITE_CHECK_ROW', [], [256])
+check_range_routine('BASIC_SPRITE_CHECK_COL', [], [256])
+check_range_routine('BASIC_SPRITE_CHECK_WH', [], [256])
 
 # =====================================================================
 # 3. BASIC_SPRITE_PARSE_SLOT — valid, out-of-range, malformed
@@ -162,10 +181,15 @@ check('PARSE_SLOT valid(2) carry', interp.sim.flags['C'], 0)
 check('PARSE_SLOT valid(2) stored', interp.sim.rb(sim.SYSVARS['SPRITE_ARG_SLOT']), 2)
 
 prog, interp = new_interp()
-interp.set_script('BASIC_EVAL_EXPR', [({'D': 0, 'E': 4}, {'C': 0})])  # 4 is out of range (0-3)
+interp.set_script('BASIC_EVAL_EXPR', [({'D': 0, 'E': 8}, {'C': 0})])
 run(prog, interp, 'BASIC_SPRITE_PARSE_SLOT')
-check('PARSE_SLOT bad slot(4) carry', interp.sim.flags['C'], 1)
-check('PARSE_SLOT bad slot(4) message', interp.sim.rw(sim.SYSVARS['PENDING_ERROR_MSG']), sim.SYSVARS['MSG_SPRITE_BAD_SLOT'])
+check('PARSE_SLOT bad slot(8) carry', interp.sim.flags['C'], 1)
+check('PARSE_SLOT bad slot(8) message', interp.sim.rw(sim.SYSVARS['PENDING_ERROR_MSG']), sim.SYSVARS['MSG_SPRITE_BAD_SLOT'])
+
+prog, interp = new_interp()
+interp.set_script('BASIC_EVAL_EXPR', [({'D': 1, 'E': 0}, {'C': 0})])
+run(prog, interp, 'BASIC_SPRITE_PARSE_SLOT')
+check('PARSE_SLOT 256 does not wrap to slot 0', interp.sim.flags['C'], 1)
 
 prog, interp = new_interp()
 interp.set_script('BASIC_EVAL_EXPR', [({}, {'C': 1})])  # malformed expression
@@ -244,6 +268,23 @@ else:
     check('GRAB->CAPTURE E (h)', capture_call['E'], 3)
     check('GRAB->CAPTURE HL (slot 1 img buffer)', got_hl, want_hl)
 
+# Re-GRAB must not replace a shown slot's image/dimensions.
+prog, interp = new_interp()
+interp.sim.wb(sim.SYSVARS['SPRITE_SLOT_SHOWN'] + 1, 1)
+interp.sim.wb(sim.SYSVARS['SPRITE_SLOT_W'] + 1, 2)
+interp.sim.wb(sim.SYSVARS['SPRITE_SLOT_H'] + 1, 3)
+interp.set_script('BASIC_SKIP_SPACES', [({}, {})])
+interp.set_script('BASIC_MATCH_KEYWORD_BOUNDARY', [MATCH])
+interp.set_script('BASIC_EVAL_EXPR', [({'D': 0, 'E': 1}, {'C': 0})])
+interp.set_script('BASIC_EXPECT_COMMA_EXPR', [
+    ({'D': 0, 'E': 1}, {'C': 0}), ({'D': 0, 'E': 1}, {'C': 0}),
+    ({'D': 0, 'E': 4}, {'C': 0}), ({'D': 0, 'E': 4}, {'C': 0})])
+interp.set_script('BASIC_EXPECT_STATEMENT_END', [({}, {'C': 0})])
+run(prog, interp, 'BASIC_STMT_SPRITE')
+check('GRAB shown slot rejected', interp.sim.flags['C'], 1)
+check('GRAB shown slot keeps W', interp.sim.rb(sim.SYSVARS['SPRITE_SLOT_W'] + 1), 2)
+check('GRAB shown slot keeps H', interp.sim.rb(sim.SYSVARS['SPRITE_SLOT_H'] + 1), 3)
+
 # =====================================================================
 # 6. Full SHOW flow: slot 1 already GRAB'd (W=2,H=3), not shown yet;
 #    SHOW at row=8,col=12
@@ -284,7 +325,7 @@ run(prog, interp, 'BASIC_STMT_SPRITE')
 # going into the row call, 0x8020 going into the col call), never a
 # leftover SPRITE_SLOT_* array address from the flag lookups in between
 comma_calls = [r for (sc, l, mn, op, r, fl) in interp.trace_log
-               if mn == 'call' and op and 'BASIC_EXPECT_COMMA_EXPR' in op]
+               if mn == 'call' and op == 'BASIC_EXPECT_COMMA_EXPR']
 if len(comma_calls) < 2:
     FAILURES.append(f'SHOW: expected 2 BASIC_EXPECT_COMMA_EXPR calls, got {len(comma_calls)}')
 else:
@@ -377,6 +418,30 @@ run(prog, interp, 'BASIC_STMT_SPRITE')
 check('HIDE not-shown carry', interp.sim.flags['C'], 1)
 check('HIDE not-shown message', interp.sim.rw(sim.SYSVARS['PENDING_ERROR_MSG']), sim.SYSVARS['MSG_SPRITE_NOT_SHOWN'])
 
+# MOVE parse failure is transactional: the old background is not drawn and
+# the slot remains shown at its original coordinates.
+prog, interp = new_interp()
+interp.sim.wb(sim.SYSVARS['SPRITE_SLOT_SHOWN'] + 1, 1)
+interp.sim.wb(sim.SYSVARS['SPRITE_SLOT_ROW'] + 1, 8)
+interp.sim.wb(sim.SYSVARS['SPRITE_SLOT_COL'] + 1, 12)
+interp.sim.wb(sim.SYSVARS['SPRITE_SLOT_W'] + 1, 2)
+interp.sim.wb(sim.SYSVARS['SPRITE_SLOT_H'] + 1, 3)
+interp.set_script('BASIC_SKIP_SPACES', [({}, {})])
+interp.set_script('BASIC_MATCH_KEYWORD_BOUNDARY',
+                  [NOMATCH, NOMATCH, NOMATCH, MATCH])
+interp.set_script('BASIC_EVAL_EXPR', [({'D': 0, 'E': 1}, {'C': 0})])
+interp.set_script('BASIC_EXPECT_COMMA_EXPR', [({}, {'C': 1})])
+run(prog, interp, 'BASIC_STMT_SPRITE')
+move_draws = [r for (sc, l, mn, op, r, fl) in interp.trace_log
+              if mn == 'call' and op == 'GFX_SPRITE_DRAW']
+check('MOVE parse failure does not erase sprite', len(move_draws), 0)
+check('MOVE parse failure leaves SHOWN set',
+      interp.sim.rb(sim.SYSVARS['SPRITE_SLOT_SHOWN'] + 1), 1)
+check('MOVE parse failure leaves ROW',
+      interp.sim.rb(sim.SYSVARS['SPRITE_SLOT_ROW'] + 1), 8)
+check('MOVE parse failure leaves COL',
+      interp.sim.rb(sim.SYSVARS['SPRITE_SLOT_COL'] + 1), 12)
+
 # ---- report -----------------------------------------------------------
 if FAILURES:
     print(f"FAILED ({len(FAILURES)} failing checks):")
@@ -384,4 +449,4 @@ if FAILURES:
         print(' -', f)
     sys.exit(1)
 else:
-    print("ALL CHECKS PASSED (SPRITE GRAB/SHOW/HIDE)")
+    print("ALL CHECKS PASSED (SPRITE GRAB/SHOW/HIDE/MOVE)")

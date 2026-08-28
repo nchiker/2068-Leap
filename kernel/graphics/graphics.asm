@@ -2766,11 +2766,13 @@ GFX_SPRITE_BOUNDS_CHECK:
 
     ld   a, b
     add  a, e
+    jr   c, .fail
     cp   25
     jr   nc, .fail                     ; top_row + height > 24
 
     ld   a, c
     add  a, d
+    jr   c, .fail
     cp   33
     jr   nc, .fail                     ; top_col + width > 32
 
