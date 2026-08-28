@@ -630,10 +630,11 @@ cells (32×32 pixels).
 SLOT`, `SPRITE TOO LARGE`, or `SPRITE OUT OF RANGE` as appropriate;
 using a slot that was never `GRAB`bed raises `SPRITE NOT DEFINED`.
 
-Sprites use independent save-under backgrounds rather than a compositor.
-Overlapping sprites can be detected with `HIT()`, but they must be hidden in
-reverse display order; moving or hiding a lower sprite while another overlaps
-it can disturb the upper sprite's pixels.
+Sprites use independent save-under backgrounds and maintain a display stack.
+Overlapping sprites can be detected with `HIT()`. `HIDE` and `MOVE` must
+operate in reverse `SHOW` order; attempting either operation on a lower sprite
+reports `SPRITE ORDER ERROR` before changing the screen. Once the upper sprite
+is hidden, the next sprite can be moved or hidden safely.
 
 ## 11. Sound
 
@@ -843,6 +844,7 @@ text, not a new statement.
 | `SPRITE NOT DEFINED` | Using a slot that was never `GRAB`bed |
 | `SPRITE ALREADY SHOWN` | `SHOW` on a slot that's already shown |
 | `SPRITE NOT SHOWN` | `HIDE`/`MOVE` on a slot that isn't currently shown |
+| `SPRITE ORDER ERROR` | `HIDE`/`MOVE` attempted on a slot below another displayed sprite |
 
 **`SAVE`/`LOAD`**:
 

@@ -1920,6 +1920,10 @@ SPRITE_SLOT_ROW:     DEFS 8           ; 8 bytes (1/slot) — current display
                                 ; (HIDE/MOVE need this to know where
                                 ; the saved background goes back)
 SPRITE_SLOT_COL:     DEFS 8           ; 8 bytes (1/slot) — same, column
+SPRITE_DISPLAY_DEPTH: DEFS 1          ; number of slots currently shown
+SPRITE_DISPLAY_STACK: DEFS 8          ; slot numbers in SHOW order;
+                                ; save-under restoration must pop these
+                                ; in reverse order to preserve overlaps
 SPRITE_SLOT_IMG_BUF: DEFS 1152        ; 1152 bytes — the captured sprite
                                 ; image itself (SPRITE_SLOT_MAX *
                                 ; SPRITE_SLOT_BYTES), filled once per

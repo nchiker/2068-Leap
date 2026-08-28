@@ -72,15 +72,9 @@
 ;
 ; <row>/<col>/<w>/<h> are validated at BASIC level (0-23/0-31/1-4/1-4)
 ; BEFORE ever reaching GFX_SPRITE_BOUNDS_CHECK — deliberately: that
-; kernel-level check computes row+height/col+width as a plain 8-bit
-; ADD with no overflow guard of its own (fine for its own callers so
-; far, all of which pass already-small values), so a grossly out-of-
-; range row/col from a user expression could theoretically wrap an
-; 8-bit sum back under the check's own threshold and slip through.
-; Validating the small ranges here first makes that wraparound
-; unreachable from BASIC, rather than fixing the kernel routine itself
-; (out of scope this round — would need re-verification of already-
-; z80sim-confirmed code). Once those ranges are confirmed small,
+; kernel-level check also rejects carry from row+height/col+width, but
+; BASIC validates its narrower public ranges here so callers receive the
+; statement-specific error messages. Once those ranges are confirmed small,
 ; GFX_SPRITE_BOUNDS_CHECK's own "does it actually fit on the 32x24
 ; grid" rejection is safe to rely on as-is (reported as SPRITE OUT OF
 ; RANGE).
@@ -129,9 +123,7 @@ BASIC_SPRITE_PARSE_SLOT:
     ret
 .bad_slot:
     ld   hl, MSG_SPRITE_BAD_SLOT
-    call KTAB_BASIC_SET_PENDING_ERROR
-    scf
-    ret
+    jp   SPRITE_RAISE_ERROR
 
 ; ============================================================================
 ; BASIC_SPRITE_SLOT_IMG_ADDR / BASIC_SPRITE_SLOT_BG_ADDR
@@ -205,9 +197,7 @@ BASIC_SPRITE_CHECK_COL:
     ret
 BASIC_SPRITE_RANGE_FAIL:
     ld   hl, MSG_SPRITE_OUT_OF_RANGE
-    call KTAB_BASIC_SET_PENDING_ERROR
-    scf
-    ret
+    jp   SPRITE_RAISE_ERROR
 
 BASIC_SPRITE_CHECK_WH:
     ld   a, d
@@ -222,9 +212,7 @@ BASIC_SPRITE_CHECK_WH:
     ret
 .size_fail:
     ld   hl, MSG_SPRITE_TOO_LARGE
-    call KTAB_BASIC_SET_PENDING_ERROR
-    scf
-    ret
+    jp   SPRITE_RAISE_ERROR
 
 ; ============================================================================
 ; BASIC_STMT_SPRITE_GRAB
@@ -312,14 +300,10 @@ BASIC_STMT_SPRITE_GRAB:
 
 .out_of_range:
     ld   hl, MSG_SPRITE_OUT_OF_RANGE
-    call KTAB_BASIC_SET_PENDING_ERROR
-    scf
-    ret
+    jp   SPRITE_RAISE_ERROR
 .already_shown:
     ld   hl, MSG_SPRITE_ALREADY_SHOWN
-    call KTAB_BASIC_SET_PENDING_ERROR
-    scf
-    ret
+    jp   SPRITE_RAISE_ERROR
 
 ; ============================================================================
 ; BASIC_SPRITE_SLOT_FLAG_ADDR
@@ -343,6 +327,37 @@ BASIC_SPRITE_SLOT_FLAG_ADDR:
     add  hl, de
     pop  de
     ret
+
+; Save-under sprites must be removed in reverse display order.  Keeping a
+; tiny slot-number stack makes overlapping SHOWs safe without a full-screen
+; compositor.  CHECK_TOP records SPRITE ORDER ERROR on a violation.
+BASIC_SPRITE_PUSH_DISPLAY:
+    ld   a, (SPRITE_DISPLAY_DEPTH)
+    ld   e, a
+    ld   d, 0
+    ld   hl, SPRITE_DISPLAY_STACK
+    add  hl, de
+    ld   a, (SPRITE_ARG_SLOT)
+    ld   (hl), a
+    ld   hl, SPRITE_DISPLAY_DEPTH
+    inc  (hl)
+    ret
+
+BASIC_SPRITE_CHECK_TOP:
+    ld   a, (SPRITE_DISPLAY_DEPTH)
+    or   a
+    jr   z, .bad_order
+    dec  a
+    ld   e, a
+    ld   d, 0
+    ld   hl, SPRITE_DISPLAY_STACK
+    add  hl, de
+    ld   a, (SPRITE_ARG_SLOT)
+    cp   (hl)
+    ret  z
+.bad_order:
+    ld   hl, MSG_SPRITE_ORDER
+    jp   SPRITE_RAISE_ERROR
 
 ; ============================================================================
 ; BASIC_SPRITE_LOAD_WH
@@ -546,6 +561,7 @@ BASIC_STMT_SPRITE_SHOW:
     ld   hl, SPRITE_SLOT_SHOWN
     call BASIC_SPRITE_SLOT_FLAG_ADDR
     ld   (hl), 1
+    call BASIC_SPRITE_PUSH_DISPLAY
     or   a
     ret
 
@@ -554,21 +570,15 @@ BASIC_STMT_SPRITE_SHOW:
                                          ; error already recorded below
 .not_defined:
     ld   hl, MSG_SPRITE_NOT_DEFINED
-    call KTAB_BASIC_SET_PENDING_ERROR
-    scf
-    ret
+    jp   SPRITE_RAISE_ERROR
 .already_shown_pop:
     pop  hl
 .already_shown:
     ld   hl, MSG_SPRITE_ALREADY_SHOWN
-    call KTAB_BASIC_SET_PENDING_ERROR
-    scf
-    ret
+    jp   SPRITE_RAISE_ERROR
 .out_of_range:
     ld   hl, MSG_SPRITE_OUT_OF_RANGE
-    call KTAB_BASIC_SET_PENDING_ERROR
-    scf
-    ret
+    jp   SPRITE_RAISE_ERROR
 
 ; ============================================================================
 ; BASIC_STMT_SPRITE_HIDE
@@ -592,6 +602,9 @@ BASIC_STMT_SPRITE_HIDE:
     or   a
     jp   z, .not_shown
 
+    call BASIC_SPRITE_CHECK_TOP
+    ret  c
+
     call BASIC_SPRITE_LOAD_OLD_POS
     call BASIC_SPRITE_RESTORE_BG
     jp   c, .out_of_range             ; can't happen (SHOW/MOVE already
@@ -602,19 +615,17 @@ BASIC_STMT_SPRITE_HIDE:
     ld   hl, SPRITE_SLOT_SHOWN
     call BASIC_SPRITE_SLOT_FLAG_ADDR
     ld   (hl), 0
+    ld   hl, SPRITE_DISPLAY_DEPTH
+    dec  (hl)
     or   a
     ret
 
 .not_shown:
     ld   hl, MSG_SPRITE_NOT_SHOWN
-    call KTAB_BASIC_SET_PENDING_ERROR
-    scf
-    ret
+    jp   SPRITE_RAISE_ERROR
 .out_of_range:
     ld   hl, MSG_SPRITE_OUT_OF_RANGE
-    call KTAB_BASIC_SET_PENDING_ERROR
-    scf
-    ret
+    jp   SPRITE_RAISE_ERROR
 
 ; ============================================================================
 ; BASIC_STMT_SPRITE_MOVE
@@ -639,6 +650,8 @@ BASIC_STMT_SPRITE_MOVE:
     ld   a, (hl)
     or   a
     jp   z, .not_shown_pop
+    call BASIC_SPRITE_CHECK_TOP
+    jp   c, .order_error_pop
 
     pop  hl
     call KTAB_BASIC_EXPECT_COMMA_EXPR
@@ -682,9 +695,7 @@ BASIC_STMT_SPRITE_MOVE:
 
 .out_of_range:
     ld   hl, MSG_SPRITE_OUT_OF_RANGE
-    call KTAB_BASIC_SET_PENDING_ERROR
-    scf
-    ret
+    jp   SPRITE_RAISE_ERROR
 
 .not_shown_pop:
     pop  hl                              ; discard the saved parse
@@ -693,7 +704,9 @@ BASIC_STMT_SPRITE_MOVE:
                                          ; stack
 .not_shown:
     ld   hl, MSG_SPRITE_NOT_SHOWN
-    call KTAB_BASIC_SET_PENDING_ERROR
+    jp   SPRITE_RAISE_ERROR
+.order_error_pop:
+    pop  hl
     scf
     ret
 
@@ -859,6 +872,7 @@ BASIC_SPRITE_HIT:
 ; ============================================================================
 SPRITE_RAISE_SYNTAX_ERROR:
     ld   hl, MSG_SYNTAX_ERROR
+SPRITE_RAISE_ERROR:
     call KTAB_BASIC_SET_PENDING_ERROR
     scf
     ret
@@ -872,3 +886,4 @@ MSG_SPRITE_OUT_OF_RANGE:  DB "SPRITE OUT OF RANGE", 0
 MSG_SPRITE_NOT_DEFINED:   DB "SPRITE NOT DEFINED", 0
 MSG_SPRITE_ALREADY_SHOWN: DB "SPRITE ALREADY SHOWN", 0
 MSG_SPRITE_NOT_SHOWN:     DB "SPRITE NOT SHOWN", 0
+MSG_SPRITE_ORDER:         DB "SPRITE ORDER ERROR", 0

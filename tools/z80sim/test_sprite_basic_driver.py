@@ -31,8 +31,10 @@ sim.SYSVARS['SPRITE_SLOT_W'] = 0x9570
 sim.SYSVARS['SPRITE_SLOT_H'] = 0x9578
 sim.SYSVARS['SPRITE_SLOT_ROW'] = 0x9580
 sim.SYSVARS['SPRITE_SLOT_COL'] = 0x9588
-sim.SYSVARS['SPRITE_SLOT_IMG_BUF'] = 0x9590
-sim.SYSVARS['SPRITE_SLOT_BG_BUF'] = 0x9A10
+sim.SYSVARS['SPRITE_DISPLAY_DEPTH'] = 0x9590
+sim.SYSVARS['SPRITE_DISPLAY_STACK'] = 0x9591
+sim.SYSVARS['SPRITE_SLOT_IMG_BUF'] = 0x9599
+sim.SYSVARS['SPRITE_SLOT_BG_BUF'] = 0x9A19
 sim.SYSVARS['SPRITE_SLOT_BYTES'] = 144
 sim.SYSVARS['SPRITE_SLOT_MAX'] = 8
 sim.SYSVARS['SPRITE_CELL_MAX'] = 4
@@ -42,6 +44,7 @@ sim.SYSVARS['MSG_SPRITE_OUT_OF_RANGE'] = 0x7320
 sim.SYSVARS['MSG_SPRITE_NOT_DEFINED'] = 0x7330
 sim.SYSVARS['MSG_SPRITE_ALREADY_SHOWN'] = 0x7340
 sim.SYSVARS['MSG_SPRITE_NOT_SHOWN'] = 0x7350
+sim.SYSVARS['MSG_SPRITE_ORDER'] = 0x7370
 sim.SYSVARS['MSG_SYNTAX_ERROR'] = 0x7360
 sim.SYSVARS['PENDING_ERROR_MSG'] = 0x82EE
 sim.SYSVARS['KW_GRAB'] = 0x7400
@@ -336,6 +339,10 @@ else:
 
 check('SHOW success carry', interp.sim.flags['C'], 0)
 check('SHOW slot 1 SHOWN', interp.sim.rb(sim.SYSVARS['SPRITE_SLOT_SHOWN'] + 1), 1)
+check('SHOW pushes display depth',
+      interp.sim.rb(sim.SYSVARS['SPRITE_DISPLAY_DEPTH']), 1)
+check('SHOW pushes slot number',
+      interp.sim.rb(sim.SYSVARS['SPRITE_DISPLAY_STACK']), 1)
 check('SHOW slot 1 ROW', interp.sim.rb(sim.SYSVARS['SPRITE_SLOT_ROW'] + 1), 8)
 check('SHOW slot 1 COL', interp.sim.rb(sim.SYSVARS['SPRITE_SLOT_COL'] + 1), 12)
 
@@ -384,6 +391,8 @@ check('SHOW already-shown message', interp.sim.rw(sim.SYSVARS['PENDING_ERROR_MSG
 # =====================================================================
 prog, interp = new_interp()
 interp.sim.wb(sim.SYSVARS['SPRITE_SLOT_SHOWN'] + 1, 1)
+interp.sim.wb(sim.SYSVARS['SPRITE_DISPLAY_DEPTH'], 1)
+interp.sim.wb(sim.SYSVARS['SPRITE_DISPLAY_STACK'], 1)
 interp.sim.wb(sim.SYSVARS['SPRITE_SLOT_ROW'] + 1, 8)
 interp.sim.wb(sim.SYSVARS['SPRITE_SLOT_COL'] + 1, 12)
 interp.sim.wb(sim.SYSVARS['SPRITE_SLOT_W'] + 1, 2)
@@ -397,6 +406,8 @@ run(prog, interp, 'BASIC_STMT_SPRITE')
 
 check('HIDE success carry', interp.sim.flags['C'], 0)
 check('HIDE slot 1 SHOWN cleared', interp.sim.rb(sim.SYSVARS['SPRITE_SLOT_SHOWN'] + 1), 0)
+check('HIDE pops display depth',
+      interp.sim.rb(sim.SYSVARS['SPRITE_DISPLAY_DEPTH']), 0)
 
 hide_draw_call = next(
     (r for (sc, l, mn, op, r, fl) in interp.trace_log
@@ -422,6 +433,8 @@ check('HIDE not-shown message', interp.sim.rw(sim.SYSVARS['PENDING_ERROR_MSG']),
 # the slot remains shown at its original coordinates.
 prog, interp = new_interp()
 interp.sim.wb(sim.SYSVARS['SPRITE_SLOT_SHOWN'] + 1, 1)
+interp.sim.wb(sim.SYSVARS['SPRITE_DISPLAY_DEPTH'], 1)
+interp.sim.wb(sim.SYSVARS['SPRITE_DISPLAY_STACK'], 1)
 interp.sim.wb(sim.SYSVARS['SPRITE_SLOT_ROW'] + 1, 8)
 interp.sim.wb(sim.SYSVARS['SPRITE_SLOT_COL'] + 1, 12)
 interp.sim.wb(sim.SYSVARS['SPRITE_SLOT_W'] + 1, 2)
@@ -441,6 +454,32 @@ check('MOVE parse failure leaves ROW',
       interp.sim.rb(sim.SYSVARS['SPRITE_SLOT_ROW'] + 1), 8)
 check('MOVE parse failure leaves COL',
       interp.sim.rb(sim.SYSVARS['SPRITE_SLOT_COL'] + 1), 12)
+
+# Two displayed slots model an overlap-capable save-under stack.  Removing a
+# lower slot first must fail before drawing; the upper slot remains removable.
+prog, interp = new_interp()
+for slot in (0, 1):
+    interp.sim.wb(sim.SYSVARS['SPRITE_SLOT_SHOWN'] + slot, 1)
+    interp.sim.wb(sim.SYSVARS['SPRITE_SLOT_ROW'] + slot, 4)
+    interp.sim.wb(sim.SYSVARS['SPRITE_SLOT_COL'] + slot, 4)
+    interp.sim.wb(sim.SYSVARS['SPRITE_SLOT_W'] + slot, 2)
+    interp.sim.wb(sim.SYSVARS['SPRITE_SLOT_H'] + slot, 2)
+interp.sim.wb(sim.SYSVARS['SPRITE_DISPLAY_DEPTH'], 2)
+interp.sim.wb(sim.SYSVARS['SPRITE_DISPLAY_STACK'], 0)
+interp.sim.wb(sim.SYSVARS['SPRITE_DISPLAY_STACK'] + 1, 1)
+interp.set_script('BASIC_EVAL_EXPR', [({'D': 0, 'E': 0}, {'C': 0})])
+interp.set_script('BASIC_EXPECT_STATEMENT_END', [({}, {'C': 0})])
+run(prog, interp, 'BASIC_STMT_SPRITE_HIDE')
+order_draws = [r for (sc, l, mn, op, r, fl) in interp.trace_log
+               if mn == 'call' and op == 'GFX_SPRITE_DRAW']
+check('out-of-order HIDE rejected before drawing', len(order_draws), 0)
+check('out-of-order HIDE reports order error',
+      interp.sim.rw(sim.SYSVARS['PENDING_ERROR_MSG']),
+      sim.SYSVARS['MSG_SPRITE_ORDER'])
+check('out-of-order HIDE preserves depth',
+      interp.sim.rb(sim.SYSVARS['SPRITE_DISPLAY_DEPTH']), 2)
+check('out-of-order HIDE preserves shown state',
+      interp.sim.rb(sim.SYSVARS['SPRITE_SLOT_SHOWN']), 1)
 
 # ---- report -----------------------------------------------------------
 if FAILURES:

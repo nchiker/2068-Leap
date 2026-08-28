@@ -98,6 +98,7 @@ MEM_INIT:
     ld   hl, SPRITE_SLOT_DEFINED
     ld   bc, SPRITE_SLOT_MAX * 2        ; DEFINED and SHOWN are contiguous
     call MEM_FILL_ZERO
+    ld   (SPRITE_DISPLAY_DEPTH), a       ; MEM_FILL_ZERO returns A=0
     jr MEM_LABEL_TABLE_CLEAR
 
 ; ============================================================================
