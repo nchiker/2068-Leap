@@ -38,12 +38,13 @@
     IFNDEF CHECKER_KEYWORDS_INC
     DEFINE CHECKER_KEYWORDS_INC
 
+    INCLUDE "include/shared_lowrom_data.inc"
+
 KW_PRINT: DB "PRINT", 0
 KW_END:   DB "END", 0
 KW_STOP:  DB "STOP", 0
 KW_INPUT: DB "INPUT", 0
 KW_GOTO:  DB "GOTO", 0
-KW_IF:      DB "IF", 0
 KW_THEN:    DB "THEN", 0
 KW_ELSEIF:  DB "ELSEIF", 0        ; checked BEFORE KW_ELSE everywhere,
                                  ; since "ELSE" is a prefix of "ELSEIF"
@@ -112,13 +113,12 @@ KW_CALL:    DB "CALL", 0          ; alias for GOSUB — see BASIC_STMT_
 
 ; ---- error messages (uppercase, null-terminated — read by
 ; BASIC_REPORT_ERROR on the Home side, never mutated) ----
-MSG_SYNTAX_ERROR:      DB "SYNTAX ERROR", 0
 MSG_LABEL_NOT_FOUND:   DB "LABEL NOT FOUND", 0
-MSG_INVALID_ARGUMENT:  DB "INVALID ARGUMENT", 0   ; shared — STICK
+; MSG_INVALID_ARGUMENT is fixed shared low-ROM data — STICK
                                  ; (basic/basic.asm) and CHR$ (rom/
                                  ; exrom_strfuncs.asm) both raise it
 MSG_RETURN_WITHOUT_GOSUB: DB "RETURN WITHOUT GOSUB", 0
-MSG_ARRAY_NOT_DIMMED:  DB "ARRAY NOT DIMENSIONED", 0   ; shared — raised
+; MSG_ARRAY_NOT_DIMMED is fixed shared low-ROM data — raised
                                  ; from basic.asm's own Home-resident
                                  ; array read/write AND rom/exrom_
                                  ; arrays.asm's DIMN (2026-08-22)

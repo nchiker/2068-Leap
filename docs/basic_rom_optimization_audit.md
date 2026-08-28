@@ -1,32 +1,28 @@
 # BASIC ROM Optimization Audit
 
-Status: analysis only, measured from the clean 2026-08-27 build. No runtime
-behavior has been changed. `make audit-basic` regenerates the complete ranked
-global-block inventory.
+Status: first recovery pass implemented on `develop/v2` and verified by the
+complete automated suite. `make audit-basic` regenerates the ranked global-
+block inventory and `make budget` reports the current byte totals.
 
 ## Executive result
 
-There is a credible path to several hundred V2 bytes without removing a user
-feature. The first **110 bytes are structurally recoverable with high
-confidence** by using an existing low-ROM padding region for strings needed by
-both banks. Another **2 HOME bytes** are a provably dead table entry. A
-table-driven statement dispatcher is the largest code opportunity and is
-estimated to recover **180-240 HOME bytes**, but that figure must be confirmed
-by assembling a prototype before it is treated as budget.
+The first V2 recovery pass has increased free space from **2 to 312 HOME
+bytes** and from **99 to 154 EXROM bytes**, without removing a user feature.
+The shared low-ROM strings and dead highlighting pointer recovered 57 HOME
+bytes and 55 EXROM bytes. Replacing the execution keyword chain and its jump
+veneers with a table recovered another 253 HOME bytes after preserving IX.
 
 | Opportunity | HOME | EXROM | Confidence |
 |---|---:|---:|---|
-| Put shared strings in unused `$00C8-$00FF` HOME window | 55 | 55 | High; exact placement available |
-| Remove dead `KW_THEN` highlighting pointer | 2 | 0 | High; source documents it cannot be reached |
+| Put shared strings in unused `$00C8-$00FF` HOME window | 55 | 55 | Implemented and asserted |
+| Remove dead `KW_THEN` highlighting pointer | 2 | 0 | Implemented |
 | Reuse retired `$C072-$C077` EXROM entry slot | 0 | 6 | High for new internal bytes; ABI review required |
-| Table-drive execution statement dispatch | 180-240 | 0 | Medium; byte estimate, prototype required |
+| Table-drive execution statement dispatch | 253 | 0 | Implemented and suite-verified |
 | Replace numeric function ID branch chain | 35-60 | 0 | Medium; prototype required |
 
-The high-confidence items alone increase immediately usable space from 2 to
-**59 HOME bytes**, and from 99 to **160 EXROM bytes** (counting the retired
-six-byte slot as a usable internal hole). With both code refactors proven, a
-reasonable working target is approximately **274-359 HOME bytes** and **160
-EXROM bytes** available.
+Current end-of-image headroom is **312 HOME bytes and 154 EXROM bytes**. The
+retired six-byte entry remains an internal reusable hole and is deliberately
+not counted as end-of-image free space.
 
 ## Routine-level measurements
 
@@ -98,7 +94,7 @@ without filling the slot does not move EXROM's final end because the following
 entry remains fixed at `$C078`; the value is the ability to use those six bytes
 in place.
 
-## 4. Statement dispatcher: estimated 180-240 HOME bytes
+## 4. Statement dispatcher: 253 verified HOME bytes
 
 `BASIC_EXEC_STATEMENT_CONTENT` performs 41 explicit keyword probes. A normal
 probe costs 8-9 bytes:
@@ -115,12 +111,11 @@ containing a keyword pointer and handler pointer costs four bytes per entry, or
 bytes and can dispatch with a synthetic return (`push handler` / `ret`) while
 leaving the advanced text pointer in HL. Most current veneers disappear.
 
-Special cases remain necessary for compound `END IF`, `ULAPLUS` versus
-`PALETTE`, stop semantics, and the assignment/label fallbacks. Accounting for
-those is why this report uses a conservative 180-240-byte net estimate rather
-than claiming the full gross difference. This should be implemented behind an
-assembly-time experimental switch first and accepted only if the binary builds
-and the full statement suite passes.
+The implemented walker keeps `END IF` as a compound-keyword pre-check and uses
+small handlers for `ULAPLUS`/`PALETTE`, `INPUT`, and stop semantics. It
+preserves IX across dispatch, retains the original keyword order, and points
+directly at ordinary statement handlers instead of retaining jump veneers.
+The complete 68-fixture suite, smoke ROMs, and automated editor test pass.
 
 ## 5. Numeric function dispatch: estimated 35-60 HOME bytes
 
@@ -140,15 +135,11 @@ chain.
 
 ## Recommended implementation order
 
-1. Shared low-page strings, because the saving is exact and independent of
-   interpreter control flow.
-2. Remove the dead `KW_THEN` highlighting pointer.
-3. Prototype the table-driven statement dispatcher under a build define and
-   compare its assembled end address with the current image.
-4. Run the complete static checker, smoke, statement, editor, and emulator
-   suites before making that dispatcher the default.
-5. Prototype function-handler pointers only after the statement dispatcher is
-   stable.
+1. Completed: shared low-page strings and stale-pairing magic bump.
+2. Completed: dead `KW_THEN` highlighting pointer removal.
+3. Completed: table-driven execution statement dispatcher.
+4. Completed: static checks, smoke ROMs, editor automation, and 68 fixtures.
+5. Next candidate: prototype numeric function-handler pointers separately.
 
 No routine should be removed solely because the textual report shows zero
 references. Entry fallthrough, fixed ABI addresses, jump tables, inline data,

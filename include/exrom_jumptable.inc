@@ -346,9 +346,10 @@ KTAB_MAGIC_ADDR EQU KTAB_END                    ; where Home stamps
                                                 ; EXROM_VERIFY_KTAB_
                                                 ; MAGIC (rom/exrom_
                                                 ; checker.asm)
-KTAB_MAGIC      EQU 14  ; bump by 1 any time KTAB_LIST's entry COUNT
-                        ; or ORDER changes — its only job is to change
-                        ; when the table shape changes, so a stale
+KTAB_MAGIC      EQU 15  ; bump by 1 any time KTAB_LIST's entry COUNT
+                        ; or ORDER, or shared low-ROM ABI changes — its
+                        ; job is to change when paired-image contracts
+                        ; change, so a stale
                         ; binary pairing gets caught at runtime; the
                         ; exact value carries no other meaning
 

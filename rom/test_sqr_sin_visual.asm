@@ -49,6 +49,9 @@ RST_38:
     ASSERT $ <= KTAB_END
     DB   KTAB_MAGIC
 
+    INCLUDE "include/shared_lowrom_data.inc"
+    EMIT_SHARED_LOWROM_DATA
+
     DS   $0100 - $, $FF
 
 CUR_ROW EQU CUR_VAR_LETTER      ; RAM scratch this test never otherwise

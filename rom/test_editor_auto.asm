@@ -146,7 +146,34 @@ RST_38:
     ASSERT $ <= KTAB_END
     DB   KTAB_MAGIC
 
-; Test-only ISR body uses the otherwise empty tail of the vector page.
+    INCLUDE "include/shared_lowrom_data.inc"
+    EMIT_SHARED_LOWROM_DATA
+
+    DS   $0100 - $, $FF
+
+COLD_START:
+    ld   sp, $FF00
+
+    call MEM_INIT
+
+INJECT_POINT:
+    ; Fuse breaks here (stable label address, read via --sym) and pokes
+    ; the key queue's bytes at TEST_KEY_QUEUE before real execution
+    ; continues into `ei` below — same natural-pause-point injection
+    ; tools/fuse_suite_inject.py already uses, no PC redirection or
+    ; stack surgery needed. If no .dbg script is attached, TEST_KEY_
+    ; QUEUE's first byte is whatever RAM happened to power on with (not
+    ; guaranteed 0) — this harness was never meant to run standalone.
+    im   1
+    ei
+
+    call BASIC_COMMAND_LOOP          ; never returns — see file header;
+                                     ; verification happens from inside
+                                     ; TEST_KEY_INJECT_TICK once the
+                                     ; queue drains
+
+; Test-only ISR body. It used to occupy the low-vector-page padding, which is
+; now production shared data, so RST_38 forward-calls it here instead.
 TEST_KEY_INJECT_TICK:
     push af
     push hl
@@ -179,30 +206,6 @@ TEST_KEY_INJECT_TICK:
     pop  hl
     pop  af
     ret
-    ASSERT $ <= $0100
-
-    DS   $0100 - $, $FF
-
-COLD_START:
-    ld   sp, $FF00
-
-    call MEM_INIT
-
-INJECT_POINT:
-    ; Fuse breaks here (stable label address, read via --sym) and pokes
-    ; the key queue's bytes at TEST_KEY_QUEUE before real execution
-    ; continues into `ei` below — same natural-pause-point injection
-    ; tools/fuse_suite_inject.py already uses, no PC redirection or
-    ; stack surgery needed. If no .dbg script is attached, TEST_KEY_
-    ; QUEUE's first byte is whatever RAM happened to power on with (not
-    ; guaranteed 0) — this harness was never meant to run standalone.
-    im   1
-    ei
-
-    call BASIC_COMMAND_LOOP          ; never returns — see file header;
-                                     ; verification happens from inside
-                                     ; TEST_KEY_INJECT_TICK once the
-                                     ; queue drains
 
     INCLUDE "basic/basic.asm"
     INCLUDE "kernel/memory/memory.asm"

@@ -465,6 +465,9 @@ RST_38:
                                         ; KTAB_MAGIC before trusting
                                         ; the table above for real work
 
+    INCLUDE "include/shared_lowrom_data.inc"
+    EMIT_SHARED_LOWROM_DATA
+
     DS   $0100 - $, $FF
 
 COLD_START:

@@ -10376,102 +10376,6 @@ BASIC_EXEC_STATEMENT:
 ; Destroys: AF, BC, DE, HL
 ; ============================================================================
 BASIC_EXEC_STATEMENT_CONTENT:
-    ld   de, KW_PRINT
-    call BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .do_print
-
-    ld   de, KW_CLS
-    call BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .do_cls
-
-    ld   de, KW_REM
-    call BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .do_rem
-
-    ld   de, KW_BORDER
-    call BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .do_border
-
-    ld   de, KW_INK
-    call BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .do_ink
-
-    ld   de, KW_PAPER
-    call BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .do_paper
-
-    ld   de, KW_FLASH
-    call BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .do_flash
-
-    ld   de, KW_BRIGHT
-    call BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .do_bright
-
-    ld   de, KW_INVERSE
-    call BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .do_inverse
-
-    ld   de, KW_OVER
-    call BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .do_over
-
-    ld   de, KW_AT
-    call BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .do_at
-
-    ld   de, KW_TAB
-    call BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .do_tab
-
-    ld   de, KW_PLOT
-    call BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .do_plot
-
-    ld   de, KW_LINE
-    call BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .do_line
-
-    ld   de, KW_BLOCK
-    call BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .do_block
-
-    ld   de, KW_CIRCLE
-    call BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .do_circle
-
-    ld   de, KW_CPLOT
-    call BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .do_cplot
-
-    ld   de, KW_FILL
-    call BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .do_fill
-
-    ld   de, KW_BEEP
-    call BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .do_beep
-
-    ld   de, KW_SOUND
-    call BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .do_sound
-
-    ld   de, KW_DIM
-    call BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .do_dim
-
-    ld   de, KW_MODE
-    call BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .do_mode
-
-    ld   de, KW_ULAPLUS
-    call BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .do_ulaplus
-
-    ld   de, KW_PALETTE
-    call BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .do_palette
-
     call BASIC_MATCH_ENDIF
     jp   nc, .done                    ; END IF is a pure no-op —
                                       ; whether reached by ordinary
@@ -10481,86 +10385,30 @@ BASIC_EXEC_STATEMENT_CONTENT:
                                       ; just continues to whatever
                                       ; comes next either way
 
-    ld   de, KW_END
+    push ix                           ; IX is not part of this routine's
+                                      ; documented destroy set
+    ld   ix, BASIC_EXEC_DISPATCH_TABLE
+.dispatch_loop:
+    ld   e, (ix+0)
+    ld   d, (ix+1)
+    ld   a, d
+    or   e
+    jr   z, .try_assignments
     call BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .do_stop                 ; END and STOP both just halt
-                                      ; execution in this first pass —
-                                      ; the language design distinguishes
-                                      ; them (STOP is a resumable
-                                      ; breakpoint, END is final
-                                      ; termination — see
-                                      ; docs/basic_language_reference.md)
-                                      ; but nothing here implements
-                                      ; CONTINUE/resume yet, so treating
-                                      ; them identically is an honest
-                                      ; simplification, not a mistake
+    jr   nc, .dispatch_match
+    ld   de, 4
+    add  ix, de
+    jr   .dispatch_loop
+.dispatch_match:
+    ld   e, (ix+2)
+    ld   d, (ix+3)
+    pop  ix
+    push de
+    ret                               ; synthetic indirect jump; HL is
+                                      ; still advanced past the keyword
 
-    ld   de, KW_STOP
-    call BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .do_stop
-
-    ld   de, KW_INPUT
-    call BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .do_input
-
-    ld   de, KW_GOTO
-    call BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .do_goto
-
-    ld   de, KW_IF
-    call BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .do_if
-
-    ld   de, KW_ELSEIF
-    call BASIC_MATCH_KEYWORD_BOUNDARY
-    jr   nc, .do_else
-
-    ld   de, KW_ELSE
-    call BASIC_MATCH_KEYWORD_BOUNDARY
-    jr   nc, .do_else
-
-    ld   de, KW_FOR
-    call BASIC_MATCH_KEYWORD_BOUNDARY
-    jr   nc, .do_for
-
-    ld   de, KW_NEXT
-    call BASIC_MATCH_KEYWORD_BOUNDARY
-    jr   nc, .do_next
-
-    ld   de, KW_EXIT
-    call BASIC_MATCH_KEYWORD_BOUNDARY
-    jr   nc, .do_exit
-
-    ld   de, KW_SPRITE
-    call BASIC_MATCH_KEYWORD_BOUNDARY
-    jr   nc, .do_sprite
-
-    ld   de, KW_POKE
-    call BASIC_MATCH_KEYWORD_BOUNDARY
-    jr   nc, .do_poke
-
-    ld   de, KW_PAUSE
-    call BASIC_MATCH_KEYWORD_BOUNDARY
-    jr   nc, .do_pause
-
-    ld   de, KW_RANDOMISE
-    call BASIC_MATCH_KEYWORD_BOUNDARY
-    jr   nc, .do_randomise
-
-    ld   de, KW_GOSUB
-    call BASIC_MATCH_KEYWORD_BOUNDARY
-    jr   nc, .do_gosub
-
-    ld   de, KW_CALL
-    call BASIC_MATCH_KEYWORD_BOUNDARY
-    jr   nc, .do_gosub                ; CALL is a second spelling of
-                                      ; GOSUB — see BASIC_STMT_GOSUB's
-                                      ; own header
-
-    ld   de, KW_RETURN
-    call BASIC_MATCH_KEYWORD_BOUNDARY
-    jr   nc, .do_return
-
+.try_assignments:
+    pop  ix
     call BASIC_TRY_STR_ASSIGNMENT
     jp   nc, .done                    ; string assignment handled it
 
@@ -10590,113 +10438,69 @@ BASIC_EXEC_STATEMENT_CONTENT:
     or   a
     ret
 
-.do_print:
-    jp BASIC_STMT_PRINT  ; propagate whatever carry
-                                       ; BASIC_STMT_PRINT set — used to
-                                       ; unconditionally clear it here
-                                       ; (via "or a"), which silently
-                                       ; discarded a malformed-expression
-                                       ; error even after
-                                       ; BASIC_REPORT_ERROR started
-                                       ; reporting it
 .do_input:
     call BASIC_STMT_INPUT
     or   a
     ret
-.do_goto:
-    jp BASIC_STMT_GOTO  ; propagate carry — see .do_print's
-                                       ; own comment just above for why
-                                       ; this can no longer unconditionally
-                                       ; clear it
-.do_if:
-    jp BASIC_STMT_IF  ; propagate carry — same reasoning
-.do_else:
-    jp BASIC_STMT_ELSE_OR_ELSEIF  ; propagate carry
-.do_for:
-    jp BASIC_STMT_FOR  ; propagate carry
-.do_next:
-    jp BASIC_STMT_NEXT  ; propagate carry
-.do_exit:
-    jp BASIC_STMT_EXIT  ; propagate carry
-.do_sprite:
-    jp BASIC_SPRITE_EXROM  ; propagate carry
-.do_poke:
-    jp BASIC_STMT_POKE  ; propagate carry
-.do_pause:
-    jp BASIC_STMT_PAUSE  ; propagate carry
-.do_randomise:
-    jp BASIC_STMT_RANDOMISE  ; propagate carry
-.do_gosub:
-    jp BASIC_STMT_GOSUB  ; propagate carry
-.do_return:
-    jp BASIC_STMT_RETURN  ; propagate carry
-.do_cls:
-    jp BASIC_STMT_CLS
-.do_rem:
-    jp BASIC_STMT_REM
-.do_border:
-    jp BASIC_STMT_BORDER  ; propagate carry — same
-                                       ; reasoning as .do_print
-.do_ink:
-    jp BASIC_STMT_INK  ; propagate carry — same
-                                       ; reasoning as .do_print
-.do_paper:
-    jp BASIC_STMT_PAPER
-.do_flash:
-    jp BASIC_STMT_FLASH
-.do_bright:
-    jp BASIC_STMT_BRIGHT
-.do_inverse:
-    jp BASIC_STMT_INVERSE
-.do_over:
-    jp BASIC_STMT_OVER
-.do_at:
-    jp BASIC_STMT_AT  ; propagate carry — same
-                                       ; reasoning as .do_print
-.do_tab:
-    jp BASIC_STMT_TAB
-.do_plot:
-    jp BASIC_STMT_PLOT  ; propagate carry — same
-                                       ; reasoning as .do_print
-.do_line:
-    jp BASIC_STMT_LINE  ; propagate carry — same
-                                       ; reasoning as .do_print
-.do_block:
-    jp BASIC_STMT_BLOCK  ; propagate carry — same
-                                       ; reasoning as .do_print
-.do_circle:
-    jp BASIC_STMT_CIRCLE  ; propagate carry — same
-                                       ; reasoning as .do_print
-.do_cplot:
-    jp BASIC_STMT_CPLOT  ; propagate carry — same
-                                       ; reasoning as .do_print
-.do_fill:
-    jp BASIC_STMT_FILL  ; propagate carry — same
-                                       ; reasoning as .do_print
-.do_mode:
-    jp BASIC_STMT_MODE  ; propagate carry — same
-                                       ; reasoning as .do_print
 .do_ulaplus:
     ld   b, 0
     jp   BASIC_ULAPLUS_EXROM
 .do_palette:
     ld   b, 1
     jp   BASIC_ULAPLUS_EXROM
-.do_beep:
-    jp BASIC_STMT_BEEP  ; propagate carry — same
-                                       ; reasoning as .do_print
-.do_sound:
-    jp BASIC_STMT_SOUND  ; propagate carry — same
-                                       ; reasoning as .do_print
-.do_dim:
-    jp BASIC_STMT_DIM  ; propagate carry — same
-                                       ; reasoning as .do_print
 .do_stop:
     scf
     ret
 .done:
     or   a
     ret
+
+; Keyword pointer + handler pointer. END IF remains the dedicated pre-check
+; above because it is the only compound statement-leading keyword. Duplicate
+; handler pointers are intentional aliases (END/STOP, ELSEIF/ELSE, GOSUB/CALL).
+BASIC_EXEC_DISPATCH_TABLE:
+    DW KW_PRINT, BASIC_STMT_PRINT
+    DW KW_CLS, BASIC_STMT_CLS
+    DW KW_REM, BASIC_STMT_REM
+    DW KW_BORDER, BASIC_STMT_BORDER
+    DW KW_INK, BASIC_STMT_INK
+    DW KW_PAPER, BASIC_STMT_PAPER
+    DW KW_FLASH, BASIC_STMT_FLASH
+    DW KW_BRIGHT, BASIC_STMT_BRIGHT
+    DW KW_INVERSE, BASIC_STMT_INVERSE
+    DW KW_OVER, BASIC_STMT_OVER
+    DW KW_AT, BASIC_STMT_AT
+    DW KW_TAB, BASIC_STMT_TAB
+    DW KW_PLOT, BASIC_STMT_PLOT
+    DW KW_LINE, BASIC_STMT_LINE
+    DW KW_BLOCK, BASIC_STMT_BLOCK
+    DW KW_CIRCLE, BASIC_STMT_CIRCLE
+    DW KW_CPLOT, BASIC_STMT_CPLOT
+    DW KW_FILL, BASIC_STMT_FILL
+    DW KW_BEEP, BASIC_STMT_BEEP
+    DW KW_SOUND, BASIC_STMT_SOUND
+    DW KW_DIM, BASIC_STMT_DIM
+    DW KW_MODE, BASIC_STMT_MODE
+    DW KW_ULAPLUS, BASIC_EXEC_STATEMENT_CONTENT.do_ulaplus
+    DW KW_PALETTE, BASIC_EXEC_STATEMENT_CONTENT.do_palette
+    DW KW_END, BASIC_EXEC_STATEMENT_CONTENT.do_stop
+    DW KW_STOP, BASIC_EXEC_STATEMENT_CONTENT.do_stop
+    DW KW_INPUT, BASIC_EXEC_STATEMENT_CONTENT.do_input
+    DW KW_GOTO, BASIC_STMT_GOTO
+    DW KW_IF, BASIC_STMT_IF
+    DW KW_ELSEIF, BASIC_STMT_ELSE_OR_ELSEIF
+    DW KW_ELSE, BASIC_STMT_ELSE_OR_ELSEIF
+    DW KW_FOR, BASIC_STMT_FOR
+    DW KW_NEXT, BASIC_STMT_NEXT
+    DW KW_EXIT, BASIC_STMT_EXIT
+    DW KW_SPRITE, BASIC_SPRITE_EXROM
+    DW KW_POKE, BASIC_STMT_POKE
+    DW KW_PAUSE, BASIC_STMT_PAUSE
+    DW KW_RANDOMISE, BASIC_STMT_RANDOMISE
+    DW KW_GOSUB, BASIC_STMT_GOSUB
+    DW KW_CALL, BASIC_STMT_GOSUB
+    DW KW_RETURN, BASIC_STMT_RETURN
+    DW 0
 
 ; ============================================================================
 ; BASIC_EXEC_MULTI_STATEMENT
@@ -13783,7 +13587,7 @@ KW_STEP:    DB "STEP", 0          ; connector keyword within FOR's own
 ; ----
 KEYWORD_HILITE_TABLE:
     DW   KW_PRINT, KW_END, KW_STOP, KW_INPUT, KW_GOTO
-    DW   KW_IF, KW_ELSEIF, KW_ELSE, KW_THEN
+    DW   KW_IF, KW_ELSEIF, KW_ELSE
     DW   KW_FOR, KW_NEXT, KW_EXIT
     DW   KW_SPRITE
     DW   KW_RUN, KW_NEW, KW_LIST, KW_EDIT, KW_DELETE, KW_SAVE, KW_LOAD
