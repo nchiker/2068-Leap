@@ -56,6 +56,14 @@ sim.SYSVARS['CALC_OP2_PTR'] = 0xB24B
 sim.SYSVARS['CALC_LITERAL_PARAM'] = 0xB24D
 sim.SYSVARS['CALC_STACK_OVERFLOW_FLAG'] = 0xB24E
 sim.SYSVARS['CALC_TRUNC_FLAG'] = 0xB245
+sim.SYSVARS['CALC_ERROR_CODE'] = 0xB246
+sim.SYSVARS['CALC_ERR_NONE'] = 0
+sim.SYSVARS['CALC_ERR_INVALID_LITERAL'] = 1
+sim.SYSVARS['CALC_ERR_STACK_UNDERFLOW'] = 2
+sim.SYSVARS['CALC_ERR_STACK_OVERFLOW'] = 3
+sim.SYSVARS['CALC_ERR_DIVISION_BY_ZERO'] = 4
+sim.SYSVARS['CALC_ERR_NUMERIC_OVERFLOW'] = 5
+sim.SYSVARS['CALC_ERR_UNIMPLEMENTED'] = 6
 # ---- 2026-08-21 real-arithmetic addition: register the 5 new scratch
 # sysvars (include/sysvars.inc's own real addresses, not invented) ----
 sim.SYSVARS['CALC_UNP_A'] = 0xB24F
@@ -131,29 +139,23 @@ def expected_param(literal):
 
 
 def populate_calc_table(prog, s):
-    """Writes the REAL CALC_TABLE layout (all 66 entries, matching rom/
-    exrom_calc.asm's own DW list exactly — everything CALC_OP_
-    UNIMPLEMENTED except index $02=exchange, $04=delete, $62=duplicate,
-    $70=end-calc, the four real ops implemented so far) into simulated
-    memory as resolved instruction indices. Without this, `LD E,(HL)/LD
-    D,(HL)` reads zero bytes (Z80Sim.mem starts all-zero) and `JP (HL)`
-    would silently land on instruction index 0 instead of the real op —
-    this is what makes the test exercise the REAL table layout, not a
-    fabricated one."""
+    """Writes the production sparse CALC_TABLE into simulated memory."""
     real_ops = {
         0x02: 'CALC_OP_EXCHANGE',
         0x04: 'CALC_OP_DELETE',
         0x06: 'CALC_OP_SUB',       # literal $03, subtract
         0x08: 'CALC_OP_MUL',       # literal $04, multiply
+        0x0A: 'CALC_OP_DIV',       # literal $05, division
         0x1E: 'CALC_OP_ADD',       # literal $0F, addition
         0x62: 'CALC_OP_DUPLICATE',
         0x70: 'CALC_OP_END_CALC',
     }
-    unimpl_idx = prog.resolve_label(None, 'CALC_OP_UNIMPLEMENTED')
-    for offset in range(0, 132, 2):
-        label = real_ops.get(offset)
-        idx = prog.resolve_label(None, label) if label else unimpl_idx
-        s.ww(CALC_TABLE_ADDR + offset, idx)
+    address = CALC_TABLE_ADDR
+    for offset, label in real_ops.items():
+        s.wb(address, offset)
+        s.ww(address + 1, prog.resolve_label(None, label))
+        address += 3
+    s.wb(address, 0xFF)
 
 
 def new_sim(prog, calc_sp=1):
@@ -212,38 +214,30 @@ check("test1 end-calc: resume address", got_resume_addr,
 check("test1 end-calc: CALC_LITERAL_PTR left consistent",
       s.rw(sim.SYSVARS['CALC_LITERAL_PTR']), LITERAL_STREAM_ADDR + 1)
 
-# ---- test 2: unimplemented op, binary path (literal $05, < $18) -----
-# NOTE: was literal $02 originally, then $03 -- both (delete, subtract)
-# are now real, implemented ops; reusing either here would have
-# silently tested the WRONG thing (that op's own behavior, not the
-# unimplemented-op path) the moment it got wired in. $05 (division) is
-# still genuinely unimplemented.
+# ---- test 2: unimplemented op, binary path (literal $06, < $18) -----
 s = new_sim(prog, calc_sp=2)   # 2, so CALC_STK_PNTRS_BINARY's -5 adjustment
                          # doesn't need to go negative-index (SP-1 >= 1)
-interp, halt_msg = run_literal(prog, s, 0x05, max_steps=500)
-check("test2 binary-unimpl: hit the hang loop (max_steps)",
-      halt_msg is not None and 'max_steps' in halt_msg, True)
-check("test2 binary-unimpl: table index recorded",
-      s.rb(sim.SYSVARS['CALC_UNIMPLEMENTED_LITERAL_FLAG']),
-      expected_table_index_simple(0x05))
+interp, halt_msg = run_literals(prog, s, [0x06, 0x38], max_steps=500)
+check("test2 binary-unimpl: returned through end-calc",
+      halt_msg is not None and 'clean stop' in halt_msg, True)
+check("test2 binary-unimpl: error recorded",
+      s.rb(sim.SYSVARS['CALC_ERROR_CODE']), 6)
 
 # ---- test 3: unimplemented op, unary/manipulatory path (literal $20) -
 s = new_sim(prog, calc_sp=1)
-interp, halt_msg = run_literal(prog, s, 0x20, max_steps=500)
-check("test3 unary-unimpl: hit the hang loop (max_steps)",
-      halt_msg is not None and 'max_steps' in halt_msg, True)
-check("test3 unary-unimpl: table index recorded",
-      s.rb(sim.SYSVARS['CALC_UNIMPLEMENTED_LITERAL_FLAG']),
-      expected_table_index_simple(0x20))
+interp, halt_msg = run_literals(prog, s, [0x20, 0x38], max_steps=500)
+check("test3 unary-unimpl: returned through end-calc",
+      halt_msg is not None and 'clean stop' in halt_msg, True)
+check("test3 unary-unimpl: error recorded",
+      s.rb(sim.SYSVARS['CALC_ERROR_CODE']), 6)
 
 # ---- test 4: unimplemented op, multi-purpose path (literal $C3) -----
 s = new_sim(prog, calc_sp=1)
-interp, halt_msg = run_literal(prog, s, 0xC3, max_steps=500)
-check("test4 multi-unimpl: hit the hang loop (max_steps)",
-      halt_msg is not None and 'max_steps' in halt_msg, True)
-check("test4 multi-unimpl: table index recorded",
-      s.rb(sim.SYSVARS['CALC_UNIMPLEMENTED_LITERAL_FLAG']),
-      expected_table_index_multi(0xC3))
+interp, halt_msg = run_literals(prog, s, [0xC3, 0x38], max_steps=500)
+check("test4 multi-unimpl: returned through end-calc",
+      halt_msg is not None and 'clean stop' in halt_msg, True)
+check("test4 multi-unimpl: error recorded",
+      s.rb(sim.SYSVARS['CALC_ERROR_CODE']), 6)
 check("test4 multi-unimpl: parameter extracted",
       s.rb(sim.SYSVARS['CALC_LITERAL_PARAM']),
       expected_param(0xC3))
@@ -303,13 +297,12 @@ check("test7 duplicate: original slot0 untouched",
       read_slot(s, 0), slot0_pattern)
 
 # ---- test 8: duplicate overflow (CALC_SP already at the 8-slot cap) -
-# Expected: hangs (matches CALC_OP_UNIMPLEMENTED's own diagnostic-hang
-# shape, deliberately shared — see that op's own header) rather than
-# silently writing past CALC_STACK's real 40-byte allocation.
+# Expected: returns with an explicit error rather than writing past
+# CALC_STACK's real 40-byte allocation.
 s = new_sim(prog, calc_sp=8)
-interp, halt_msg = run_literal(prog, s, 0x31, max_steps=500)
-check("test8 duplicate-overflow: hit the hang loop (max_steps)",
-      halt_msg is not None and 'max_steps' in halt_msg, True)
+interp, halt_msg = run_literals(prog, s, [0x31, 0x38], max_steps=500)
+check("test8 duplicate-overflow: returned through end-calc",
+      halt_msg is not None and 'clean stop' in halt_msg, True)
 check("test8 duplicate-overflow: overflow flag recorded CALC_SP",
       s.rb(sim.SYSVARS['CALC_STACK_OVERFLOW_FLAG']), 8)
 
@@ -432,7 +425,7 @@ check("test13 mul-overflow: CALC_TRUNC_FLAG set",
 s = new_sim(prog, calc_sp=2)
 poke_slot(s, 0, small_int_form(-30))
 poke_slot(s, 1, small_int_form(80))
-interp, halt_msg = run_literals(prog, s, [0x0F])  # addition only
+interp, halt_msg = run_literals(prog, s, [0x0F, 0x38])
 check("test14 chain: intermediate CALC_SP", s.rb(sim.SYSVARS['CALC_SP']), 1)
 poke_slot(s, 1, small_int_form(7))
 s.wb(sim.SYSVARS['CALC_SP'], 2)
@@ -440,6 +433,79 @@ interp, halt_msg = run_literals(prog, s, [0x04, 0x38], max_steps=8000)  # multip
 interp, halt_msg = run_sub(prog, s, 'CALC_FP_TO_INT')
 got_hl = (s.regs['H'] << 8) | s.regs['L']
 check("test14 chain: (-30+80)*7=350", got_hl, 350)
+
+# ---- test 15: malformed simple literal is bounded -------------------
+s = new_sim(prog, calc_sp=2)
+interp, halt_msg = run_literals(prog, s, [0x42, 0x38])
+check("test15 invalid literal: clean error return",
+      halt_msg is not None and 'clean stop' in halt_msg, True)
+check("test15 invalid literal: error code",
+      s.rb(sim.SYSVARS['CALC_ERROR_CODE']), 1)
+
+# ---- test 16: binary stack underflow cannot escape CALC_STACK -------
+s = new_sim(prog, calc_sp=1)
+interp, halt_msg = run_literals(prog, s, [0x0F, 0x38])
+check("test16 stack underflow: clean error return",
+      halt_msg is not None and 'clean stop' in halt_msg, True)
+check("test16 stack underflow: error code",
+      s.rb(sim.SYSVARS['CALC_ERROR_CODE']), 2)
+check("test16 stack underflow: stack reset", s.rb(sim.SYSVARS['CALC_SP']), 0)
+
+# ---- test 17: calculator division by zero is recoverable ------------
+s = new_sim(prog, calc_sp=2)
+poke_slot(s, 0, small_int_form(10))
+poke_slot(s, 1, small_int_form(0))
+interp, halt_msg = run_literals(prog, s, [0x05, 0x38])
+check("test17 divide zero: clean error return",
+      halt_msg is not None and 'clean stop' in halt_msg, True)
+check("test17 divide zero: error code",
+      s.rb(sim.SYSVARS['CALC_ERROR_CODE']), 4)
+
+# ---- test 18: FP_TO_INT overflow saturates consistently by sign -----
+for label, packed, expected in (
+        ("positive", [0x91, 0x00, 0, 0, 0], 0x7FFF),
+        ("negative", [0x91, 0x80, 0, 0, 0], 0x8000)):
+    s = new_sim(prog, calc_sp=1)
+    poke_slot(s, 0, packed)
+    interp, halt_msg = run_sub(prog, s, 'CALC_FP_TO_INT')
+    got_hl = (s.regs['H'] << 8) | s.regs['L']
+    check(f"test18 {label}: saturated result", got_hl, expected)
+    check(f"test18 {label}: trunc flag", s.rb(sim.SYSVARS['CALC_TRUNC_FLAG']), 1)
+    check(f"test18 {label}: numeric error", s.rb(sim.SYSVARS['CALC_ERROR_CODE']), 5)
+
+# ---- test 19: exponent overflow errors; underflow becomes zero -------
+def run_binary_packed(op, left, right, max_steps=10000):
+    state = new_sim(prog, calc_sp=2)
+    poke_slot(state, 0, left)
+    poke_slot(state, 1, right)
+    interpreter, stopped = run_literals(prog, state, [op, 0x38],
+                                        max_steps=max_steps)
+    return state, stopped
+
+
+s, halt_msg = run_binary_packed(0x0F, [0xFF, 0, 0, 0, 0],
+                                [0xFF, 0, 0, 0, 0])
+check("test19 add exponent overflow: clean return",
+      halt_msg is not None and 'clean stop' in halt_msg, True)
+check("test19 add exponent overflow: error", s.rb(sim.SYSVARS['CALC_ERROR_CODE']), 5)
+
+s, halt_msg = run_binary_packed(0x04, [200, 0, 0, 0, 0],
+                                [200, 0, 0, 0, 0])
+check("test19 mul exponent overflow: error", s.rb(sim.SYSVARS['CALC_ERROR_CODE']), 5)
+
+s, halt_msg = run_binary_packed(0x04, [1, 0, 0, 0, 0],
+                                [1, 0, 0, 0, 0])
+check("test19 mul exponent underflow: no error", s.rb(sim.SYSVARS['CALC_ERROR_CODE']), 0)
+check("test19 mul exponent underflow: zero exponent", read_slot(s, 0)[0], 0)
+
+s, halt_msg = run_binary_packed(0x05, [250, 0, 0, 0, 0],
+                                [1, 0, 0, 0, 0])
+check("test19 div exponent overflow: error", s.rb(sim.SYSVARS['CALC_ERROR_CODE']), 5)
+
+s, halt_msg = run_binary_packed(0x05, [1, 0, 0, 0, 0],
+                                [250, 0, 0, 0, 0])
+check("test19 div exponent underflow: no error", s.rb(sim.SYSVARS['CALC_ERROR_CODE']), 0)
+check("test19 div exponent underflow: zero exponent", read_slot(s, 0)[0], 0)
 
 # ---- results ----------------------------------------------------------
 if FAILURES:

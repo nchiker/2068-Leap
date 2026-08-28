@@ -12,6 +12,8 @@ tests=(
     test_calc_smoke_stackops
     test_calc_smoke_arithmetic
     test_calc_smoke_division
+    test_calc_smoke_dupoverflow
+    test_calc_smoke_unimpl
 )
 pass=0
 fail=0

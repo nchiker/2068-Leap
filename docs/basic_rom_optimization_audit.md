@@ -6,7 +6,7 @@ block inventory and `make budget` reports the current byte totals.
 
 ## Executive result
 
-The V2 recovery passes have increased free space from **2 to 360 HOME
+The V2 recovery passes initially increased free space from **2 to 360 HOME
 bytes** and from **99 to 317 EXROM bytes**, without removing a user feature.
 The shared low-ROM strings and dead highlighting pointer recovered 57 HOME
 bytes and 55 EXROM bytes. Replacing the execution keyword chain and its jump
@@ -22,7 +22,8 @@ Table-driving the EXROM static checker recovered a further 163 EXROM bytes.
 | Replace numeric function ID branch chain | 48 | 0 | Implemented and suite-verified |
 | Table-drive static-checker statement dispatch | 0 | 163 | Implemented and suite-verified |
 
-Current end-of-image headroom is **360 HOME bytes and 317 EXROM bytes**. The
+Calculator hardening subsequently used part of that feature budget. Current
+end-of-image headroom is **276 HOME bytes and 249 EXROM bytes**. The
 retired six-byte entry remains an internal reusable hole and is deliberately
 not counted as end-of-image free space.
 

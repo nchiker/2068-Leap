@@ -8953,10 +8953,14 @@ BASIC_FORMAT_STORAGE_STATUS_EXROM:
 CALC_INT_TO_FP_HOME:
     call BASIC_CALL_EXROM_INLINE
     DW   $C02A
+    ret  nc
+    jp   CALC_REPORT_ERROR
 
 CALC_FP_TO_INT_HOME:
     call BASIC_CALL_EXROM_INLINE
     DW   $C030
+    ret  nc
+    jp   CALC_REPORT_ERROR
 
 ; ============================================================================
 ; CALC_PUSH_PI_HOME / CALC_PUSH_FP_RAW_HOME
@@ -8981,10 +8985,14 @@ CALC_FP_TO_INT_HOME:
 CALC_PUSH_PI_HOME:
     call BASIC_CALL_EXROM_INLINE
     DW   $C036
+    ret  nc
+    jp   CALC_REPORT_ERROR
 
 CALC_PUSH_FP_RAW_HOME:
     call BASIC_CALL_EXROM_INLINE
     DW   $C03C
+    ret  nc
+    jp   CALC_REPORT_ERROR
 
 ; ============================================================================
 ; CALC_ENTRY_TRAMPOLINE / CALC_EXIT_TRAMPOLINE
@@ -9044,7 +9052,30 @@ CALC_ENTRY_TRAMPOLINE:
 ; Destroys: AF (BANK_PAGE_EXROM_OUT's own contract)
 ; ============================================================================
 CALC_EXIT_TRAMPOLINE:
-    jp   BANK_PAGE_EXROM_OUT
+    call BANK_PAGE_EXROM_OUT
+    ld   a, (CALC_ERROR_CODE)
+    or   a
+    ret  z
+    call CALC_REPORT_ERROR
+    ret
+
+; Converts CALC_ERROR_CODE into the BASIC error channel. The specific
+; division and numeric-range messages are retained; malformed bytecode,
+; stack depth, overflow, and unavailable operations share a calculator
+; error because none are valid source-level BASIC constructs.
+CALC_REPORT_ERROR:
+    ld   a, (CALC_ERROR_CODE)
+    cp   CALC_ERR_DIVISION_BY_ZERO
+    ld   hl, MSG_DIVISION_BY_ZERO
+    jr   z, .record
+    cp   CALC_ERR_NUMERIC_OVERFLOW
+    ld   hl, MSG_NUMERIC_OVERFLOW
+    jr   z, .record
+    ld   hl, MSG_CALCULATOR_ERROR
+.record:
+    call BASIC_SET_PENDING_ERROR
+    scf
+    ret
 
 ; ============================================================================
 ; BASIC_EXROM_EXIT_PROTECTED
@@ -11221,6 +11252,8 @@ KEYWORD_HILITE_TABLE:
 ; include/checker_keywords.inc INCLUDE above (shared with the
 ; checker) — not redefined here.
 MSG_DIVISION_BY_ZERO:  DB "DIVISION BY ZERO", 0
+MSG_NUMERIC_OVERFLOW:  DB "NUMERIC OVERFLOW", 0
+MSG_CALCULATOR_ERROR:  DB "CALCULATOR ERROR", 0
 MSG_INVALID_MODE:      DB "INVALID MODE", 0
 MSG_INVALID_SOUND_REGISTER: DB "INVALID SOUND REGISTER", 0
 MSG_INVALID_ARRAY_SIZE:   DB "INVALID ARRAY SIZE", 0

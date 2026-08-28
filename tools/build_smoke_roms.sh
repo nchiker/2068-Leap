@@ -19,6 +19,8 @@ sources=(
     rom/test_calc_smoke_stackops.asm
     rom/test_calc_smoke_arithmetic.asm
     rom/test_calc_smoke_division.asm
+    rom/test_calc_smoke_dupoverflow.asm
+    rom/test_calc_smoke_unimpl.asm
 )
 
 outputs=(
@@ -35,6 +37,8 @@ outputs=(
     test_calc_smoke_stackops.bin
     test_calc_smoke_arithmetic.bin
     test_calc_smoke_division.bin
+    test_calc_smoke_dupoverflow.bin
+    test_calc_smoke_unimpl.bin
 )
 
 for index in "${!sources[@]}"; do

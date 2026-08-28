@@ -37,12 +37,9 @@
 ;     implement RLCA/RRCA/EXX/EX (SP),HL/DW, and re-deriving the same
 ;     arithmetic with instructions it DOES support was cheaper and more
 ;     legible than extending the simulator for a one-off need.
-;   - CALC_OP_UNIMPLEMENTED hangs via `jr` to itself, not the Z80 HALT
-;     opcode — this project's own established idiom (EXROM_VERIFY_KTAB_
-;     MAGIC, rom/exrom_checker.asm) already does exactly this; using
-;     HALT in the version before this rework was an inconsistency with
-;     the project's own convention, caught and fixed here, independent
-;     of the simulator question.
+;   - invalid literals, stack errors, unavailable operations, division by
+;     zero, and numeric overflow use one recoverable error path rather than
+;     executing outside the table or freezing in diagnostic loops.
 ;
 ; WHAT'S STILL A FAITHFUL PORT: the overall literal-decode arithmetic
 ; (which bits mean what, the $18/$7C/$60/$1F magic numbers, the binary-
@@ -72,6 +69,8 @@
 
 CALC_EXROM_ENTRY:
 CALC_GEN_ENT_1:
+    xor  a
+    ld   (CALC_ERROR_CODE), a
     ld   a, b
     ld   (CALC_BREG), a
 CALC_GEN_ENT_2:
@@ -122,15 +121,31 @@ CALC_SCAN_ENT:
                                     ; sysvars.inc's own comment on this
     jr   CALC_DISPATCH
 CALC_FIRST_3D:
+    cp   $42
+    jr   nc, CALC_ABORT_INVALID_LITERAL
+    cp   $38
+    jr   z, CALC_DOUBLE_A             ; END-CALC needs no operand
     cp   $18
     jr   nc, CALC_UNARY_OR_MANIP  ; literal >= $18 -> no operand-2
     ; Binary op ($00-$17): both operand pointers needed.
+    ld   a, (CALC_SP)
+    cp   2
+    jr   c, CALC_ABORT_STACK_UNDERFLOW
+    ld   hl, (CALC_LITERAL_PTR)
+    dec  hl
+    ld   a, (hl)                       ; restore literal after depth test
     push af                       ; protect the literal value across
                                    ; the pointer-computation call
     call CALC_STK_PNTRS_BINARY    ; sets CALC_OP1_PTR + CALC_OP2_PTR
     pop  af
     jr   CALC_DOUBLE_A
 CALC_UNARY_OR_MANIP:
+    ld   a, (CALC_SP)
+    or   a
+    jr   z, CALC_ABORT_STACK_UNDERFLOW
+    ld   hl, (CALC_LITERAL_PTR)
+    dec  hl
+    ld   a, (hl)                       ; restore literal after depth test
     push af
     call CALC_STK_PNTRS_UNARY      ; sets CALC_OP1_PTR only
     pop  af
@@ -140,9 +155,18 @@ CALC_DOUBLE_A:
                                     ; `jp p` test above; see file header)
     ld   c, a
 CALC_DISPATCH:
-    ld   b, 0
     ld   hl, CALC_TABLE
-    add  hl, bc
+.dispatch_lookup:
+    ld   a, (hl)
+    inc  hl
+    cp   $FF
+    jr   z, .dispatch_unimplemented
+    cp   c
+    jr   z, .dispatch_found
+    inc  hl
+    inc  hl
+    jr   .dispatch_lookup
+.dispatch_found:
     ld   e, (hl)
     inc  hl
     ld   d, (hl)
@@ -154,6 +178,35 @@ CALC_DISPATCH:
                                      ; instruction(s) reload HL/DE from
                                      ; CALC_OP1_PTR/CALC_OP2_PTR — see
                                      ; those sysvars' own comments
+.dispatch_unimplemented:
+    ld   a, CALC_ERR_UNIMPLEMENTED
+    jp   CALC_ABORT_STREAM
+
+; Recoverable literal-stream failures. Every valid calculator program ends
+; in literal $38. Skip the remainder, restore the RST caller's continuation,
+; and leave through the normal paging-safe exit. A malformed stream with no
+; terminator still cannot be recovered because the bytecode carries no length.
+CALC_ABORT_INVALID_LITERAL:
+    ld   a, CALC_ERR_INVALID_LITERAL
+    jr   CALC_ABORT_STREAM
+CALC_ABORT_STACK_UNDERFLOW:
+    ld   a, CALC_ERR_STACK_UNDERFLOW
+    jr   CALC_ABORT_STREAM
+CALC_ABORT_NUMERIC_OVERFLOW:
+    ld   a, CALC_ERR_NUMERIC_OVERFLOW
+    jr   CALC_ABORT_STREAM
+CALC_ABORT_STREAM:
+    ld   (CALC_ERROR_CODE), a
+    xor  a
+    ld   (CALC_SP), a
+    ld   hl, (CALC_LITERAL_PTR)
+.find_end:
+    ld   a, (hl)
+    inc  hl
+    cp   $38
+    jr   nz, .find_end
+    push hl
+    jp   KTAB_CALC_EXIT_TRAMPOLINE
 
 ; ============================================================================
 ; CALC_STK_PNTRS_UNARY / CALC_STK_PNTRS_BINARY
@@ -371,15 +424,8 @@ CALC_OP_DELETE:
 ;
 ; In:  CALC_OP1_PTR = top (source) — set by CALC_STK_PNTRS_UNARY
 ; Out: CALC_SP incremented by 1; the new top slot is a copy of the old
-;      one. On overflow (CALC_SP already 8): hangs via its own local
-;      jr-to-self loop, same shape as CALC_OP_UNIMPLEMENTED's (this
-;      project's established diagnostic-hang idiom) but not a shared
-;      cross-routine jump target — a reader shouldn't need to chase
-;      into a different op's internals to understand this one's own
-;      overflow path, and tools/z80sim/sim.py's resolve_label has no
-;      support for a qualified GLOBAL.local reference anyway (confirmed
-;      by reading its implementation, not assumed) — 2 duplicated bytes
-;      is a fair trade for both
+;      one. Overflow records CALC_ERR_STACK_OVERFLOW and returns through
+;      the stream's normal END-CALC/paging exit.
 ; Destroys: AF, BC, DE, HL
 ; ============================================================================
 CALC_OP_DUPLICATE:
@@ -398,8 +444,8 @@ CALC_OP_DUPLICATE:
     jp   CALC_RE_ENTRY
 .overflow:
     ld   (CALC_STACK_OVERFLOW_FLAG), a
-.hang_loop:
-    jr   .hang_loop
+    ld   a, CALC_ERR_STACK_OVERFLOW
+    jp   CALC_ABORT_STREAM
 
 ; ============================================================================
 ; CALC_UNPACK / CALC_PACK — general float <-> internal record conversion,
@@ -611,12 +657,8 @@ CALC_PACK:
 ; fast form (always valid for a 16-bit source — no mantissa math
 ; needed at all).
 ; In:  HL = signed 16-bit int
-; Out: CALC_SP incremented by 1. On overflow (CALC_SP already at the
-;      8-slot cap): same diagnostic idiom as CALC_OP_DUPLICATE's own
-;      overflow path (CALC_STACK_OVERFLOW_FLAG + local hang) — not
-;      shared cross-routine, same reasoning as that routine's own
-;      header (tools/z80sim/sim.py's resolve_label has no qualified-
-;      label support).
+; Out: CALC_SP incremented by 1, carry clear. On overflow, stack is
+;      unchanged, CALC_ERR_STACK_OVERFLOW is recorded, and carry is set.
 ; Destroys: AF, BC, DE, HL
 ; ============================================================================
 CALC_INT_TO_FP:
@@ -650,13 +692,16 @@ CALC_INT_TO_FP:
     ld   a, (CALC_SP)
     inc  a
     ld   (CALC_SP), a
+    or   a
     ret
 .cif_overflow:
     pop  hl
     ld   a, (CALC_SP)
     ld   (CALC_STACK_OVERFLOW_FLAG), a
-.cif_hang:
-    jr   .cif_hang
+    ld   a, CALC_ERR_STACK_OVERFLOW
+    ld   (CALC_ERROR_CODE), a
+    scf
+    ret
 
 ; ============================================================================
 ; CALC_FP_TO_INT — boundary converter (real ROM's STK-TO-A/STK-TO-BC
@@ -665,8 +710,8 @@ CALC_INT_TO_FP:
 ; check needed) and the general form (truncate-toward-zero, matching
 ; the real "truncate" literal $3A's semantics, plus an explicit 16-bit
 ; range check).
-; Out: HL = converted int (best-effort even on overflow — lesson 10:
-;      store the real value, don't guess). CALC_TRUNC_FLAG (sysvars.inc
+; Out: HL = converted int. Overflow saturates to $7FFF/$8000, sets carry
+;      and CALC_TRUNC_FLAG. CALC_TRUNC_FLAG (sysvars.inc
 ;      — already the documented hook for exactly this) set to 1 on
 ;      overflow, 0 otherwise. [stated]'s confirmed decision: a future
 ;      LET-assignment integration is responsible for turning a set
@@ -682,6 +727,8 @@ CALC_INT_TO_FP:
 ; ============================================================================
 CALC_FP_TO_INT:
     ld   a, (CALC_SP)
+    or   a
+    jp   z, .fpi_underflow
     dec  a
     ld   (CALC_SP), a
     call CALC_SP_TO_NEXT_FREE_PTR
@@ -698,6 +745,7 @@ CALC_FP_TO_INT:
     ex   de, hl
     xor  a
     ld   (CALC_TRUNC_FLAG), a
+    or   a
     ret
 .fpi_general:
     ld   (CALC_UNP_A+1), a
@@ -771,20 +819,37 @@ CALC_FP_TO_INT:
     jr   nz, .fpi_overflow
     xor  a
     ld   (CALC_TRUNC_FLAG), a
+    or   a
     ret
 .fpi_overflow:
-    ld   a, 1
-    ld   (CALC_TRUNC_FLAG), a
-    ret
+    jr   .fpi_saturate
 .fpi_overflow_noshift:
-    ld   hl, 0
+.fpi_saturate:
+    ld   hl, $7FFF
+    ld   a, (CALC_SHIFT_COUNT)
+    or   a
+    jr   z, .fpi_mark_overflow
+    ld   hl, $8000
+.fpi_mark_overflow:
     ld   a, 1
     ld   (CALC_TRUNC_FLAG), a
+    ld   a, CALC_ERR_NUMERIC_OVERFLOW
+    ld   (CALC_ERROR_CODE), a
+    scf
     ret
 .fpi_result_zero:
     ld   hl, 0
     xor  a
     ld   (CALC_TRUNC_FLAG), a
+    or   a
+    ret
+.fpi_underflow:
+    ld   hl, 0
+    ld   a, 1
+    ld   (CALC_TRUNC_FLAG), a
+    ld   a, CALC_ERR_STACK_UNDERFLOW
+    ld   (CALC_ERROR_CODE), a
+    scf
     ret
 
 ; ============================================================================
@@ -815,12 +880,15 @@ CALC_PUSH_FP_RAW:
     ld   a, (CALC_SP)
     inc  a
     ld   (CALC_SP), a
+    or   a
     ret
 .overflow:
     ld   a, (CALC_SP)
     ld   (CALC_STACK_OVERFLOW_FLAG), a
-.hang:
-    jr   .hang
+    ld   a, CALC_ERR_STACK_OVERFLOW
+    ld   (CALC_ERROR_CODE), a
+    scf
+    ret
 
 ; ============================================================================
 ; CALC_PUSH_PI — pushes the constant pi (packed float, PI_CONST below)
@@ -1022,6 +1090,7 @@ CALC_ADDSUB_ENGINE:
     ld   (CALC_UNP_A+2), a
     ld   a, (CALC_UNP_A+1)
     inc  a
+    jp   z, CALC_ABORT_NUMERIC_OVERFLOW
     ld   (CALC_UNP_A+1), a
 .ae_add_no_carry:
     ret
@@ -1341,18 +1410,31 @@ CALC_OP_MUL:
     ld   a, (CALC_MUL_ACC+7)
     rl   a
     ld   (CALC_MUL_ACC+7), a
-    ld   a, (CALC_UNP_A+1)
-    ld   b, a
-    ld   a, (CALC_UNP_B+1)
-    add  a, b
-    sub  129
-    jr   .cm_store_exp
+    ld   c, 129
+    jr   .cm_compute_exp
 .cm_no_renorm:
+    ld   c, 128
+.cm_compute_exp:
     ld   a, (CALC_UNP_A+1)
-    ld   b, a
+    ld   l, a
+    ld   h, 0
     ld   a, (CALC_UNP_B+1)
-    add  a, b
-    sub  128
+    ld   e, a
+    ld   d, 0
+    add  hl, de
+    ld   a, l
+    sub  c
+    ld   l, a
+    ld   a, h
+    sbc  a, 0
+    ld   h, a
+    cp   $FF
+    jp   z, .cm_zero                  ; exponent underflow -> signed zero
+    or   a
+    jp   nz, CALC_ABORT_NUMERIC_OVERFLOW
+    ld   a, l
+    or   a
+    jp   z, .cm_zero                  ; biased exponent zero is underflow
 .cm_store_exp:
     ld   (CALC_UNP_A+1), a
     ld   a, (CALC_SHIFT_COUNT)
@@ -1434,16 +1516,14 @@ CALC_OP_MUL:
 ; iteration's quotient bit (1 if subtracted, 0 if not).
 ;
 ; Zero shortcuts: divisor mantissa zero (CALC_UNP_B+1 = 0, i.e. B is
-; exactly zero) hangs via jr-to-self — division by zero, no error-
-; reporting integration into BASIC exists for this engine yet, same
-; documented gap as every other op here, same idiom as CALC_OP_
-; UNIMPLEMENTED rather than silently returning a wrong value. Dividend
+; exactly zero) returns CALC_ERR_DIVISION_BY_ZERO through the normal
+; END-CALC and paging-safe BASIC error path. Dividend
 ; mantissa zero (A is exactly zero, B nonzero) short-circuits straight
 ; to a zero result, same shape as CALC_OP_MUL's own .cm_zero path.
 ;
 ; In:  CALC_OP1_PTR/CALC_OP2_PTR set by CALC_STK_PNTRS_BINARY
-; Out: CALC_SP decremented by 1; OP1's slot holds the result. Hangs
-;      (never returns) on division by zero.
+; Out: CALC_SP decremented by 1; OP1's slot holds the result, or the
+;      stream aborts recoverably on division by zero/numeric overflow.
 ; Destroys: AF, BC, DE, HL
 ; ============================================================================
 CALC_OP_DIV:
@@ -1468,11 +1548,24 @@ CALC_OP_DIV:
     xor  b
     ld   (CALC_SHIFT_COUNT), a       ; stash result sign
 
-    ld   a, (CALC_UNP_B+1)
-    ld   b, a
     ld   a, (CALC_UNP_A+1)
-    sub  b
-    add  a, 128
+    ld   l, a
+    ld   h, 0
+    ld   a, (CALC_UNP_B+1)
+    ld   e, a
+    ld   d, 0
+    or   a
+    sbc  hl, de
+    ld   de, 128
+    add  hl, de
+    ld   a, h
+    cp   $FF
+    jp   z, .cd_zero                  ; exponent underflow -> signed zero
+    or   a
+    jp   nz, CALC_ABORT_NUMERIC_OVERFLOW
+    ld   a, l
+    or   a
+    jp   z, .cd_zero
     ld   (CALC_UNP_A+1), a           ; provisional exponent, no preshift
 
     ; preshift decision: compare MA (CALC_UNP_A+2..+5) vs MB (CALC_UNP_B
@@ -1519,6 +1612,7 @@ CALC_OP_DIV:
 .cd_preshift:
     ld   a, (CALC_UNP_A+1)
     inc  a
+    jp   z, CALC_ABORT_NUMERIC_OVERFLOW
     ld   (CALC_UNP_A+1), a
     ld   a, (CALC_UNP_A+2)
     srl  a
@@ -1663,77 +1757,32 @@ CALC_OP_DIV:
     ld   (CALC_SP), a
     jp   CALC_RE_ENTRY
 .cd_divzero:
-.cd_divzero_hang:
-    jr   .cd_divzero_hang
+    ld   a, CALC_ERR_DIVISION_BY_ZERO
+    jp   CALC_ABORT_STREAM
 
 ; ============================================================================
-; CALC_OP_UNIMPLEMENTED
-; Default target for every CALC_TABLE entry that isn't CALC_OP_END_CALC
-; yet. Hangs via jr-to-self — this project's own established idiom
-; (EXROM_VERIFY_KTAB_MAGIC, rom/exrom_checker.asm), not the Z80 HALT
-; opcode (an earlier version of this file used HALT; inconsistent with
-; the project's own convention, fixed in this rework). Lesson 10: store
-; the real value, don't guess.
-;
-; Records C (the table index actually used to reach here), not a
-; reconstructed "literal byte value" — deliberate: A means different
-; things depending which CALC_SCAN_ENT branch got here (the doubled
-; literal on the $00-$3D path, but the PARAMETER on the multi-purpose
-; ($80+) path, which overwrites A with `and $1F` after computing the
-; index) — halving A back would silently misreport on that second path.
-; C survives untouched from CALC_DISPATCH through to here on BOTH
-; paths, so it's the only value that's always correct. index>>1 = the
-; original literal for the $00-$3D path (recoverable by hand if needed
-; when debugging); the multi-purpose path's index doesn't map back to
-; a single literal byte at all (the parameter bits are lost by design,
-; already saved separately in CALC_LITERAL_PARAM before dispatch), so
-; recording the index directly is the only universally meaningful
-; choice, not a simplification of a "should reconstruct the literal"
-; ideal.
-; In:  C = table index (byte offset into CALC_TABLE) that dispatched
-;      here
-; Out: never returns
-; Destroys: AF
-; ============================================================================
-CALC_OP_UNIMPLEMENTED:
-    ld   a, c
-    ld   (CALC_UNIMPLEMENTED_LITERAL_FLAG), a
-.hang_loop:
-    jr   .hang_loop
-
-; ============================================================================
-; CALC_TABLE — 66 entries (indices $00-$41), 2 bytes each = 132 bytes,
-; matching the real ROM's own CALCADDR table byte-for-byte in size and
-; layout (confirmed against skoolkid.github.io/rom/asm/32D7.html and
-; 335B.html's index-derivation logic — literal N -> index N for
-; N=$00-$3D; $3E-$41 covers the real ROM's "multi-purpose" literals
-; >=$80). Every index is CALC_OP_UNIMPLEMENTED except $38 (end-calc).
+; Sparse calculator dispatch table. Each implemented entry is the doubled
+; index produced by CALC_SCAN_ENT followed by its handler pointer. `$FF`
+; terminates the table and routes every unavailable literal through the
+; recoverable error path. This replaces the original 132-byte dense table;
+; retaining 58 identical unimplemented pointers had no compatibility value
+; because CALC_TABLE is EXROM-internal, not part of the fixed entry ABI.
 ; ============================================================================
 CALC_TABLE:
-    ; $00-$07 -- $01=exchange, $02=delete, $03=subtract, $04=multiply,
-    ; $05=division
-    DW CALC_OP_UNIMPLEMENTED, CALC_OP_EXCHANGE, CALC_OP_DELETE, CALC_OP_SUB
-    DW CALC_OP_MUL, CALC_OP_DIV, CALC_OP_UNIMPLEMENTED, CALC_OP_UNIMPLEMENTED
-    ; $08-$0F -- $0F=addition
-    DW CALC_OP_UNIMPLEMENTED, CALC_OP_UNIMPLEMENTED, CALC_OP_UNIMPLEMENTED, CALC_OP_UNIMPLEMENTED
-    DW CALC_OP_UNIMPLEMENTED, CALC_OP_UNIMPLEMENTED, CALC_OP_UNIMPLEMENTED, CALC_OP_ADD
-    ; $10-$17
-    DW CALC_OP_UNIMPLEMENTED, CALC_OP_UNIMPLEMENTED, CALC_OP_UNIMPLEMENTED, CALC_OP_UNIMPLEMENTED
-    DW CALC_OP_UNIMPLEMENTED, CALC_OP_UNIMPLEMENTED, CALC_OP_UNIMPLEMENTED, CALC_OP_UNIMPLEMENTED
-    ; $18-$1F
-    DW CALC_OP_UNIMPLEMENTED, CALC_OP_UNIMPLEMENTED, CALC_OP_UNIMPLEMENTED, CALC_OP_UNIMPLEMENTED
-    DW CALC_OP_UNIMPLEMENTED, CALC_OP_UNIMPLEMENTED, CALC_OP_UNIMPLEMENTED, CALC_OP_UNIMPLEMENTED
-    ; $20-$27
-    DW CALC_OP_UNIMPLEMENTED, CALC_OP_UNIMPLEMENTED, CALC_OP_UNIMPLEMENTED, CALC_OP_UNIMPLEMENTED
-    DW CALC_OP_UNIMPLEMENTED, CALC_OP_UNIMPLEMENTED, CALC_OP_UNIMPLEMENTED, CALC_OP_UNIMPLEMENTED
-    ; $28-$2F
-    DW CALC_OP_UNIMPLEMENTED, CALC_OP_UNIMPLEMENTED, CALC_OP_UNIMPLEMENTED, CALC_OP_UNIMPLEMENTED
-    DW CALC_OP_UNIMPLEMENTED, CALC_OP_UNIMPLEMENTED, CALC_OP_UNIMPLEMENTED, CALC_OP_UNIMPLEMENTED
-    ; $30-$37 -- $31=duplicate
-    DW CALC_OP_UNIMPLEMENTED, CALC_OP_DUPLICATE, CALC_OP_UNIMPLEMENTED, CALC_OP_UNIMPLEMENTED
-    DW CALC_OP_UNIMPLEMENTED, CALC_OP_UNIMPLEMENTED, CALC_OP_UNIMPLEMENTED, CALC_OP_UNIMPLEMENTED
-    ; $38-$3F — $38 = end-calc, the one real op so far
-    DW CALC_OP_END_CALC, CALC_OP_UNIMPLEMENTED, CALC_OP_UNIMPLEMENTED, CALC_OP_UNIMPLEMENTED
-    DW CALC_OP_UNIMPLEMENTED, CALC_OP_UNIMPLEMENTED, CALC_OP_UNIMPLEMENTED, CALC_OP_UNIMPLEMENTED
-    ; $40-$41
-    DW CALC_OP_UNIMPLEMENTED, CALC_OP_UNIMPLEMENTED
+    DB $02
+    DW CALC_OP_EXCHANGE
+    DB $04
+    DW CALC_OP_DELETE
+    DB $06
+    DW CALC_OP_SUB
+    DB $08
+    DW CALC_OP_MUL
+    DB $0A
+    DW CALC_OP_DIV
+    DB $1E
+    DW CALC_OP_ADD
+    DB $62
+    DW CALC_OP_DUPLICATE
+    DB $70
+    DW CALC_OP_END_CALC
+    DB $FF

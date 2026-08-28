@@ -1,6 +1,6 @@
 ; ============================================================================
 ; rom/test_calc_smoke_dupoverflow.asm — calculator engine real-hardware
-; smoke test: duplicate ($31) stack-overflow hang path
+; smoke test: duplicate ($31) recoverable stack-overflow path
 ;
 ; Standalone, no BASIC keyword needed — see rom/test_calc_smoke_
 ; endcalc.asm's own header for the full background on file structure.
@@ -8,18 +8,8 @@
 ; Sets CALC_SP=8 (the fixed 8-slot cap — see CALC_STACK's own sysvars.
 ; inc comment) directly, then runs `RST $28 / DB $31` (duplicate).
 ;
-; EXPECTED OUTCOME IS A HANG, same shape as rom/test_calc_smoke_unimpl.
-; asm: CALC_OP_DUPLICATE's own bounds check (CALC_SP already at the
-; 8-slot cap, confirmed against real hardware here — z80sim's test 8
-; already confirmed the code path, this confirms it holds under real
-; silicon) should hang via its own local jr-to-self loop rather than
-; silently writing a 9th 5-byte slot past CALC_STACK's real 40-byte
-; allocation into whatever sysvar happens to sit right after it
-; (CALC_SP itself, at $B225 — an actual out-of-bounds write bug this
-; check exists specifically to catch, not a hypothetical). Border
-; NEVER reaches the GREEN line below if that's working correctly.
-;
-; NOT YET ASSEMBLED OR TESTED BY THE AUTHOR.
+; Expected: return through END-CALC with CALC_ERR_STACK_OVERFLOW and an
+; empty calculator stack, without writing a ninth slot past CALC_STACK.
 ;
 ; Build:
 ;   sjasmplus rom/test_calc_smoke_dupoverflow.asm
@@ -75,14 +65,21 @@ COLD_START:
     ld   a, 8
     ld   (CALC_SP), a               ; stack already at the 8-slot cap
     rst  $28
-    DB   $31                        ; duplicate — EXPECTED to hang here
-                                    ; and never reach the lines below
-                                    ; at all
-    ; should NEVER execute — see this file's own header
+    DB   $31, $38
+    ld   a, (CALC_ERROR_CODE)
+    cp   CALC_ERR_STACK_OVERFLOW
+    jr   nz, .fail
+    ld   a, (CALC_SP)
+    or   a
+    jr   nz, .fail
     ld   a, 4                       ; green
     out  (PORT_ULA), a
 .loop:
     jr   .loop
+.fail:
+    ld   a, 2
+    out  (PORT_ULA), a
+    jr   .fail
 
     INCLUDE "rom/calc_smoke_home.inc"
 

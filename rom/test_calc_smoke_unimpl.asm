@@ -1,6 +1,6 @@
 ; ============================================================================
 ; rom/test_calc_smoke_unimpl.asm — calculator engine (RST $28) real-
-; hardware smoke test: unimplemented-op hang path
+; hardware smoke test: recoverable unimplemented-op path
 ;
 ; Standalone, no BASIC keyword needed — see rom/test_calc_smoke_
 ; endcalc.asm's own header for the full reasoning on file structure,
@@ -8,26 +8,9 @@
 ; approach was wrong. Read that file first; this one only documents
 ; what's actually different below.
 ;
-; Runs `RST $28 / DB $02` (delete — a real, defined op number, but not
-; yet implemented in CALC_TABLE) directly from COLD_START.
-;
-; EXPECTED OUTCOME IS THE OPPOSITE OF THE OTHER TEST: this one should
-; HANG, not return. CALC_TABLE's entry for $02 points at CALC_OP_
-; UNIMPLEMENTED, whose whole job is a jr-to-self loop (matches this
-; project's own EXROM_VERIFY_KTAB_MAGIC idiom) rather than returning —
-; a deliberate "obvious flagged hang beats silent wrong behavior"
-; diagnostic (this project's own lesson 10). The border NEVER reaches
-; the GREEN line below if that's working correctly. A green border
-; here would mean the opposite of a pass: CALC_TABLE's unimplemented
-; entries aren't actually routing to the hang stub, a real bug.
-;
-; This confirms that diagnostic holds under real silicon, not just
-; under tools/z80sim/test_calc_dispatcher.py's max_steps stand-in for
-; "didn't return" — the simulator can prove the CODE PATH is taken,
-; but only real hardware can confirm the machine actually stops
-; responding rather than, say, resetting or executing garbage.
-;
-; NOT YET ASSEMBLED OR TESTED BY THE AUTHOR.
+; Runs `RST $28 / DB $06,$38`. Literal $06 is unavailable; the expected
+; result is a normal return with CALC_ERR_UNIMPLEMENTED and an empty
+; calculator stack, not a diagnostic freeze.
 ;
 ; Build:
 ;   sjasmplus rom/test_calc_smoke_unimpl.asm
@@ -80,18 +63,24 @@ RST_38:
 COLD_START:
     ld   sp, $FF00
 
-    xor  a
-    inc  a
-    ld   (CALC_SP), a           ; CALC_SP = 1
+    ld   a, 2
+    ld   (CALC_SP), a           ; binary-path operand depth is valid
     rst  $28
-    DB   $02                    ; delete — unimplemented; EXPECTED to
-                                ; hang here and never reach the lines
-                                ; below at all
-    ; should NEVER execute — see this file's own header
+    DB   $06, $38              ; unavailable op, then normal terminator
+    ld   a, (CALC_ERROR_CODE)
+    cp   CALC_ERR_UNIMPLEMENTED
+    jr   nz, .fail
+    ld   a, (CALC_SP)
+    or   a
+    jr   nz, .fail
     ld   a, 4                   ; green
     out  (PORT_ULA), a
 .loop:
     jr   .loop
+.fail:
+    ld   a, 2
+    out  (PORT_ULA), a
+    jr   .fail
 
     INCLUDE "rom/calc_smoke_home.inc"
 

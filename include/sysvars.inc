@@ -1986,7 +1986,24 @@ CALC_TRUNC_FLAG:     DEFS 1           ; 1 byte — set when a float result is
                                 ; wrap) not yet decided, this is just
                                 ; the hook, cheap now vs. a redesign
                                 ; later if skipped
-CALC_UNIMPLEMENTED_LITERAL_FLAG:DEFS 1         ; 1 byte — set to the CALC_
+; Calculator error codes. CALC_ERROR_CODE aliases the original diagnostic
+; byte so the hardening pass changes no RAM addresses.
+CALC_ERR_NONE              EQU 0
+CALC_ERR_INVALID_LITERAL   EQU 1
+CALC_ERR_STACK_UNDERFLOW   EQU 2
+CALC_ERR_STACK_OVERFLOW    EQU 3
+CALC_ERR_DIVISION_BY_ZERO  EQU 4
+CALC_ERR_NUMERIC_OVERFLOW  EQU 5
+CALC_ERR_UNIMPLEMENTED     EQU 6
+CALC_UNIMPLEMENTED_LITERAL_FLAG:DEFS 1         ; retained ABI name
+CALC_ERROR_CODE       EQU CALC_UNIMPLEMENTED_LITERAL_FLAG
+                                ; nonzero CALC_ERR_* value. RST $28
+                                ; failures scan to END-CALC and return
+                                ; through the normal paging trampoline;
+                                ; direct push/conversion entries return
+                                ; carry set. No calculator error writes
+                                ; outside CALC_STACK.
+                                ; Formerly held the CALC_
                                 ; TABLE index (byte offset) that
                                 ; dispatched to the unimplemented-op
                                 ; stub, NOT a reconstructed literal
@@ -1995,16 +2012,8 @@ CALC_UNIMPLEMENTED_LITERAL_FLAG:DEFS 1         ; 1 byte — set to the CALC_
                                 ; see rom/exrom_calc.asm's CALC_OP_
                                 ; UNIMPLEMENTED for why the multi-
                                 ; purpose ($80+) path can't be
-                                ; recovered the same way). Then hangs
-                                ; in a jr-to-self loop (matches this
-                                ; project's own EXROM_VERIFY_KTAB_MAGIC
-                                ; idiom, not the Z80 HALT opcode); same
-                                ; halt-with-diagnostic shape as EXROM_
-                                ; KTAB_MISMATCH_FLAG (lesson 10 — print/
-                                ; store real values rather than guess),
-                                ; not a permanent op — most of CALC_
-                                ; TABLE's 66 entries point here until
-                                ; each real op gets written
+                                ; recovered the same way); that historical
+                                ; detail value is no longer stored.
 CALC_LITERAL_PTR:    DEFS 2           ; 2 bytes — current position in the RST
                                 ; $28 literal-byte stream. Added 2026-
                                 ; 08-20 when the dispatcher was reworked
@@ -2053,17 +2062,11 @@ CALC_LITERAL_PARAM:  DEFS 1           ; 1 byte — the 5-bit parameter CALC_
                                 ; regardless, so it needs a home now
                                 ; rather than a redesign when the first
                                 ; parameterized op (e.g. get-mem-3) lands
-CALC_STACK_OVERFLOW_FLAG:DEFS 1         ; 1 byte — set to CALC_SP's value at
+CALC_STACK_OVERFLOW_FLAG:DEFS 1         ; 1 byte — diagnostic stack depth at
                                 ; the moment `duplicate` (literal $31)
                                 ; found no room left (CALC_SP already at
-                                ; the 8-slot cap) — then hangs, sharing
-                                ; CALC_OP_UNIMPLEMENTED's own jr-to-self
-                                ; loop (rom/exrom_calc.asm) rather than a
-                                ; separate one, since the stopping
-                                ; behavior is identical; only the
-                                ; diagnostic sysvar differs so the two
-                                ; failure modes (unimplemented op vs.
-                                ; genuine overflow) aren't conflated.
+                                ; the 8-slot cap). CALC_ERROR_CODE carries
+                                ; the recoverable error classification.
                                 ; Real ROM has no equivalent — its stack
                                 ; grows into free RAM and only fails on
                                 ; genuine memory exhaustion; this
