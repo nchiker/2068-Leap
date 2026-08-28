@@ -560,6 +560,8 @@ coarser 32×24 character view of the same physical screen.
 | `ATTR(row,col)` | Function — normal-screen attribute byte at character row 0-23, column 0-31; returns `0` outside that grid |
 | `CPLOT cx,cy` | Coarse 2×2-per-cell block-graphics plot; `cx` is 0-63, `cy` is 0-47 |
 | `MODE n` | `0` = Normal, `1` = High Resolution Graphics (same 256×191 bitmap, finer per-scanline colour). Anything else raises `INVALID MODE` |
+| `ULAPLUS n` | Enable (`1`) or disable (`0`) the ULAplus extended palette. Other values raise `INVALID ARGUMENT` |
+| `PALETTE index,value` | Program ULAplus register `index` (0-63) with an 8-bit `GGGRRRBB` colour value (0-255). Out-of-range arguments raise `INVALID ARGUMENT` |
 
 `PLOT`/`LINE`/`BLOCK`/`CIRCLE`/`CPLOT` all colour using the *current*
 `INK`/`PAPER`/`FLASH`/`INVERSE` state, same as `PRINT` — and, unlike
@@ -568,6 +570,46 @@ pixel is set outright; with `OVER 1` it's **XOR-toggled** instead
 (plotting the same point twice with `OVER 1` clears it again) — useful
 for drawing something temporarily without needing to remember and redraw
 whatever was underneath it.
+
+### ULAplus palettes
+
+ULAplus provides 64 programmable colours. Select a palette register with an
+index from 0 through 63, then give it an 8-bit colour value in `GGGRRRBB`
+format:
+
+- bits 7-5: green, 0-7;
+- bits 4-2: red, 0-7;
+- bits 1-0: blue, 0-3.
+
+For example, this programs the first eight registers and enables ULAplus:
+
+```basic
+PALETTE 0,0
+PALETTE 1,3
+PALETTE 2,28
+PALETTE 3,31
+PALETTE 4,224
+PALETTE 5,227
+PALETTE 6,252
+PALETTE 7,255
+ULAPLUS 1
+```
+
+`PALETTE` stores register values whether ULAplus is currently enabled or not,
+so a program can prepare its colours first and then issue `ULAPLUS 1`. Issuing
+`ULAPLUS 0` returns to the normal palette without erasing the programmed
+values; a later `ULAPLUS 1` reuses them.
+
+ULAplus is deliberately program-scoped. Every route back to the editor—normal
+completion, `END`, `STOP`, a runtime error, or `BREAK`—automatically disables
+ULAplus so the editor is always readable in the normal display mode. The
+programmed palette values remain available to the next `ULAPLUS 1` during that
+session.
+
+ULAplus works with the normal screen and with `MODE 1`; it is independent of
+the removed 64-column mode and its former TS2068 palette selector. Emulator
+support varies: ZEsarUX can enable ULAplus for the TS2068, while an unpatched
+upstream Fuse may not expose it for this machine.
 
 ## 10. Sprites
 
@@ -737,6 +779,7 @@ description of each.
 | `NEW` | [14](#14-immediate-commands) |
 | `OVER` | [8](#8-screen-output), [9](#9-graphics) |
 | `PAPER` | [8](#8-screen-output) |
+| `PALETTE` | [9](#9-graphics) |
 | `PAUSE` | [5](#5-control-flow) |
 | `PLOT` | [9](#9-graphics) |
 | `POKE` | [13](#13-memory-and-machine-code) |
@@ -749,6 +792,7 @@ description of each.
 | `SPRITE GRAB` / `SHOW` / `HIDE` / `MOVE` | [10](#10-sprites) |
 | `STOP` | [5](#5-control-flow) |
 | `TAB` | [8](#8-screen-output) |
+| `ULAPLUS` | [9](#9-graphics) |
 | `:` (statement separator) | chains multiple statements on one line: `x=1 : y=2 : PRINT x+y` — works inside single-line `IF ... THEN` too |
 
 `REM` (bare word only, not `REMark` spelled out) starts a comment
