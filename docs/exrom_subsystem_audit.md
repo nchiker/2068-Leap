@@ -1,12 +1,14 @@
 # EXROM subsystem and BASIC exposure audit
 
-Status: first complete pass, 2026-08-27.
+Status: complete pass, reconciled for the private preview on 2026-08-27.
 
 ## Capacity and governing constraint
 
-After moving `INPUT` to EXROM and adding string input, the production images
-use `$3FA5/$4000` in Home ROM (91 bytes free) and end at `$DF24` in EXROM
-(220 bytes free). The shared program/array/scalar RAM pool remains 1865 bytes.
+The current production images use `$3FFE/$4000` in Home ROM (2 bytes free)
+and end at `$DF9D` in EXROM (99 bytes free). The shared
+program/array/scalar RAM pool is 1857 bytes. These figures come from
+`make budget`; historical measurements elsewhere in the engineering journal
+are intentionally retained as snapshots of their respective changes.
 Another language feature therefore needs a relocation, a compact shared
 implementation, or removal of lower-value code.
 

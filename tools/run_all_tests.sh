@@ -19,11 +19,20 @@
 set -u
 cd "$(dirname "$0")/.."
 
-EXPECTED_CYAN="err1 mem2 snd3 ulaplus_bad_mode ulaplus_bad_index ulaplus_bad_value"
+EXPECTED_CYAN="err1 snd3 ulaplus_bad_mode ulaplus_bad_index ulaplus_bad_value"
+EXPECTED_RED="mem2"
 
 is_expected_cyan() {
     local name="$1"
     for n in $EXPECTED_CYAN; do
+        [ "$n" = "$name" ] && return 0
+    done
+    return 1
+}
+
+is_expected_red() {
+    local name="$1"
+    for n in $EXPECTED_RED; do
         [ "$n" = "$name" ] && return 0
     done
     return 1
@@ -53,6 +62,8 @@ print(img.getpixel((10,10)))
         verdict="PASS"
     elif { [ "$color" = "(0, 194, 197)" ] || [ "$color" = "(0, 181, 180)" ]; } && is_expected_cyan "$name"; then
         verdict="PASS (expected cyan)"
+    elif [ "$color" = "(180, 0, 0)" ] && is_expected_red "$name"; then
+        verdict="PASS (expected pre-run rejection)"
     fi
 
     echo "${name}: rc=${rc} border=${color} -> ${verdict}"

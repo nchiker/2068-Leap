@@ -43,10 +43,12 @@ BASIC_STMT_DIM_EXROM:
     ld   a, (ARRAY_DIM_KIND)
     ld   c, a
     ld   a, b
+    push hl                         ; preserve the validated dimension;
+                                    ; pool lookup owns all main registers
     call KTAB_BASIC_ARRAY_FIND
+    pop  hl                         ; POP preserves lookup's carry result
     jr   nc, .already
 
-    ld   hl, (ARRAY_DIM_COUNT)
     ld   a, (ARRAY_DIM_KIND)
     cp   ARRAY_KIND_STR
     jr   nz, .numeric_size
@@ -63,6 +65,8 @@ BASIC_STMT_DIM_EXROM:
     add  hl, hl
     jr   .size_ready
 .numeric_size:
+    bit  7, h                       ; count*2 would overflow 16 bits
+    jr   nz, .out_of_memory
     add  hl, hl
 .size_ready:
     ld   (ARRAY_ALLOC_BYTES), hl
@@ -75,6 +79,7 @@ BASIC_STMT_DIM_EXROM:
     sbc  hl, de
     jr   c, .fits
     jr   z, .fits
+.out_of_memory:
     ld   a, 4
     ret
 .fits:

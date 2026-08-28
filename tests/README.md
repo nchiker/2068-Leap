@@ -117,6 +117,12 @@ continue past a runtime error instead of halting, the border would
 change to whatever comes after, which is exactly what this convention
 is watching for. `err1.txt` is the first test using this pattern.
 
+`mem2.txt` is the exception: the whole-program validation rejects its
+deliberately impossible `DIM A(FREE())` before execution begins, so no
+fixture-set border is reached. The automated runner therefore recognizes the
+cold red border as that fixture's expected pre-run rejection. It is listed
+explicitly rather than treating red as success for any other test.
+
 ## Gaps not covered by this suite
 
 - **`DATA`/`RESTORE`/`READ`** — design-documented
