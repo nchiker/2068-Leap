@@ -5,11 +5,12 @@ regenerate the authoritative totals and module map after any source change.
 
 ## Result
 
-The current V2 image has **276 free bytes in the 16K HOME ROM** and **249 free
-bytes in the 8K EXROM**. This is up from the V1 baseline of 2 and 99 bytes.
+After the recovery work and subsequent calculator/sprite hardening, the current
+V2 image has **227 free bytes in the 16K HOME ROM** and **100 free bytes in the
+8K EXROM**. The V1 baseline was 2 and 99 bytes respectively.
 
-The 525-byte combined end-of-image budget can fund modest V2 features, but it
-should retain a safety margin for fixes and new EXROM entry wiring.
+The 327-byte combined end-of-image budget is now primarily a correction margin;
+larger additions require another measured recovery pass.
 
 ## Measured map
 
@@ -22,15 +23,15 @@ alignment. They do not claim every byte in a module is live code.
 | Address range | Bytes | Share | Source |
 |---|---:|---:|---|
 | `$0000-$010E` | 271 | 1.7% | Driver, vectors, EXROM call table, initialization |
-| `$010F-$2B76` | 10,856 | 66.3% | `basic/basic.asm` |
-| `$2B77-$2E7A` | 772 | 4.7% | `kernel/memory/memory.asm` |
-| `$2E7B-$3084` | 522 | 3.2% | `kernel/io/io.asm` |
-| `$3085-$3C4D` | 3,017 | 18.4% | `kernel/graphics/graphics.asm` |
-| `$3C4E-$3DEE` | 417 | 2.5% | `kernel/math/math.asm` |
-| `$3DEF-$3E25` | 55 | 0.3% | `kernel/sound/sound.asm` |
-| `$3E26-$3EB5` | 144 | 0.9% | `kernel/interrupt/interrupt.asm` |
-| `$3EB6-$3EEB` | 54 | 0.3% | `kernel/bank/bank.asm` |
-| `$3EEC-$3FFF` | **276** | 1.7% | **Unallocated padding** |
+| `$010F-$2B7B` | 10,861 | 66.3% | `basic/basic.asm` |
+| `$2B7C-$2E8B` | 784 | 4.8% | `kernel/memory/memory.asm` |
+| `$2E8C-$3095` | 522 | 3.2% | `kernel/io/io.asm` |
+| `$3096-$3C7E` | 3,049 | 18.6% | `kernel/graphics/graphics.asm` |
+| `$3C7F-$3E1F` | 417 | 2.5% | `kernel/math/math.asm` |
+| `$3E20-$3E56` | 55 | 0.3% | `kernel/sound/sound.asm` |
+| `$3E57-$3EE6` | 144 | 0.9% | `kernel/interrupt/interrupt.asm` |
+| `$3EE7-$3F1C` | 54 | 0.3% | `kernel/bank/bank.asm` |
+| `$3F1D-$3FFF` | **227** | 1.4% | **Unallocated padding** |
 
 ### EXROM
 
@@ -43,14 +44,14 @@ alignment. They do not claim every byte in a module is live code.
 | `$CB69-$D3F7` | 2,191 | 26.7% | Calculator |
 | `$D3F8-$D408` | 17 | 0.2% | Sound command |
 | `$D409-$D45B` | 83 | 1.0% | ULAplus |
-| `$D45C-$D811` | 950 | 11.6% | Sprites |
-| `$D812-$D994` | 387 | 4.7% | String functions |
-| `$D995-$DC83` | 751 | 9.2% | Editor |
-| `$DC84-$DCD1` | 78 | 1.0% | Arrays |
-| `$DCD2-$DD9F` | 206 | 2.5% | INPUT |
-| `$DDA0-$DE6A` | 203 | 2.5% | DIM allocator |
-| `$DE6B-$DF06` | 156 | 1.9% | Keyword highlighting |
-| `$DF07-$DFFF` | **249** | 3.0% | **Unallocated padding** |
+| `$D45C-$D8A6` | 1,099 | 13.4% | Sprites |
+| `$D8A7-$DA29` | 387 | 4.7% | String functions |
+| `$DA2A-$DD18` | 751 | 9.2% | Editor |
+| `$DD19-$DD66` | 78 | 1.0% | Arrays |
+| `$DD67-$DE34` | 206 | 2.5% | INPUT |
+| `$DE35-$DEFF` | 203 | 2.5% | DIM allocator |
+| `$DF00-$DF9B` | 156 | 1.9% | Keyword highlighting |
+| `$DF9C-$DFFF` | **100** | 1.2% | **Unallocated padding** |
 
 ## Best V2 space-recovery targets
 

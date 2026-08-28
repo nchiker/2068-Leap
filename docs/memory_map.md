@@ -10,7 +10,7 @@ Status: DRAFT — living document, updated alongside code.
 | $4000-$57FF   | 6K    | Screen display file (bitmap), standard Spectrum-compatible layout |
 | $5800-$5AFF   | 768B  | Screen attributes |
 | $5B00-$7FFF   | ~10.3K | Reserved for the video hardware's own use (see below) — nothing this project owns lives here |
-| $8000-$FEFF   | ~31.8K | System variables (`include/sysvars.inc`, $8000-$84AC), BASIC program area (`PROG_AREA_START`=$84AD onward), editor line buffer, GOSUB/FOR stacks, spare RAM |
+| $8000-$BFFF   | 16K | System variables (`include/sysvars.inc`, starting at $8000) followed by the dynamic BASIC program/array/scalar pool (`PROG_AREA_START`=$B8C9 through $BFFF) |
 | $FF00-$FFFF   | 256B  | BASIC/machine stack (grows down from `$FF00`) |
 
 **Why `$5B00`-`$7FFF` is off-limits, not just "reserved for later":** the
@@ -124,7 +124,7 @@ purpose, cross-referenced from the Programmer's Reference.
   control-flow features; the current editor, BASIC, fill, and GOSUB stacks
   are allocated and tested.
 - Reclaim or relocate additional cold code before expanding the language;
-  the private-preview build has 2 Home-ROM bytes and 99 EXROM bytes free.
+  the V2 candidate has 227 Home-ROM bytes and 100 EXROM bytes free.
   `make budget` is authoritative as these figures change.
 - **Label table**: the current top-level implementation is working and
   checked on every commit and before `RUN`. Revisit its fixed capacity when
