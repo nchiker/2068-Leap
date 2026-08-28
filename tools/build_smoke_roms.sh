@@ -15,6 +15,10 @@ sources=(
     rom/test_editor_ops.asm
     rom/test_port_monitor.asm
     rom/test_ulaplus.asm
+    rom/test_calc_smoke_endcalc.asm
+    rom/test_calc_smoke_stackops.asm
+    rom/test_calc_smoke_arithmetic.asm
+    rom/test_calc_smoke_division.asm
 )
 
 outputs=(
@@ -27,6 +31,10 @@ outputs=(
     test_editor_ops.bin
     test_port_monitor.bin
     test_ulaplus.bin
+    test_calc_smoke_endcalc.bin
+    test_calc_smoke_stackops.bin
+    test_calc_smoke_arithmetic.bin
+    test_calc_smoke_division.bin
 )
 
 for index in "${!sources[@]}"; do

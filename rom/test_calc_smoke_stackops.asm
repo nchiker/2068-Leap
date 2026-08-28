@@ -228,14 +228,7 @@ FAIL:
 .fail_loop:
     jr   .fail_loop
 
-    INCLUDE "basic/basic.asm"
-    INCLUDE "kernel/editor/editor.asm"
-    INCLUDE "kernel/memory/memory.asm"
-    INCLUDE "kernel/io/io.asm"
-    INCLUDE "kernel/graphics/graphics.asm"
-    INCLUDE "kernel/math/math.asm"
-    INCLUDE "kernel/interrupt/interrupt.asm"
-    INCLUDE "kernel/bank/bank.asm"
+    INCLUDE "rom/calc_smoke_home.inc"
 
     DS   $4000 - $, $FF
 

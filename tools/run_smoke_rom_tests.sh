@@ -4,7 +4,15 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-tests=(test_memory test_math test_editor_ops)
+tests=(
+    test_memory
+    test_math
+    test_editor_ops
+    test_calc_smoke_endcalc
+    test_calc_smoke_stackops
+    test_calc_smoke_arithmetic
+    test_calc_smoke_division
+)
 pass=0
 fail=0
 
