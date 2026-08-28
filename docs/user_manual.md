@@ -636,6 +636,11 @@ operate in reverse `SHOW` order; attempting either operation on a lower sprite
 reports `SPRITE ORDER ERROR` before changing the screen. Once the upper sprite
 is hidden, the next sprite can be moved or hidden safely.
 
+`CLS`, `MODE`, editor entry, and screen scrolling invalidate all currently
+displayed slots because their saved backgrounds no longer describe the screen.
+Captured images remain defined and can be shown again; `HIT()` returns `0` and
+`HIDE`/`MOVE` report `SPRITE NOT SHOWN` until that happens.
+
 ## 11. Sound
 
 | Statement | Effect |

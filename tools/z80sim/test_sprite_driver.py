@@ -30,6 +30,9 @@ sim.SYSVARS['SPRITE_W'] = 0x955C
 sim.SYSVARS['SPRITE_H'] = 0x955D
 sim.SYSVARS['SPRITE_ROW_IDX'] = 0x955E
 sim.SYSVARS['SPRITE_COL_IDX'] = 0x955F
+sim.SYSVARS['SPRITE_SLOT_SHOWN'] = 0x9560
+sim.SYSVARS['SPRITE_DISPLAY_DEPTH'] = 0x9568
+sim.SYSVARS['SPRITE_SLOT_MAX'] = 8
 
 REAL_ROW_BASE_TABLE = [
     0x4000, 0x4020, 0x4040, 0x4060, 0x4080, 0x40A0, 0x40C0, 0x40E0,
@@ -166,6 +169,18 @@ s6 = new_sim()
 run_from(prog, s6, 'GFX_SPRITE_CAPTURE', b=0, c=0, d=1, e=0, hl=sentinel_buf)
 check('CAPTURE height=0 rejected (carry set)', s6.flags['C'], 1)
 
+# ---- test 5: global screen transformations invalidate displayed state ----
+s7 = new_sim()
+for slot in range(8):
+    s7.wb(sim.SYSVARS['SPRITE_SLOT_SHOWN'] + slot, slot + 1)
+s7.wb(sim.SYSVARS['SPRITE_DISPLAY_DEPTH'], 8)
+run_from(prog, s7, 'GFX_SPRITE_INVALIDATE', b=0, c=0, d=0, e=0, hl=0)
+check('INVALIDATE clears every shown flag',
+      [s7.rb(sim.SYSVARS['SPRITE_SLOT_SHOWN'] + i) for i in range(8)],
+      [0] * 8)
+check('INVALIDATE clears display depth',
+      s7.rb(sim.SYSVARS['SPRITE_DISPLAY_DEPTH']), 0)
+
 # ---- report ----------------------------------------------------------
 total_checks = 'many'
 if FAILURES:
@@ -174,4 +189,4 @@ if FAILURES:
         print(' -', f)
     sys.exit(1)
 else:
-    print("ALL CHECKS PASSED (GFX_SPRITE_CAPTURE / GFX_SPRITE_DRAW)")
+    print("ALL CHECKS PASSED (sprite graphics primitives and invalidation)")

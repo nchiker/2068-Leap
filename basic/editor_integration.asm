@@ -571,6 +571,9 @@ BASIC_EDITOR_INIT_EXROM:
     DW   $C060
 
 BASIC_EDITOR_ENTER_EXROM:
+    push hl
+    call GFX_SPRITE_INVALIDATE
+    pop  hl
     call BASIC_CALL_EXROM_INLINE
     DW   $C066
 
