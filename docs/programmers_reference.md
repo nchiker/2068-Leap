@@ -77,9 +77,10 @@ a scrollable, cursor-addressable view.
 **Moved to EXROM (2026-08-22)**: the production ROM no longer builds this
 module Home-resident — see the dedicated "`kernel/editor` moved to EXROM"
 section under `basic/` below for the full migration writeup (why, the
-paging design, and live interactive verification). `kernel/editor/
-editor.asm` itself is unchanged and still builds/runs standalone (`rom/
-test_editor.asm`); it's no longer part of `include/kernel_api.inc`'s
+paging design, and live interactive verification). `kernel/editor/editor.asm`
+is now a compatibility adapter that includes the canonical EXROM body and
+still builds/runs standalone (`rom/test_editor.asm`); it is no longer part of
+`include/kernel_api.inc`'s
 contract, since `basic/` now reaches it through its own `BASIC_EDITOR_*_
 EXROM` wrappers instead of calling these labels directly. The rest of this
 section (behavioural design, routine list) still describes the module's
@@ -92,7 +93,7 @@ compiled" for every routine name below.
 |-----------------------|-------------------------------------------------------|
 | `EDITOR_INIT`          | Reset editor state. Call at cold start and on `NEW`. |
 | `EDITOR_ENTER`         | Take over screen/keyboard, run the edit loop.        |
-| `EDITOR_EXIT`          | Commit the current line, return to BASIC.            |
+| `EDITOR_EXIT`          | End editing; BASIC owns tokenization and commit.      |
 | `EDITOR_INSERT_CHAR`   | Insert one char at the cursor.                       |
 | `EDITOR_DELETE_CHAR`   | Delete the char at the cursor.                       |
 | `EDITOR_MOVE_CURSOR`   | Move cursor one step, or jump (home/end/top/bottom). |
@@ -155,17 +156,17 @@ rather than duplicating the shift logic, and `EDITOR_LOOP` now calls it
 instead. `EDITOR_DELETE_CHAR` itself is unchanged and still available
 as a forward-delete primitive for whenever that's needed separately.
 
-`EDIT_PROGRAM_POS` (new scratch var) is now tracked by `EDITOR_ENTER`
-and available to `EDITOR_EXIT` — but **`EDITOR_EXIT` deliberately does
-NOT call `MEM_LINE_STORE` yet**. Checking the two format contracts
+`EDIT_PROGRAM_POS` is tracked by `EDITOR_ENTER` and remains available when
+`EDITOR_EXIT` returns. **`EDITOR_EXIT` deliberately does not call
+`MEM_LINE_STORE`.** Checking the two format contracts
 against each other surfaced a real bug before it shipped:
 `EDIT_LINE_BUF` holds raw null-terminated ASCII, while `MEM_LINE_STORE`
 expects the length-prefixed, tokenized statement format. Calling it as
 originally stubbed would have misread the first two typed characters as
 a length field and corrupted the program area. That conversion (raw
-text -> tokenized statement) is a `basic/` tokenizer concern, not
-`kernel/editor`'s — deferred until `basic/` exists, with the position
-already tracked and ready for when it does.
+text -> tokenized statement) is a `basic/` tokenizer concern, not the
+generic editor's. `BASIC_COMMAND_LOOP` now performs that conversion and
+commit after the EXROM editing session returns.
 
 **Now has a blinking cursor indicator**: `EDITOR_REDRAW_SCREEN` shows
 the cursor as an inverse-video block at `EDIT_BUF_OFFSET`'s column, via

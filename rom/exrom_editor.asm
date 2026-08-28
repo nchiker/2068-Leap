@@ -311,11 +311,12 @@ EDITOR_LOOP:
 
 ; ============================================================================
 ; EDITOR_EXIT
-; Commits the current line buffer back into the program area and returns
-; control to BASIC.
+; Ends the editor session and returns the raw line buffer to BASIC. The
+; BASIC command loop owns normalization, tokenization, immediate-command
+; handling, and committing an existing or new statement.
 ; In:  editor state as left by EDITOR_ENTER's loop
-; Out: program area updated via kernel/memory line-store routine
-; Destroys: AF, HL, BC, DE
+; Out: EDIT_LINE_BUF and EDIT_PROGRAM_POS remain available to the caller
+; Destroys: none
 ; ============================================================================
 EDITOR_EXIT:
     ; EDIT_LINE_BUF holds raw null-terminated ASCII text; kernel/memory's
@@ -327,10 +328,8 @@ EDITOR_EXIT:
     ; checking the two format contracts against each other rather than
     ; wiring the call and hoping it worked. The conversion (raw text ->
     ; tokenized statement) is fundamentally a basic/ tokenizer concern,
-    ; not something kernel/editor should own — deferred until basic/
-    ; exists. EDIT_PROGRAM_POS is tracked (see EDITOR_ENTER) so the
-    ; position is ready to use the moment that conversion exists; this
-    ; routine just doesn't call MEM_LINE_STORE with it yet.
+    ; not something the generic editor should own. BASIC_COMMAND_LOOP now
+    ; performs that conversion and commit after EDITOR_ENTER returns.
     ret
 
 ; ============================================================================
