@@ -7,10 +7,11 @@ block inventory and `make budget` reports the current byte totals.
 ## Executive result
 
 The V2 recovery passes have increased free space from **2 to 360 HOME
-bytes** and from **99 to 154 EXROM bytes**, without removing a user feature.
+bytes** and from **99 to 317 EXROM bytes**, without removing a user feature.
 The shared low-ROM strings and dead highlighting pointer recovered 57 HOME
 bytes and 55 EXROM bytes. Replacing the execution keyword chain and its jump
 veneers with a table recovered another 253 HOME bytes after preserving IX.
+Table-driving the EXROM static checker recovered a further 163 EXROM bytes.
 
 | Opportunity | HOME | EXROM | Confidence |
 |---|---:|---:|---|
@@ -19,8 +20,9 @@ veneers with a table recovered another 253 HOME bytes after preserving IX.
 | Reuse retired `$C072-$C077` EXROM entry slot | 0 | 6 | High for new internal bytes; ABI review required |
 | Table-drive execution statement dispatch | 253 | 0 | Implemented and suite-verified |
 | Replace numeric function ID branch chain | 48 | 0 | Implemented and suite-verified |
+| Table-drive static-checker statement dispatch | 0 | 163 | Implemented and suite-verified |
 
-Current end-of-image headroom is **360 HOME bytes and 154 EXROM bytes**. The
+Current end-of-image headroom is **360 HOME bytes and 317 EXROM bytes**. The
 retired six-byte entry remains an internal reusable hole and is deliberately
 not counted as end-of-image free space.
 
@@ -130,6 +132,15 @@ parsed values. The change uses one additional RAM byte for the two-byte handler
 scratch and leaves **1,856 bytes** in the dynamic RAM pool. All automated tests
 pass.
 
+## 6. Static-checker statement dispatch: 163 verified EXROM bytes
+
+`BASIC_CHECK_STATEMENT_CONTENT` now uses the same four-byte keyword/handler
+table shape as execution dispatch. The walker preserves IX, retains the
+original keyword order and grammar-handler sharing, and keeps compound
+`END IF` recognition ahead of the single-keyword table. Assignment checking
+remains the final fallback. This reduces the checker by 163 bytes without
+changing accepted syntax.
+
 ## Recommended implementation order
 
 1. Completed: shared low-page strings and stale-pairing magic bump.
@@ -137,6 +148,7 @@ pass.
 3. Completed: table-driven execution statement dispatcher.
 4. Completed: static checks, smoke ROMs, editor automation, and 68 fixtures.
 5. Completed: numeric function-handler pointers, 48 HOME bytes recovered.
+6. Completed: table-driven checker dispatch, 163 EXROM bytes recovered.
 
 No routine should be removed solely because the textual report shows zero
 references. Entry fallthrough, fixed ABI addresses, jump tables, inline data,

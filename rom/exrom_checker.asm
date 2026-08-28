@@ -932,220 +932,31 @@ BASIC_CHECK_STATEMENT:
 ; Destroys: AF, BC, DE, HL
 ; ============================================================================
 BASIC_CHECK_STATEMENT_CONTENT:
-    ld   de, KW_PRINT
-    call KTAB_BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .check_print
-
-    ld   de, KW_CLS
-    call KTAB_BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .ok                       ; CLS takes no argument
-
-    ld   de, KW_REM
-    call KTAB_BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .ok                       ; REM's trailing text is a
-                                       ; comment — matching the keyword
-                                       ; IS the whole check, same as
-                                       ; END/STOP below
-
-    ld   de, KW_BORDER
-    call KTAB_BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .check_border
-
-    ld   de, KW_INK
-    call KTAB_BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .check_attr_expr
-
-    ld   de, KW_PAPER
-    call KTAB_BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .check_attr_expr
-
-    ld   de, KW_FLASH
-    call KTAB_BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .check_attr_expr
-
-    ld   de, KW_BRIGHT
-    call KTAB_BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .check_attr_expr
-
-    ld   de, KW_INVERSE
-    call KTAB_BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .check_attr_expr
-
-    ld   de, KW_OVER
-    call KTAB_BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .check_attr_expr
-
-    ld   de, KW_AT
-    call KTAB_BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .check_at
-
-    ld   de, KW_TAB
-    call KTAB_BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .check_attr_expr             ; TAB validates identically
-                                         ; to INK/PAPER/etc — one
-                                         ; expression, nothing further
-
-    ld   de, KW_PLOT
-    call KTAB_BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .check_at                    ; PLOT's grammar (expr,expr)
-                                         ; is identical to AT's — reuse
-                                         ; its existing check rather
-                                         ; than duplicate it
-
-    ld   de, KW_LINE
-    call KTAB_BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .check_line
-
-    ld   de, KW_BLOCK
-    call KTAB_BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .check_line                  ; BLOCK's grammar (expr,expr
-                                         ; TO expr,expr) is identical
-                                         ; to LINE's own — reuse rather
-                                         ; than duplicate
-
-    ld   de, KW_CIRCLE
-    call KTAB_BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .check_circle
-
-    ld   de, KW_CPLOT
-    call KTAB_BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .check_at                    ; CPLOT's grammar (expr,expr)
-                                         ; is identical to AT/PLOT's —
-                                         ; reuse rather than duplicate
-
-    ld   de, KW_FILL
-    call KTAB_BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .check_at                    ; FILL's grammar (expr,expr)
-                                         ; is identical too — reuse
-
-    ld   de, KW_BEEP
-    call KTAB_BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .check_at                    ; BEEP's grammar (expr,expr —
-                                         ; duration,pitch) is identical
-                                         ; to AT/PLOT's — reuse rather
-                                         ; than duplicate
-
-    ld   de, KW_SOUND
-    call KTAB_BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .check_at                    ; SOUND's grammar (expr,expr
-                                         ; — register,data) is identical
-                                         ; to AT/PLOT/BEEP's — reuse
-                                         ; rather than duplicate. Static
-                                         ; check does NOT validate the
-                                         ; register range (1-16) — same
-                                         ; "grammar only, not values"
-                                         ; split MODE's own range check
-                                         ; already established; the
-                                         ; real range check happens at
-                                         ; runtime in rom/exrom_sound.
-                                         ; asm's SOUND_EXROM
-
-    ld   de, KW_DIM
-    call KTAB_BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .check_dim
-
-    ld   de, KW_MODE
-    call KTAB_BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .check_border                ; MODE's grammar (one
-                                         ; expression) is identical to
-                                         ; BORDER's — reuse rather than
-                                         ; duplicate (the runtime 0/1
-                                         ; range check happens in
-                                         ; BASIC_STMT_MODE, not here —
-                                         ; same "static check only
-                                         ; validates grammar, not
-                                         ; values" split DIVISION BY
-                                         ; ZERO already has)
-
-    ld   de, KW_ULAPLUS
-    call KTAB_BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .check_border
-
-    ld   de, KW_PALETTE
-    call KTAB_BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .check_at
-
     call KTAB_BASIC_MATCH_ENDIF
     jp   nc, .ok                       ; END IF takes no argument
 
-    ld   de, KW_END
+    push ix                              ; preserve caller's IX
+    ld   ix, CHECK_STATEMENT_DISPATCH_TABLE
+.dispatch_loop:
+    ld   e, (ix+0)
+    ld   d, (ix+1)
+    ld   a, d
+    or   e
+    jr   z, .try_assignments
     call KTAB_BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .ok                       ; END/STOP take no argument —
-                                       ; matching the keyword IS the
-                                       ; whole check
+    jr   nc, .dispatch_match
+    ld   de, 4
+    add  ix, de
+    jr   .dispatch_loop
+.dispatch_match:
+    ld   e, (ix+2)
+    ld   d, (ix+3)
+    pop  ix
+    push de
+    ret
 
-    ld   de, KW_STOP
-    call KTAB_BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .ok
-
-    ld   de, KW_INPUT
-    call KTAB_BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .check_input
-
-    ld   de, KW_GOTO
-    call KTAB_BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .check_goto
-
-    ld   de, KW_IF
-    call KTAB_BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .check_if
-
-    ld   de, KW_ELSEIF
-    call KTAB_BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .check_elseif
-
-    ld   de, KW_ELSE
-    call KTAB_BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .ok                       ; ELSE takes no argument
-
-    ld   de, KW_FOR
-    call KTAB_BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .check_for
-
-    ld   de, KW_NEXT
-    call KTAB_BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .check_next
-
-    ld   de, KW_EXIT
-    call KTAB_BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .check_exit
-
-    ld   de, KW_SPRITE
-    call KTAB_BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .check_sprite
-
-    ld   de, KW_POKE
-    call KTAB_BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .check_at                    ; POKE's grammar (expr,expr)
-                                         ; is identical to AT/PLOT's —
-                                         ; reuse rather than duplicate
-
-    ld   de, KW_PAUSE
-    call KTAB_BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .check_border                ; PAUSE's grammar (one
-                                         ; expression) is identical to
-                                         ; BORDER's — reuse rather than
-                                         ; duplicate
-
-    ld   de, KW_RANDOMISE
-    call KTAB_BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .check_border                ; RANDOMISE's grammar (one
-                                         ; expression) is identical too
-
-    ld   de, KW_GOSUB
-    call KTAB_BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .check_goto                  ; GOSUB's grammar (one label)
-                                         ; is identical to GOTO's
-
-    ld   de, KW_CALL
-    call KTAB_BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .check_goto                  ; CALL is a second spelling
-                                         ; of GOSUB — same grammar
-
-    ld   de, KW_RETURN
-    call KTAB_BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .ok                          ; RETURN takes no argument
-
+.try_assignments:
+    pop  ix
     call BASIC_CHECK_STR_ASSIGNMENT
     jp   nc, .ok                          ; string assignment handled
                                          ; it — tried first, same
@@ -1552,6 +1363,53 @@ BASIC_CHECK_STATEMENT_CONTENT:
 .ok:
     or   a
     ret
+
+; Keyword pointer + grammar-handler pointer. The order matches execution
+; dispatch. Multiple keywords intentionally share validators where their
+; grammar is identical; END IF remains the compound pre-check above.
+CHECK_STATEMENT_DISPATCH_TABLE:
+    DW KW_PRINT, BASIC_CHECK_STATEMENT_CONTENT.check_print
+    DW KW_CLS, BASIC_CHECK_STATEMENT_CONTENT.ok
+    DW KW_REM, BASIC_CHECK_STATEMENT_CONTENT.ok
+    DW KW_BORDER, BASIC_CHECK_STATEMENT_CONTENT.check_border
+    DW KW_INK, BASIC_CHECK_STATEMENT_CONTENT.check_attr_expr
+    DW KW_PAPER, BASIC_CHECK_STATEMENT_CONTENT.check_attr_expr
+    DW KW_FLASH, BASIC_CHECK_STATEMENT_CONTENT.check_attr_expr
+    DW KW_BRIGHT, BASIC_CHECK_STATEMENT_CONTENT.check_attr_expr
+    DW KW_INVERSE, BASIC_CHECK_STATEMENT_CONTENT.check_attr_expr
+    DW KW_OVER, BASIC_CHECK_STATEMENT_CONTENT.check_attr_expr
+    DW KW_AT, BASIC_CHECK_STATEMENT_CONTENT.check_at
+    DW KW_TAB, BASIC_CHECK_STATEMENT_CONTENT.check_attr_expr
+    DW KW_PLOT, BASIC_CHECK_STATEMENT_CONTENT.check_at
+    DW KW_LINE, BASIC_CHECK_STATEMENT_CONTENT.check_line
+    DW KW_BLOCK, BASIC_CHECK_STATEMENT_CONTENT.check_line
+    DW KW_CIRCLE, BASIC_CHECK_STATEMENT_CONTENT.check_circle
+    DW KW_CPLOT, BASIC_CHECK_STATEMENT_CONTENT.check_at
+    DW KW_FILL, BASIC_CHECK_STATEMENT_CONTENT.check_at
+    DW KW_BEEP, BASIC_CHECK_STATEMENT_CONTENT.check_at
+    DW KW_SOUND, BASIC_CHECK_STATEMENT_CONTENT.check_at
+    DW KW_DIM, BASIC_CHECK_STATEMENT_CONTENT.check_dim
+    DW KW_MODE, BASIC_CHECK_STATEMENT_CONTENT.check_border
+    DW KW_ULAPLUS, BASIC_CHECK_STATEMENT_CONTENT.check_border
+    DW KW_PALETTE, BASIC_CHECK_STATEMENT_CONTENT.check_at
+    DW KW_END, BASIC_CHECK_STATEMENT_CONTENT.ok
+    DW KW_STOP, BASIC_CHECK_STATEMENT_CONTENT.ok
+    DW KW_INPUT, BASIC_CHECK_STATEMENT_CONTENT.check_input
+    DW KW_GOTO, BASIC_CHECK_STATEMENT_CONTENT.check_goto
+    DW KW_IF, BASIC_CHECK_STATEMENT_CONTENT.check_if
+    DW KW_ELSEIF, BASIC_CHECK_STATEMENT_CONTENT.check_elseif
+    DW KW_ELSE, BASIC_CHECK_STATEMENT_CONTENT.ok
+    DW KW_FOR, BASIC_CHECK_STATEMENT_CONTENT.check_for
+    DW KW_NEXT, BASIC_CHECK_STATEMENT_CONTENT.check_next
+    DW KW_EXIT, BASIC_CHECK_STATEMENT_CONTENT.check_exit
+    DW KW_SPRITE, BASIC_CHECK_STATEMENT_CONTENT.check_sprite
+    DW KW_POKE, BASIC_CHECK_STATEMENT_CONTENT.check_at
+    DW KW_PAUSE, BASIC_CHECK_STATEMENT_CONTENT.check_border
+    DW KW_RANDOMISE, BASIC_CHECK_STATEMENT_CONTENT.check_border
+    DW KW_GOSUB, BASIC_CHECK_STATEMENT_CONTENT.check_goto
+    DW KW_CALL, BASIC_CHECK_STATEMENT_CONTENT.check_goto
+    DW KW_RETURN, BASIC_CHECK_STATEMENT_CONTENT.ok
+    DW 0
 
 ; ============================================================================
 ; BASIC_CHECK_MULTI_STATEMENT

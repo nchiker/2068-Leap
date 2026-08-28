@@ -5,10 +5,10 @@ regenerate the authoritative totals and module map after any source change.
 
 ## Result
 
-The current V2 image has **360 free bytes in the 16K HOME ROM** and **154 free
+The current V2 image has **360 free bytes in the 16K HOME ROM** and **317 free
 bytes in the 8K EXROM**. This is up from the V1 baseline of 2 and 99 bytes.
 
-The 514-byte combined end-of-image budget can fund modest V2 features, but it
+The 677-byte combined end-of-image budget can fund modest V2 features, but it
 should retain a safety margin for fixes and new EXROM entry wiring.
 
 ## Measured map
@@ -36,21 +36,21 @@ alignment. They do not claim every byte in a module is live code.
 
 | Address range | Bytes | Share | Source |
 |---|---:|---:|---|
-| `$C000-$C704` | 1,797 | 21.9% | Checker plus fixed entry table |
-| `$C705-$CA88` | 900 | 11.0% | Storage |
-| `$CA89-$CB4C` | 196 | 2.4% | Formatting helpers |
-| `$CB4D-$CC0B` | 191 | 2.3% | Help |
-| `$CC0C-$D456` | 2,123 | 25.9% | Calculator |
-| `$D457-$D467` | 17 | 0.2% | Sound command |
-| `$D468-$D4BA` | 83 | 1.0% | ULAplus |
-| `$D4BB-$D870` | 950 | 11.6% | Sprites |
-| `$D871-$D9F3` | 387 | 4.7% | String functions |
-| `$D9F4-$DCE2` | 751 | 9.2% | Editor |
-| `$DCE3-$DD30` | 78 | 1.0% | Arrays |
-| `$DD31-$DDFE` | 206 | 2.5% | INPUT |
-| `$DDFF-$DEC9` | 203 | 2.5% | DIM allocator |
-| `$DECA-$DF65` | 156 | 1.9% | Keyword highlighting |
-| `$DF66-$DFFF` | **154** | 1.9% | **Unallocated padding** |
+| `$C000-$C661` | 1,634 | 19.9% | Checker plus fixed entry table |
+| `$C662-$C9E5` | 900 | 11.0% | Storage |
+| `$C9E6-$CAA9` | 196 | 2.4% | Formatting helpers |
+| `$CAAA-$CB68` | 191 | 2.3% | Help |
+| `$CB69-$D3B3` | 2,123 | 25.9% | Calculator |
+| `$D3B4-$D3C4` | 17 | 0.2% | Sound command |
+| `$D3C5-$D417` | 83 | 1.0% | ULAplus |
+| `$D418-$D7CD` | 950 | 11.6% | Sprites |
+| `$D7CE-$D950` | 387 | 4.7% | String functions |
+| `$D951-$DC3F` | 751 | 9.2% | Editor |
+| `$DC40-$DC8D` | 78 | 1.0% | Arrays |
+| `$DC8E-$DD5B` | 206 | 2.5% | INPUT |
+| `$DD5C-$DE26` | 203 | 2.5% | DIM allocator |
+| `$DE27-$DEC2` | 156 | 1.9% | Keyword highlighting |
+| `$DEC3-$DFFF` | **317** | 3.9% | **Unallocated padding** |
 
 ## Best V2 space-recovery targets
 
