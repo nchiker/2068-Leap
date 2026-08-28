@@ -22,13 +22,20 @@ def main() -> int:
         if match:
             symbols[match.group(1)] = int(match.group(2), 16)
 
+    try:
+        basic_start = symbols["BASIC_TOKENIZE_LINE"]
+        basic_end = symbols["MEM_INIT"]
+    except KeyError as error:
+        print(f"required boundary symbol missing: {error.args[0]}", file=sys.stderr)
+        return 1
+
     labels = []
     for lineno, line in enumerate(lines, 1):
         match = LABEL_RE.match(line)
         if match and match.group(1) in symbols:
             name = match.group(1)
             address = symbols[name]
-            if 0x010F <= address < 0x2C89:
+            if basic_start <= address < basic_end:
                 kind = "data" if re.match(r"(?:DB|DW|DEFB|DEFW)\b", match.group(2), re.I) else "code"
                 labels.append((address, lineno, name, kind))
     labels.sort()
@@ -36,7 +43,7 @@ def main() -> int:
     source_without_comments = "\n".join(line.split(";", 1)[0] for line in lines)
     rows = []
     for index, (address, lineno, name, kind) in enumerate(labels):
-        end = labels[index + 1][0] if index + 1 < len(labels) else 0x2C89
+        end = labels[index + 1][0] if index + 1 < len(labels) else basic_end
         refs = len(re.findall(rf"\b{re.escape(name)}\b", source_without_comments)) - 1
         rows.append((end - address, address, end, lineno, refs, kind, name))
 

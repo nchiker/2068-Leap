@@ -31,14 +31,14 @@ The largest global blocks in `basic/basic.asm` are:
 | Bytes | Address | Block | Assessment |
 |---:|---|---|---|
 | 644 | `$244A-$26CD` | `BASIC_REDRAW_PROGRAM` | Large but stateful and regression-prone |
-| 610 | `$08FE-$0B5F` | `BASIC_EVAL_PRIMARY` | Contains a promising function dispatch chain |
+| 534 | `$08FE-$0B13` | `BASIC_EVAL_PRIMARY` | Function dispatch is now table-driven |
 | 510 | `$0154-$0351` | `BASIC_COMMAND_LOOP` | Includes cold initialization plus immediate-command handling |
-| 509 | `$1DFC-$1FF8` | `BASIC_EXEC_STATEMENT_CONTENT` | Best first code-compression target |
+| 256 | dispatch routine + table | `BASIC_EXEC_STATEMENT_CONTENT` | Reduced from 509 bytes |
 | 310 | `$06BB-$07F0` | `BASIC_HANDLE_NAV` | Stateful; lower priority |
 | 288 | `$26CE-$27ED` | `BASIC_DRAW_STATUS_LINE` | Multiple status modes; lower priority |
 | 268 | `$0DD2-$0EDD` | `BASIC_EVAL_COMPARISON` | Possible later parser audit |
 | 237 | `$0BAE-$0C9A` | `BASIC_SIN_FLOAT` | Math correctness risk outweighs first-pass return |
-| 223 | `$1095-$1173` | `BASIC_EVAL_STR_FUNCTION_CALL` | Possible later dispatch consolidation |
+| 223 | `$104F-$112D` | `BASIC_EVAL_STR_FUNCTION_CALL` | Possible later dispatch consolidation |
 
 The apparent zero textual references to `BASIC_COMMAND_LOOP` do **not** make it
 dead: execution falls into it from the ROM driver. This is why the audit does
