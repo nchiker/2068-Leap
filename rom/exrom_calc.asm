@@ -52,13 +52,12 @@
 ; exactly (see that table's own header) and porting a real op body
 ; later still needs zero literal-value translation.
 ;
-; STILL NOT ASSEMBLED THIS SESSION: sjasmplus isn't available in this
-; sandbox (network disabled). Checked with tools/check_asm.py (label/
-; scope/stack-fingerprint only) and by hand against the disassembly.
-; Needs a z80sim smoke test (this project's own tools/z80sim, now that
-; every instruction used here is one it actually supports — verified
-; against tools/z80sim/sim.py's own mnemonic list before writing this)
-; before any more ops get added, then sjasmplus + real hardware.
+; VALIDATION STATUS: assembled by sjasmplus as part of the production
+; HOME/EXROM build and exercised by tools/z80sim/test_calc_dispatcher.py,
+; the dedicated calculator smoke ROMs, and the integrated BASIC suite.
+; See docs/calculator_review.md for the current coverage and the explicit
+; robustness limits that remain before this can be treated as a general-
+; purpose replacement for the original ROM calculator.
 ;
 ; ENTRY CONTRACT (CALC_EXROM_ENTRY, reached via the $C024 stub — rom/
 ; exrom_checker.asm): stack top = pointer to the literal-op byte stream
