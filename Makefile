@@ -1,4 +1,4 @@
-.PHONY: all build check smoke-build test budget manual clean
+.PHONY: all build check smoke-build test budget audit-basic manual clean
 
 all: check build
 
@@ -28,6 +28,10 @@ test: all
 
 budget: build
 	python3 tools/report_budget.py build/test_basic.lst build/exrom.lst build/test_basic.sym
+	python3 tools/report_rom_map.py build/test_basic.lst build/exrom.lst
+
+audit-basic: build
+	python3 tools/report_basic_routines.py basic/basic.asm build/test_basic.sym
 
 manual:
 	python3 tools/build_user_manual_docx.py
