@@ -6,7 +6,7 @@ block inventory and `make budget` reports the current byte totals.
 
 ## Executive result
 
-The first V2 recovery pass has increased free space from **2 to 312 HOME
+The V2 recovery passes have increased free space from **2 to 360 HOME
 bytes** and from **99 to 154 EXROM bytes**, without removing a user feature.
 The shared low-ROM strings and dead highlighting pointer recovered 57 HOME
 bytes and 55 EXROM bytes. Replacing the execution keyword chain and its jump
@@ -18,9 +18,9 @@ veneers with a table recovered another 253 HOME bytes after preserving IX.
 | Remove dead `KW_THEN` highlighting pointer | 2 | 0 | Implemented |
 | Reuse retired `$C072-$C077` EXROM entry slot | 0 | 6 | High for new internal bytes; ABI review required |
 | Table-drive execution statement dispatch | 253 | 0 | Implemented and suite-verified |
-| Replace numeric function ID branch chain | 35-60 | 0 | Medium; prototype required |
+| Replace numeric function ID branch chain | 48 | 0 | Implemented and suite-verified |
 
-Current end-of-image headroom is **312 HOME bytes and 154 EXROM bytes**. The
+Current end-of-image headroom is **360 HOME bytes and 154 EXROM bytes**. The
 retired six-byte entry remains an internal reusable hole and is deliberately
 not counted as end-of-image free space.
 
@@ -117,21 +117,18 @@ preserves IX across dispatch, retains the original keyword order, and points
 directly at ordinary statement handlers instead of retaining jump veneers.
 The complete 68-fixture suite, smoke ROMs, and automated editor test pass.
 
-## 5. Numeric function dispatch: estimated 35-60 HOME bytes
+## 5. Numeric function dispatch: 48 verified HOME bytes
 
-`BASIC_EVAL_PRIMARY` contains 20 `CP FUNC_ID_*` tests followed by conditional
-branches, while `FUNCTION_TABLE` already carries a per-function ID and argument
-count. A V2 table can carry a handler address instead of the ID. The address
-costs one additional byte per entry, but removes most of the approximately
-80-byte comparison chain.
+`FUNCTION_TABLE` now carries a handler pointer and argument shape instead of a
+one-byte ID. The extra pointer byte per entry is outweighed by removing the
+comparison chain. Handler and argument shape are independently snapshotted on
+the Z80 stack, preserving nested calls such as `MOD(ABS(X),3)` and
+`LEN(UPPER$(A$))`.
 
-HL cannot simultaneously contain both a numeric argument and an indirect jump
-target—the reason documented for the current design—but the handler address
-can be placed on the Z80 stack and entered with `ret` after argument parsing.
-Nested function calls make a RAM scratch unsafe; the real stack is the correct
-prototype. String-argument and array-name functions still require specialized
-parsing paths, so the expected net saving is 35-60 bytes rather than the whole
-chain.
+The handler is entered with a synthetic `push`/`ret`, leaving HL and DE free for
+parsed values. The change uses one additional RAM byte for the two-byte handler
+scratch and leaves **1,856 bytes** in the dynamic RAM pool. All automated tests
+pass.
 
 ## Recommended implementation order
 
@@ -139,7 +136,7 @@ chain.
 2. Completed: dead `KW_THEN` highlighting pointer removal.
 3. Completed: table-driven execution statement dispatcher.
 4. Completed: static checks, smoke ROMs, editor automation, and 68 fixtures.
-5. Next candidate: prototype numeric function-handler pointers separately.
+5. Completed: numeric function-handler pointers, 48 HOME bytes recovered.
 
 No routine should be removed solely because the textual report shows zero
 references. Entry fallthrough, fixed ABI addresses, jump tables, inline data,

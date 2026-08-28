@@ -3238,16 +3238,16 @@ BASIC_EVAL_PRIMARY:
     ; consumed it plus its opening '(' — HL is positioned right at the
     ; start of the first argument, EXPR_PARSE_PTR already holds that
     ; same position (see BASIC_MATCH_FUNCTION_NAME's own contract),
-    ; and FUNC_CALL_ID/FUNC_CALL_ARGC say which function it was and
-    ; how many arguments it takes.
+    ; and FUNC_CALL_HANDLER/FUNC_CALL_ARGC say which handler to enter
+    ; and how many arguments it takes.
     ;
     ; REAL BUG FOUND AND FIXED (caught by tools/z80sim testing
     ; MOD(ABS(X),3) — a function call nested inside another function's
-    ; own argument): FUNC_CALL_ID/FUNC_CALL_ARGC are shared scratch,
+    ; own argument): FUNC_CALL_HANDLER/FUNC_CALL_ARGC are shared scratch,
     ; set by BASIC_TRY_EVAL_FUNCTION every time ANY function name is
     ; matched. The recursive BASIC_EVAL_EXPR call below, while parsing
     ; THIS call's own argument(s), can itself reach another function
-    ; call (ABS(X) here) — which overwrites FUNC_CALL_ID/ARGC with
+    ; call (ABS(X) here) — which overwrites the handler/argc result with
     ; ITS OWN values before this (outer, MOD's) call ever gets to read
     ; them back. Concretely: MOD's ARGC=2 was being clobbered to
     ; ABS's ARGC=1 by the time this code checked it, so
@@ -3262,13 +3262,11 @@ BASIC_EVAL_PRIMARY:
     ; else, just via the stack instead of a dedicated sysvar, since
     ; this needs to survive an arbitrary, unbounded depth of recursion
     ; (nested/repeated function calls), not one specific call site.
-    ld   a, (FUNC_CALL_ID)
-    ld   b, a
-    ld   a, (FUNC_CALL_ARGC)
-    ld   c, a                                  ; BC = our own snapshot,
-                                              ; safe from any nested
-                                              ; function call from here
+    ld   bc, (FUNC_CALL_HANDLER)
     push bc
+    ld   a, (FUNC_CALL_ARGC)
+    push af                                    ; handler + argc snapshots,
+                                               ; safe from nested calls
 
     ; ARGC_STR1 (100) is a sentinel, not a real argument count — LEN/
     ; CODE/VAL take one STRING argument, which doesn't fit the numeric
@@ -3303,9 +3301,8 @@ BASIC_EVAL_PRIMARY:
     jr   c, .fail_after_push                  ; must pop BC before
                                               ; propagating failure now
 
-    pop  bc                                    ; BC = our snapshot,
-                                              ; restored
-    ld   a, c
+    pop  af                                    ; A = argc snapshot
+    pop  bc                                    ; BC = handler snapshot
     cp   2
     jr   z, .two_arg
 
@@ -3339,7 +3336,7 @@ BASIC_EVAL_PRIMARY:
 
     ; ---- two-argument functions (MOD) ----
 .two_arg:
-    push bc                                    ; save our snapshot
+    push bc                                    ; save handler snapshot
                                               ; again, across the
                                               ; second recursive call
                                               ; below (which could
@@ -3391,8 +3388,8 @@ BASIC_EVAL_PRIMARY:
                                                 ; lesson)
 
 .two_arg_fail_early:
-    pop  bc                                      ; discard the
-                                                ; re-pushed snapshot —
+    pop  bc                                      ; discard the re-pushed
+                                                ; handler snapshot —
                                                 ; nothing else pushed
                                                 ; on this path yet
     scf
@@ -3411,8 +3408,9 @@ BASIC_EVAL_PRIMARY:
     ret
 
 .fail_after_push:
-    pop  bc                                      ; discard our
-                                                ; snapshot, keep the
+    pop  af                                      ; discard argc snapshot
+    pop  bc                                      ; discard handler snapshot,
+                                                ; keep the
                                                 ; stack balanced
     scf
     ret
@@ -3433,8 +3431,8 @@ BASIC_EVAL_PRIMARY:
 ; as an expression the way a normal function argument would be — see
 ; EXROM_ENTRY_DIMN's own header (rom/exrom_checker.asm) for why.
 .array_name_dim_arg:
-    pop  bc                              ; discard our FUNC_CALL_ID/
-                                         ; ARGC snapshot — the EXROM
+    pop  af                              ; discard argc snapshot
+    pop  bc                              ; discard handler snapshot — EXROM
                                          ; body below does its own full
                                          ; parse, nothing here needs it
     call BASIC_ARRAY_DIMN_EXROM
@@ -3453,8 +3451,8 @@ BASIC_EVAL_PRIMARY:
     jr   nz, .zero_arg_fail
     inc  hl
     ld   (EXPR_PARSE_PTR), hl
-    pop  bc                                      ; BC = our snapshot,
-                                                ; restored
+    pop  af                                      ; discard argc snapshot
+    pop  bc                                      ; BC = handler snapshot
     jp   .dispatch                               ; JP not JR — the new
                                                 ; ARGC_STR1/STR2 string-
                                                 ; argument dispatch
@@ -3465,7 +3463,8 @@ BASIC_EVAL_PRIMARY:
                                                 ; lesson)
 
 .zero_arg_fail:
-    pop  bc                                      ; discard our snapshot
+    pop  af
+    pop  bc                                      ; discard snapshots
     scf
     ret
 
@@ -3478,7 +3477,7 @@ BASIC_EVAL_PRIMARY:
 ; contain another string-function call), so the same fix applies: the
 ; acquired pool-buffer address lives on the real stack across the
 ; recursive BASIC_EVAL_STR_EXPR call, never in a shared sysvar. Our
-; own FUNC_CALL_ID/ARGC snapshot (BC) is already stack-based per this
+; own handler/argc snapshot is already stack-based per this
 ; routine's own established pattern above — popped back right before
 ; .dispatch, same as every other branch here.
 ;
@@ -3486,12 +3485,8 @@ BASIC_EVAL_PRIMARY:
 ; (a length-prefixed [len][content...] blob, same shape STR_FUNC_POOL
 ; slots always hold) without any EXROM round trip. VAL calls through
 ; BASIC_STRFUNC_EXROM like every other string-function body, STR_FUNC_
-; CALL_ID set to the STRFUNC_ID_* (not FUNC_ID_*) constant — two
-; different ID spaces for the same function, since FUNC_ID_VAL
-; identifies the NUMERIC FUNCTION_TABLE entry that got us here, while
-; STRFUNC_ID_VAL tells STRFUNC_EXROM which body to run once we're
-; there — see STRING_FUNCTION_TABLE's own header for the full
-; reasoning.
+; CALL_ID is set to STRFUNC_ID_VAL only when the selected numeric-table
+; handler reaches VAL's EXROM transform.
 .str_arg_1:
     ld   hl, (EXPR_PARSE_PTR)
     call BASIC_PARSE_STR_ARG_TO_POOL     ; HL = buffer address (length
@@ -3508,15 +3503,11 @@ BASIC_EVAL_PRIMARY:
     inc  hl
     ld   (EXPR_PARSE_PTR), hl
     pop  hl                              ; HL = buffer address
-    pop  bc                              ; BC = our own FUNC_CALL_ID/
-                                         ; ARGC snapshot, restored
-    ld   a, b                            ; A = FUNC_CALL_ID (which of
-                                         ; LEN/CODE/VAL this actually is)
-    cp   FUNC_ID_LEN
-    jr   z, .str_arg_len
-    cp   FUNC_ID_CODE
-    jr   z, .str_arg_code
-    ; else VAL — the only remaining ARGC_STR1 function
+    pop  af                              ; discard argc snapshot
+    pop  bc                              ; BC = handler snapshot
+    jp   .dispatch
+
+.str_arg_val:
     ld   a, STRFUNC_ID_VAL
     ld   (STR_FUNC_CALL_ID), a
     call BASIC_STRFUNC_EXROM             ; HL = buffer (in); DE =
@@ -3552,7 +3543,8 @@ BASIC_EVAL_PRIMARY:
     jp   .function_done
 
 .str_arg_pool_fail:
-    pop  bc                              ; discard our own snapshot —
+    pop  af                              ; discard argc snapshot
+    pop  bc                              ; discard handler snapshot —
                                          ; nothing else pushed yet
     scf
     ret
@@ -3566,7 +3558,8 @@ BASIC_EVAL_PRIMARY:
                                          ; only covers a grammar check
                                          ; AFTER a successful parse)
     call STR_FUNC_POOL_RELEASE
-    pop  bc                              ; discard our own snapshot
+    pop  af
+    pop  bc                              ; discard snapshots
     scf
     ret
 
@@ -3603,61 +3596,9 @@ BASIC_EVAL_PRIMARY:
     ; arguments were.
     xor  a
     ld   (FUNC_RESULT_IS_FLOAT), a
-    ld   a, b                                  ; A = our own saved
-                                              ; FUNC_CALL_ID — reading
-                                              ; the snapshot in B, NOT
-                                              ; the (possibly still-
-                                              ; clobbered) FUNC_CALL_ID
-                                              ; sysvar directly
-    cp   FUNC_ID_ATTR
-    jr   z, .call_attr                         ; deliberately adjacent
-                                              ; above; JR saves the byte
-                                              ; the injected suite harness
-                                              ; also needs to fit
-    cp   FUNC_ID_ABS
-    jr   z, .call_abs
-    cp   FUNC_ID_SGN
-    jr   z, .call_sgn
-    cp   FUNC_ID_MOD
-    jr   z, .call_mod
-    cp   FUNC_ID_SQR
-    jr   z, .call_sqr
-    cp   FUNC_ID_DIV
-    jr   z, .call_div
-    cp   FUNC_ID_INT
-    jr   z, .call_int
-    cp   FUNC_ID_RND
-    jr   z, .call_rnd
-    cp   FUNC_ID_POINT
-    jr   z, .call_point
-    cp   FUNC_ID_PEEK
-    jr   z, .call_peek
-    cp   FUNC_ID_FREE
-    jr   z, .call_free
-    cp   FUNC_ID_USR
-    jr   z, .call_usr
-    cp   FUNC_ID_SIN
-    jp   z, .call_sin                          ; JP not JR — .call_sin
-                                              ; lives past BASIC_SIN_
-                                              ; FLOAT, well outside JR's
-                                              ; range (project's own
-                                              ; recurring JR-range lesson)
-    cp   FUNC_ID_PI
-    jp   z, .call_pi                           ; JP — same distance
-                                              ; reasoning as SIN above
-    cp   FUNC_ID_RAD
-    jr   z, .call_rad
-    cp   FUNC_ID_DEG
-    jr   z, .call_deg
-    cp   FUNC_ID_STICK
-    jr   z, .call_stick
-    cp   FUNC_ID_HIT
-    jp   z, .call_hit
-    jp   .fail                                 ; unreachable as long as
-                                              ; FUNCTION_TABLE and this
-                                              ; chain stay in sync —
-                                              ; handled safely rather
-                                              ; than silently
+    push bc                                    ; synthetic indirect call:
+    ret                                        ; each handler converges on
+                                               ; .function_done
                                               ; falling through
 .call_abs:
     call MATH_ABS16
@@ -5058,15 +4999,11 @@ BASIC_MATCH_FUNCTION_NAME:
 ; Tries each entry in FUNCTION_TABLE against the text at HL via
 ; BASIC_MATCH_FUNCTION_NAME, same IX-walking shape as BASIC_DETECT_
 ; KEYWORD_PREFIX's own table walk. On a match, stashes the matched
-; function's ID (not a raw code address — see FUNCTION_TABLE's own
-; header for why this project uses an ID plus an explicit dispatch
-; chain here rather than an indirect jump-table call) in FUNC_CALL_ID
-; for BASIC_EVAL_PRIMARY's caller to read afterward.
+; function's handler address and argument shape for BASIC_EVAL_PRIMARY.
 ; In:  HL = text pointer (spaces already skipped by the caller, per
 ;      BASIC_EVAL_PRIMARY's own existing convention)
-; Out: carry clear + HL advanced to the argument start (FUNC_CALL_ID
+; Out: carry clear + HL advanced to the argument start (handler/argc
 ;      set) if a function name matched; carry set + HL unchanged
-;      (FUNC_CALL_ID untouched) if nothing in the table matched
 ; Destroys: AF, BC, DE, HL, IX
 ; ============================================================================
 BASIC_TRY_EVAL_FUNCTION:
@@ -5088,17 +5025,18 @@ BASIC_TRY_EVAL_FUNCTION:
                                             ; BASIC_MATCH_FUNCTION_
                                             ; NAME's own failure paths
 
-    ld   a, (ix+2)                           ; matched — stash this
-    ld   (FUNC_CALL_ID), a                     ; entry's function ID
-    ld   a, (ix+3)                           ; ...and its argument
+    ld   a, (ix+2)                           ; matched — stash handler
+    ld   (FUNC_CALL_HANDLER), a
+    ld   a, (ix+3)
+    ld   (FUNC_CALL_HANDLER+1), a
+    ld   a, (ix+4)                           ; ...and argument shape
     ld   (FUNC_CALL_ARGC), a                   ; count
     or   a
     ret
 
 .try_next:
-    ld   bc, 4                               ; 4 bytes per entry (2
-    add  ix, bc                                ; name-ptr + 1 ID byte +
-                                              ; 1 argcount byte)
+    ld   bc, 5                               ; name pointer + handler
+    add  ix, bc                              ; pointer + argcount
     jr   .loop
 
 .no_match:
@@ -13292,133 +13230,67 @@ STATUS_SLASH_TEXT:  DB "/", 0
 ; FUNCTION_TABLE — built-in functions callable from expressions
 ; (ABS(x), SGN(x), MOD(x,y), ...), matched by BASIC_TRY_EVAL_FUNCTION.
 ;
-; Each entry is 4 bytes: a 2-byte pointer to the function's uppercase
-; name (null-terminated, same convention as KEYWORD_HILITE_TABLE's
-; entries), a 1-byte FUNC_ID_* constant, and a 1-byte argument count
-; (1 or 2 — see BASIC_EVAL_PRIMARY's own .do_function_call for how
-; each is parsed). Table ends with a 0,0 name-pointer sentinel (the
-; two bytes after it are never read).
-;
-; Deliberately an ID, not the function's real Z80 code address — an ID
-; plus BASIC_EVAL_PRIMARY's own explicit "CP id / JR Z, .call_x" chain
-; was chosen over an indirect jump-table call because every current
-; built-in function takes at least one argument in HL (MATH_ABS16/
-; MATH_SGN16's own contract, and MATH_MOD16's HL-in dividend) — the
-; exact same register an indirect call through JP (HL) would need to
-; hold the CALL TARGET instead, a genuine conflict, not a style
-; preference. IX/IY could sidestep it, but this project has no
-; established precedent yet for an indirect call through either (its
-; one existing hook mechanism — EDITOR_REDRAW_HOOK/STORAGE_PROGRESS_
-; HOOK's "push return address, JP (HL)" idiom — is for zero-argument
-; callbacks, a different shape of problem). An explicit dispatch chain
-; needs no new idiom, costs nothing extra for a function set this
-; small, and matches this file's own established keyword-table
-; philosophy: BASIC_EXEC_STATEMENT_CONTENT/BASIC_CHECK_STATEMENT_
-; CONTENT were deliberately NOT folded into KEYWORD_HILITE_TABLE's
-; flat-table pattern either, for the same kind of reason (see that
-; table's own header) — matching NAMES is uniform enough to
-; table-drive, but what happens on a match often isn't, and forcing it
-; to be usually costs more than it saves.
+; Each entry is 5 bytes: name pointer, final handler pointer, and argument
+; shape. BASIC_EVAL_PRIMARY snapshots the latter two on the Z80 stack before
+; recursively parsing arguments, then enters the handler with push/ret so HL
+; and DE remain available for the parsed values.
 ; ============================================================================
 FUNCTION_TABLE:
-    DW   KW_FN_ABS
-    DB   FUNC_ID_ABS, 1
-    DW   KW_FN_SGN
-    DB   FUNC_ID_SGN, 1
-    DW   KW_FN_MOD
-    DB   FUNC_ID_MOD, 2
-    DW   KW_FN_SQR
-    DB   FUNC_ID_SQR, 1
-    DW   KW_FN_DIV
-    DB   FUNC_ID_DIV, 2
-    DW   KW_FN_INT
-    DB   FUNC_ID_INT, 1
-    DW   KW_FN_RND
-    DB   FUNC_ID_RND, 1
-    DW   KW_FN_POINT
-    DB   FUNC_ID_POINT, 2
-    DW   KW_FN_ATTR
-    DB   FUNC_ID_ATTR, 2
-    DW   KW_FN_SIN
-    DB   FUNC_ID_SIN, 1
-    DW   KW_FN_PEEK
-    DB   FUNC_ID_PEEK, 1
-    DW   KW_FN_FREE
-    DB   FUNC_ID_FREE, 0             ; zero arguments — see BASIC_EVAL_
-                                     ; PRIMARY's .do_function_call for
-                                     ; how argc=0 is parsed (FREE is the
-                                     ; only current 0-argument built-in)
-    DW   KW_FN_USR
-    DB   FUNC_ID_USR, 1
-    DW   KW_FN_PI
-    DB   FUNC_ID_PI, 0                ; zero arguments, same as FREE —
-                                      ; see BASIC_EVAL_PRIMARY's
-                                      ; .do_function_call .zero_arg
-    DW   KW_FN_RAD
-    DB   FUNC_ID_RAD, 1
-    DW   KW_FN_DEG
-    DB   FUNC_ID_DEG, 1
+    DW KW_FN_ABS, BASIC_EVAL_PRIMARY.call_abs
+    DB 1
+    DW KW_FN_SGN, BASIC_EVAL_PRIMARY.call_sgn
+    DB 1
+    DW KW_FN_MOD, BASIC_EVAL_PRIMARY.call_mod
+    DB 2
+    DW KW_FN_SQR, BASIC_EVAL_PRIMARY.call_sqr
+    DB 1
+    DW KW_FN_DIV, BASIC_EVAL_PRIMARY.call_div
+    DB 2
+    DW KW_FN_INT, BASIC_EVAL_PRIMARY.call_int
+    DB 1
+    DW KW_FN_RND, BASIC_EVAL_PRIMARY.call_rnd
+    DB 1
+    DW KW_FN_POINT, BASIC_EVAL_PRIMARY.call_point
+    DB 2
+    DW KW_FN_ATTR, BASIC_EVAL_PRIMARY.call_attr
+    DB 2
+    DW KW_FN_SIN, BASIC_EVAL_PRIMARY.call_sin
+    DB 1
+    DW KW_FN_PEEK, BASIC_EVAL_PRIMARY.call_peek
+    DB 1
+    DW KW_FN_FREE, BASIC_EVAL_PRIMARY.call_free
+    DB 0
+    DW KW_FN_USR, BASIC_EVAL_PRIMARY.call_usr
+    DB 1
+    DW KW_FN_PI, BASIC_EVAL_PRIMARY.call_pi
+    DB 0
+    DW KW_FN_RAD, BASIC_EVAL_PRIMARY.call_rad
+    DB 1
+    DW KW_FN_DEG, BASIC_EVAL_PRIMARY.call_deg
+    DB 1
     ; KW_FN_INKEY/FUNC_ID_INKEY removed (2026-08-22) — INKEY$ upgraded
     ; to return a real string, moved to STRING_FUNCTION_TABLE below
     ; (STRFUNC_ID_INKEY) now that string scalars/comparison exist to
     ; make that worthwhile. See docs/basic_language_reference.md's own
     ; INKEY$ section for the full history.
-    DW   KW_FN_STICK
-    DB   FUNC_ID_STICK, 1
-    DW   KW_FN_LEN
-    DB   FUNC_ID_LEN, ARGC_STR1        ; 1 string argument — see
+    DW KW_FN_STICK, BASIC_EVAL_PRIMARY.call_stick
+    DB 1
+    DW KW_FN_LEN, BASIC_EVAL_PRIMARY.str_arg_len
+    DB ARGC_STR1                       ; 1 string argument — see
                                       ; .do_function_call's own new
                                       ; ARGC_STR1/STR2 check, tried
                                       ; before the normal 0/1/2-numeric-
                                       ; arg dispatch
-    DW   KW_FN_CODE
-    DB   FUNC_ID_CODE, ARGC_STR1
-    DW   KW_FN_VAL
-    DB   FUNC_ID_VAL, ARGC_STR1
+    DW KW_FN_CODE, BASIC_EVAL_PRIMARY.str_arg_code
+    DB ARGC_STR1
+    DW KW_FN_VAL, BASIC_EVAL_PRIMARY.str_arg_val
+    DB ARGC_STR1
     ; INSTR dropped (2026-08-22) — see FUNC_ID_INSTR's own comment below
-    DW   KW_FN_DIMN
-    DB   FUNC_ID_DIMN, ARGC_ARRAYNAME
-    DW   KW_FN_HIT
-    DB   FUNC_ID_HIT, 2
+    DW KW_FN_DIMN, BASIC_EVAL_PRIMARY.array_name_dim_arg
+    DB ARGC_ARRAYNAME
+    DW KW_FN_HIT, BASIC_EVAL_PRIMARY.call_hit
+    DB 2
     DW   0
-
-FUNC_ID_ABS EQU 1
-FUNC_ID_SGN EQU 2
-FUNC_ID_MOD EQU 3
-FUNC_ID_SQR EQU 4
-FUNC_ID_DIV EQU 5
-FUNC_ID_INT EQU 6
-FUNC_ID_RND EQU 7
-FUNC_ID_POINT EQU 8
-FUNC_ID_SIN EQU 9
-FUNC_ID_PEEK EQU 10
-FUNC_ID_FREE EQU 11
-FUNC_ID_USR EQU 12
-FUNC_ID_PI EQU 13
-FUNC_ID_RAD EQU 14
-FUNC_ID_DEG EQU 15
-; FUNC_ID_INKEY (16) retired — see the FUNCTION_TABLE comment above
-FUNC_ID_STICK EQU 17
-FUNC_ID_LEN EQU 18
-FUNC_ID_CODE EQU 19
-FUNC_ID_VAL EQU 20
-; FUNC_ID_INSTR (21) dropped (2026-08-22) — INSTR cut from this pass's
-; scope to fit Home ROM's own budget, along with FILL$ (see STRING_
-; FUNCTION_TABLE's own comment below); STRFUNC_ID_INSTR/STRFUNC_ID_FILL
-; and their rom/exrom_strfuncs.asm bodies were removed too, so nothing
-; sets them any more
-FUNC_ID_DIMN EQU 22   ; DIMN(name), 2026-08-22 — see ARGC_ARRAYNAME's
-                      ; own comment for why this one doesn't fit the
-                      ; plain 0/1/2-numeric-argument shape every ID
-                      ; above it does
-FUNC_ID_HIT EQU 23    ; HIT(slot1,slot2), 2026-08-23 — sprite collision
-                      ; check, ordinary 2-numeric-argument shape (like
-                      ; MOD/DIV/POINT above); body lives in EXROM (rom/
-                      ; exrom_sprite.asm's own BASIC_SPRITE_HIT) since
-                      ; it needs BASIC_SPRITE_SLOT_FLAG_ADDR, already
-                      ; EXROM-resident
-FUNC_ID_ATTR EQU 24   ; ATTR(row,col), direct read of the normal screen's
-                      ; attribute byte through GFX_CELL_ATTR_ADDR
 ARGC_ARRAYNAME EQU 101   ; sentinel FUNC_CALL_ARGC value: DIMN's own
                          ; one argument is a bare array-name LETTER,
                          ; never evaluated as an expression at all,

@@ -1196,24 +1196,15 @@ MULTI_STMT_BUF:      DEFS 128         ; 128 bytes ($60FB-$617A) — one
                                  ; one line in the first place
 
 ; ---- built-in function calls in expressions (ABS(x), SGN(x), MOD(x,y), ...) ----
-FUNC_CALL_ID:        DEFS 1           ; 1 byte — which built-in function
-                                 ; BASIC_TRY_EVAL_FUNCTION just matched
-                                 ; (a FUNC_ID_* constant from
-                                 ; basic/basic.asm), read by
-                                 ; BASIC_EVAL_PRIMARY's own dispatch
-                                 ; chain right after the argument(s)
-                                 ; and closing ')' are parsed. A
-                                 ; register can't hold this across
-                                 ; that parsing, same reasoning as
-                                 ; everywhere else in this file:
-                                 ; BASIC_EVAL_EXPR's recursive call for
-                                 ; each argument destroys everything.
-                                 ; Fits the 8-byte gap left before
-                                 ; PROG_AREA_START by MULTI_STMT_BUF
-                                 ; above; 7 bytes remain ($617C-$6182)
+FUNC_CALL_HANDLER:   DEFS 2           ; 2-byte handler address from
+                                 ; FUNCTION_TABLE. BASIC_EVAL_PRIMARY
+                                 ; snapshots it on the Z80 stack before
+                                 ; recursively parsing arguments, so a
+                                 ; nested function may safely overwrite
+                                 ; this shared lookup result.
 FUNC_CALL_ARGC:      DEFS 1           ; 1 byte — how many arguments the
                                  ; matched function takes (1 or 2),
-                                 ; set alongside FUNC_CALL_ID by the
+                                 ; set alongside FUNC_CALL_HANDLER by the
                                  ; same BASIC_TRY_EVAL_FUNCTION table
                                  ; lookup, read by BASIC_EVAL_PRIMARY's
                                  ; .do_function_call to decide whether
@@ -1221,10 +1212,7 @@ FUNC_CALL_ARGC:      DEFS 1           ; 1 byte — how many arguments the
                                  ; first argument. Added alongside
                                  ; MOD(x,y), this project's first
                                  ; two-argument built-in. Fits the
-                                 ; 7-byte gap left before
-                                 ; PROG_AREA_START by FUNC_CALL_ID
-                                 ; above; 6 bytes remain
-                                 ; ($617D-$6182)
+                                 ; remaining low-RAM gap.
 
 ; ---- kernel/math scratch (MATH_SQRT16's own loop state) ----
 SQRT_OP:             DEFS 2           ; 2 bytes — MATH_SQRT16's working
@@ -2457,7 +2445,7 @@ VAR_CHECK_SCRATCH:   DEFS 32          ; 32 bytes — BASIC_VAR_FIND_OR_
 ; comparison-operand use exactly as before). A shared buffer here would
 ; hit the SAME "shared mutable scratch clobbered by a nested call" bug
 ; class this project has now hit twice this session (CUR_VAR_LETTER,
-; FUNC_CALL_ID/ARGC) — a call like "UPPER$(LEFT$(A$,3))" needs the
+; function handler/argc scratch) — a call like "UPPER$(LEFT$(A$,3))" needs the
 ; OUTER call's own argument buffer to survive while the INNER call
 ; evaluates ITS OWN argument into a buffer too. STR_FUNC_POOL_NEXT is a
 ; simple bump-allocator index (0..STR_FUNC_POOL_SLOTS-1): reserve the
@@ -2480,7 +2468,8 @@ STR_FUNC_POOL_NEXT:  DEFS 1           ; 1 byte — next free slot (0-4); reset
                                 ; evaluation should always leave it at
                                 ; 0 again on its own
 STR_FUNC_CALL_ID:    DEFS 1           ; 1 byte — which STRING_FUNCTION_TABLE
-                                ; entry matched, mirrors FUNC_CALL_ID's
+                                ; entry matched; numeric functions now store
+                                ; a handler pointer instead
                                 ; own shape for the numeric side
 STR_FUNC_DEST:       DEFS 2           ; 2 bytes — the CALLER's own target
                                 ; buffer (BASIC_EVAL_STR_PRIMARY's own
@@ -2504,7 +2493,7 @@ STR_FUNC_DEST:       DEFS 2           ; 2 bytes — the CALLER's own target
 ; a nested string-function call inside this call's OWN argument (e.g.
 ; UPPER$(LEFT$(A$,3))) recurses back through this exact dispatch and
 ; would clobber those shared cells before the outer call got to read
-; them back, the identical bug class this session's own FUNC_CALL_ID/
+; them back, the identical bug class the numeric handler/argc scratch
 ; ARGC and CUR_VAR_LETTER fixes already hit twice. BASIC_EVAL_STR_
 ; PRIMARY's own .str_func_call instead stashes the caller's DE/C (and
 ; each shape's own pool-buffer address) on the REAL Z80 stack, which
@@ -2517,7 +2506,7 @@ STR_FUNC_DEST:       DEFS 2           ; 2 bytes — the CALLER's own target
 
 ; ---- string-function ID constants — plain small integers, not
 ; addresses, but they need to be visible from BOTH basic/basic.asm
-; (which sets STR_FUNC_CALL_ID/FUNC_CALL_ID) and rom/exrom_strfuncs.asm
+; (which sets STR_FUNC_CALL_ID) and rom/exrom_strfuncs.asm
 ; (which reads it to dispatch) — sysvars.inc is the file both already
 ; INCLUDE, so this is where a genuinely shared constant like this
 ; lives, same reasoning UDG_COUNT above already established for a

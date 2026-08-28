@@ -5,10 +5,10 @@ regenerate the authoritative totals and module map after any source change.
 
 ## Result
 
-The current V2 image has **312 free bytes in the 16K HOME ROM** and **154 free
+The current V2 image has **360 free bytes in the 16K HOME ROM** and **154 free
 bytes in the 8K EXROM**. This is up from the V1 baseline of 2 and 99 bytes.
 
-The 466-byte combined end-of-image budget can fund modest V2 features, but it
+The 514-byte combined end-of-image budget can fund modest V2 features, but it
 should retain a safety margin for fixes and new EXROM entry wiring.
 
 ## Measured map
@@ -22,15 +22,15 @@ alignment. They do not claim every byte in a module is live code.
 | Address range | Bytes | Share | Source |
 |---|---:|---:|---|
 | `$0000-$010E` | 271 | 1.7% | Driver, vectors, EXROM call table, initialization |
-| `$010F-$2B52` | 10,820 | 66.0% | `basic/basic.asm` |
-| `$2B53-$2E56` | 772 | 4.7% | `kernel/memory/memory.asm` |
-| `$2E57-$3060` | 522 | 3.2% | `kernel/io/io.asm` |
-| `$3061-$3C29` | 3,017 | 18.4% | `kernel/graphics/graphics.asm` |
-| `$3C2A-$3DCA` | 417 | 2.5% | `kernel/math/math.asm` |
-| `$3DCB-$3E01` | 55 | 0.3% | `kernel/sound/sound.asm` |
-| `$3E02-$3E91` | 144 | 0.9% | `kernel/interrupt/interrupt.asm` |
-| `$3E92-$3EC7` | 54 | 0.3% | `kernel/bank/bank.asm` |
-| `$3EC8-$3FFF` | **312** | 1.9% | **Unallocated padding** |
+| `$010F-$2B22` | 10,772 | 65.7% | `basic/basic.asm` |
+| `$2B23-$2E26` | 772 | 4.7% | `kernel/memory/memory.asm` |
+| `$2E27-$3030` | 522 | 3.2% | `kernel/io/io.asm` |
+| `$3031-$3BF9` | 3,017 | 18.4% | `kernel/graphics/graphics.asm` |
+| `$3BFA-$3D9A` | 417 | 2.5% | `kernel/math/math.asm` |
+| `$3D9B-$3DD1` | 55 | 0.3% | `kernel/sound/sound.asm` |
+| `$3DD2-$3E61` | 144 | 0.9% | `kernel/interrupt/interrupt.asm` |
+| `$3E62-$3E97` | 54 | 0.3% | `kernel/bank/bank.asm` |
+| `$3E98-$3FFF` | **360** | 2.2% | **Unallocated padding** |
 
 ### EXROM
 
