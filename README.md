@@ -36,7 +36,9 @@ make budget
 
 The production images are written to `build/test_basic.bin` (Home ROM),
 `build/exrom.bin` (EXROM slot 6), and `build/ts2068rom_zesarux.bin` (combined
-image for ZEsarUX). Generated ROMs are deliberately not committed;
+image for ZEsarUX). The build also writes `build/exrom.dck` for EightyOne
+v1.41; see [`docs/eightyone_setup.md`](docs/eightyone_setup.md) for the exact
+TS2068 configuration. Generated ROMs are deliberately not committed;
 ready-to-run binaries should be attached to tagged GitHub releases.
 
 For full emulator-driven testing, install Fuse plus `python3-xlib` and
