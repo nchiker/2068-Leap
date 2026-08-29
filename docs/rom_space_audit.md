@@ -6,10 +6,10 @@ regenerate the authoritative totals and module map after any source change.
 ## Result
 
 After the recovery work and subsequent calculator/sprite hardening, the current
-V2 image has **227 free bytes in the 16K HOME ROM** and **100 free bytes in the
+V2 image has **215 free bytes in the 16K HOME ROM** and **100 free bytes in the
 8K EXROM**. The V1 baseline was 2 and 99 bytes respectively.
 
-The 327-byte combined end-of-image budget is now primarily a correction margin;
+The 315-byte combined end-of-image budget is now primarily a correction margin;
 larger additions require another measured recovery pass.
 
 ## Measured map
@@ -22,16 +22,16 @@ alignment. They do not claim every byte in a module is live code.
 
 | Address range | Bytes | Share | Source |
 |---|---:|---:|---|
-| `$0000-$010E` | 271 | 1.7% | Driver, vectors, EXROM call table, initialization |
-| `$010F-$2B7B` | 10,861 | 66.3% | `basic/basic.asm` |
-| `$2B7C-$2E8B` | 784 | 4.8% | `kernel/memory/memory.asm` |
-| `$2E8C-$3095` | 522 | 3.2% | `kernel/io/io.asm` |
-| `$3096-$3C7E` | 3,049 | 18.6% | `kernel/graphics/graphics.asm` |
-| `$3C7F-$3E1F` | 417 | 2.5% | `kernel/math/math.asm` |
-| `$3E20-$3E56` | 55 | 0.3% | `kernel/sound/sound.asm` |
-| `$3E57-$3EE6` | 144 | 0.9% | `kernel/interrupt/interrupt.asm` |
-| `$3EE7-$3F1C` | 54 | 0.3% | `kernel/bank/bank.asm` |
-| `$3F1D-$3FFF` | **227** | 1.4% | **Unallocated padding** |
+| `$0000-$0111` | 274 | 1.7% | Driver, vectors, EXROM call table, initialization |
+| `$0112-$2B7E` | 10,861 | 66.3% | `basic/basic.asm` |
+| `$2B7F-$2E97` | 793 | 4.8% | `kernel/memory/memory.asm` |
+| `$2E98-$30A1` | 522 | 3.2% | `kernel/io/io.asm` |
+| `$30A2-$3C8A` | 3,049 | 18.6% | `kernel/graphics/graphics.asm` |
+| `$3C8B-$3E2B` | 417 | 2.5% | `kernel/math/math.asm` |
+| `$3E2C-$3E62` | 55 | 0.3% | `kernel/sound/sound.asm` |
+| `$3E63-$3EF2` | 144 | 0.9% | `kernel/interrupt/interrupt.asm` |
+| `$3EF3-$3F28` | 54 | 0.3% | `kernel/bank/bank.asm` |
+| `$3F29-$3FFF` | **215** | 1.3% | **Unallocated padding** |
 
 ### EXROM
 

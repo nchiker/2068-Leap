@@ -23,6 +23,9 @@ subsystem correctness, and regression coverage rather than cartridge support.
 - Global screen transformations (`CLS`, `MODE`, scrolling, editor entry, and
   paths using `CLS` such as RUN/NEW/LOAD/help) invalidate displayed sprite
   state while preserving captured images for reuse.
+- Cold start now clears the complete ROM-owned `$8000-$BFFF` RAM region before
+  any sysvar, bank-depth counter, hook, or port shadow is read. Startup no
+  longer depends on an emulator providing zero-filled RAM.
 
 ## Validation baseline
 
@@ -32,7 +35,7 @@ subsystem correctness, and regression coverage rather than cartridge support.
 - Automated production-editor regression passes.
 - Calculator dispatcher, sprite graphics, sprite state, display-order, and
   invalidation simulator checks pass through `make check`.
-- Home ROM: 227 bytes free; EXROM: 100 bytes free; dynamic RAM pool: 1,847
+- Home ROM: 215 bytes free; EXROM: 100 bytes free; dynamic RAM pool: 1,847
   bytes.
 
 ## Candidate boundaries
