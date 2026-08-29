@@ -21,7 +21,15 @@ intended for invited testing while the GitHub repository remains private.
 - Nine standalone smoke ROMs assemble successfully.
 - Automated wrapped-line editor regression passes.
 - Showcase validation reaches its green completion border.
-- Home ROM: 2 bytes free; EXROM: 99 bytes free; dynamic RAM pool: 1857 bytes.
+- Home ROM: 13 bytes free; EXROM: 99 bytes free; dynamic RAM pool: 1857 bytes.
+
+## Startup compatibility fix
+
+- Cold start now clears the ROM-owned `$8000-$BFFF` RAM region before any
+  subsystem initialization. This prevents randomized power-on RAM from being
+  mistaken for valid bank, port-shadow, editor, calculator, or hook state.
+- A memory smoke regression pre-fills that complete region with `$A5`, invokes
+  cold initialization, and verifies that every byte was cleared.
 
 ## Preview boundaries
 
