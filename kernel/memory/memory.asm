@@ -57,6 +57,22 @@ LABEL_NAMELEN_SIZE  EQU 1
 LABEL_POS_SIZE      EQU 2
 
 ; ============================================================================
+; MEM_COLD_INIT
+; Establishes the power-on invariant for every ROM-owned RAM byte.  Emulators
+; commonly zero RAM, but real hardware and accuracy-oriented emulators may
+; supply arbitrary values.  Clear the complete $8000-$BFFF system/program
+; region before MEM_INIT or interrupts; the stack at $FF00 and display RAM are
+; deliberately outside this range.
+; In: none
+; Out: $8000..PROG_AREA_MAX-1 = 0
+; Destroys: AF, BC, DE, HL
+; ============================================================================
+MEM_COLD_INIT:
+    ld   hl, $8000
+    ld   bc, PROG_AREA_MAX - $8000
+    jp   MEM_FILL_ZERO
+
+; ============================================================================
 ; MEM_INIT
 ; Initializes the program area to empty and clears the top-level label
 ; table's entry count. Call once at cold start, and again on NEW. Without

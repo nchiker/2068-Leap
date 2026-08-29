@@ -472,6 +472,11 @@ RST_38:
 
 COLD_START:
     ld   sp, $FF00
+    call MEM_COLD_INIT              ; real RAM power-on contents are
+                                    ; undefined; clear the complete
+                                    ; $8000-$BFFF owned RAM region before
+                                    ; any sysvar, hook, bank depth, or port
+                                    ; shadow can be read
     call MEM_INIT
     call KBD_ISR_INIT                ; kernel/interrupt — must run
                                      ; before the EI below, so RST_38
