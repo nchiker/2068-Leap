@@ -35,7 +35,7 @@ subsystem correctness, and regression coverage rather than cartridge support.
 - Automated production-editor regression passes.
 - Calculator dispatcher, sprite graphics, sprite state, display-order, and
   invalidation simulator checks pass through `make check`.
-- Home ROM: 215 bytes free; EXROM: 100 bytes free; dynamic RAM pool: 1,847
+- Home ROM: 238 bytes free; EXROM: 100 bytes free; dynamic RAM pool: 1,847
   bytes.
 
 ## Candidate boundaries
