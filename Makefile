@@ -8,6 +8,7 @@ build:
 	cp test_basic.bin build/test_basic.bin
 	sjasmplus --sym=build/exrom.sym --lst=build/exrom.lst rom/exrom_build.asm
 	cp exrom.bin build/exrom.bin
+	tools/make_eightyone_dck.sh build/exrom.bin build/exrom.dck
 	sjasmplus rom/zesarux_combined.asm
 
 check:
