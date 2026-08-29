@@ -268,27 +268,10 @@ BASIC_COMMAND_LOOP:
 .count_existing_done:
     ld   (CUR_EDIT_INDEX), bc
 
-    ld   hl, 0
-    ld   (VIEW_TOP_INDEX), hl
-    ld   (CHECK_ERROR_COUNT), hl        ; no check-pass failure to show
-                                       ; yet — avoids a spurious "N
-                                       ; ERRORS FOUND" on the very
-                                       ; first screen, before any RUN
-                                       ; has happened, from whatever
-                                       ; garbage was in this sysvar at
-                                       ; cold boot
-    xor  a
-    ld   (DELETE_INVALID_FLAG), a       ; same reasoning — avoids a
-                                       ; spurious "INVALID RANGE" on
-                                       ; the very first screen from
-                                       ; whatever garbage was here at
-                                       ; cold boot
-    ld   (STORAGE_CMD_INVALID_FLAG), a   ; same reasoning again — avoids
-                                       ; a spurious "INVALID FILENAME"
-    ld   (STORAGE_OP_STATE), a          ; same reasoning again — 0=idle,
-                                       ; avoids a spurious SAVED/LOADED/
-                                       ; LOAD FAILED message on the very
-                                       ; first screen
+    ; VIEW_TOP_INDEX, CHECK_ERROR_COUNT, DELETE_INVALID_FLAG,
+    ; STORAGE_CMD_INVALID_FLAG, and STORAGE_OP_STATE are already zero from
+    ; MEM_COLD_INIT.  Keeping a second set of cold-only stores here used 16
+    ; bytes and obscured which routine owns the power-on invariant.
     ld   hl, $FFFF
     ld   (PENDING_DELETE_POS), hl        ; same reasoning again —
                                         ; garbage here at cold boot
@@ -297,22 +280,8 @@ BASIC_COMMAND_LOOP:
                                         ; whatever program the user
                                         ; first types the moment they
                                         ; navigate
-    xor  a
-    ld   (CALC_SP), a                    ; same reasoning again — the
-                                        ; calculator engine's own stack
-                                        ; depth (rom/exrom_calc.asm),
-                                        ; never zeroed by MEM_INIT or
-                                        ; anything else. Nothing called
-                                        ; RST $28 from real BASIC
-                                        ; execution before division was
-                                        ; wired through it (2026-08-21);
-                                        ; garbage here at cold boot could
-                                        ; otherwise put CALC_SP at or
-                                        ; past the 8-slot cap, and the
-                                        ; very first division would hang
-                                        ; in CALC_INT_TO_FP's own
-                                        ; overflow path instead of
-                                        ; computing anything
+    ; CALC_SP is likewise zero from MEM_COLD_INIT before calculator code can
+    ; run; NEW still resets it explicitly in its own independent path.
 
     call BASIC_RESET_ROW_SHADOW
 
