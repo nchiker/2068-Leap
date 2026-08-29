@@ -69,6 +69,8 @@ RST_00:
 COLD_START:
     ld   sp, $FF00
 
+    call TEST_MEM_COLD_INIT
+    jr   c, FAIL
     call MEM_INIT
     call TEST_MEM_LINE_FIRST_EMPTY
     jr   c, FAIL
@@ -98,6 +100,30 @@ FAIL:
     ld   a, 2                ; red
     out  (PORT_ULA), a
     jr   $
+
+; Seed the entire ROM-owned RAM region nonzero, then prove cold init clears
+; every byte.  This models hardware/emulators that randomize RAM on reset.
+TEST_MEM_COLD_INIT:
+    ld   hl, $8000
+    ld   bc, PROG_AREA_MAX - $8000
+    ld   a, $A5
+    call MEM_FILL
+    call MEM_COLD_INIT
+    ld   hl, $8000
+    ld   bc, PROG_AREA_MAX - $8000
+.verify:
+    ld   a, (hl)
+    or   a
+    jr   nz, .fail
+    inc  hl
+    dec  bc
+    ld   a, b
+    or   c
+    jr   nz, .verify
+    ret
+.fail:
+    scf
+    ret
 
 ; ============================================================================
 ; TEST_MEM_LINE_FIRST_EMPTY
@@ -566,4 +592,3 @@ DR_STMT_C:     DB  $01, $00, $0D
     DS   $4000 - $, $FF
 
     SAVEBIN "test_memory.bin", $0000, $4000
-
