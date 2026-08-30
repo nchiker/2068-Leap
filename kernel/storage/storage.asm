@@ -295,7 +295,7 @@ STORAGE_SEND_BLOCK:
     ex   af, af'                          ; restore the type flag —
                                          ; it's the first byte "sent"
     ld   l, a
-    jp   .start
+    jr   .start
 
 .loop:
     ld   a, d
@@ -309,7 +309,7 @@ STORAGE_SEND_BLOCK:
     ld   h, a
     ld   a, $01
     scf
-    jp   .bits8
+    jr   .bits8
 .parity:
     ld   l, h
     jr   .loop_p
@@ -332,7 +332,7 @@ STORAGE_SEND_BLOCK:
     inc  a
 .bits8:
     rl   l
-    jp   nz, .bit1
+    jr   nz, .bit1
     dec  de
     inc  ix
     ld   b, STORAGE_NEXTBYTE_HOLD
@@ -347,7 +347,7 @@ STORAGE_SEND_BLOCK:
                                          ; address)
     ld   a, d
     inc  a
-    jp   nz, .loop
+    jr   nz, .loop
     ld   b, STORAGE_TAIL_HOLD
 .delay:
     djnz .delay
@@ -518,7 +518,7 @@ STORAGE_RECEIVE_BLOCK:
     cp   b
     rl   l
     ld   b, STORAGE_BIT_RESET_LD
-    jp   nc, .bits8
+    jr   nc, .bits8
     ld   a, h
     xor  l
     ld   h, a

@@ -5,7 +5,8 @@ cd "$(dirname "$0")/.."
 
 sjasmplus -DEDITOR_TEST_EXROM rom/exrom_build.asm
 sjasmplus --sym=build/test_editor_auto.sym rom/test_editor_auto.asm
-python3 tools/fuse_editor_inject.py build/test_editor_auto.sym /tmp/editor_auto.dbg
+case_name="${1:-wrap}"
+python3 tools/fuse_editor_inject.py build/test_editor_auto.sym /tmp/editor_auto.dbg "$case_name"
 
 pkill -9 -f fuse 2>/dev/null || true
 sleep 1

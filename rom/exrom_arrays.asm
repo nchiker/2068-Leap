@@ -47,7 +47,7 @@ ARRAY_EXROM_DIMN:
     ld   hl, (EXPR_PARSE_PTR)
     ld   a, (hl)
     call KTAB_BASIC_VALIDATE_VAR_LETTER
-    jp   c, .dimn_syntax_fail
+    jr   c, .dimn_syntax_fail
     push af                              ; the array letter — survives
                                          ; the ")" check below
     inc  hl
@@ -62,7 +62,7 @@ ARRAY_EXROM_DIMN:
     call KTAB_BASIC_SKIP_SPACES
     ld   a, (hl)
     cp   ")"
-    jp   nz, .dimn_fail_pop
+    jr   nz, .dimn_fail_pop
     inc  hl
     ld   (EXPR_PARSE_PTR), hl
     pop  bc                              ; C = requested array kind
@@ -89,7 +89,7 @@ ARRAY_EXROM_DIMN:
     call KTAB_BASIC_ARRAY_FIND            ; HL = data, DE = count;
                                          ; carry set if the name isn't
                                          ; DIM'd at all
-    jp   c, .dimn_not_dimmed
+    jr   c, .dimn_not_dimmed
     ex   de, hl                          ; HL = count — the result
     or   a
     ret

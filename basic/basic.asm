@@ -1898,7 +1898,7 @@ BASIC_DO_LOAD:
     ; DE = filename pointer, B = filename length (0 = wildcard)
     ld   a, b
     or   a
-    jp   z, .load_wildcard                ; B=0 (LOAD "") — pass
+    jr   z, .load_wildcard                ; B=0 (LOAD "") — pass
                                          ; through unchanged, no
                                          ; padding needed for a
                                          ; wildcard match
@@ -1917,11 +1917,12 @@ BASIC_DO_LOAD:
     ; missing padding step, not a signal or receive-logic problem.
     ex   de, hl                          ; HL = real scan pointer
                                          ; (was in DE)
-    ; DETOK_BUF is shared redraw/parser scratch and can be overwritten by
-    ; STORAGE_LOAD's initial progress-hook redraw before header matching.
-    ; EDIT_LABEL_COPY is retained text storage and is idle for this
-    ; blocking immediate command.
-    ld   de, EDIT_LABEL_COPY
+    ; STATUS_BUF/DETOK_BUF are both touched by STORAGE_LOAD's initial progress
+    ; redraw before header matching. The edit line is disposable once this
+    ; blocking immediate command has parsed its filename, and the forward copy
+    ; is safe even though source/destination share that same buffer (destination
+    ; trails the quoted source text).
+    ld   de, STORAGE_LOAD_NAME_BUF
     ld   c, STORAGE_HEADER_FILENAME_LEN
 .pad_copy:
     ld   a, b
@@ -1938,7 +1939,7 @@ BASIC_DO_LOAD:
     inc  de
     dec  c
     jr   nz, .pad_copy
-    ld   hl, EDIT_LABEL_COPY             ; HL = the retained padded name
+    ld   hl, STORAGE_LOAD_NAME_BUF        ; HL = retained padded name
     ld   b, STORAGE_HEADER_FILENAME_LEN  ; B = 10, matching what
                                          ; STORAGE_LOAD's own check
                                          ; requires
@@ -2936,7 +2937,7 @@ BASIC_EVAL_PRIMARY:
     pop  hl                              ; HL = buffer address
     pop  af                              ; discard argc snapshot
     pop  bc                              ; BC = handler snapshot
-    jp   .dispatch
+    jr   .dispatch
 
 .str_arg_val:
     ld   a, STRFUNC_ID_VAL
@@ -4845,7 +4846,7 @@ BASIC_EVAL_STR_PRIMARY:
     cp   c
     jr   c, .var_ref_within_budget
     ld   a, c
-    jp   .var_ref_within_budget       ; common length/clamped copy tail
+    jr   .var_ref_within_budget       ; common length/clamped copy tail
 .array_ref_check_only:
     pop  de
     pop  bc
@@ -8923,13 +8924,13 @@ CALC_INT_TO_FP_HOME:
     call BASIC_CALL_EXROM_INLINE
     DW   $C02A
     ret  nc
-    jp   CALC_REPORT_ERROR
+    jr   CALC_REPORT_ERROR
 
 CALC_FP_TO_INT_HOME:
     call BASIC_CALL_EXROM_INLINE
     DW   $C030
     ret  nc
-    jp   CALC_REPORT_ERROR
+    jr   CALC_REPORT_ERROR
 
 ; ============================================================================
 ; CALC_PUSH_PI_HOME / CALC_PUSH_FP_RAW_HOME
@@ -8955,13 +8956,13 @@ CALC_PUSH_PI_HOME:
     call BASIC_CALL_EXROM_INLINE
     DW   $C036
     ret  nc
-    jp   CALC_REPORT_ERROR
+    jr   CALC_REPORT_ERROR
 
 CALC_PUSH_FP_RAW_HOME:
     call BASIC_CALL_EXROM_INLINE
     DW   $C03C
     ret  nc
-    jp   CALC_REPORT_ERROR
+    jr   CALC_REPORT_ERROR
 
 ; ============================================================================
 ; CALC_ENTRY_TRAMPOLINE / CALC_EXIT_TRAMPOLINE
@@ -9753,10 +9754,10 @@ BASIC_EXEC_STATEMENT_CONTENT:
 .try_assignments:
     pop  ix
     call BASIC_TRY_STR_ASSIGNMENT
-    jp   nc, .done                    ; string assignment handled it
+    jr   nc, .done                    ; string assignment handled it
 
     call BASIC_TRY_ARRAY_ASSIGNMENT
-    jp   nc, .done                    ; array-element assignment
+    jr   nc, .done                    ; array-element assignment
                                       ; handled it — tried before the
                                       ; plain scalar assignment below,
                                       ; same reasoning: "A(3) = 5"
@@ -10357,7 +10358,7 @@ BASIC_RUN:
 .loop:
     ld   a, h
     or   l
-    jp   z, .return_to_editor         ; HL=0: end of program, stop
+    jr   z, .return_to_editor         ; HL=0: end of program, stop
 
     push hl                            ; save this statement's pointer —
                                       ; BASIC_EXEC_STATEMENT clobbers HL,

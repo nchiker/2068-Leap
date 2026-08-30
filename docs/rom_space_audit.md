@@ -6,10 +6,10 @@ regenerate the authoritative totals and module map after any source change.
 ## Result
 
 After the recovery work and subsequent calculator/sprite hardening, the current
-V2 image has **238 free bytes in the 16K HOME ROM** and **100 free bytes in the
+V2 image has **241 free bytes in the 16K HOME ROM** and **177 free bytes in the
 8K EXROM**. The V1 baseline was 2 and 99 bytes respectively.
 
-The 315-byte combined end-of-image budget is now primarily a correction margin;
+The 418-byte combined end-of-image budget is now primarily a correction margin;
 larger additions require another measured recovery pass.
 
 ## Measured map
@@ -23,35 +23,35 @@ alignment. They do not claim every byte in a module is live code.
 | Address range | Bytes | Share | Source |
 |---|---:|---:|---|
 | `$0000-$0111` | 274 | 1.7% | Driver, vectors, EXROM call table, initialization |
-| `$0112-$2B67` | 10,838 | 66.1% | `basic/basic.asm` |
-| `$2B68-$2E80` | 793 | 4.8% | `kernel/memory/memory.asm` |
-| `$2E81-$308A` | 522 | 3.2% | `kernel/io/io.asm` |
-| `$308B-$3C73` | 3,049 | 18.6% | `kernel/graphics/graphics.asm` |
-| `$3C74-$3E14` | 417 | 2.5% | `kernel/math/math.asm` |
-| `$3E15-$3E4B` | 55 | 0.3% | `kernel/sound/sound.asm` |
-| `$3E4C-$3EDB` | 144 | 0.9% | `kernel/interrupt/interrupt.asm` |
-| `$3EDC-$3F11` | 54 | 0.3% | `kernel/bank/bank.asm` |
-| `$3F12-$3FFF` | **238** | 1.5% | **Unallocated padding** |
+| `$0112-$2B65` | 10,836 | 66.1% | `basic/basic.asm` |
+| `$2B66-$2E7D` | 792 | 4.8% | `kernel/memory/memory.asm` |
+| `$2E7E-$3087` | 522 | 3.2% | `kernel/io/io.asm` |
+| `$3088-$3C70` | 3,049 | 18.6% | `kernel/graphics/graphics.asm` |
+| `$3C71-$3E11` | 417 | 2.5% | `kernel/math/math.asm` |
+| `$3E12-$3E48` | 55 | 0.3% | `kernel/sound/sound.asm` |
+| `$3E49-$3ED8` | 144 | 0.9% | `kernel/interrupt/interrupt.asm` |
+| `$3ED9-$3F0E` | 54 | 0.3% | `kernel/bank/bank.asm` |
+| `$3F0F-$3FFF` | **241** | 1.5% | **Unallocated padding** |
 
 ### EXROM
 
 | Address range | Bytes | Share | Source |
 |---|---:|---:|---|
-| `$C000-$C661` | 1,634 | 19.9% | Checker plus fixed entry table |
-| `$C662-$C9E5` | 900 | 11.0% | Storage |
-| `$C9E6-$CAA9` | 196 | 2.4% | Formatting helpers |
-| `$CAAA-$CB68` | 191 | 2.3% | Help |
-| `$CB69-$D3F7` | 2,191 | 26.7% | Calculator |
-| `$D3F8-$D408` | 17 | 0.2% | Sound command |
-| `$D409-$D45B` | 83 | 1.0% | ULAplus |
-| `$D45C-$D8A6` | 1,099 | 13.4% | Sprites |
-| `$D8A7-$DA29` | 387 | 4.7% | String functions |
-| `$DA2A-$DD18` | 751 | 9.2% | Editor |
-| `$DD19-$DD66` | 78 | 1.0% | Arrays |
-| `$DD67-$DE34` | 206 | 2.5% | INPUT |
-| `$DE35-$DEFF` | 203 | 2.5% | DIM allocator |
-| `$DF00-$DF9B` | 156 | 1.9% | Keyword highlighting |
-| `$DF9C-$DFFF` | **100** | 1.2% | **Unallocated padding** |
+| `$C000-$C646` | 1,607 | 19.6% | Checker plus fixed entry table |
+| `$C647-$C9C0` | 890 | 10.9% | Storage |
+| `$C9C1-$CA84` | 196 | 2.4% | Formatting helpers |
+| `$CA85-$CB43` | 191 | 2.3% | Help |
+| `$CB44-$D3C7` | 2,180 | 26.6% | Calculator |
+| `$D3C8-$D3D8` | 17 | 0.2% | Sound command |
+| `$D3D9-$D42B` | 83 | 1.0% | ULAplus |
+| `$D42C-$D864` | 1,081 | 13.2% | Sprites |
+| `$D865-$D9E5` | 385 | 4.7% | String functions |
+| `$D9E6-$DCCE` | 745 | 9.1% | Editor |
+| `$DCCF-$DD19` | 75 | 0.9% | Arrays |
+| `$DD1A-$DDE7` | 206 | 2.5% | INPUT |
+| `$DDE8-$DEB2` | 203 | 2.5% | DIM allocator |
+| `$DEB3-$DF4E` | 156 | 1.9% | Keyword highlighting |
+| `$DF4F-$DFFF` | **177** | 2.2% | **Unallocated padding** |
 
 ## Best V2 space-recovery targets
 

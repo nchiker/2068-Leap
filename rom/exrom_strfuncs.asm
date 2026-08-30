@@ -68,9 +68,9 @@
 STRFUNC_EXROM:
     ld   a, (STR_FUNC_CALL_ID)
     cp   STRFUNC_ID_CHR
-    jp   z, .f_chr
+    jr   z, .f_chr
     cp   STRFUNC_ID_STR
-    jp   z, .f_str
+    jr   z, .f_str
     cp   STRFUNC_ID_UPPER
     jp   z, .f_upper
     cp   STRFUNC_ID_LOWER

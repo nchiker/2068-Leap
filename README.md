@@ -1676,6 +1676,7 @@ of `make test` and can also be run directly:
 
 ```
 tools/run_editor_auto_test.sh
+tools/run_editor_auto_test.sh insert
 ```
 
 **Non-interactive, no keyboard/X11 involved** — added 2026-08-23 after
@@ -1725,15 +1726,13 @@ values show green, and a deliberately-wrong expected value (temporary,
 reverted immediately) shows red — confirms the harness actually
 discriminates pass/fail rather than always reporting green.
 
-Only one test case exists so far (typing + word-wrap + cursor
-placement) — extending this to cover INSERT/DELETE/BACKSPACE/cursor
-navigation/multi-line EDIT-into-existing-statement scenarios is future
-work; the technique (custom `RST_38` injector + parking mid-edit to
-avoid the commit race + reusing real production hooks) generalizes
-directly, just needs more queued key sequences and hand-computed
-expected states per case. Costs zero real product budget — this file's
-own INCLUDEs and Home ROM 16K target only apply to the disposable test
-binary itself, never to `test_basic.bin`.
+The second case preloads `REM test` and `PRINT "hello"`, injects UP and
+CAPS SHIFT+ENTER, waits for the redraw to settle, and checks physical display
+RAM—not just row-shadow metadata—to ensure the shifted `PRINT` remains visible
+below the new blank line before any character is typed. It reproduces the
+reported first-redraw omission: the old path goes red and the fixed path goes
+green. Extending coverage to DELETE/BACKSPACE and additional navigation cases
+remains future work. The harness costs zero product RAM or ROM budget.
 
 ## Testing kernel/graphics
 

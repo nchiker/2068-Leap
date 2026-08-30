@@ -64,18 +64,29 @@ SYSVARS_RETURN_ORG EQU $
     ORG $8000
 
 ; ---- kernel/editor working storage ----
-EDIT_CURSOR_ROW:     DEFS 1        
-EDIT_CURSOR_COL:     DEFS 1        
+; The original row/column cursor bytes were write-only after editing became a
+; linear-buffer operation. EDIT_BUF_OFFSET is the sole cursor authority now.
 EDIT_BUF_OFFSET:     DEFS 2           ; 2 bytes ($5D02-$5D03)
 EDIT_LINE_BUF_LEN   EQU 128
-EDIT_LINE_BUF:       DEFS 128         ; through $5D83
+; Shared by the interactive editor and runtime string-function pool. Chunk 7
+; stays mapped during EXROM editor/string calls; see the upper-RAM assertions
+; beside UDG_TABLE for the complete packed layout and stack margin.
+EDIT_LINE_BUF        EQU $F228
+; A blocking named LOAD may reuse the edit line after parsing its command, but
+; its retained filename must not share STATUS_BUF: STORAGE_LOAD invokes the
+; progress redraw before header comparison. Keep the semantic alias explicit
+; so the cross-subsystem lifetime rule is assembly-checked below.
+STORAGE_LOAD_NAME_BUF EQU EDIT_LINE_BUF
+    ASSERT STORAGE_LOAD_NAME_BUF != STATUS_BUF
 
 ; ---- kernel/memory label table (top-level scope only, for now) ----
 ; TODO: per-procedure scopes (see docs/basic_language_reference.md,
 ; "Label table") each need their own table once DEFine PROCedure/
 ; DEFine FuNction storage exists. Single top-level table is enough to
 ; get kernel/memory's label routines working before that's built.
-LABEL_TABLE_TOP:     DEFS 128      
+; Persistent, but safe in chunk 7: EXROM pages only chunk 6, so label
+; lookup/checking can reach this table from every HOME/EXROM call path.
+LABEL_TABLE_TOP      EQU $F100
 LABEL_TABLE_MAXLEN  EQU 128     ; bytes reserved for the top-level table;
                                 ; revisit alongside the memory map's open
                                 ; "label table size budget" question
@@ -279,23 +290,10 @@ EDIT_CONTENT_LEN:    DEFS 1           ; 1 byte — scratch result of scanning
                                  ; it inline
 
 ; ---- kernel/io working storage, continued ----
-IO_SCAN_TABLE_SHIFTED:DEFS 8          ; 8 bytes — masked copy of IO_SCAN_TABLE
-                                 ; used when checking for CAPS SHIFT+letter
-                                 ; (uppercase); see kernel/io/io.asm's
-                                 ; IO_READ_KEY
-IO_RETRY_COUNT:      DEFS 2         ; 2 bytes — combo-detection retry counter,
-                                 ; kept in memory rather than a register
-                                 ; since IO_READ_KEY's inner shifted-letter
-                                 ; scan already uses B as its own row
-                                 ; counter — a register-based outer retry
-                                 ; counter would conflict with that. Widened
-                                 ; from 1 byte: a small fixed budget (~3ms)
-                                 ; was enough for Fuse's atomic simulated
-                                 ; Backspace combo but nowhere near enough
-                                 ; for a real human's own finger-movement
-                                 ; timing holding Shift then reaching a
-                                 ; letter key — needs roughly a
-                                 ; half-second-scale budget, not milliseconds.
+; IO_SCAN_TABLE_SHIFTED and IO_RETRY_COUNT used to follow here. The
+; interrupt-driven decoder reads modifier state from IO_SCAN_TABLE directly;
+; ISR debounce replaced its bounded settle loop, leaving both reservations
+; unreferenced. They were removed in the RAM audit.
 
 ; ---- basic/ working storage ----
 TOKEN_BUF:           DEFS 130         ; 130 bytes — 2-byte length prefix + up
@@ -385,7 +383,7 @@ HILITE_ROW:          DEFS 1           ; 1 byte — which row
                                  ; simpler and safer than trying to
                                  ; keep it alive across those calls via
                                  ; push/pop juggling
-DETOK_BUF:           DEFS 128         ; 128 bytes, matches EDIT_LINE_BUF_LEN
+DETOK_BUF            EQU $F2A8         ; 128 bytes, follows EDIT_LINE_BUF
                                  ; — scratch for converting one stored
                                  ; (tokenized) statement back into a
                                  ; null-terminated display string when
@@ -503,7 +501,11 @@ FIND_REMAINING:      DEFS 2           ; 2 bytes — BASIC_FIND_STATEMENT_AT_
                                  ; same reason as COUNT_TMP above
 
 ; ---- basic/ status line (row 23) ----
-STATUS_BUF:          DEFS 32          ; 32 bytes — assembled status line
+; TOKEN_BUF is live only between BASIC_TOKENIZE_LINE and MEM_LINE_STORE.
+; Status construction happens during redraw/check/storage, after that copy is
+; complete (or before tokenization for an immediate storage command), so this
+; transient buffer can safely reuse its first 32 bytes.
+STATUS_BUF           EQU TOKEN_BUF
                                  ; text ("LINE n/m" or "NEW LINE")
 STATUS_WRITE_PTR:    DEFS 2           ; 2 bytes — current write position
                                  ; within STATUS_BUF while assembling
@@ -776,22 +778,9 @@ LAST_STATUS_TEXT:    DEFS 33          ; 33 bytes (32 chars + null
                                  ; earlier status-bar toggle fix
 
 ; ---- HELP command (basic/'s BASIC_SHOW_HELP) ----
-HELP_PTR:            DEFS 2           ; 2 bytes — scratch pointer reused for
-                                 ; two separate steps of BASIC_SHOW_HELP:
-                                 ; first to hold the user's typed topic
-                                 ; text across the topic-table walk
-                                 ; (BASIC_MATCH_KEYWORD only destroys
-                                 ; AF, but reloading from memory each
-                                 ; iteration keeps that loop simple),
-                                 ; then, once a topic's text is found,
-                                 ; to hold the line-table pointer across
-                                 ; GFX_CLS (which destroys HL per its
-                                 ; own contract — the same mistake
-                                 ; BASIC_REPORT_ERROR made once already,
-                                 ; see ERR_MSG_PTR above). The two uses
-                                 ; never overlap in time, so sharing is
-                                 ; safe. Fits the 9-byte gap left before
-                                 ; PROG_AREA_START by LAST_STATUS_TEXT
+; The former HELP_PTR scratch word became dead when HELP was simplified to one
+; EXROM-resident screen: the routine loads its fixed table after GFX_CLS and
+; preserves the walk pointer on the Z80 stack around each print call.
 HELP_ROW:            DEFS 1           ; 1 byte — current screen row while
                                  ; BASIC_SHOW_HELP's line-printing loop
                                  ; walks a topic's text, kept in memory
@@ -928,7 +917,10 @@ DELETE_END:          DEFS 2           ; 2 bytes — same reasoning, for the
                                  ; enough for these 4 bytes together,
                                  ; so PROG_AREA_START moves again below
 
-EDIT_LABEL_COPY:     DEFS 32          ; 32 bytes — BASIC_DO_EDIT's own
+; EDIT and LOAD are recognized before the command-line tokenizer runs. Their
+; retained label/filename copy is dead before control can fall through to
+; BASIC_TOKENIZE_LINE, so it shares the same command-phase storage too.
+EDIT_LABEL_COPY      EQU TOKEN_BUF
                                  ; copy of the parsed label name,
                                  ; capped at 31 chars + null terminator
                                  ; (same silently-truncate convention
@@ -1098,11 +1090,9 @@ STORAGE_PROGRESS_PCT:DEFS 1           ; 1 byte — timing-safe milestone
                                  ; header block, 100 after the data
                                  ; block. Never updated by drawing from
                                  ; inside a pulse-critical block.
-STORAGE_USED_BACKUP: DEFS 1           ; 1 reserved byte — formerly tracked
-                                 ; the removed private backup data copy.
-                                 ; Kept to avoid moving every later
-                                 ; sysvar; may be reclaimed in a future
-                                 ; coordinated memory-map change.
+; STORAGE_USED_BACKUP was a one-byte compatibility hole left by the removed
+; private backup-copy state. Addresses are assembler-derived now, so keeping a
+; dead gap no longer serves a compatibility purpose.
 STORAGE_ENTRY_RETRY: DEFS 2           ; 2 bytes — STORAGE_RECEIVE_
                                  ; BLOCK's own internal .entry_start
                                  ; retry budget (see STORAGE_ENTRY_
@@ -1182,7 +1172,10 @@ MULTI_SEG_BOUNDARY_CHAR:DEFS 1           ; 1 byte — which character
                                  ; looping for more segments or stop;
                                  ; a register can't survive the
                                  ; segment-dispatch call in between
-MULTI_STMT_BUF:      DEFS 128         ; 128 bytes ($60FB-$617A) — one
+; Execution/checking only sees statements after MEM_LINE_STORE copied the
+; tokenizer output into the dynamic program area. Reuse TOKEN_BUF's full
+; 128-byte payload capacity rather than reserving a second line-sized buffer.
+MULTI_STMT_BUF       EQU TOKEN_BUF
                                  ; colon-separated segment's own copy,
                                  ; synthetically $0D-terminated so the
                                  ; existing, completely unmodified
@@ -1194,6 +1187,11 @@ MULTI_STMT_BUF:      DEFS 128         ; 128 bytes ($60FB-$617A) — one
                                  ; a single segment can never exceed
                                  ; what a person could have typed on
                                  ; one line in the first place
+
+    ASSERT STATUS_BUF == TOKEN_BUF
+    ASSERT EDIT_LABEL_COPY == TOKEN_BUF
+    ASSERT MULTI_STMT_BUF == TOKEN_BUF
+    ASSERT EDIT_LINE_BUF_LEN <= 128
 
 ; ---- built-in function calls in expressions (ABS(x), SGN(x), MOD(x,y), ...) ----
 FUNC_CALL_HANDLER:   DEFS 2           ; 2-byte handler address from
@@ -1467,8 +1465,13 @@ CURRENT_BRIGHT:      DEFS 1          ; 1 byte, 0/1, default 0
 ; already queued still get processed and colored correctly, but a
 ; genuinely huge fill may not reach its full extent. No crash, no
 ; memory corruption — a documented, deliberate limitation.
-GFX_FILL_STACK:      DEFS 4096        ; 4096 bytes (2048 entries x 2
-                                   ; bytes: x, y)
+;
+; The stack is transient, so it lives above the persistent BASIC ceiling
+; instead of consuming 4K below PROG_AREA_START. Together with the visited
+; bitmap at $C000 it occupies $C000-$E7FF only while FILL is executing.
+; FILL is HOME-ROM code and makes no EXROM calls, so EXROM temporarily
+; hiding $C000-$DFFF can never overlap a live fill operation.
+GFX_FILL_STACK       EQU $D800         ; 4096 bytes (2048 x/y entries)
 GFX_FILL_STACK_END     EQU GFX_FILL_STACK + 4096
 GFX_FILL_SP:         DEFS 2           ; 2 bytes — pointer into GFX_FILL_
                                    ; STACK; == GFX_FILL_STACK means
@@ -1892,11 +1895,10 @@ SPRITE_SLOT_MAX     EQU 8       ; number of slots (0-7). Doubled from
                                 ; GRAB/SHOW/HIDE/MOVE/HIT all already
                                 ; take the slot count as a runtime
                                 ; bound, not a compile-time one), so
-                                ; the only real cost is RAM: +1176
-                                ; bytes total, entirely inside this
-                                ; block (see PROG_AREA_START's own
-                                ; history comment below for the exact
-                                ; before/after program-area impact).
+                                ; the only real cost is RAM. The large
+                                ; image/background buffers now live at
+                                ; $E800-$F0FF; only the small per-slot
+                                ; metadata remains below PROG_AREA_START.
 SPRITE_CELL_MAX     EQU 4       ; max cells per dimension per slot
 SPRITE_SLOT_BYTES   EQU 144     ; SPRITE_CELL_MAX*SPRITE_CELL_MAX*9
                                 ; (GFX_SPRITE_CAPTURE/DRAW's own 9-
@@ -1924,15 +1926,24 @@ SPRITE_DISPLAY_DEPTH: DEFS 1          ; number of slots currently shown
 SPRITE_DISPLAY_STACK: DEFS 8          ; slot numbers in SHOW order;
                                 ; save-under restoration must pop these
                                 ; in reverse order to preserve overlaps
-SPRITE_SLOT_IMG_BUF: DEFS 1152        ; 1152 bytes — the captured sprite
+; The two large buffers are persistent across EXROM calls, so they live in
+; chunk 7, which this project never pages. This returns 2304 bytes below
+; PROG_AREA_START to BASIC while keeping the buffers visible to the EXROM-
+; resident sprite driver. Their $F100 end leaves $0E00 (3584) bytes before
+; the machine stack at $FF00.
+SPRITE_SLOT_IMG_BUF  EQU $E800         ; 1152 bytes — captured sprite
                                 ; image itself (SPRITE_SLOT_MAX *
                                 ; SPRITE_SLOT_BYTES), filled once per
                                 ; GRAB, read (never written) by every
                                 ; SHOW/MOVE
-SPRITE_SLOT_BG_BUF:  DEFS 1152        ; 1152 bytes — whatever was on screen
+SPRITE_SLOT_BG_BUF   EQU $EC80         ; 1152 bytes — saved background
                                 ; under the sprite, captured fresh by
                                 ; each SHOW/MOVE, consumed by the
                                 ; matching HIDE/MOVE
+
+    ASSERT SPRITE_SLOT_IMG_BUF + (SPRITE_SLOT_MAX * SPRITE_SLOT_BYTES) == SPRITE_SLOT_BG_BUF
+    ASSERT SPRITE_SLOT_BG_BUF + (SPRITE_SLOT_MAX * SPRITE_SLOT_BYTES) == $F100
+    ASSERT $F100 <= $FF00              ; preserve machine-stack headroom
 
 ; Parse-time scratch for GRAB/SHOW's own multi-argument grammar (slot,
 ; row, col[, w, h]) — each argument gets evaluated and written here
@@ -1952,9 +1963,14 @@ SPRITE_ARG_H:        DEFS 1           ; 1 byte
 ; buffer rather than folded into the bitmap write. Plain linear
 ; row*32+col layout (NOT the real screen's interleaved-thirds
 ; addressing — this buffer has no display hardware to match), cleared
-; at the start of every FILL call.
-GFX_FILL_VISITED:    DEFS 6144        ; 6144 bytes (1 bit per screen pixel,
-                                ; 256x192/8)
+; at the start of every FILL call. This is transient scratch in the reserved
+; HOME-RAM EXROM window, not persistent storage: $C000-$D7FF is available
+; whenever HOME is mapped, and no EXROM call occurs while the bitmap is live.
+GFX_FILL_VISITED     EQU $C000         ; 6144 bytes, through $D7FF
+
+    ASSERT GFX_FILL_VISITED + 6144 == GFX_FILL_STACK
+    ASSERT GFX_FILL_STACK_END == $E800
+    ASSERT GFX_FILL_STACK_END <= $FF00 ; keep clear of machine stack
 
 ; Calculator engine (RST $28) working storage — RPN stack, calculator
 ; "memory" cells, and recursive-entry counter, matching the real
@@ -1971,25 +1987,20 @@ GFX_FILL_VISITED:    DEFS 6144        ; 6144 bytes (1 bit per screen pixel,
 ; headroom, not a tight fit; bump this EQU later if it's ever too small.
 CALC_STACK:          DEFS 40          ; 40 bytes (8 slots x 5-byte float)
 CALC_SP:             DEFS 1           ; 1 byte — stack index, 0 = empty
-CALC_MEM:            DEFS 30          ; 30 bytes (6 slots x 5-byte float) —
-                                ; mem-0..mem-5, confirmed from the real
-                                ; ROM's table of addresses (st-mem-0..
-                                ; st-mem-5, literals +C0-+C5); required
-                                ; for the SERIES generator (SIN/EXP/LN/
-                                ; ATN) to function at all, not optional
+; The original calculator design reserved six five-byte mem-N slots here.
+; No implemented dispatcher operation reads or writes them: SQR/SIN use the
+; explicit Home-side fields below instead of the ROM SERIES generator. Remove
+; the unused 30-byte block; add it back only with an implemented st/get-mem op.
 CALC_BREG:           DEFS 1           ; 1 byte — mirrors the real ROM's BREG:
                                 ; recursive-entry counter used by
                                 ; GEN_ENT_1/GEN_ENT_2 so a nested
                                 ; CALCULATE call (e.g. SERIES calling
                                 ; back into itself) doesn't disturb the
                                 ; outer call's own op counter
-CALC_TRUNC_FLAG:     DEFS 1           ; 1 byte — set when a float result is
-                                ; truncated to 16-bit int on assignment
-                                ; back into a VAR_TABLE variable;
-                                ; overflow semantics (error/saturate/
-                                ; wrap) not yet decided, this is just
-                                ; the hook, cheap now vs. a redesign
-                                ; later if skipped
+CALC_TRUNC_FLAG:     DEFS 1           ; set by CALC_FP_TO_INT: 1 when the
+                                ; result exceeded signed 16-bit range, 0
+                                ; otherwise; simulator-observed calculator
+                                ; boundary status alongside carry/error code
 ; Calculator error codes. CALC_ERROR_CODE aliases the original diagnostic
 ; byte so the hardening pass changes no RAM addresses.
 CALC_ERR_NONE              EQU 0
@@ -2288,7 +2299,16 @@ GOSUB_STACK_DEPTH:   DEFS 1           ; 1 byte — number of live entries
 ; see GFX_PRINT_STRING_ATTR's own PRINT_ATTR_SCRATCH comment for why a
 ; `ld (addr),a` into a ROM address is a silent no-op on real hardware.
 UDG_COUNT           EQU 21
-UDG_TABLE:           DEFS 168         ; 21*8 = 168 bytes, through $B349
+; Persistent UDG glyphs also live in never-paged chunk 7, immediately after
+; the label table. Graphics calls remain able to read them while EXROM owns
+; chunk 6; $F228-$FEFF remains available as machine-stack headroom.
+UDG_TABLE            EQU $F180
+    ASSERT LABEL_TABLE_TOP + LABEL_TABLE_MAXLEN == UDG_TABLE
+    ASSERT UDG_TABLE + 168 == $F228
+    ASSERT UDG_TABLE + 168 == EDIT_LINE_BUF
+    ASSERT EDIT_LINE_BUF + EDIT_LINE_BUF_LEN == DETOK_BUF
+    ASSERT DETOK_BUF + 128 == $F328
+    ASSERT $F328 <= $FF00              ; 3032 bytes of stack headroom
 BLOCK_GFX_SCRATCH:   DEFS 8           ; 8 bytes, through $B351
 
 ; ---- String scalars (Phase 3, 2026-08-22) ----
@@ -2466,7 +2486,13 @@ VAR_CHECK_SCRATCH:   DEFS 32          ; 32 bytes — BASIC_VAR_FIND_OR_
 ; established "small fixed pool" precedent — FOR_STACK_MAX, GOSUB_
 ; STACK_MAX, SPRITE_SLOT_MAX all made the same tradeoff).
 STR_FUNC_POOL_SLOTS EQU 4
-STR_FUNC_POOL:       DEFS 128         ; 4*32 = 128 bytes, through $B759
+; Runtime execution is mutually exclusive with editing, but the static checker
+; is not: BASIC_DRAW_STATUS_LINE may validate a stored, flagged statement while
+; EDIT_LINE_BUF contains the user's uncommitted edits. String functions invoked
+; by that check therefore need an independent pool or they can corrupt the live
+; line. This dedicated reservation restores that separation.
+STR_FUNC_POOL:       DEFS 128
+    ASSERT 128 == (STR_FUNC_POOL_SLOTS * 32)
 STR_FUNC_POOL_NEXT:  DEFS 1           ; 1 byte — next free slot (0-4); reset
                                 ; to 0 at MEM_INIT/BASIC_RUN as a safety
                                 ; net, same precedent GOSUB_STACK_DEPTH
@@ -2578,9 +2604,25 @@ HILITE_TABLE_PTR:    DEFS 2           ; 2 bytes — KEYWORD_HILITE_TABLE's own
                                 ; found" trap CALC_EXIT_TRAMPOLINE's
                                 ; own KTAB entry comment documents)
 
-PROG_AREA_START:   ; No longer a hand-tracked hex EQU (2026-08-23) — see
+PROG_AREA_START:   ; Current value $84B4. No longer a hand-tracked hex EQU
+                                ; (2026-08-23) — see
                                 ; this file's own "assembler-computed
-                                ; addresses" header. Retiring VAR_TABLE/
+                                ; addresses" header. Relocating FILL's
+                                ; 10,240 transient bytes and the sprite
+                                ; buffers' 2,304 persistent bytes to
+                                ; reserved upper HOME RAM moved this from
+                                ; $B8C9 to $87C9 on 2026-08-28. Moving the
+                                ; label/UDG/editor/detokenizer storage and
+                                ; overlaying string scratch then lowered it
+                                ; to $8521 on 2026-08-29. The next RAM audit
+                                ; overlaid four mutually-exclusive command-
+                                ; phase buffers and removed 45 bytes of dead
+                                ; state, initially lowering it to $8434. An
+                                ; independent lifetime review restored the
+                                ; checker-visible 128-byte string-function
+                                ; pool, settling the safe layout at $84B4.
+                                ; Before that,
+                                ; retiring VAR_TABLE/
                                 ; STR_TABLE the same day (see "Scalar
                                 ; variables in the dynamic pool" above)
                                 ; moved this from $BC01 down to $B8B1,

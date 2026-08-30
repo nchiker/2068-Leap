@@ -55,8 +55,8 @@ def main() -> int:
     load_command = basic_source.split("\nBASIC_DO_LOAD:\n", 1)[1].split(
         "\nBASIC_DETOKENIZE_TO_BUF:\n", 1
     )[0]
-    assert "ld   de, EDIT_LABEL_COPY" in load_command
-    assert "ld   hl, EDIT_LABEL_COPY" in load_command
+    assert "ld   de, STORAGE_LOAD_NAME_BUF" in load_command
+    assert "ld   hl, STORAGE_LOAD_NAME_BUF" in load_command
     assert "ld   de, DETOK_BUF" not in load_command, (
         "named LOAD must not retain its padded name in redraw scratch"
     )

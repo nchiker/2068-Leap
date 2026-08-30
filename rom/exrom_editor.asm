@@ -61,7 +61,7 @@
 ; EDITOR_INIT
 ; Clears editor state. Call once at cold start (and again on NEW).
 ; In:  none
-; Out: EDIT_CURSOR_ROW/COL = 0, EDIT_BUF_OFFSET = 0, line buffer zeroed,
+; Out: EDIT_BUF_OFFSET = 0, line buffer zeroed,
 ;      EDITOR_REDRAW_HOOK = 0 (default rendering — see that sysvar's
 ;      comment), EDITOR_NAV_HOOK = 0 (default UP/DOWN handling — see
 ;      that sysvar's comment)
@@ -69,8 +69,6 @@
 ; ============================================================================
 EDITOR_INIT:
     xor  a
-    ld   (EDIT_CURSOR_ROW), a
-    ld   (EDIT_CURSOR_COL), a
     ld   hl, 0
     ld   (EDIT_BUF_OFFSET), hl
     ld   (EDITOR_REDRAW_HOOK), hl    ; also 0 — default rendering unless

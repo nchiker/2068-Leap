@@ -180,7 +180,7 @@ CALC_DISPATCH:
                                      ; those sysvars' own comments
 .dispatch_unimplemented:
     ld   a, CALC_ERR_UNIMPLEMENTED
-    jp   CALC_ABORT_STREAM
+    jr   CALC_ABORT_STREAM
 
 ; Recoverable literal-stream failures. Every valid calculator program ends
 ; in literal $38. Skip the remainder, restore the RST caller's continuation,
@@ -228,7 +228,7 @@ CALC_ABORT_STREAM:
 ; Destroys: AF, BC, DE, HL
 ; ============================================================================
 CALC_STK_PNTRS_UNARY:
-    jp CALC_SP_TO_TOP_PTR
+    jr CALC_SP_TO_TOP_PTR
 
 CALC_STK_PNTRS_BINARY:
     ; FIXED 2026-08-20: this used to set CALC_OP1_PTR=top and CALC_
@@ -710,17 +710,9 @@ CALC_INT_TO_FP:
 ; check needed) and the general form (truncate-toward-zero, matching
 ; the real "truncate" literal $3A's semantics, plus an explicit 16-bit
 ; range check).
-; Out: HL = converted int. Overflow saturates to $7FFF/$8000, sets carry
-;      and CALC_TRUNC_FLAG. CALC_TRUNC_FLAG (sysvars.inc
-;      — already the documented hook for exactly this) set to 1 on
-;      overflow, 0 otherwise. [stated]'s confirmed decision: a future
-;      LET-assignment integration is responsible for turning a set
-;      CALC_TRUNC_FLAG into a real BASIC "Integer out of range" error
-;      (matching the real ROM's own idiom) — that wiring doesn't exist
-;      yet (no caller does real LET-assignment through the calculator
-;      yet, same status as every other op here), so this routine only
-;      raises the flag, per the project's own established "cheap hook
-;      now vs. redesign later" reasoning for CALC_TRUNC_FLAG itself.
+; Out: HL = converted int. Overflow saturates to $7FFF/$8000, sets carry,
+;      CALC_TRUNC_FLAG, and CALC_ERR_NUMERIC_OVERFLOW. Exact results clear
+;      carry and CALC_TRUNC_FLAG.
 ;      CALC_SP decremented by 1.
 ; In:  CALC_SP > 0 (caller bug otherwise, same as every other op here)
 ; Destroys: AF, BC, DE, HL
@@ -901,7 +893,7 @@ CALC_PUSH_FP_RAW:
 ; ============================================================================
 CALC_PUSH_PI:
     ld   hl, PI_CONST
-    jp   CALC_PUSH_FP_RAW
+    jr   CALC_PUSH_FP_RAW
 
 ; pi = 3.14159265..., encoded by hand via this project's own documented
 ; pack algorithm (docs/programmers_reference.md's calculator section)
@@ -972,8 +964,7 @@ CALC_ADDSUB_ENGINE:
     inc  de
     djnz .ae_mant_cmp
 .ae_mant_cmp_done:
-    jr   c, .ae_do_swap              ; A's byte < B's byte -> B is bigger
-    jr   .ae_no_swap                  ; A's byte >= B's byte, or exact tie
+    jr   nc, .ae_no_swap             ; A's byte >= B's byte, or exact tie
 .ae_do_swap:
     ld   hl, CALC_UNP_A
     ld   de, CALC_UNP_B
@@ -1036,8 +1027,7 @@ CALC_ADDSUB_ENGINE:
     ld   b, a
     ld   a, (CALC_UNP_B)
     cp   b
-    jr   z, .ae_same_sign
-    jr   .ae_diff_sign
+    jr   nz, .ae_diff_sign
 .ae_same_sign:
     ; No absolute-address form of ADD/ADC exists on real Z80 (only
     ; register, immediate, and (HL)/(IX+d)/(IY+d) operands) — every
@@ -1125,8 +1115,7 @@ CALC_ADDSUB_ENGINE:
     jr   nz, .ae_sub_nonzero
     ld   a, (CALC_UNP_A+5)
     or   a
-    jr   nz, .ae_sub_nonzero
-    jr   .ae_result_zero
+    jr   z, .ae_result_zero
 .ae_sub_nonzero:
     ld   b, 0
 .ae_renorm_loop:
@@ -1429,12 +1418,12 @@ CALC_OP_MUL:
     sbc  a, 0
     ld   h, a
     cp   $FF
-    jp   z, .cm_zero                  ; exponent underflow -> signed zero
+    jr   z, .cm_zero                  ; exponent underflow -> signed zero
     or   a
     jp   nz, CALC_ABORT_NUMERIC_OVERFLOW
     ld   a, l
     or   a
-    jp   z, .cm_zero                  ; biased exponent zero is underflow
+    jr   z, .cm_zero                  ; biased exponent zero is underflow
 .cm_store_exp:
     ld   (CALC_UNP_A+1), a
     ld   a, (CALC_SHIFT_COUNT)

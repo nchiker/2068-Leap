@@ -33,10 +33,26 @@ subsystem correctness, and regression coverage rather than cartridge support.
 - Nine standalone runtime smoke ROMs pass in Fuse.
 - Fifteen standalone smoke ROM targets assemble successfully.
 - Automated production-editor regression passes.
+- Fixed CAPS SHIFT+ENTER's first-redraw omission: the statement shifted below
+  a newly inserted blank line now remains visible immediately, before the user
+  types into that blank line. The automated editor harness covers the exact
+  two-statement insertion sequence and inspects physical display RAM.
 - Calculator dispatcher, sprite graphics, sprite state, display-order, and
   invalidation simulator checks pass through `make check`.
-- Home ROM: 238 bytes free; EXROM: 100 bytes free; dynamic RAM pool: 1,847
-  bytes.
+- Home ROM: 241 bytes free; EXROM: 177 bytes free; dynamic RAM pool: 15,180
+  bytes. Transient `FILL` scratch and persistent sprite, label, UDG, editor,
+  and detokenizer storage now use safe upper HOME RAM. The command-phase token,
+  status, EDIT-copy, and multi-statement buffers share
+  one 130-byte reservation; the follow-up audit also removed 45 bytes of dead
+  state. Independent review caught two unsafe lifetime assumptions before
+  commit: named LOAD now retains its filename in the edit buffer, clear of its
+  status callback, and static-checker string functions again have a dedicated
+  128-byte pool so they cannot overwrite an uncommitted edit line.
+- A byte-exact branch audit replaced 70 eligible absolute jumps with relative
+  jumps and inverted five two-branch tails. Unsupported Z80 conditions,
+  historically tight branches, low-margin targets, and editor code were left
+  unchanged. This recovered 11 Home-ROM and 71 EXROM bytes without changing
+  RAM, fixed entry addresses, or the KTAB ABI.
 
 ## Candidate boundaries
 

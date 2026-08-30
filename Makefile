@@ -11,9 +11,10 @@ build:
 	tools/make_eightyone_dck.sh build/exrom.bin build/exrom.dck
 	sjasmplus rom/zesarux_combined.asm
 
-check:
+check: build
 	python3 tools/check_asm.py
 	python3 tools/check_docs.py
+	python3 tools/check_ram_aliases.py build/test_basic.sym
 	python3 tools/check_storage_contract.py
 	python3 tools/check_tape_fixture.py
 	python3 tools/check_commit_validation.py
@@ -28,6 +29,7 @@ smoke-build:
 test: all
 	tools/run_smoke_rom_tests.sh
 	tools/run_editor_auto_test.sh
+	tools/run_editor_auto_test.sh insert
 	tools/run_all_tests.sh
 
 budget: build

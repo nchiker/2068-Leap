@@ -479,7 +479,21 @@ BASIC_HANDLE_NAV:
     ; blank statement, since that's exactly where it was inserted.
     ; CUR_EDIT_INDEX is unchanged too (the blank line takes that
     ; index, pushing what was there and everything after it later)
-    jr   .loaded
+    ;
+    ; A structural-insert redraw has a real two-pass dependency: the first
+    ; pass establishes the empty active row's wrap/row-cache state after the
+    ; following records have shifted; without a second pass, the statement
+    ; immediately below the new blank row can remain physically undrawn even
+    ; though program storage and the row shadow are already correct. The next
+    ; typed character used to supply that missing pass, producing the visible
+    ; "PRINT disappears until I type" bug. Perform the settling pass here;
+    ; EDITOR_LOOP's normal hook-return redraw immediately follows and paints
+    ; from the now-consistent state. Kept specific to structural insertion —
+    ; ordinary navigation and character editing have no shifted successor.
+    call BASIC_LOAD_EDIT_LINE
+    call BASIC_SCROLL_TO_FIT
+    call BASIC_REDRAW_PROGRAM
+    ret
 
 .blank_statement: DB $01, $00, $0D          ; length=1 (just the
                                            ; terminator), no content —

@@ -70,15 +70,15 @@ BASIC_FORMAT_STORAGE_STATUS:
     ld   (STATUS_WRITE_PTR), hl
     ld   a, (STORAGE_OP_STATE)
     cp   1
-    jp   z, .saving
+    jr   z, .saving
     cp   2
-    jp   z, .saved
+    jr   z, .saved
     cp   3
-    jp   z, .loading
+    jr   z, .loading
     cp   4
-    jp   z, .loaded
+    jr   z, .loaded
     cp   7
-    jp   z, .program_found
+    jr   z, .program_found
     ; only 6 remains among the values this is ever called for (the
     ; caller already ruled out 0 before calling)
     ld   hl, MSG_LOAD_FAILED

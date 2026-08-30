@@ -70,7 +70,7 @@ LABEL_POS_SIZE      EQU 2
 MEM_COLD_INIT:
     ld   hl, $8000
     ld   bc, PROG_AREA_MAX - $8000
-    jp   MEM_FILL_ZERO
+    jr   MEM_FILL_ZERO
 
 ; ============================================================================
 ; MEM_INIT

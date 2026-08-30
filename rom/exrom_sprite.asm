@@ -114,10 +114,10 @@ BASIC_SPRITE_PARSE_SLOT:
     jp   c, SPRITE_RAISE_SYNTAX_ERROR
     ld   a, d
     or   a
-    jp   nz, .bad_slot
+    jr   nz, .bad_slot
     ld   a, e
     cp   SPRITE_SLOT_MAX
-    jp   nc, .bad_slot
+    jr   nc, .bad_slot
     ld   (SPRITE_ARG_SLOT), a
     or   a
     ret
@@ -140,7 +140,7 @@ BASIC_SPRITE_PARSE_SLOT:
 ; ============================================================================
 BASIC_SPRITE_SLOT_IMG_ADDR:
     ld   hl, SPRITE_SLOT_IMG_BUF
-    jp   BASIC_SPRITE_ADD_SLOT_OFFSET
+    jr   BASIC_SPRITE_ADD_SLOT_OFFSET
 BASIC_SPRITE_SLOT_BG_ADDR:
     ld   hl, SPRITE_SLOT_BG_BUF
     ; falls through — see BASIC_SPRITE_ADD_SLOT_OFFSET below. Made this
@@ -180,19 +180,19 @@ BASIC_SPRITE_ADD_SLOT_OFFSET:
 BASIC_SPRITE_CHECK_ROW:
     ld   a, d
     or   a
-    jp   nz, BASIC_SPRITE_RANGE_FAIL
+    jr   nz, BASIC_SPRITE_RANGE_FAIL
     ld   a, e
     cp   24
-    jp   nc, BASIC_SPRITE_RANGE_FAIL
+    jr   nc, BASIC_SPRITE_RANGE_FAIL
     or   a
     ret
 BASIC_SPRITE_CHECK_COL:
     ld   a, d
     or   a
-    jp   nz, BASIC_SPRITE_RANGE_FAIL
+    jr   nz, BASIC_SPRITE_RANGE_FAIL
     ld   a, e
     cp   32
-    jp   nc, BASIC_SPRITE_RANGE_FAIL
+    jr   nc, BASIC_SPRITE_RANGE_FAIL
     or   a
     ret
 BASIC_SPRITE_RANGE_FAIL:
@@ -202,12 +202,12 @@ BASIC_SPRITE_RANGE_FAIL:
 BASIC_SPRITE_CHECK_WH:
     ld   a, d
     or   a
-    jp   nz, .size_fail
+    jr   nz, .size_fail
     ld   a, e
     or   a
-    jp   z, .size_fail                  ; 0 is invalid
+    jr   z, .size_fail                  ; 0 is invalid
     cp   SPRITE_CELL_MAX + 1
-    jp   nc, .size_fail
+    jr   nc, .size_fail
     or   a
     ret
 .size_fail:
@@ -262,7 +262,7 @@ BASIC_STMT_SPRITE_GRAB:
     call BASIC_SPRITE_SLOT_FLAG_ADDR
     ld   a, (hl)
     or   a
-    jp   nz, .already_shown
+    jr   nz, .already_shown
 
     call BASIC_SPRITE_SLOT_IMG_ADDR         ; HL = this slot's image
                                             ; buffer — untouched by the
@@ -279,7 +279,7 @@ BASIC_STMT_SPRITE_GRAB:
     ld   a, (SPRITE_ARG_H)
     ld   e, a
     call KTAB_GFX_SPRITE_CAPTURE
-    jp   c, .out_of_range
+    jr   c, .out_of_range
 
     ld   a, (SPRITE_ARG_SLOT)
     ld   hl, SPRITE_SLOT_DEFINED
@@ -402,7 +402,7 @@ BASIC_SPRITE_LOAD_OLD_POS:
     call BASIC_SPRITE_SLOT_FLAG_ADDR
     ld   a, (hl)
     ld   (SPRITE_ARG_COL), a
-    jp   BASIC_SPRITE_LOAD_WH             ; tail call — same w/h load
+    jr   BASIC_SPRITE_LOAD_WH             ; tail call — same w/h load
                                           ; SHOW/MOVE's OWN "new
                                           ; position" step needs, just
                                           ; also needed here for the
@@ -526,14 +526,14 @@ BASIC_STMT_SPRITE_SHOW:
     call BASIC_SPRITE_SLOT_FLAG_ADDR
     ld   a, (hl)
     or   a
-    jp   z, .not_defined_pop
+    jr   z, .not_defined_pop
 
     ld   a, (SPRITE_ARG_SLOT)
     ld   hl, SPRITE_SLOT_SHOWN
     call BASIC_SPRITE_SLOT_FLAG_ADDR
     ld   a, (hl)
     or   a
-    jp   nz, .already_shown_pop
+    jr   nz, .already_shown_pop
     pop  hl                              ; restore the real parse
                                          ; pointer before continuing
                                          ; to parse row/col
@@ -555,7 +555,7 @@ BASIC_STMT_SPRITE_SHOW:
 
     call BASIC_SPRITE_LOAD_WH
     call BASIC_SPRITE_CAPTURE_AND_SHOW
-    jp   c, .out_of_range
+    jr   c, .out_of_range
 
     ld   a, (SPRITE_ARG_SLOT)
     ld   hl, SPRITE_SLOT_SHOWN
@@ -600,14 +600,14 @@ BASIC_STMT_SPRITE_HIDE:
     call BASIC_SPRITE_SLOT_FLAG_ADDR
     ld   a, (hl)
     or   a
-    jp   z, .not_shown
+    jr   z, .not_shown
 
     call BASIC_SPRITE_CHECK_TOP
     ret  c
 
     call BASIC_SPRITE_LOAD_OLD_POS
     call BASIC_SPRITE_RESTORE_BG
-    jp   c, .out_of_range             ; can't happen (SHOW/MOVE already
+    jr   c, .out_of_range             ; can't happen (SHOW/MOVE already
                                       ; accepted this same rectangle)
                                       ; but handled anyway
 

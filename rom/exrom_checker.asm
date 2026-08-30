@@ -696,7 +696,7 @@ BASIC_SCAN_LABELS:
 .advance:
     ld   hl, (SCAN_STMT_POS)
     call KTAB_MEM_LINE_NEXT
-    jp   .loop
+    jr   .loop
 ; ============================================================================
 ; BASIC_CHECK_STR_ASSIGNMENT
 ; Same recognition logic as BASIC_TRY_STR_ASSIGNMENT (string-variable
@@ -716,7 +716,7 @@ BASIC_SCAN_LABELS:
 BASIC_CHECK_STR_ASSIGNMENT:
     push hl
     call KTAB_BASIC_DETECT_STRVAR
-    jp   c, .strassign_fail
+    jr   c, .strassign_fail
     ld   a, (hl)
     cp   "("
     jr   nz, .strassign_skip1
@@ -782,7 +782,7 @@ BASIC_CHECK_ARRAY_ASSIGNMENT:
     push hl
     ld   a, (hl)
     call KTAB_BASIC_VALIDATE_VAR_LETTER
-    jp   c, .arrassign_fail
+    jr   c, .arrassign_fail
     inc  hl
     ld   a, (hl)
     cp   "("
@@ -831,7 +831,7 @@ BASIC_CHECK_ASSIGNMENT:
     push hl
     ld   a, (hl)
     call KTAB_BASIC_VALIDATE_VAR_LETTER
-    jp   c, .fail
+    jr   c, .fail
     inc  hl
 .skip_spaces1:
     ld   a, (hl)
@@ -985,12 +985,12 @@ BASIC_CHECK_STATEMENT_CONTENT:
 .check_if:
     call KTAB_BASIC_SKIP_SPACES
     call KTAB_BASIC_EVAL_CONDITION
-    jp   c, .syntax_fail
+    jr   c, .syntax_fail
 
     call KTAB_BASIC_SKIP_SPACES
     ld   de, KW_THEN
     call KTAB_BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   c, .syntax_fail
+    jr   c, .syntax_fail
     call KTAB_BASIC_SKIP_SPACES
     ld   a, (hl)
     cp   $0D
@@ -1008,19 +1008,19 @@ BASIC_CHECK_STATEMENT_CONTENT:
 .check_elseif:
     call KTAB_BASIC_SKIP_SPACES
     call KTAB_BASIC_EVAL_CONDITION
-    jp   c, .syntax_fail
+    jr   c, .syntax_fail
     call KTAB_BASIC_SKIP_SPACES
     ld   de, KW_THEN
     call KTAB_BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   c, .syntax_fail
+    jr   c, .syntax_fail
     call KTAB_BASIC_SKIP_SPACES
     ld   a, (hl)
     cp   $0D
-    jp   nz, .syntax_fail                 ; ELSEIF is block-only — no
+    jp   z, .ok                           ; ELSEIF is block-only — no
                                          ; single-line short form, so
                                          ; anything left after THEN is
-                                         ; invalid
-    jp   .ok
+                                         ; invalid; valid end jumps to
+                                         ; the shared success tail
 
 .syntax_fail:
     ld   hl, MSG_SYNTAX_ERROR
@@ -1044,7 +1044,7 @@ BASIC_CHECK_STATEMENT_CONTENT:
     cp   $0D
     jp   z, .ok                            ; bare NEXT
     call KTAB_BASIC_VALIDATE_VAR_LETTER
-    jp   c, .syntax_fail
+    jr   c, .syntax_fail
     inc  hl                                ; advance past the letter —
                                           ; BASIC_EXPECT_STATEMENT_END
                                           ; fix needs the real position
@@ -1073,7 +1073,7 @@ BASIC_CHECK_STATEMENT_CONTENT:
     call KTAB_BASIC_SKIP_SPACES
     ld   de, KW_FOR
     call KTAB_BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   c, .syntax_fail
+    jr   c, .syntax_fail
     call KTAB_BASIC_EXPECT_STATEMENT_END
     ret  c
     jp   .ok
@@ -1088,19 +1088,19 @@ BASIC_CHECK_STATEMENT_CONTENT:
     call KTAB_BASIC_SKIP_SPACES
     ld   de, KW_GRAB
     call KTAB_BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .check_sprite_5args
+    jr   nc, .check_sprite_5args
 
     ld   de, KW_SHOW
     call KTAB_BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .check_sprite_3args
+    jr   nc, .check_sprite_3args
 
     ld   de, KW_HIDE
     call KTAB_BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .check_sprite_1arg
+    jr   nc, .check_sprite_1arg
 
     ld   de, KW_MOVE
     call KTAB_BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .check_sprite_3args          ; MOVE <slot>,<row>,<col> —
+    jr   nc, .check_sprite_3args          ; MOVE <slot>,<row>,<col> —
                                           ; identical shape to SHOW
 
     jp   .syntax_fail
@@ -1263,12 +1263,12 @@ BASIC_CHECK_STATEMENT_CONTENT:
     ; STR_ASSIGNMENT already uses for its own real KTAB_BASIC_EVAL_
     ; STR_EXPR call just above in this file.
     call KTAB_BASIC_TRY_EVAL_STR_FUNCTION
-    jp   c, .print_not_str_func
+    jr   c, .print_not_str_func
     ld   de, STR_EXPR_SCRATCH + 1
     ld   c, 31
     call KTAB_BASIC_EVAL_STR_FUNCTION_CALL
     jp   c, .syntax_fail
-    jp   .ok
+    jr   .ok
 .print_not_str_func:
 
     call KTAB_BASIC_EVAL_EXPR
@@ -1303,8 +1303,7 @@ BASIC_CHECK_STATEMENT_CONTENT:
                                            ; fix — "INPUT xy" is
                                            ; malformed; one scalar
                                            ; variable is the whole grammar
-    jr   c, .input_fail
-    jp   .ok
+    jr   nc, .ok
 .input_fail:
     ld   hl, MSG_SYNTAX_ERROR
     call KTAB_BASIC_SET_PENDING_ERROR
@@ -1358,7 +1357,7 @@ BASIC_CHECK_STATEMENT_CONTENT:
                                          ; fix — "GOTO labelx extra" is
                                          ; malformed
     ret  c
-    jp   .ok
+    jr   .ok
 
 .ok:
     or   a
@@ -1462,7 +1461,7 @@ BASIC_CHECK_MULTI_STATEMENT:
     ld   hl, (MULTI_SEG_START)
     or   a
     sbc  hl, de
-    jp   z, .next_segment                  ; empty segment — skip
+    jr   z, .next_segment                  ; empty segment — skip
 
     ld   hl, (MULTI_SEG_START)
     ld   de, MULTI_STMT_BUF
@@ -1486,7 +1485,7 @@ BASIC_CHECK_MULTI_STATEMENT:
 
     ld   hl, MULTI_STMT_BUF
     call BASIC_CHECK_STATEMENT_CONTENT
-    jp   c, .stop
+    jr   c, .stop
 
 .next_segment:
     ld   a, (MULTI_SEG_BOUNDARY_CHAR)
@@ -1561,7 +1560,7 @@ BASIC_CHECK_PROGRAM:
     ld   (PENDING_ERROR_MSG), de            ; fresh per statement — see
                                            ; this routine's own header
     call BASIC_CHECK_STATEMENT
-    jp   nc, .next                          ; this statement is fine
+    jr   nc, .next                          ; this statement is fine
 
     ld   hl, (CHECK_ERROR_COUNT)
     inc  hl
@@ -1610,7 +1609,7 @@ BASIC_CHECK_PROGRAM:
 .next:
     ld   hl, (SCAN_STMT_POS)
     call KTAB_MEM_LINE_NEXT
-    jp   .loop
+    jr   .loop
 
 
 ; ============================================================================

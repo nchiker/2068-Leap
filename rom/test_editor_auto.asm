@@ -33,7 +33,7 @@
 ; call run 100% unmodified, through the real KTAB boundary, exactly as
 ; a human typing would drive them.
 ;
-; The queue itself (TEST_KEY_QUEUE, $F010) is Fuse-debugger-injected
+; The queue itself (TEST_KEY_QUEUE, $F410) is Fuse-debugger-injected
 ; RAM, not compile-time ROM data (2026-08-23 — see "ROM budget" below):
 ; INJECT_POINT (COLD_START) is a stable breakpoint address a generated
 ; .dbg script pokes bytes into before real execution resumes, same
@@ -54,8 +54,8 @@
 ; injected key has actually been consumed (KBD_KEYHIT back to 0) —
 ; the moment EDITOR_LOOP itself will be sitting parked in IO_READ_KEY's
 ; busy-wait with EDIT_LINE_BUF/EDIT_BUF_OFFSET in their final, stable
-; state. This is why the test's key queue deliberately never includes
-; KEY_ENTER: an ENTER would commit the line and let BASIC_COMMAND_LOOP
+; state. The wrap test's key queue deliberately never includes KEY_ENTER:
+; an ENTER would commit the line and let BASIC_COMMAND_LOOP
 ; race ahead to its next loop iteration (which re-zeroes EDIT_LINE_BUF
 ; via BASIC_EDITOR_INIT_EXROM) before this harness's own verification
 ; ever got a chance to read it — parking mid-edit instead sidesteps
@@ -187,7 +187,19 @@ TEST_KEY_INJECT_TICK:
     ld   a, (KBD_KEYHIT)
     or   a
     jr   nz, .maybe_inject
-    call $DFC0                    ; test-only EXROM verifier
+    ld   a, (TEST_SETTLE_COUNT)
+    inc  a
+    ld   (TEST_SETTLE_COUNT), a
+    cp   8                         ; let the final redraw finish before
+    jr   c, .done                 ; inspecting physical screen RAM
+    ld   a, (TEST_CASE)
+    or   a
+    jr   nz, .verify_insert
+    call $DFC0                   ; wrap case needs EXROM editor routines
+    jr   .verified
+.verify_insert:
+    call TEST_VERIFY_INSERT      ; insertion case checks physical bitmap
+.verified:
     ld   (TEST_VERIFIED_FLAG), a
 .maybe_inject:
     ld   a, (KBD_KEYHIT)
@@ -205,6 +217,37 @@ TEST_KEY_INJECT_TICK:
 .done:
     pop  hl
     pop  af
+    ret
+
+TEST_VERIFY_INSERT:
+    ; PRINT "hello" must be visible on character row 2 immediately after
+    ; Shift+Enter inserts the empty active row before it. Inspect physical
+    ; bitmap bytes, not the row-shadow bookkeeping implicated in the bug.
+    ld   hl, $4040
+    ld   b, 8
+.scanline:
+    push bc
+    push hl
+    ld   b, 16
+.byte:
+    ld   a, (hl)
+    or   a
+    jr   nz, .pass_pop
+    inc  hl
+    djnz .byte
+    pop  hl
+    ld   bc, $0100
+    add  hl, bc
+    pop  bc
+    djnz .scanline
+    ld   a, 2
+    out  (PORT_ULA), a
+    ret
+.pass_pop:
+    pop  hl
+    pop  bc
+    ld   a, 4
+    out  (PORT_ULA), a
     ret
 
     INCLUDE "basic/basic.asm"
@@ -227,21 +270,23 @@ TEST_KEY_INJECT_TICK:
 
     SAVEBIN "test_editor_auto.bin", $0000, $4000
 
-; ---- test-harness-only scratch RAM: chunk 7 ($E000-$FFFF), well clear
-; of both the machine stack (SP=$FF00, ~4K of headroom below it) and
-; chunk 6 (paged to EXROM for the whole session — writing test scratch
+; ---- test-harness-only scratch RAM: chunk 7 ($F400+), below the test
+; machine stack at $FF00 and above product upper-RAM allocations. Chunk 6 is
+; paged to EXROM for the whole session, so writing test scratch
 ; there would be inaccessible while paged in). NOT in include/
 ; sysvars.inc on purpose: this is test-harness-only state, not a real
 ; product sysvar, and must never compete with PROG_AREA_START's own
 ; zero-slack budget. ----
-TEST_QUEUE_POS      EQU $F000   ; 2 bytes
-TEST_VERIFIED_FLAG  EQU $F002   ; 1 byte
-TEST_KEY_QUEUE       EQU $F010   ; 64 bytes — Fuse-debugger-injected
+TEST_QUEUE_POS      EQU $F400   ; 2 bytes
+TEST_VERIFIED_FLAG  EQU $F402   ; 1 byte
+TEST_CASE           EQU $F403   ; 0=wrap/cursor, 1=blank-line insertion
+TEST_SETTLE_COUNT   EQU $F404   ; ticks after final key consumption
+TEST_KEY_QUEUE       EQU $F410   ; 128 bytes — Fuse-debugger-injected
                                 ; (2026-08-23, see file header's own
                                 ; "ROM budget" note); was a compile-time
                                 ; DB block living directly in the ROM
                                 ; image, moved to RAM for the same
                                 ; reason tools/fuse_suite_inject.py's
-                                ; own header explains at length. 64
-                                ; bytes is generous headroom over the
-                                ; 34 this test case actually uses.
+                                ; own header explains at length. 128
+                                ; bytes is generous headroom over both
+                                ; test cases.

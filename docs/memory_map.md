@@ -10,7 +10,11 @@ Status: DRAFT — living document, updated alongside code.
 | $4000-$57FF   | 6K    | Screen display file (bitmap), standard Spectrum-compatible layout |
 | $5800-$5AFF   | 768B  | Screen attributes |
 | $5B00-$7FFF   | ~10.3K | Reserved for the video hardware's own use (see below) — nothing this project owns lives here |
-| $8000-$BFFF   | 16K | System variables (`include/sysvars.inc`, starting at $8000) followed by the dynamic BASIC program/array/scalar pool (`PROG_AREA_START`=$B8C9 through $BFFF) |
+| $8000-$BFFF   | 16K | System variables (`include/sysvars.inc`, starting at $8000) followed by the dynamic BASIC program/array/scalar pool (`PROG_AREA_START`=$84B4 through $BFFF; 15,180 bytes) |
+| $C000-$E7FF   | 10K | Transient `FILL` visited bitmap and coordinate stack while HOME RAM is mapped; no state here survives or overlaps an EXROM call |
+| $E800-$F0FF   | 2.25K | Persistent sprite image/background buffers; chunk 7 remains visible during EXROM calls |
+| $F100-$F327   | 552B | Persistent label table, UDGs, editor/LOAD-name buffer, and detokenizer buffer |
+| $F328-$FEFF   | ~2.96K | 3,032-byte machine-stack headroom below `$FF00` |
 | $FF00-$FFFF   | 256B  | BASIC/machine stack (grows down from `$FF00`) |
 
 **Why `$5B00`-`$7FFF` is off-limits, not just "reserved for later":** the
@@ -124,8 +128,21 @@ purpose, cross-referenced from the Programmer's Reference.
   control-flow features; the current editor, BASIC, fill, and GOSUB stacks
   are allocated and tested.
 - Reclaim or relocate additional cold code before expanding the language;
-  the V2 candidate has 238 Home-ROM bytes and 100 EXROM bytes free.
+  the V2 candidate has 241 Home-ROM bytes and 177 EXROM bytes free.
   `make budget` is authoritative as these figures change.
+- `FILL` no longer permanently consumes 10,240 bytes below
+  `PROG_AREA_START`: its visited bitmap and bounded coordinate stack occupy
+  `$C000-$E7FF` only for the duration of the HOME-ROM fill operation. Assembly
+  assertions keep this scratch below the `$FF00` machine stack.
+- The 2,304-byte sprite image/background buffers occupy `$E800-$F0FF`.
+  EXROM only pages chunk 6 (`$C000-$DFFF`), so its sprite driver can access
+  these persistent chunk-7 buffers directly.
+- `$F100-$F327` packs the 128-byte label table, 168-byte UDG table, 128-byte
+  editor/LOAD-name buffer, and 128-byte detokenizer buffer. A blocking named
+  LOAD may reuse the already-parsed edit line, but string-function evaluation
+  retains a separate lower-RAM pool because the static checker can run while
+  an uncommitted edit line is live. The packed upper layout leaves 3,032 bytes
+  (`$F328-$FEFF`) below the machine stack.
 - **Label table**: the current top-level implementation is working and
   checked on every commit and before `RUN`. Revisit its fixed capacity when
   procedures introduce nested scopes.
