@@ -46,6 +46,7 @@ Output:
     <out.dbg> — pass to Fuse via --debugger-command "$(cat <out.dbg>)".
 """
 import re
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -55,7 +56,12 @@ from preload_gen import encode_program  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 HARNESS_ASM = REPO_ROOT / "rom" / "test_suite_inject.asm"
-HARNESS_SYM = REPO_ROOT / "rom" / "test_suite_inject.sym"
+HARNESS_SYM = REPO_ROOT / "rom" / (
+    "test_stack_audit.sym" if os.environ.get("STACK_AUDIT") else
+    "test_extension_clear_inject.sym" if os.environ.get("RAM_EXTENSION_CLEAR") else
+    "test_extension_inject.sym" if os.environ.get("RAM_EXTENSION_BIN") else
+    "test_suite_inject.sym"
+)
 
 _SYMS = None
 
@@ -121,6 +127,20 @@ def main():
     ]
     pokes.append(f"set 0x{prog_end_addr:04x} {prog_end_value & 0xff}")
     pokes.append(f"set 0x{prog_end_addr + 1:04x} {(prog_end_value >> 8) & 0xff}")
+
+    module_path = os.environ.get("RAM_EXTENSION_BIN")
+    if module_path:
+        module = Path(module_path).read_bytes()
+        module_base = syms['EXTENSION_MODULE_BASE']
+        module_limit = syms['EXTENSION_MODULE_LIMIT']
+        if module_base + len(module) > module_limit:
+            raise ValueError("RAM extension exceeds reserved module window")
+        pokes.extend(
+            f"set 0x{module_base + i:04x} {b}"
+            for i, b in enumerate(module)
+        )
+        if os.environ.get("RAM_EXTENSION_SEED_CACHE"):
+            pokes.append(f"set 0x{syms['STATUS_CHECK_VALID']:04x} 1")
 
     script = (
         f"breakpoint 0x{inject_point:04x}\n"

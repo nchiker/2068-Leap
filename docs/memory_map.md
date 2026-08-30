@@ -10,11 +10,13 @@ Status: DRAFT — living document, updated alongside code.
 | $4000-$57FF   | 6K    | Screen display file (bitmap), standard Spectrum-compatible layout |
 | $5800-$5AFF   | 768B  | Screen attributes |
 | $5B00-$7FFF   | ~10.3K | Reserved for the video hardware's own use (see below) — nothing this project owns lives here |
-| $8000-$BFFF   | 16K | System variables (`include/sysvars.inc`, starting at $8000) followed by the dynamic BASIC program/array/scalar pool (`PROG_AREA_START`=$84B4 through $BFFF; 15,180 bytes) |
+| $8000-$BFFF   | 16K | System variables (`include/sysvars.inc`, starting at $8000) followed by the dynamic BASIC program/array/scalar pool (`PROG_AREA_START`=$8434 through $BFFF; 15,308 bytes) |
 | $C000-$E7FF   | 10K | Transient `FILL` visited bitmap and coordinate stack while HOME RAM is mapped; no state here survives or overlaps an EXROM call |
 | $E800-$F0FF   | 2.25K | Persistent sprite image/background buffers; chunk 7 remains visible during EXROM calls |
 | $F100-$F327   | 552B | Persistent label table, UDGs, editor/LOAD-name buffer, and detokenizer buffer |
-| $F328-$FEFF   | ~2.96K | 3,032-byte machine-stack headroom below `$FF00` |
+| $F328-$F3A7   | 128B | Persistent string-function scratch pool, relocated from chunk 4 |
+| $F3A8-$F3AE   | 7B | Minimal numeric `DEF FN` runtime state |
+| $F3AF-$FEFF   | ~2.83K | 2,897-byte machine-stack headroom below `$FF00` |
 | $FF00-$FFFF   | 256B  | BASIC/machine stack (grows down from `$FF00`) |
 
 **Why `$5B00`-`$7FFF` is off-limits, not just "reserved for later":** the
@@ -141,8 +143,10 @@ purpose, cross-referenced from the Programmer's Reference.
   editor/LOAD-name buffer, and 128-byte detokenizer buffer. A blocking named
   LOAD may reuse the already-parsed edit line, but string-function evaluation
   retains a separate lower-RAM pool because the static checker can run while
-  an uncommitted edit line is live. The packed upper layout leaves 3,032 bytes
-  (`$F328-$FEFF`) below the machine stack.
+  an uncommitted edit line is live. The pool now occupies `$F328-$F3A7` in
+  always-visible chunk 7. `DEF FN` uses the next seven bytes, leaving 2,897
+  bytes (`$F3AF-$FEFF`) below the machine stack. A canary-based valid nested-expression run measured a
+  126-byte peak, so this retains more than 23 times that observed usage.
 - **Label table**: the current top-level implementation is working and
   checked on every commit and before `RUN`. Revisit its fixed capacity when
   procedures introduce nested scopes.

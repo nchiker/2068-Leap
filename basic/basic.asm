@@ -2513,6 +2513,12 @@ BASIC_EVAL_PRIMARY:
                                                ; either (could be a letter)
 
 .check_var:
+    IFNDEF EDITOR_AUTO_OMIT_DEF_FN
+    ; User-defined numeric function invocation: FN name(argument).
+    call .try_def_fn
+    ret  nc
+    ENDIF
+
     ; Try a built-in function call (ABS(x), SGN(x), ...) BEFORE the
     ; single-letter-variable check below — a function name's first
     ; letter would otherwise be consumed as an unrelated single-letter
@@ -2522,7 +2528,7 @@ BASIC_EVAL_PRIMARY:
     ; above already skipped spaces and stored it to EXPR_PARSE_PTR;
     ; nothing between there and here has moved it).
     call BASIC_TRY_EVAL_FUNCTION
-    jr   nc, .do_function_call
+    jp   nc, .do_function_call
 
     ; REAL BUG FOUND AND FIXED (caught by tools/z80sim, not static
     ; analysis): BASIC_TRY_EVAL_FUNCTION destroys A along with
@@ -2554,13 +2560,29 @@ BASIC_EVAL_PRIMARY:
     inc  hl
     ld   a, (hl)
     cp   "("
-    jr   z, .do_array_read                  ; letter immediately
+    jp   z, .do_array_read                  ; letter immediately
                                             ; followed by "(" — array-
                                             ; index read (e.g. "A(3)"),
                                             ; not the plain scalar
                                             ; below; HL already points
                                             ; at "(", matching .do_
                                             ; array_read's own entry
+
+    IFNDEF EDITOR_AUTO_OMIT_DEF_FN
+    ld   a, (DEF_FN_ACTIVE)
+    or   a
+    jr   z, .plain_scalar
+    ld   a, (DEF_FN_PARAM)
+    cp   d
+    jr   nz, .plain_scalar
+    ld   de, (DEF_FN_ARG)
+    ld   hl, (EXPR_PARSE_PTR)
+    inc  hl
+    ld   (EXPR_PARSE_PTR), hl
+    or   a
+    ret
+.plain_scalar:
+    ENDIF
 
     ld   a, d                              ; A = uppercased letter
                                           ; (restored)
@@ -2575,6 +2597,81 @@ BASIC_EVAL_PRIMARY:
     ld   (EXPR_PARSE_PTR), hl                    ; 1-character variable
     or   a
     ret
+
+; Minimal classic DEF FN evaluator. One single-letter function name and one
+; numeric parameter are supported; definitions become active when their DEF
+; statement executes. Nested built-ins are fine, recursive FN calls are not.
+    IFNDEF EDITOR_AUTO_OMIT_DEF_FN
+.try_def_fn:
+    ld   hl, (EXPR_PARSE_PTR)
+    ld   de, KW_FN
+    call BASIC_MATCH_KEYWORD_BOUNDARY
+    jr   c, .def_not_fn
+    call BASIC_SKIP_SPACES
+    ld   a, (hl)
+    call BASIC_VALIDATE_VAR_LETTER
+    jr   c, .def_fail
+    ld   c, a
+    inc  hl
+    call BASIC_SKIP_SPACES
+    ld   a, (hl)
+    cp   '('
+    jr   nz, .def_fail
+    inc  hl
+    ld   (EXPR_PARSE_PTR), hl
+    push bc
+    call BASIC_EVAL_EXPR
+    pop  bc
+    jr   c, .def_fail
+    push de
+    ld   hl, (EXPR_PARSE_PTR)
+    call BASIC_SKIP_SPACES
+    ld   a, (hl)
+    cp   ')'
+    jr   nz, .def_fail_pop
+    inc  hl
+    ld   a, (BASIC_CHECK_ONLY)
+    or   a
+    jr   z, .def_runtime
+    pop  de                              ; discard checked argument
+    ld   (EXPR_PARSE_PTR), hl
+    ld   de, 0
+    or   a
+    ret
+.def_runtime:
+    push hl                              ; caller continuation
+    ld   a, (DEF_FN_NAME)
+    cp   c
+    jr   nz, .def_fail_pop2
+    ld   a, (DEF_FN_ACTIVE)
+    or   a
+    jr   nz, .def_fail_pop2             ; recursion deliberately unsupported
+    pop  hl
+    ex   (sp), hl                        ; stack: continuation; HL=argument
+    ld   (DEF_FN_ARG), hl
+    ld   a, 1
+    ld   (DEF_FN_ACTIVE), a
+    ld   hl, (DEF_FN_EXPR_PTR)
+    ld   (EXPR_PARSE_PTR), hl
+    call BASIC_EVAL_EXPR
+    push af
+    xor  a
+    ld   (DEF_FN_ACTIVE), a
+    pop  af
+    pop  hl                              ; caller continuation
+    ld   (EXPR_PARSE_PTR), hl
+    ret
+.def_fail_pop2:
+    pop  hl
+.def_fail_pop:
+    pop  de
+.def_fail:
+    scf
+    ret
+.def_not_fn:
+    scf
+    ret
+    ENDIF
 
 ; ============================================================================
 ; .do_array_read — array-element read (A(i) used as a primary)
@@ -6963,61 +7060,6 @@ BASIC_STMT_PLOT:
     ret
 
 ; ============================================================================
-; BASIC_STMT_CPLOT
-; Parses CPLOT <cx-expr>,<cy-expr> and coarse-plots one 4x4-pixel
-; quadrant via GFX_CPLOT. Same shape as BASIC_STMT_PLOT, but — unlike
-; PLOT's x — CPLOT's coarse coordinates aren't a full byte's natural
-; range (cx: 0-63, cy: 0-47), so both get the same explicit clamp
-; PLOT's own y already gets, not just one of them.
-; In:  HL = pointer just past the CPLOT keyword
-; Out: none; carry set on a malformed expression or missing comma
-; Destroys: AF, BC, DE, HL
-; ============================================================================
-BASIC_STMT_CPLOT:
-    call BASIC_EVAL_EXPR              ; DE = cx
-    jp   c, BASIC_RAISE_SYNTAX_ERROR
-    ld   a, e
-    cp   64
-    jr   c, .cx_in_range
-    ld   a, 63
-.cx_in_range:
-    ld   e, a                          ; E = cx (clamped)
-    push de                            ; stash cx across the shared
-                                       ; helper below, which destroys DE
-    call BASIC_EXPECT_COMMA_EXPR        ; DE = cy (or carry set, error
-                                        ; already recorded)
-    jr   c, .comma_fail
-    call BASIC_EXPECT_STATEMENT_END      ; BASIC_EXPECT_STATEMENT_END fix
-    jr   c, .comma_fail                  ; error already recorded; same
-                                        ; cleanup path
-    ld   a, e
-    cp   48
-    jr   c, .cy_in_range
-    ld   a, 47
-.cy_in_range:
-    ld   c, a                           ; C = cy (clamped)
-    pop  de                              ; DE = cx (restored)
-    ld   b, e                            ; B = cx
-
-    push bc
-    call BASIC_COMPUTE_PRINT_ATTR
-    push af
-    ld   a, (CURRENT_OVER)
-    ld   e, a
-    pop  af
-    pop  bc
-    ld   d, e
-    call GFX_CPLOT
-    or   a
-    ret
-
-.comma_fail:
-    pop  de                              ; keep the stack balanced —
-                                        ; error already recorded by
-                                        ; BASIC_EXPECT_COMMA_EXPR
-    ret
-
-; ============================================================================
 ; BASIC_STMT_MODE
 ; Parses MODE <n-expr> and switches video mode via GFX_SET_MODE. Only
 ; 0 (Normal) and 1 (High Resolution Graphics) are valid — unlike
@@ -9753,6 +9795,15 @@ BASIC_EXEC_STATEMENT_CONTENT:
 
 .try_assignments:
     pop  ix
+    call BASIC_TRY_EXTENSION
+    push af                              ; preserve extension callback carry
+    ld   a, b                            ; B=0 no registry match, B=1 matched
+    or   a
+    jr   z, .extension_not_found
+    pop  af
+    ret                                  ; propagate callback/error carry
+.extension_not_found:
+    pop  af
     call BASIC_TRY_STR_ASSIGNMENT
     jr   nc, .done                    ; string assignment handled it
 
@@ -9799,6 +9850,114 @@ BASIC_EXEC_STATEMENT_CONTENT:
     or   a
     ret
 
+; Single-slot RAM extension proof. The checker uses the same registered name
+; but validates the fixed two-numeric-expression grammar without executing RAM.
+; In: HL = original statement text. Out: B=0 no match; B=1 matched, with carry
+; from parsing or the callback. Callback receives BC=first value, DE=second.
+BASIC_TRY_EXTENSION:
+    ld   b, 0
+    ld   de, (EXTENSION_MAGIC)
+    ld   a, e
+    cp   LOW EXTENSION_REG_MAGIC
+    ret  nz
+    ld   a, d
+    cp   HIGH EXTENSION_REG_MAGIC
+    ret  nz
+    ld   de, (EXTENSION_NAME_PTR)
+    call BASIC_MATCH_KEYWORD_BOUNDARY
+    ret  c
+    call BASIC_EVAL_EXPR
+    jr   c, .matched
+    push de
+    call BASIC_EXPECT_COMMA_EXPR
+    jr   c, .drop_first
+    call BASIC_EXPECT_STATEMENT_END
+    jr   c, .drop_first
+    pop  bc
+    ld   hl, (EXTENSION_EXEC_PTR)
+    call BASIC_CALL_USR
+    jr   .matched
+.drop_first:
+    pop  de
+.matched:
+    push af
+    ld   b, 1
+    pop  af
+    ret
+
+; Registration is the only supported way to publish a module: write pointers
+; first, invalidate the editor verdict cache, then publish the magic atomically.
+; PoC modules are restricted to the fixed $F400-$F5FF upper-RAM window.
+; In: HL=name, DE=execute callback. Out: carry set if either is outside window.
+BASIC_EXTENSION_REGISTER:
+    ld   a, h
+    cp   HIGH EXTENSION_MODULE_BASE
+    jr   c, .register_fail
+    cp   HIGH EXTENSION_MODULE_LIMIT
+    jr   nc, .register_fail
+    ld   a, d
+    cp   HIGH EXTENSION_MODULE_BASE
+    jr   c, .register_fail
+    cp   HIGH EXTENSION_MODULE_LIMIT
+    jr   nc, .register_fail
+    ld   (EXTENSION_NAME_PTR), hl
+    ld   (EXTENSION_EXEC_PTR), de
+    xor  a
+    ld   (STATUS_CHECK_VALID), a
+    ld   bc, EXTENSION_REG_MAGIC
+    ld   (EXTENSION_MAGIC), bc
+    ret
+.register_fail:
+    xor  a
+    ld   (EXTENSION_MAGIC), a
+    ld   (EXTENSION_MAGIC+1), a
+    scf
+    ret
+
+; DEF FN name(param)=expression. The static checker validates the expression;
+; runtime execution records its in-program expression pointer for later FN use.
+BASIC_STMT_DEF_FN:
+    IFNDEF EDITOR_AUTO_OMIT_DEF_FN
+    call BASIC_SKIP_SPACES
+    ld   de, KW_FN
+    call BASIC_MATCH_KEYWORD_BOUNDARY
+    jr   c, .bad
+    call BASIC_SKIP_SPACES
+    ld   a, (hl)
+    call BASIC_VALIDATE_VAR_LETTER
+    jr   c, .bad
+    ld   (DEF_FN_NAME), a
+    inc  hl
+    call BASIC_SKIP_SPACES
+    ld   a, (hl)
+    cp   '('
+    jr   nz, .bad
+    inc  hl
+    call BASIC_SKIP_SPACES
+    ld   a, (hl)
+    call BASIC_VALIDATE_VAR_LETTER
+    jr   c, .bad
+    ld   (DEF_FN_PARAM), a
+    inc  hl
+    call BASIC_SKIP_SPACES
+    ld   a, (hl)
+    cp   ')'
+    jr   nz, .bad
+    inc  hl
+    call BASIC_SKIP_SPACES
+    ld   a, (hl)
+    cp   '='
+    jr   nz, .bad
+    inc  hl
+    call BASIC_SKIP_SPACES
+    ld   (DEF_FN_EXPR_PTR), hl
+    xor  a
+    ld   (DEF_FN_ACTIVE), a
+    ret
+.bad:
+    jp   BASIC_RAISE_SYNTAX_ERROR
+    ENDIF
+
 ; Keyword pointer + handler pointer. END IF remains the dedicated pre-check
 ; above because it is the only compound statement-leading keyword. Duplicate
 ; handler pointers are intentional aliases (END/STOP, ELSEIF/ELSE, GOSUB/CALL).
@@ -9819,7 +9978,6 @@ BASIC_EXEC_DISPATCH_TABLE:
     DW KW_LINE, BASIC_STMT_LINE
     DW KW_BLOCK, BASIC_STMT_BLOCK
     DW KW_CIRCLE, BASIC_STMT_CIRCLE
-    DW KW_CPLOT, BASIC_STMT_CPLOT
     DW KW_FILL, BASIC_STMT_FILL
     DW KW_BEEP, BASIC_STMT_BEEP
     DW KW_SOUND, BASIC_STMT_SOUND
@@ -9844,6 +10002,9 @@ BASIC_EXEC_DISPATCH_TABLE:
     DW KW_GOSUB, BASIC_STMT_GOSUB
     DW KW_CALL, BASIC_STMT_GOSUB
     DW KW_RETURN, BASIC_STMT_RETURN
+    IFNDEF EDITOR_AUTO_OMIT_DEF_FN
+        DW KW_DEF, BASIC_STMT_DEF_FN
+    ENDIF
     DW 0
 
 ; ============================================================================
@@ -11209,7 +11370,7 @@ KEYWORD_HILITE_TABLE:
     DW   KW_CLS, KW_REM, KW_BORDER
     DW   KW_INK, KW_PAPER, KW_FLASH, KW_BRIGHT, KW_INVERSE, KW_OVER
     DW   KW_AT, KW_TAB
-    DW   KW_PLOT, KW_LINE, KW_BLOCK, KW_CIRCLE, KW_CPLOT, KW_FILL, KW_MODE
+    DW   KW_PLOT, KW_LINE, KW_BLOCK, KW_CIRCLE, KW_FILL, KW_MODE
     DW   KW_ULAPLUS, KW_PALETTE
     DW   KW_POKE, KW_PAUSE, KW_RANDOMISE
     DW   KW_GOSUB, KW_RETURN, KW_CALL

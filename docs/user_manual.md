@@ -558,7 +558,7 @@ coarser 32×24 character view of the same physical screen.
 | `FILL x,y` | Flood-fill the connected region starting at that pixel |
 | `POINT(x,y)` | Function — `1` if that pixel is currently set, `0` if not |
 | `ATTR(row,col)` | Function — normal-screen attribute byte at character row 0-23, column 0-31; returns `0` outside that grid |
-| `CPLOT cx,cy` | Coarse 2×2-per-cell block-graphics plot; `cx` is 0-63, `cy` is 0-47 |
+| `CPLOT cx,cy` | Optional loadable extension: coarse 2×2-per-cell block graphics; unavailable until its RAM module is installed |
 | `MODE n` | `0` = Normal, `1` = High Resolution Graphics (same 256×191 bitmap, finer per-scanline colour). Anything else raises `INVALID MODE` |
 | `ULAPLUS n` | Enable (`1`) or disable (`0`) the ULAplus extended palette. Other values raise `INVALID ARGUMENT` |
 | `PALETTE index,value` | Program ULAplus register `index` (0-63) with an 8-bit `GGGRRRBB` colour value (0-255). Out-of-range arguments raise `INVALID ARGUMENT` |

@@ -86,6 +86,22 @@ COLD_START:
     im   1
     ei
 
+    IFDEF STACK_AUDIT
+    ; Canary the entire currently documented machine-stack headroom.
+    ; The scan after BASIC_RUN records the first byte touched.
+    ld   hl, $F3AF
+    ld   bc, $FF00 - $F3AF
+    ld   a, $A5
+.stack_fill:
+    ld   (hl), a
+    inc  hl
+    dec  bc
+    ld   a, b
+    or   c
+    ld   a, $A5
+    jr   nz, .stack_fill
+    ENDIF
+
 INJECT_POINT:
     ; Fuse breaks here (a stable label address, read via --sym the same
     ; "read live, don't hardcode" way tools/fuse_load_inject.py already
@@ -97,6 +113,12 @@ INJECT_POINT:
     ; script is attached, this runs an EMPTY program (PROG_END still
     ; PROG_AREA_START from MEM_INIT above) — BASIC_RUN just returns
     ; immediately, harmless, not a hang.
+    IFDEF TEST_RAM_EXTENSION
+    call EXTENSION_MODULE_BASE       ; debugger has injected installer here
+    IFDEF TEST_RAM_EXTENSION_CLEAR
+    call MEM_INIT                    ; prove NEW/cold reset unregisters it
+    ENDIF
+    ENDIF
     call BASIC_RUN                   ; real call — properly balances
                                      ; whatever happens after MEM_INIT,
                                      ; no debugger stack manipulation
@@ -117,12 +139,59 @@ INJECT_POINT:
                                      ; of a distinct yellow — still
                                      ; visibly different from any real
                                      ; fixture's own expected verdict
+    IFDEF STACK_AUDIT
+    ld   hl, $F3AF
+.stack_scan:
+    ld   a, (hl)
+    cp   $A5
+    jr   nz, .stack_found
+    inc  hl
+    ld   a, h
+    cp   $FF
+    jr   nz, .stack_scan
+.stack_found:
+    ld   (STORAGE_ENTRY_RETRY), hl
+    ld   de, STATUS_BUF
+    ld   a, h
+    call STACK_HEX_BYTE
+    ld   a, l
+    call STACK_HEX_BYTE
+    xor  a
+    ld   (de), a
+    call GFX_CLS
+    call BASIC_RESET_TEXT_ATTR
+    ld   hl, STATUS_BUF
+    ld   b, 0
+    ld   c, 0
+    call GFX_PRINT_STRING
+    ENDIF
 .hang:
     jr   .hang                       ; leave whatever border color the
                                      ; program itself last set via its
                                      ; own BORDER statement — the
                                      ; verdict, same convention as
                                      ; everywhere else in this suite
+
+    IFDEF STACK_AUDIT
+STACK_HEX_BYTE:
+    push af
+    rrca
+    rrca
+    rrca
+    rrca
+    call STACK_HEX_NIBBLE
+    pop  af
+STACK_HEX_NIBBLE:
+    and  $0F
+    add  a, '0'
+    cp   '9' + 1
+    jr   c, .hex_store
+    add  a, 'A' - '9' - 1
+.hex_store:
+    ld   (de), a
+    inc  de
+    ret
+    ENDIF
 
     INCLUDE "basic/basic.asm"
     INCLUDE "kernel/memory/memory.asm"
@@ -135,4 +204,16 @@ INJECT_POINT:
 
     DS   $4000 - $, $FF
 
-    SAVEBIN "test_suite_inject.bin", $0000, $4000
+    IFDEF STACK_AUDIT
+        SAVEBIN "test_stack_audit.bin", $0000, $4000
+    ELSE
+        IFDEF TEST_RAM_EXTENSION
+            IFDEF TEST_RAM_EXTENSION_CLEAR
+                SAVEBIN "test_extension_clear_inject.bin", $0000, $4000
+            ELSE
+                SAVEBIN "test_extension_inject.bin", $0000, $4000
+            ENDIF
+        ELSE
+            SAVEBIN "test_suite_inject.bin", $0000, $4000
+        ENDIF
+    ENDIF

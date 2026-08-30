@@ -387,6 +387,9 @@ STORAGE_SEND_BLOCK:
 ; Destroys: AF, AF', BC, DE, HL, IX
 ; ============================================================================
 STORAGE_RECEIVE_BLOCK:
+    IFDEF STORAGE_TEST_FAKE_RECEIVE
+        jp   STORAGE_TEST_RECEIVE_BLOCK
+    ELSE
     ld   hl, .exit
     push hl                               ; shared exit, same idiom as
                                          ; STORAGE_SEND_BLOCK's own
@@ -576,6 +579,7 @@ STORAGE_RECEIVE_BLOCK:
     ld   a, (PORT_FE_SHADOW)
     out  (PORT_ULA), a
     ret
+    ENDIF
 
 ; ============================================================================
 ; STORAGE_SAVE

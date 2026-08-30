@@ -1406,22 +1406,6 @@ GFX_CIRCLE_Y:        DEFS 1           ; 1 byte — current octant y offset
 GFX_CIRCLE_D:        DEFS 2           ; 2 bytes ($61A9-$61AA) — signed
                                  ; 16-bit decision variable
 
-; GFX_CPLOT_* — CPLOT's own tiny scratch. Coarse-plot fills a 4x4-pixel
-; quadrant by OR/XOR-ing a repeated byte pattern ($F0 left half, $0F
-; right half) into 4 consecutive scanline bytes — verified in Python
-; against plotting all 16 individual pixels in the quadrant across
-; random pre-existing cell content (2000 trials, zero mismatches)
-; before writing this. No 16-entry glyph table needed — turned out to
-; be unnecessary once the byte-OR equivalence was actually checked
-; rather than assumed.
-GFX_CPLOT_SCANLINE_START:DEFS 1          ; 1 byte — 0 (top half) or 4
-                                    ; (bottom half); which 4 of the
-                                    ; cell's 8 scanlines this call
-                                    ; touches
-GFX_CPLOT_PATTERN:   DEFS 1          ; 1 byte — $F0 (left half) or $0F
-                                    ; (right half), OR/XOR'd into
-                                    ; each of those 4 scanline bytes
-
 ; GFX_MODE / PORT_FF_SHADOW — MODE's own state. GFX_MODE is this
 ; project's own friendly 0/1 numbering (0=Normal, 1=High Resolution
 ; Graphics), consulted by GFX_WRITE_PIXEL to decide which attribute-
@@ -2301,14 +2285,16 @@ GOSUB_STACK_DEPTH:   DEFS 1           ; 1 byte — number of live entries
 UDG_COUNT           EQU 21
 ; Persistent UDG glyphs also live in never-paged chunk 7, immediately after
 ; the label table. Graphics calls remain able to read them while EXROM owns
-; chunk 6; $F228-$FEFF remains available as machine-stack headroom.
+; chunk 6. `$F328-$F3A7` holds STR_FUNC_POOL and `$F3A8-$F3AE` holds
+; minimal DEF FN state; `$F3AF-$FEFF`
+; remains available as machine-stack headroom.
 UDG_TABLE            EQU $F180
     ASSERT LABEL_TABLE_TOP + LABEL_TABLE_MAXLEN == UDG_TABLE
     ASSERT UDG_TABLE + 168 == $F228
     ASSERT UDG_TABLE + 168 == EDIT_LINE_BUF
     ASSERT EDIT_LINE_BUF + EDIT_LINE_BUF_LEN == DETOK_BUF
     ASSERT DETOK_BUF + 128 == $F328
-    ASSERT $F328 <= $FF00              ; 3032 bytes of stack headroom
+    ASSERT $F3AF <= $FF00              ; 2897 bytes of stack headroom
 BLOCK_GFX_SCRATCH:   DEFS 8           ; 8 bytes, through $B351
 
 ; ---- String scalars (Phase 3, 2026-08-22) ----
@@ -2491,8 +2477,40 @@ STR_FUNC_POOL_SLOTS EQU 4
 ; EDIT_LINE_BUF contains the user's uncommitted edits. String functions invoked
 ; by that check therefore need an independent pool or they can corrupt the live
 ; line. This dedicated reservation restores that separation.
-STR_FUNC_POOL:       DEFS 128
+; Relocated out of chunk 4 so this persistent-but-fixed scratch does not
+; reduce BASIC program space. Chunk 7 is always visible during EXROM calls.
+; The measured valid nested-expression stress peak is 126 machine-stack
+; bytes; placing this at the former bottom of stack headroom still leaves
+; $F3A8-$FEFF (2,904 bytes) below SP=$FF00 before DEF FN's seven-byte
+; state; the current stack headroom starts at $F3AF (2,897 bytes).
+STR_FUNC_POOL        EQU $F328
     ASSERT 128 == (STR_FUNC_POOL_SLOTS * 32)
+    ASSERT STR_FUNC_POOL + 128 == $F3A8
+    ASSERT STR_FUNC_POOL + 128 <= $FF00
+; Minimal numeric DEF FN runtime state. Kept beside the relocated string pool
+; so the spike consumes no BASIC program RAM. Definitions are established when
+; their DEF statement executes; recursive FN evaluation is rejected.
+DEF_FN_NAME          EQU $F3A8
+DEF_FN_PARAM         EQU $F3A9
+DEF_FN_EXPR_PTR      EQU $F3AA
+DEF_FN_ARG           EQU $F3AC
+DEF_FN_ACTIVE        EQU $F3AE
+    ASSERT DEF_FN_ACTIVE + 1 == $F3AF
+    ASSERT DEF_FN_ACTIVE + 1 <= $FF00
+; Single-slot loadable BASIC-extension proof registry. Registration is only
+; valid through BASIC_EXTENSION_REGISTER, which writes the magic last and
+; invalidates the editor's cached checker verdict. NEW/cold init clear magic.
+; The module payload itself is loaded at EXTENSION_MODULE_BASE and must remain
+; below EXTENSION_MODULE_LIMIT, leaving more than 2K of stack headroom.
+EXTENSION_MAGIC       EQU $F3AF       ; 2 bytes; zero means no extension
+EXTENSION_NAME_PTR    EQU $F3B1       ; 2 bytes; null-terminated RAM keyword
+EXTENSION_EXEC_PTR    EQU $F3B3       ; 2 bytes; callback after two args parsed
+EXTENSION_REG_MAGIC   EQU $5845       ; "EX" little-endian
+EXTENSION_MODULE_BASE EQU $F400
+EXTENSION_MODULE_LIMIT EQU $F600
+    ASSERT EXTENSION_EXEC_PTR + 2 == $F3B5
+    ASSERT EXTENSION_MODULE_BASE >= EXTENSION_EXEC_PTR + 2
+    ASSERT EXTENSION_MODULE_LIMIT <= $FF00
 STR_FUNC_POOL_NEXT:  DEFS 1           ; 1 byte — next free slot (0-4); reset
                                 ; to 0 at MEM_INIT/BASIC_RUN as a safety
                                 ; net, same precedent GOSUB_STACK_DEPTH

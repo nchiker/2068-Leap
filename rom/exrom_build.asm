@@ -54,6 +54,9 @@
                                          ; the checker's own routine
                                          ; bodies + its KW_*/MSG_* data
     INCLUDE "rom/exrom_storage.asm"      ; STORAGE_SAVE/STORAGE_LOAD
+    IFDEF STORAGE_TEST_FAKE_RECEIVE
+        INCLUDE "rom/exrom_storage_test.asm"
+    ENDIF
     INCLUDE "rom/exrom_format.asm"       ; shared formatting utilities
                                          ; and everything they call —
                                          ; the two entry stubs above
@@ -96,11 +99,16 @@
                                          ; $C090 entry stub above
                                          ; already points here
 
-    IFDEF EDITOR_TEST_EXROM
-        INCLUDE "rom/exrom_editor_test_payload.asm"
+    IFDEF STORAGE_TEST_FAKE_RECEIVE
         DS   $E000 - $, $FF
-        SAVEBIN "exrom_editor_test.bin", $C000, $2000
+        SAVEBIN "exrom_storage_test.bin", $C000, $2000
     ELSE
-        DS   $E000 - $, $FF              ; pad to a full 8K image
-        SAVEBIN "exrom.bin", $C000, $2000
+        IFDEF EDITOR_TEST_EXROM
+            INCLUDE "rom/exrom_editor_test_payload.asm"
+            DS   $E000 - $, $FF
+            SAVEBIN "exrom_editor_test.bin", $C000, $2000
+        ELSE
+            DS   $E000 - $, $FF          ; pad to a full 8K image
+            SAVEBIN "exrom.bin", $C000, $2000
+        ENDIF
     ENDIF

@@ -957,6 +957,17 @@ BASIC_CHECK_STATEMENT_CONTENT:
 
 .try_assignments:
     pop  ix
+    ld   de, (EXTENSION_MAGIC)
+    ld   a, e
+    cp   LOW EXTENSION_REG_MAGIC
+    jr   nz, .no_extension
+    ld   a, d
+    cp   HIGH EXTENSION_REG_MAGIC
+    jr   nz, .no_extension
+    ld   de, (EXTENSION_NAME_PTR)
+    call KTAB_BASIC_MATCH_KEYWORD_BOUNDARY
+    jp   nc, .check_at                  ; v1 registry grammar: expr,expr
+.no_extension:
     call BASIC_CHECK_STR_ASSIGNMENT
     jp   nc, .ok                          ; string assignment handled
                                          ; it — tried first, same
@@ -1074,6 +1085,46 @@ BASIC_CHECK_STATEMENT_CONTENT:
     ld   de, KW_FOR
     call KTAB_BASIC_MATCH_KEYWORD_BOUNDARY
     jr   c, .syntax_fail
+    call KTAB_BASIC_EXPECT_STATEMENT_END
+    ret  c
+    jp   .ok
+
+.check_def_fn:
+    call KTAB_BASIC_SKIP_SPACES
+    ld   de, KW_FN
+    call KTAB_BASIC_MATCH_KEYWORD_BOUNDARY
+    jp   c, .syntax_fail
+    call KTAB_BASIC_SKIP_SPACES
+    call KTAB_BASIC_VALIDATE_VAR_LETTER
+    jp   c, .syntax_fail
+    ld   (DEF_FN_NAME), a
+    inc  hl
+    call KTAB_BASIC_SKIP_SPACES
+    ld   a, (hl)
+    cp   '('
+    jp   nz, .syntax_fail
+    inc  hl
+    call KTAB_BASIC_SKIP_SPACES
+    call KTAB_BASIC_VALIDATE_VAR_LETTER
+    jp   c, .syntax_fail
+    ld   (DEF_FN_PARAM), a
+    inc  hl
+    call KTAB_BASIC_SKIP_SPACES
+    ld   a, (hl)
+    cp   ')'
+    jp   nz, .syntax_fail
+    inc  hl
+    call KTAB_BASIC_SKIP_SPACES
+    ld   a, (hl)
+    cp   '='
+    jp   nz, .syntax_fail
+    inc  hl
+    call KTAB_BASIC_SKIP_SPACES
+    ld   (DEF_FN_EXPR_PTR), hl
+    xor  a
+    ld   (DEF_FN_ACTIVE), a
+    call KTAB_BASIC_EVAL_EXPR
+    jp   c, .syntax_fail
     call KTAB_BASIC_EXPECT_STATEMENT_END
     ret  c
     jp   .ok
@@ -1383,7 +1434,6 @@ CHECK_STATEMENT_DISPATCH_TABLE:
     DW KW_LINE, BASIC_CHECK_STATEMENT_CONTENT.check_line
     DW KW_BLOCK, BASIC_CHECK_STATEMENT_CONTENT.check_line
     DW KW_CIRCLE, BASIC_CHECK_STATEMENT_CONTENT.check_circle
-    DW KW_CPLOT, BASIC_CHECK_STATEMENT_CONTENT.check_at
     DW KW_FILL, BASIC_CHECK_STATEMENT_CONTENT.check_at
     DW KW_BEEP, BASIC_CHECK_STATEMENT_CONTENT.check_at
     DW KW_SOUND, BASIC_CHECK_STATEMENT_CONTENT.check_at
@@ -1408,6 +1458,7 @@ CHECK_STATEMENT_DISPATCH_TABLE:
     DW KW_GOSUB, BASIC_CHECK_STATEMENT_CONTENT.check_goto
     DW KW_CALL, BASIC_CHECK_STATEMENT_CONTENT.check_goto
     DW KW_RETURN, BASIC_CHECK_STATEMENT_CONTENT.ok
+    DW KW_DEF, BASIC_CHECK_STATEMENT_CONTENT.check_def_fn
     DW 0
 
 ; ============================================================================

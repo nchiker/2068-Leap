@@ -34,14 +34,28 @@ fi
 # Always rebuild: the binary and its symbol table include the live product
 # sources/sysvar layout, and stale cached outputs can make address-sensitive
 # fixtures test yesterday's ROM instead of today's build.
-sjasmplus rom/test_suite_inject.asm --sym=rom/test_suite_inject.sym
+HARNESS_ROM=test_suite_inject.bin
+if [ -n "${RAM_EXTENSION_BIN:-}" ]; then
+    if [ -n "${RAM_EXTENSION_CLEAR:-}" ]; then
+        sjasmplus rom/test_extension_clear_inject.asm \
+            --sym=rom/test_extension_clear_inject.sym
+        HARNESS_ROM=test_extension_clear_inject.bin
+    else
+        sjasmplus rom/test_extension_inject.asm \
+            --sym=rom/test_extension_inject.sym
+        HARNESS_ROM=test_extension_inject.bin
+    fi
+else
+    sjasmplus rom/test_suite_inject.asm --sym=rom/test_suite_inject.sym
+fi
 
 python3 tools/fuse_suite_inject.py "tests/${name}.txt" "/tmp/suite_${name}.dbg"
 
 pkill -9 -f fuse 2>/dev/null || true
 sleep 1
 DISPLAY=:1 nohup fuse --machine ts2068 \
-    --rom-ts2068-0 test_suite_inject.bin \
+    --no-sound \
+    --rom-ts2068-0 "$HARNESS_ROM" \
     --rom-ts2068-1 exrom.bin \
     --debugger-command "$(cat "/tmp/suite_${name}.dbg")" \
     > "/tmp/fuse_${name}.log" 2>&1 &
@@ -57,7 +71,7 @@ fi
 # liveness check -- see this project's other run_*_test.sh scripts for
 # why: a hung/frozen Fuse instance still shows a valid last-rendered
 # frame, indistinguishable from a real result by screenshot alone.
-FPID=$(pgrep -f "fuse --machine ts2068 --rom-ts2068-0 test_suite_inject.bin" | head -1)
+FPID=$(pgrep -f "fuse --machine ts2068 --rom-ts2068-0 $HARNESS_ROM" | head -1)
 T1=$(ps -p "$FPID" -o time= 2>/dev/null | tr -d ' ')
 sleep 1
 T2=$(ps -p "$FPID" -o time= 2>/dev/null | tr -d ' ')
@@ -66,7 +80,8 @@ if [ "$T1" = "$T2" ]; then
     pkill -9 -f fuse 2>/dev/null || true
     sleep 1
     DISPLAY=:1 nohup fuse --machine ts2068 \
-        --rom-ts2068-0 test_suite_inject.bin \
+        --no-sound \
+        --rom-ts2068-0 "$HARNESS_ROM" \
         --rom-ts2068-1 exrom.bin \
         --debugger-command "$(cat "/tmp/suite_${name}.dbg")" \
         > "/tmp/fuse_${name}.log" 2>&1 &

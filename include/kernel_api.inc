@@ -122,15 +122,6 @@
                                  ; (GFX_FILL_STACK, 2048 entries — see
                                  ; that sysvar's own comment for why
                                  ; that size and how it was measured)
-    EXTERN GFX_CPLOT            ; B = cx (0-63), C = cy (0-47, caller
-                                 ; clamps both), A = attribute byte,
-                                 ; D = OVER flag — coarse 2x2-per-cell
-                                 ; block-graphics plot, no font
-                                 ; glyphs involved. Mode-aware in both
-                                 ; Normal and High Resolution Graphics
-                                 ; mode (one attribute write per
-                                 ; touched scanline in the latter,
-                                 ; matching its 8x1 resolution)
     EXTERN GFX_SET_MODE         ; A = mode (0 = Normal, 1 = High
                                  ; Resolution Graphics) — MODE's
                                  ; mechanism; real port $FF write via

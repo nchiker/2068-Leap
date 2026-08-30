@@ -26,10 +26,13 @@ subsystem correctness, and regression coverage rather than cartridge support.
 - Cold start now clears the complete ROM-owned `$8000-$BFFF` RAM region before
   any sysvar, bank-depth counter, hook, or port shadow is read. Startup no
   longer depends on an emulator providing zero-filled RAM.
+- Replaced resident `CPLOT` with the 121-byte reference RAM BASIC extension.
+  Its single-slot gateway validates the existing two-expression grammar in ROM,
+  invalidates cached editor errors on registration, and unregisters on `NEW`.
 
 ## Validation baseline
 
-- 68 integrated BASIC fixtures pass.
+- 72 integrated BASIC fixtures pass.
 - Nine standalone runtime smoke ROMs pass in Fuse.
 - Fifteen standalone smoke ROM targets assemble successfully.
 - Automated production-editor regression passes.
@@ -39,7 +42,7 @@ subsystem correctness, and regression coverage rather than cartridge support.
   two-statement insertion sequence and inspects physical display RAM.
 - Calculator dispatcher, sprite graphics, sprite state, display-order, and
   invalidation simulator checks pass through `make check`.
-- Home ROM: 241 bytes free; EXROM: 177 bytes free; dynamic RAM pool: 15,180
+- Home ROM: 3 bytes free; EXROM: 75 bytes free; dynamic RAM pool: 15,308
   bytes. Transient `FILL` scratch and persistent sprite, label, UDG, editor,
   and detokenizer storage now use safe upper HOME RAM. The command-phase token,
   status, EDIT-copy, and multi-statement buffers share
@@ -48,6 +51,19 @@ subsystem correctness, and regression coverage rather than cartridge support.
   commit: named LOAD now retains its filename in the edit buffer, clear of its
   status callback, and static-checker string functions again have a dedicated
   128-byte pool so they cannot overwrite an uncommitted edit line.
+- The dedicated string-function pool now lives at `$F328-$F3A7` in
+  always-visible chunk 7, increasing dynamic BASIC RAM by another 128 bytes
+  while leaving 2,897 bytes below the machine stack after DEF FN state. A canary-based valid
+  nested-expression run observed a 126-byte peak; this is a measurement, not a
+  claimed global maximum.
+- Added minimal classic numeric `DEF FN`: one single-letter function, one
+  numeric parameter, and an expression result (`DEF FN S(X)=X*X`, called as
+  `FN S(value)`). Definitions take effect when execution reaches them;
+  recursion is deliberately rejected. The measured cost is 238 Home bytes and
+  102 EXROM bytes.
+- Added a deterministic named-LOAD regression which stubs only the pulse
+  receiver while exercising the real command parser, progress redraws,
+  filename comparison, `3 -> 7 -> 4` state sequence, and installed bytes.
 - A byte-exact branch audit replaced 70 eligible absolute jumps with relative
   jumps and inverted five two-branch tails. Unsupported Z80 conditions,
   historically tight branches, low-margin targets, and editor code were left

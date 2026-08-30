@@ -21,6 +21,7 @@ cd "$(dirname "$0")/.."
 
 EXPECTED_CYAN="err1 snd3 ulaplus_bad_mode ulaplus_bad_index ulaplus_bad_value"
 EXPECTED_RED="mem2"
+EXPECTED_BLACK="extension_unloaded extension_new_clear"
 
 is_expected_cyan() {
     local name="$1"
@@ -38,6 +39,16 @@ is_expected_red() {
     return 1
 }
 
+is_expected_black() {
+    local name="$1"
+    for n in $EXPECTED_BLACK; do
+        [ "$n" = "$name" ] && return 0
+    done
+    return 1
+}
+
+make cplot-extension >/tmp/build_cplot_extension.log 2>&1 || exit 1
+
 pass=0
 fail=0
 failed_names=()
@@ -46,7 +57,20 @@ for f in tests/*.txt; do
     name=$(basename "$f" .txt)
     pkill -9 -x fuse 2>/dev/null
     sleep 0.5
-    bash tools/run_suite_test.sh "$name" > "/tmp/run_${name}.log" 2>&1
+    if [ "$name" = "gfx6" ]; then
+        RAM_EXTENSION_BIN=build/extensions/cplot_test.bin \
+            bash tools/run_suite_test.sh "$name" > "/tmp/run_${name}.log" 2>&1
+    elif [ "$name" = "extension_register" ]; then
+        RAM_EXTENSION_BIN=build/extensions/cplot_test.bin \
+        RAM_EXTENSION_SEED_CACHE=1 \
+            bash tools/run_suite_test.sh "$name" > "/tmp/run_${name}.log" 2>&1
+    elif [ "$name" = "extension_new_clear" ]; then
+        RAM_EXTENSION_BIN=build/extensions/cplot_clear_test.bin \
+        RAM_EXTENSION_CLEAR=1 \
+            bash tools/run_suite_test.sh "$name" > "/tmp/run_${name}.log" 2>&1
+    else
+        bash tools/run_suite_test.sh "$name" > "/tmp/run_${name}.log" 2>&1
+    fi
     rc=$?
     color="?"
     if [ -f "/tmp/suite_${name}.png" ]; then
@@ -64,6 +88,8 @@ print(img.getpixel((10,10)))
         verdict="PASS (expected cyan)"
     elif [ "$color" = "(180, 0, 0)" ] && is_expected_red "$name"; then
         verdict="PASS (expected pre-run rejection)"
+    elif [ "$color" = "(0, 0, 0)" ] && is_expected_black "$name"; then
+        verdict="PASS (expected unloaded rejection)"
     fi
 
     echo "${name}: rc=${rc} border=${color} -> ${verdict}"

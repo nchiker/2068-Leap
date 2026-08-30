@@ -1,4 +1,4 @@
-.PHONY: all build check smoke-build test budget audit-basic manual clean
+.PHONY: all build check smoke-build test budget audit-basic manual clean cplot-extension
 
 all: check build
 
@@ -30,11 +30,20 @@ test: all
 	tools/run_smoke_rom_tests.sh
 	tools/run_editor_auto_test.sh
 	tools/run_editor_auto_test.sh insert
+	tools/run_storage_named_load_test.sh
 	tools/run_all_tests.sh
 
 budget: build
 	python3 tools/report_budget.py build/test_basic.lst build/exrom.lst build/test_basic.sym
 	python3 tools/report_rom_map.py build/test_basic.lst build/exrom.lst
+
+cplot-extension: build
+	mkdir -p build/extensions
+	sjasmplus rom/extensions/cplot.asm
+	sjasmplus rom/test_extension_inject.asm --sym=rom/test_extension_inject.sym
+	sjasmplus rom/extensions/cplot_test.asm
+	sjasmplus rom/test_extension_clear_inject.asm --sym=rom/test_extension_clear_inject.sym
+	sjasmplus rom/extensions/cplot_clear_test.asm
 
 audit-basic: build
 	python3 tools/report_basic_routines.py basic/basic.asm build/test_basic.sym

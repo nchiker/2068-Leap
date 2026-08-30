@@ -75,7 +75,6 @@ KW_DIM:     DB "DIM", 0
 KW_LINE:    DB "LINE", 0
 KW_BLOCK:   DB "BLOCK", 0
 KW_CIRCLE:  DB "CIRCLE", 0
-KW_CPLOT:   DB "CPLOT", 0
 KW_FILL:    DB "FILL", 0
 KW_MODE:    DB "MODE", 0
 KW_ULAPLUS: DB "ULAPLUS", 0
@@ -110,6 +109,8 @@ KW_RETURN:  DB "RETURN", 0
 KW_CALL:    DB "CALL", 0          ; alias for GOSUB — see BASIC_STMT_
                                  ; GOSUB's own header for why CALL
                                  ; shares its exact statement handler
+KW_DEF:     DB "DEF", 0
+KW_FN:      DB "FN", 0
 
 ; ---- error messages (uppercase, null-terminated — read by
 ; BASIC_REPORT_ERROR on the Home side, never mutated) ----

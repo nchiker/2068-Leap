@@ -283,6 +283,14 @@ comes back either way). Deliberately NOT the scoped, parameter-taking
 variables, no parameter binding, no per-procedure label scoping; those
 remain just this design document's own aspiration, not built.
 
+### DEF FN — minimal numeric form implemented
+
+`DEF FN S(X)=X*X` defines one single-letter, one-parameter numeric function;
+`FN S(6)` invokes it in any numeric expression. The definition becomes active
+when execution reaches the `DEF` statement. This first bounded form has no
+string result, multiple parameters, or recursion. Its parameter is an internal
+temporary binding and does not overwrite a BASIC scalar of the same letter.
+
 ### PEEK / POKE / USR / FREE — implemented (2026-08-22)
 
 `PEEK(addr)` / `POKE addr,value` / `USR(addr)` are the classic-BASIC raw
@@ -535,7 +543,7 @@ gives `OVER` for `PLOT`/`DRAW`/`CIRCLE`, not just `PRINT`).
 | `FILL <x>,<y>` | Flood fill the connected region from that seed point — implemented, via `kernel/graphics`'s `GFX_FILL`. 4-connected, using an explicit bounded stack (2048 entries) rather than recursion; a large enough enclosed region can exhaust it, at which point the fill simply stops expanding further rather than crashing — see the programmer's reference for the real numbers behind that size |
 | `POINT(x,y)` | Function — `1` if that pixel is currently set, `0` if not; implemented, via `kernel/graphics`'s `GFX_READ_PIXEL`. QL-named deliberately (`GFX_READ_PIXEL` is the write-side's read-back counterpart, `PLOT` stays the imperative Sinclair-flavored write) |
 | `ATTR(row,col)` | Function — reads the normal 32×24 screen's attribute byte through the shared bounded attribute-address primitive; returns `0` for an out-of-range row or column |
-| `CPLOT <cx>,<cy>` | Coarse 2x2-per-cell block-graphics plot — implemented, via `kernel/graphics`'s `GFX_CPLOT`. `cx` is 0-63, `cy` is 0-47 (both clamped — unlike `PLOT`'s `x`, neither is a full byte's natural range). Mode-aware in Normal and High Resolution Graphics mode (colors one attribute per touched scanline in the latter) |
+| `CPLOT <cx>,<cy>` | Optional loadable extension. The 121-byte reference module registers the natural syntax and draws a coarse 2x2-per-cell block; `cx` is clamped to 0-63 and `cy` to 0-47. Without the module, CPLOT is a syntax error |
 | `MODE <n>` | Switch video mode — implemented, via `kernel/graphics`'s `GFX_SET_MODE`. `n` is `0` (Normal) or `1` (High Resolution Graphics — same 256x192 bitmap, finer 8x1 attribute resolution); anything else is a runtime `INVALID MODE` error, not silently clamped |
 | `ULAPLUS <n>` | Enable (`1`) or disable (`0`) the ULAplus palette extension. Other values produce `INVALID ARGUMENT`. |
 | `PALETTE <index>,<value>` | Write ULAplus palette register 0-63 with a value from 0-255 in `GGGRRRBB` format. Out-of-range values produce `INVALID ARGUMENT`. |

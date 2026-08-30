@@ -111,6 +111,8 @@ MEM_INIT:
                                        ; evaluation should always leave
                                        ; this at 0 anyway (see sysvars.
                                        ; inc's own STR_FUNC_POOL header)
+    ld   (EXTENSION_MAGIC), a           ; unregister RAM module before NEW/
+    ld   (EXTENSION_MAGIC+1), a         ; cold boot can leave a stale target
     ld   hl, SPRITE_SLOT_DEFINED
     ld   bc, SPRITE_SLOT_MAX * 2        ; DEFINED and SHOWN are contiguous
     call MEM_FILL_ZERO

@@ -4,7 +4,7 @@ set -e
 cd "$(dirname "$0")/.."
 
 sjasmplus -DEDITOR_TEST_EXROM rom/exrom_build.asm
-sjasmplus --sym=build/test_editor_auto.sym rom/test_editor_auto.asm
+sjasmplus -DEDITOR_AUTO_OMIT_DEF_FN --sym=build/test_editor_auto.sym rom/test_editor_auto.asm
 case_name="${1:-wrap}"
 python3 tools/fuse_editor_inject.py build/test_editor_auto.sym /tmp/editor_auto.dbg "$case_name"
 
