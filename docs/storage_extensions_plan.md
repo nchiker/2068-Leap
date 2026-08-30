@@ -139,7 +139,7 @@ bytes; those budgets are separate and cannot be freely combined.
 | Minimal numeric, one-argument `DEF FN` | **238 Home, 102 EXROM measured** | Implemented spike; fits but leaves only 3 Home/75 EXROM, so consolidation is required before another command |
 | `INSTR(haystack$,needle$)` | Implemented; current build includes its two-string parser and search semantics | Complete and covered by `tests/instr.txt` |
 | `FILL$(pattern$,length)` | Exact individual cost not yet isolated; shares the prior 113-Home-byte total | Size after `INSTR`; lower priority and cannot fit the current 3-byte Home remainder |
-| Prompted `INPUT "text"; A` / `A$` | Not yet measured; expected to be a relatively small EXROM-heavy extension | Strong candidate after `INSTR`; builds on the existing EXROM input engine and adds no keyword |
+| Prompted `INPUT "text"; A` / `A$` | Measured 62 EXROM bytes for the smallest complete runtime+checker spike; current build has 35 free, so it overflows by 27 | Requires a further EXROM recovery pass or a carefully measured Home/EXROM split; builds on the existing input engine and adds no keyword |
 | Two-dimensional numeric arrays | Prior complete build was ~26 bytes over Home when Home-resident, or ~69 bytes over EXROM when moved there, under the then-current layout | Reassess after CPLOT/gateway; the measured 128-byte net Home recovery makes the shared-parser design plausible but tighter than first estimated |
 | Raw `CODE` SAVE/LOAD | ~180-300 Home, ~80-150 EXROM | Borderline alone; unlikely to coexist with `DEF FN` in current padding without relocation/savings |
 | `SCREEN$` shorthand after CODE | ~25-60 total | Likely fits once CODE exists |
