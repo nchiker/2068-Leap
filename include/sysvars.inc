@@ -2505,10 +2505,11 @@ DEF_FN_ACTIVE        EQU $F3AE
 EXTENSION_MAGIC       EQU $F3AF       ; 2 bytes; zero means no extension
 EXTENSION_NAME_PTR    EQU $F3B1       ; 2 bytes; null-terminated RAM keyword
 EXTENSION_EXEC_PTR    EQU $F3B3       ; 2 bytes; callback after two args parsed
+INSTR_POS             EQU $F3B5       ; current 1-based candidate position
 EXTENSION_REG_MAGIC   EQU $5845       ; "EX" little-endian
 EXTENSION_MODULE_BASE EQU $F400
 EXTENSION_MODULE_LIMIT EQU $F600
-    ASSERT EXTENSION_EXEC_PTR + 2 == $F3B5
+    ASSERT INSTR_POS + 1 == $F3B6
     ASSERT EXTENSION_MODULE_BASE >= EXTENSION_EXEC_PTR + 2
     ASSERT EXTENSION_MODULE_LIMIT <= $FF00
 STR_FUNC_POOL_NEXT:  DEFS 1           ; 1 byte — next free slot (0-4); reset
@@ -2587,6 +2588,7 @@ STRFUNC_ID_INKEY    EQU 8   ; numbering keeps the original gaps where
 STRFUNC_ID_VAL      EQU 9
 ARGC_STR1           EQU 100  ; sentinel FUNC_CALL_ARGC value: 1 string
                              ; argument (LEN, CODE, VAL)
+ARGC_STR2           EQU 102  ; two string arguments (INSTR)
 
 ; ---- keyword-highlighting bold spans (2026-08-23) ---- BASIC_DETECT_
 ; KEYWORD_PREFIX used to record just ONE (start=0, length) bold run —

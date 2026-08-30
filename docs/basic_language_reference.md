@@ -732,7 +732,7 @@ section for the complete design if this is ever worth reviving.
 
 ### String functions (2026-08-22)
 
-**Implemented** — 8 string-returning functions plus `LEN`/`CODE`/`VAL`
+**Implemented** — 8 string-returning functions plus `LEN`/`CODE`/`VAL`/`INSTR`
 (number-returning, string-argument), all usable anywhere a string or
 number expression is expected: assignment, `PRINT`, `IF` comparison,
 even nested inside each other (`UPPER$(LEFT$(A$,3))`,
@@ -749,15 +749,12 @@ even nested inside each other (`UPPER$(LEFT$(A$,3))`,
 | `LEN(s$)` | The length of `s$`, 0-31 |
 | `CODE(s$)` | The ASCII code of `s$`'s first character, 0 for an empty string |
 | `VAL(s$)` | Parses `s$` as a decimal integer, tolerant of a leading `-`; stops at the first non-digit rather than erroring; `0` for anything unparseable |
+| `INSTR(haystack$,needle$)` | 1-based position of the first match; `0` when absent; an empty needle returns `1` |
 
-**Not implemented**: `INSTR` and `FILL$` were both dropped
-(2026-08-22) to fit Home ROM's own 16K budget — see `docs/
-programmers_reference.md`'s `basic/` "String functions" section for
-the full reasoning and the real bugs found and fixed getting the rest
-of this feature working (a nested-string-function-call clobbering bug
-in the argument-parsing stack discipline, and two separate places
-where the advanced parse position wasn't correctly propagated back to
-the caller — both caught by live emulator testing, not static review).
+`INSTR` was restored on 2026-08-30 after DEF-FN parser consolidation made
+room in Home ROM. `FILL$` remains unimplemented. See `docs/
+programmers_reference.md`'s `basic/` "String functions" section for the
+earlier implementation history and parser bugs found by live emulator tests.
 
 **`INKEY$()` upgraded to a real string (2026-08-22)** — supersedes
 the plain-integer version described below. Called with empty parens,

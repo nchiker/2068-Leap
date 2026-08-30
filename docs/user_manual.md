@@ -736,7 +736,8 @@ that as the new deterministic seed — useful when you want the same
 | `CODE(s$)` | ASCII code of the first character, `0` for an empty string |
 | `VAL(s$)` | Parses a decimal integer from the start of `s$` (tolerates a leading `-`, stops at the first non-digit); `0` if nothing parseable |
 
-`INSTR` and `FILL$` are not implemented.
+`FILL$` is not implemented. `INSTR(haystack$,needle$)` returns the 1-based
+position of the first match, or 0 when absent; an empty needle returns 1.
 
 ### Other
 
@@ -952,7 +953,7 @@ Worth knowing before you go looking for something that isn't there:
   `INPUT` instead.
 - **`OVER 1` XOR-plots both text and graphics.** Printing or plotting the
   same shape twice at the same position restores the original bitmap.
-- **`COS`/`TAN`/`EXP`/`LN`/`LOG10`/`INSTR`/`FILL$` are not implemented.**
+- **`COS`/`TAN`/`EXP`/`LN`/`LOG10`/`FILL$` are not implemented.**
 - **`SAVE`/`LOAD` uses TS2068 tape framing but this ROM's native program
   payload.** A stock ROM cannot execute that non-Sinclair BASIC payload.
 - **No `MERGE`** — `LOAD` always replaces the current program outright.

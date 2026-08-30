@@ -569,6 +569,12 @@ EXROM_ENTRY_DIM:
     jp   BASIC_STMT_DIM_EXROM
 
     ORG $C0C0
+EXROM_ENTRY_DEF_FN:
+    call EXROM_VERIFY_KTAB_MAGIC
+    jp   BASIC_PARSE_DEF_FN_SHARED
+    ASSERT $ == $C0C6
+
+    ORG $C0C6
 
 ; ============================================================================
 ; EXROM_VERIFY_KTAB_MAGIC
@@ -1090,43 +1096,9 @@ BASIC_CHECK_STATEMENT_CONTENT:
     jp   .ok
 
 .check_def_fn:
-    call KTAB_BASIC_SKIP_SPACES
-    ld   de, KW_FN
-    call KTAB_BASIC_MATCH_KEYWORD_BOUNDARY
+    ld   b, 0                         ; checker: parse, then validate expression
+    call BASIC_PARSE_DEF_FN_SHARED
     jp   c, .syntax_fail
-    call KTAB_BASIC_SKIP_SPACES
-    call KTAB_BASIC_VALIDATE_VAR_LETTER
-    jp   c, .syntax_fail
-    ld   (DEF_FN_NAME), a
-    inc  hl
-    call KTAB_BASIC_SKIP_SPACES
-    ld   a, (hl)
-    cp   '('
-    jp   nz, .syntax_fail
-    inc  hl
-    call KTAB_BASIC_SKIP_SPACES
-    call KTAB_BASIC_VALIDATE_VAR_LETTER
-    jp   c, .syntax_fail
-    ld   (DEF_FN_PARAM), a
-    inc  hl
-    call KTAB_BASIC_SKIP_SPACES
-    ld   a, (hl)
-    cp   ')'
-    jp   nz, .syntax_fail
-    inc  hl
-    call KTAB_BASIC_SKIP_SPACES
-    ld   a, (hl)
-    cp   '='
-    jp   nz, .syntax_fail
-    inc  hl
-    call KTAB_BASIC_SKIP_SPACES
-    ld   (DEF_FN_EXPR_PTR), hl
-    xor  a
-    ld   (DEF_FN_ACTIVE), a
-    call KTAB_BASIC_EVAL_EXPR
-    jp   c, .syntax_fail
-    call KTAB_BASIC_EXPECT_STATEMENT_END
-    ret  c
     jp   .ok
 
 .check_sprite:
@@ -1412,6 +1384,63 @@ BASIC_CHECK_STATEMENT_CONTENT:
 
 .ok:
     or   a
+    ret
+
+; Shared DEF FN header parser for the runtime entry and static checker.
+; In: HL after DEF keyword; B=0 checker (also evaluate expression), B=1 runtime
+; (store definition only). Out: carry set on malformed syntax.
+BASIC_PARSE_DEF_FN_SHARED:
+    push bc
+    call KTAB_BASIC_SKIP_SPACES
+    ld   de, KW_FN
+    call KTAB_BASIC_MATCH_KEYWORD_BOUNDARY
+    jr   c, .bad
+    call KTAB_BASIC_SKIP_SPACES
+    call KTAB_BASIC_VALIDATE_VAR_LETTER
+    jr   c, .bad
+    ld   (DEF_FN_NAME), a
+    inc  hl
+    call KTAB_BASIC_SKIP_SPACES
+    ld   a, (hl)
+    cp   '('
+    jr   nz, .bad
+    inc  hl
+    call KTAB_BASIC_SKIP_SPACES
+    call KTAB_BASIC_VALIDATE_VAR_LETTER
+    jr   c, .bad
+    ld   (DEF_FN_PARAM), a
+    inc  hl
+    call KTAB_BASIC_SKIP_SPACES
+    ld   a, (hl)
+    cp   ')'
+    jr   nz, .bad
+    inc  hl
+    call KTAB_BASIC_SKIP_SPACES
+    ld   a, (hl)
+    cp   '='
+    jr   nz, .bad
+    inc  hl
+    call KTAB_BASIC_SKIP_SPACES
+    push hl                            ; expression is parsed from transient
+    ld   de, MULTI_STMT_BUF            ; MULTI_STMT_BUF; store the matching
+    or   a                              ; persistent program-text address
+    sbc  hl, de
+    ld   de, (MULTI_SEG_START)
+    add  hl, de
+    ld   (DEF_FN_EXPR_PTR), hl
+    pop  hl                             ; checker still evaluates transient text
+    xor  a
+    ld   (DEF_FN_ACTIVE), a
+    pop  bc
+    ld   a, b
+    or   a
+    ret  nz
+    call KTAB_BASIC_EVAL_EXPR
+    ret  c
+    jp   KTAB_BASIC_EXPECT_STATEMENT_END
+.bad:
+    pop  bc
+    scf
     ret
 
 ; Keyword pointer + grammar-handler pointer. The order matches execution

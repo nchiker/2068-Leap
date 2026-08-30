@@ -4,8 +4,8 @@ Status: complete pass, reconciled for the private preview on 2026-08-27.
 
 ## Capacity and governing constraint
 
-The current V2 candidate uses `$3F7D/$4000` in Home ROM (131 bytes free)
-and ends at `$DFC3` in EXROM (61 bytes free). The shared
+The current V2 candidate uses `$3FEB/$4000` in Home ROM (21 bytes free)
+and ends at `$DFDD` in EXROM (35 bytes free). The shared
 program/array/scalar RAM pool is 15,310 bytes. These figures come from
 `make budget`; historical measurements elsewhere in the engineering journal
 are intentionally retained as snapshots of their respective changes.
@@ -26,7 +26,7 @@ and spending ROM and a key binding on it ranks below input and array support.
 | Sound | `SOUND` is already the minimal useful AY primitive | Keep. A high-level `PLAY` statement does not currently exist; consider a compact sequencer after arrays |
 | ULAplus | Small, well-scoped, disabled at the shared editor-return boundary | Keep unchanged and showcase it better |
 | Sprites | Distinctive and capable, but among the largest EXROM modules | Keep behavior; size-audit repeated validation, error tails, and coordinate parsing |
-| String functions | Useful and dispatched through one bank entry | Keep. `INSTR` is the best future addition and more broadly useful than editor FIND |
+| String functions | Useful and dispatched through one bank entry | Keep. `INSTR` is now implemented and is more broadly useful than editor FIND |
 | Editor | Canonical implementation and redraw hooks are structurally sound | Keep navigation/redraw design. FIND stub removed; defer editor-only expansion |
 | Arrays | Numeric and fixed-length string 1D arrays are implemented; `DIM`/`DIMN` are banked; the prior 2D version exceeded ROM | Keep 1D stable; revisit 2D only after a larger ROM-space win |
 | Highlighting | Appropriate in EXROM after settled-line caching | Keep; it no longer runs for every cursor-cell move |
@@ -36,7 +36,7 @@ and spending ROM and a key binding on it ranks below input and array support.
 
 Highest-value candidates:
 
-1. `INSTR(haystack$, needle$)` using the existing string-expression pool.
+1. Prompted `INPUT "text"; A` / `A$`, building on the existing EXROM input engine.
 2. `ATTR(row,col)` over the existing attribute-address machinery, useful for
    games and characteristic of Spectrum/Timex graphics.
 3. A relative draw command built over the existing line primitive.

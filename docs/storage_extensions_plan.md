@@ -3,8 +3,8 @@
 ## Current constraints
 
 The pre-extension DEF-FN build had 3 Home-ROM bytes and 75 EXROM bytes free.
-Removing resident CPLOT and adding the single-slot proof gateway leaves 131
-Home-ROM bytes and 61 EXROM bytes. The dynamic BASIC pool is `$8432-$BFFF`
+After the CPLOT gateway, DEF-FN parser consolidation, and `INSTR`, the build
+leaves 21 Home-ROM bytes and 35 EXROM bytes. The dynamic BASIC pool is `$8432-$BFFF`
 (15,310 bytes). Storage already writes the
 stock 17-byte header shape: type, ten-character name, length, autostart, and
 program-length fields. Extending that header is unnecessary for the first set
@@ -137,7 +137,7 @@ bytes; those budgets are separate and cannot be freely combined.
 |---|---:|---|
 | Program autorun (`SAVE ... LINE`) | ~70-120 Home, ~20-50 EXROM | Likely fits alone; best first storage feature |
 | Minimal numeric, one-argument `DEF FN` | **238 Home, 102 EXROM measured** | Implemented spike; fits but leaves only 3 Home/75 EXROM, so consolidation is required before another command |
-| `INSTR(haystack$,needle$)` | Exact individual cost not yet isolated; part of a prior 113-Home-byte `INSTR` + `FILL$` removal | Best next language-function spike after DEF-FN consolidation; RAM pool already supports its two live strings |
+| `INSTR(haystack$,needle$)` | Implemented; current build includes its two-string parser and search semantics | Complete and covered by `tests/instr.txt` |
 | `FILL$(pattern$,length)` | Exact individual cost not yet isolated; shares the prior 113-Home-byte total | Size after `INSTR`; lower priority and cannot fit the current 3-byte Home remainder |
 | Prompted `INPUT "text"; A` / `A$` | Not yet measured; expected to be a relatively small EXROM-heavy extension | Strong candidate after `INSTR`; builds on the existing EXROM input engine and adds no keyword |
 | Two-dimensional numeric arrays | Prior complete build was ~26 bytes over Home when Home-resident, or ~69 bytes over EXROM when moved there, under the then-current layout | Reassess after CPLOT/gateway; the measured 128-byte net Home recovery makes the shared-parser design plausible but tighter than first estimated |

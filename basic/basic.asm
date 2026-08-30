@@ -1428,6 +1428,58 @@ BASIC_DO_EDIT:
     scf
     ret
 
+; INSTR(haystack$,needle$): 1-based first match, 0 when absent, and 1 for an
+; empty needle. Both inputs are length-prefixed STR_FUNC_POOL buffers.
+BASIC_INSTR_SEARCH:
+    ld   a, (de)
+    ld   c, a                            ; needle length
+    or   a
+    jr   z, .empty_needle
+    ld   a, (hl)                         ; haystack length
+    cp   c
+    jr   c, .not_found
+    sub  c
+    inc  a
+    ld   b, a                            ; candidate start count
+    inc  hl
+    inc  de
+    ld   a, 1
+    ld   (INSTR_POS), a
+.candidate:
+    push bc
+    push hl
+    push de
+    ld   b, c
+.compare:
+    ld   a, (de)
+    cp   (hl)
+    jr   nz, .mismatch
+    inc  de
+    inc  hl
+    djnz .compare
+    pop  de
+    pop  hl
+    pop  bc
+    ld   a, (INSTR_POS)
+    ld   l, a
+    ld   h, 0
+    ret
+.mismatch:
+    pop  de
+    pop  hl
+    pop  bc
+    inc  hl
+    ld   a, (INSTR_POS)
+    inc  a
+    ld   (INSTR_POS), a
+    djnz .candidate
+.not_found:
+    ld   hl, 0
+    ret
+.empty_needle:
+    ld   hl, 1
+    ret
+
 ; ============================================================================
 ; BASIC_DO_DELETE
 ; Parses "<start-index>,<end-index>" — 1-based, inclusive, matching how
@@ -2805,6 +2857,8 @@ BASIC_EVAL_PRIMARY:
     ; see FUNC_ID_INSTR's own comment for why.)
     cp   ARGC_STR1
     jr   z, .str_arg_1
+    cp   ARGC_STR2
+    jp   z, .str_arg_2
 
     ; ARGC_ARRAYNAME (101) — DIMN(name), 2026-08-22. Same reasoning as
     ; ARGC_STR1: DIMN's own argument is a bare array-name LETTER, not
@@ -3034,7 +3088,7 @@ BASIC_EVAL_PRIMARY:
     pop  hl                              ; HL = buffer address
     pop  af                              ; discard argc snapshot
     pop  bc                              ; BC = handler snapshot
-    jr   .dispatch
+    jp   .dispatch
 
 .str_arg_val:
     ld   a, STRFUNC_ID_VAL
@@ -3091,6 +3145,71 @@ BASIC_EVAL_PRIMARY:
     pop  bc                              ; discard snapshots
     scf
     ret
+
+; ---- INSTR(haystack$,needle$), two simultaneous pool strings ----
+.str_arg_2:
+    ld   hl, (EXPR_PARSE_PTR)
+    call BASIC_PARSE_STR_ARG_TO_POOL
+    jr   c, .str_arg_2_first_fail
+    push hl                              ; first pool buffer
+    ld   hl, (EXPR_PARSE_PTR)
+    call BASIC_SKIP_SPACES
+    ld   a, (hl)
+    cp   ','
+    jr   nz, .str_arg_2_first_grammar_fail
+    inc  hl
+    call BASIC_SKIP_SPACES
+    ld   (EXPR_PARSE_PTR), hl            ; helper reloads its source from here
+    call BASIC_PARSE_STR_ARG_TO_POOL
+    jr   c, .str_arg_2_second_fail
+    push hl                              ; second pool buffer
+    ld   hl, (EXPR_PARSE_PTR)
+    call BASIC_SKIP_SPACES
+    ld   a, (hl)
+    cp   ')'
+    jr   nz, .str_arg_2_close_fail
+    inc  hl
+    ld   (EXPR_PARSE_PTR), hl
+    pop  de                              ; DE = needle buffer
+    pop  hl                              ; HL = haystack buffer
+    pop  af                              ; discard argc snapshot
+    pop  bc                              ; handler snapshot
+    jr   .dispatch
+
+.str_arg_2_first_fail:
+    pop  af
+    pop  bc
+    scf
+    ret
+.str_arg_2_first_grammar_fail:
+    pop  hl
+    call STR_FUNC_POOL_RELEASE
+    pop  af
+    pop  bc
+    scf
+    ret
+.str_arg_2_second_fail:
+    pop  hl                              ; first buffer; second released itself
+    call STR_FUNC_POOL_RELEASE
+    pop  af
+    pop  bc
+    scf
+    ret
+.str_arg_2_close_fail:
+    pop  hl                              ; second buffer
+    call STR_FUNC_POOL_RELEASE
+    pop  hl                              ; first buffer
+    call STR_FUNC_POOL_RELEASE
+    pop  af
+    pop  bc
+    scf
+    ret
+
+.str_arg_instr:
+    call BASIC_INSTR_SEARCH
+    call STR_FUNC_POOL_RELEASE
+    call STR_FUNC_POOL_RELEASE
+    jp   .function_done
 
 .call_attr:
     ; ATTR(row,col) reads the normal 32x24 attribute grid. Invalid
@@ -9918,44 +10037,11 @@ BASIC_EXTENSION_REGISTER:
 ; runtime execution records its in-program expression pointer for later FN use.
 BASIC_STMT_DEF_FN:
     IFNDEF EDITOR_AUTO_OMIT_DEF_FN
-    call BASIC_SKIP_SPACES
-    ld   de, KW_FN
-    call BASIC_MATCH_KEYWORD_BOUNDARY
-    jr   c, .bad
-    call BASIC_SKIP_SPACES
-    ld   a, (hl)
-    call BASIC_VALIDATE_VAR_LETTER
-    jr   c, .bad
-    ld   (DEF_FN_NAME), a
-    inc  hl
-    call BASIC_SKIP_SPACES
-    ld   a, (hl)
-    cp   '('
-    jr   nz, .bad
-    inc  hl
-    call BASIC_SKIP_SPACES
-    ld   a, (hl)
-    call BASIC_VALIDATE_VAR_LETTER
-    jr   c, .bad
-    ld   (DEF_FN_PARAM), a
-    inc  hl
-    call BASIC_SKIP_SPACES
-    ld   a, (hl)
-    cp   ')'
-    jr   nz, .bad
-    inc  hl
-    call BASIC_SKIP_SPACES
-    ld   a, (hl)
-    cp   '='
-    jr   nz, .bad
-    inc  hl
-    call BASIC_SKIP_SPACES
-    ld   (DEF_FN_EXPR_PTR), hl
-    xor  a
-    ld   (DEF_FN_ACTIVE), a
+    ld   b, 1                         ; runtime: parse/store, do not evaluate
+    call BASIC_CALL_EXROM_INLINE
+    DW   $C0C0
+    jp   c, BASIC_RAISE_SYNTAX_ERROR
     ret
-.bad:
-    jp   BASIC_RAISE_SYNTAX_ERROR
     ENDIF
 
 ; Keyword pointer + handler pointer. END IF remains the dedicated pre-check
@@ -11189,7 +11275,8 @@ FUNCTION_TABLE:
     DB ARGC_STR1
     DW KW_FN_VAL, BASIC_EVAL_PRIMARY.str_arg_val
     DB ARGC_STR1
-    ; INSTR dropped (2026-08-22) — see FUNC_ID_INSTR's own comment below
+    DW KW_FN_INSTR, BASIC_EVAL_PRIMARY.str_arg_instr
+    DB ARGC_STR2
     DW KW_FN_DIMN, BASIC_EVAL_PRIMARY.array_name_dim_arg
     DB ARGC_ARRAYNAME
     DW KW_FN_HIT, BASIC_EVAL_PRIMARY.call_hit
@@ -11225,8 +11312,7 @@ KW_FN_STICK: DB "STICK", 0
 KW_FN_LEN: DB "LEN", 0
 KW_FN_CODE: DB "CODE", 0
 KW_FN_VAL: DB "VAL", 0
-; KW_FN_INSTR removed (2026-08-22) — see FUNC_ID_INSTR's own comment
-; above
+KW_FN_INSTR: DB "INSTR", 0
 KW_FN_DIMN: DB "DIMN", 0
 KW_FN_HIT: DB "HIT", 0
 
