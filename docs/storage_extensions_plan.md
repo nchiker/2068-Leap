@@ -132,6 +132,9 @@ window, and store ABI version 1 in the header autostart field. LOAD validates
 type, size, checksum, and ABI version before calling the installer at `$F400`;
 any failure leaves the registry unpublished. Unlike program `LOAD ""`, an
 extension LOAD requires an explicit filename; `LOAD "" EXT` is rejected.
+The complete module contract, service ABI, grammar descriptors, lifecycle,
+test requirements, and feature-selection guidance are documented in
+[`loadable_basic_extensions.md`](loadable_basic_extensions.md).
 
 The registry carries a non-executable grammar descriptor. Grammar 0 is
 `expr,expr`; grammar 1 reuses LINE's `expr,expr TO expr,expr` parser and exposes
@@ -147,6 +150,10 @@ decoder from a generated Direct Recording TZX.
 - Completed: installed use, reversed corners, unloaded rejection, `NEW`
   clearing, deterministic extension SAVE/LOAD round-trip infrastructure, and
   live pulse-level BLOCK LOAD are covered.
+- Planned: future optional statement keywords are external-first. The ranked
+  queue (`FRAME`, `INVERT`, `AYREG`, `ELLIPSE`, `OUT`, `UDG`, then `HELP`) and
+  completion requirements are maintained in
+  [`loadable_basic_extensions.md`](loadable_basic_extensions.md#maintained-external-keyword-roadmap).
 
 ## Preliminary fit review
 

@@ -79,6 +79,9 @@ examples/   sample BASIC/assembly programs once there's something to run
   rebuild it with `make manual`.
 - `docs/technical_overview.md` is the shareable architectural and feature
   overview for people interested in how the redesigned ROM differs.
+- `docs/loadable_basic_extensions.md` is the implementation contract for RAM
+  BASIC statement modules: memory layout, ABI, grammars, tape format, tests,
+  and guidance for deciding which features belong outside the base ROM.
 - `demos/showcase.txt` demonstrates structured flow, High Resolution Graphics,
   ULAplus, arrays, sprites and collision, AY sound, strings, and text XOR. Run
   it interactively with `tools/run_demo.sh showcase`; its timed completion is
