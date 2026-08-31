@@ -12,10 +12,11 @@ STORAGE_TEST_SEND_BLOCK:
     jr   z, .header
     cp   STORAGE_TYPE_DATA
     jr   nz, .fail
+    push de                              ; caller's real data length
     push ix
     pop  hl
+    pop  bc
     ld   de, STORAGE_TEST_CAPTURE_DATA
-    ld   bc, EXTENSION_MODULE_LIMIT - EXTENSION_MODULE_BASE
     ldir
     ld   a, 2
     ld   (STORAGE_TEST_CAPTURE_FLAGS), a
@@ -46,7 +47,7 @@ STORAGE_TEST_RECEIVE_BLOCK:
     pop  de
     IFDEF STORAGE_TEST_ROUNDTRIP
     ld   hl, STORAGE_TEST_CAPTURE_DATA
-    ld   bc, EXTENSION_MODULE_LIMIT - EXTENSION_MODULE_BASE
+    ld   bc, (STORAGE_TEST_CAPTURE_HEADER + STORAGE_HEADER_LENGTH_OFF)
     ELSE
     IFDEF STORAGE_TEST_EXTENSION
     ld   hl, STORAGE_TEST_MODULE

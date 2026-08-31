@@ -52,10 +52,10 @@
 
 ; ---- RAM scratch buffers for this test file — see header note on why
 ; these must be RAM addresses (EQU), never DS-reserved ROM space ----
-TEST_BUF        EQU $8000
+TEST_BUF        EQU $C000
 TEST_BUF_LEN    EQU 16
-SHIFT_UP_BUF    EQU $8010     ; well clear of TEST_BUF's 16 bytes
-SHIFT_DOWN_BUF  EQU $8030     ; well clear of SHIFT_UP_BUF's shifted range
+SHIFT_UP_BUF    EQU $C010     ; transient test RAM; clear of live sysvars
+SHIFT_DOWN_BUF  EQU $C030     ; and clear of SHIFT_UP_BUF's shifted range
 
     ORG $0000
 RST_00:

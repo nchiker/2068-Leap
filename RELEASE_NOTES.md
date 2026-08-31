@@ -29,6 +29,13 @@ subsystem correctness, and regression coverage rather than cartridge support.
 - Replaced resident `CPLOT` with the 132-byte reference RAM BASIC extension.
   Its single-slot gateway validates the existing two-expression grammar in ROM,
   invalidates cached editor errors on registration, and unregisters on `NEW`.
+- Added `SAVE "name" LINE n`; the stock autostart header field records a
+  one-based statement index and a successful LOAD begins there. Invalid saved
+  indices leave the program loaded without running it.
+- Added literal prompted input: `INPUT "Age: ";A` and
+  `INPUT "Name: ";A$`, retaining the existing numeric and string bounds.
+- Retired the resident HELP screen to fund the higher-priority storage and
+  input work. The editor navigation reference remains in the user manual.
 
 ## Validation baseline
 
@@ -47,7 +54,7 @@ subsystem correctness, and regression coverage rather than cartridge support.
   two-statement insertion sequence and inspects physical display RAM.
 - Calculator dispatcher, sprite graphics, sprite state, display-order, and
   invalidation simulator checks pass through `make check`.
-- Home ROM: 4 bytes free; EXROM: 1 byte free; dynamic RAM pool: 15,321
+- Home ROM: 29 bytes free; EXROM: 2 bytes free; dynamic RAM pool: 15,321
   bytes. Transient `FILL` scratch and persistent sprite, label, UDG, editor,
   and detokenizer storage now use safe upper HOME RAM. The command-phase token,
   status, EDIT-copy, and multi-statement buffers share

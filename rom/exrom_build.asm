@@ -65,10 +65,6 @@
                                          ; and everything they call —
                                          ; the two entry stubs above
                                          ; already point here
-    INCLUDE "rom/exrom_help.asm"         ; BASIC_SHOW_HELP and its
-                                         ; topic tables/text — the
-                                         ; $C01E entry stub above
-                                         ; already points here
     INCLUDE "rom/exrom_calc.asm"         ; CALC_EXROM_ENTRY, the
                                          ; CALCULATE dispatcher, and
                                          ; CALC_TABLE — the $C024 entry
@@ -91,13 +87,13 @@
                                          ; whole — the $C060-$C089
                                          ; entry stubs above already
                                          ; point here
-    INCLUDE "rom/exrom_arrays.asm"        ; DIMN — the $C08A entry
                                          ; stub above already points
                                          ; here
     INCLUDE "rom/exrom_input.asm"         ; numeric/string INPUT — the
                                          ; $C0B4 entry stub points here
     INCLUDE "rom/exrom_dim.asm"           ; DIM allocator — the $C0BA
                                          ; entry stub points here
+    INCLUDE "rom/exrom_arrays.asm"        ; DIMN — the $C08A entry
     INCLUDE "rom/exrom_highlight.asm"     ; multi-keyword bold-
                                          ; highlighting scan — the
                                          ; $C090 entry stub above

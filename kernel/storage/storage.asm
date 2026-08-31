@@ -638,9 +638,9 @@ STORAGE_SAVE:
 .len_set:
     ld   hl, (STORAGE_SEND_LEN)
     ld   (STORAGE_HEADER_BUF + STORAGE_HEADER_LENGTH_OFF), hl
-    ld   de, STORAGE_NO_AUTOSTART
     ld   a, (STORAGE_REQUEST_TYPE)
     cp   STORAGE_EXTENSION_TYPE
+    ld   de, (STORAGE_HEADER_BUF + STORAGE_HEADER_AUTOSTART_OFF)
     jr   nz, .autostart_ready
     ld   de, EXT_SERVICE_ABI_VERSION
 .autostart_ready:

@@ -4,8 +4,8 @@ Status: complete pass, reconciled for the private preview on 2026-08-27.
 
 ## Capacity and governing constraint
 
-The current V2 candidate uses `$3FFC/$4000` in Home ROM (4 bytes free)
-and ends at `$DFFF` in EXROM (1 byte free). The shared
+The current V2 candidate uses `$3FE3/$4000` in Home ROM (29 bytes free)
+and ends at `$DFFE` in EXROM (2 bytes free). The shared
 program/array/scalar RAM pool is 15,321 bytes. These figures come from
 `make budget`; historical measurements elsewhere in the engineering journal
 are intentionally retained as snapshots of their respective changes.
@@ -30,7 +30,7 @@ and spending ROM and a key binding on it ranks below input and array support.
 | Editor | Canonical implementation and redraw hooks are structurally sound | Keep navigation/redraw design. FIND stub removed; defer editor-only expansion |
 | Arrays | Numeric and fixed-length string 1D arrays are implemented; `DIM`/`DIMN` are banked; the prior 2D version exceeded ROM | Keep 1D stable; revisit 2D only after a larger ROM-space win |
 | Highlighting | Appropriate in EXROM after settled-line caching | Keep; it no longer runs for every cursor-cell move |
-| INPUT | Was an unchecked Home-resident numeric-only loop | Moved to EXROM; now accepts numeric or 31-character string scalars and bounds numeric input |
+| INPUT | EXROM-resident bounded numeric/string input | Literal prompted form (`INPUT "text";A` / `A$`) is implemented; retain the bounds |
 
 ## Existing primitives worth exposing in BASIC
 

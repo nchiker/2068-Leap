@@ -472,44 +472,6 @@ BASIC_COMMAND_LOOP:
 
 .not_new:
     ld   hl, EDIT_LINE_BUF
-    ld   de, KW_HELP
-    call BASIC_MATCH_KEYWORD
-    jr   c, .not_help                  ; didn't even start with "HELP"
-
-    ld   a, (hl)
-    or   a
-    jr   z, .is_help                    ; "HELP" alone -> HL already at
-                                        ; the null terminator, an empty
-                                        ; topic name (lists topics)
-    cp   " "
-    jr   nz, .not_help                    ; e.g. "HELPME" — not HELP
-                                          ; alone, falls through to be
-                                          ; tokenized as a normal
-                                          ; statement, same as RUN above
-    inc  hl                                ; skip the one separating
-                                           ; space between HELP and its
-                                           ; argument
-.skip_help_spaces:
-    ld   a, (hl)
-    cp   " "
-    jr   nz, .is_help                       ; HL now at the first non-
-                                            ; space character of the
-                                            ; topic name, or at the null
-                                            ; terminator if it was all
-                                            ; spaces after "HELP"
-    inc  hl
-    jr   .skip_help_spaces
-
-.is_help:
-    call BASIC_SHOW_HELP_EXROM               ; HL = topic name text,
-                                             ; possibly empty — HELP
-                                             ; now lives in EXROM, see
-                                             ; that wrapper's own
-                                             ; comment
-    jp   .loop
-
-.not_help:
-    ld   hl, EDIT_LINE_BUF
     ld   de, KW_LIST
     call BASIC_MATCH_KEYWORD
     jr   c, .not_list                  ; didn't even start with "LIST"
@@ -1809,6 +1771,7 @@ BASIC_DO_SAVE:
 .check_end:
     push de
     push bc
+    ld   b, 1                              ; SAVE permits LINE <index>
     call BASIC_PARSE_STORAGE_QUALIFIER
     pop  bc
     pop  de
@@ -1952,6 +1915,7 @@ BASIC_DO_LOAD:
 .check_end:
     push de
     push bc
+    ld   b, 0                              ; LOAD accepts no LINE qualifier
     call BASIC_PARSE_STORAGE_QUALIFIER
     pop  bc
     pop  de
@@ -2139,6 +2103,19 @@ BASIC_DO_LOAD:
     ; LATER draw — after the screen has actually settled into its final
     ; post-load state — is what actually reaches the user.
     call BASIC_DRAW_STATUS_LINE
+    ld   de, (STORAGE_HEADER_BUF + 13)
+    ld   hl, $8000
+    or   a
+    sbc  hl, de
+    jr   z, .program_load_done
+    dec  de                               ; tape syntax is 1-based
+    call BASIC_FIND_STATEMENT_AT_INDEX
+    jr   c, .program_load_done            ; program remains loaded
+    ld   (CUR_EXEC_STMT), hl
+    ld   a, $FF                           ; one-shot BASIC_RUN start marker
+    ld   (STORAGE_REQUEST_TYPE), a
+    call BASIC_RUN
+.program_load_done:
     or   a                               ; clear carry: success
     ret
 
@@ -2173,28 +2150,8 @@ BASIC_DO_LOAD:
 ; In: HL at spaces, end, or EXT. Out: A=header type, carry clear; carry set
 ; for any other trailing text.
 BASIC_PARSE_STORAGE_QUALIFIER:
-    call BASIC_SKIP_SPACES
-    ld   a, (hl)
-    or   a
-    jr   z, .program
-    ld   de, KW_EXT
-    call BASIC_MATCH_KEYWORD_BOUNDARY
-    ret  c
-    call BASIC_SKIP_SPACES
-    ld   a, (hl)
-    or   a
-    jr   z, .extension
-    cp   $0D
-    jr   z, .extension
-    scf
-    ret
-.extension:
-    ld   a, STORAGE_EXTENSION_TYPE
-    ret
-.program:
-    ld   a, STORAGE_PROGRAM_TYPE
-    or   a
-    ret
+    call BASIC_CALL_EXROM_INLINE
+    DW   $C01E
 
 
 ; ============================================================================
@@ -2940,11 +2897,7 @@ BASIC_EVAL_PRIMARY:
     cp   ARGC_STR2
     jp   z, .str_arg_2
 
-    ; ARGC_ARRAYNAME (101) — DIMN(name), 2026-08-22. Same reasoning as
-    ; ARGC_STR1: DIMN's own argument is a bare array-name LETTER, not
-    ; an expression to evaluate (a plain "A" would otherwise just read
-    ; scalar variable A's value) — intercept before the numeric argc
-    ; chain below gets a chance to misread 101 as an argument count.
+    ; DIMN takes a bare array name rather than a numeric expression.
     cp   ARGC_ARRAYNAME
     jr   z, .array_name_dim_arg
 
@@ -2953,11 +2906,7 @@ BASIC_EVAL_PRIMARY:
     ; just above left it untouched, and push bc doesn't touch A
     ; either), so this reuses that value rather than reloading it.
     or   a
-    jp   z, .zero_arg                        ; JP not JR — the new
-                                            ; ARGC_ARRAYNAME block above
-                                            ; pushed .zero_arg out of
-                                            ; JR's range (project's own
-                                            ; recurring JR-range lesson)
+    jp   z, .zero_arg
 
     call BASIC_EVAL_EXPR                     ; DE = first argument, HL
                                             ; = advanced position
@@ -3078,29 +3027,11 @@ BASIC_EVAL_PRIMARY:
     scf
     ret
 
-; ---- DIMN(name) — ARGC_ARRAYNAME, 2026-08-22 ----
-; Returns an array's declared size — lets a procedure loop over an
-; array without hardcoding it, e.g. "FOR i = 0 TO DIMN(A)-1". (Took a
-; second "dim" argument for a while, alongside now-archived multi-
-; dimensional array support — see docs/programmers_reference.md's
-; "Multi-dimensional arrays (archived)" section — back to a single
-; argument now that only one dimension exists to ask about.) The real
-; parse/lookup body lives in EXROM (BASIC_ARRAY_DIMN_EXROM below) —
-; moved there whole once multi-dimensional array support (still true
-; even after archiving it — see rom/exrom_arrays.asm's own header)
-; pushed Home ROM over budget; unlike every other ARGC branch here, it
-; does its OWN full parse from EXPR_PARSE_PTR rather than taking pre-
-; parsed input, since its argument (the array name) is never evaluated
-; as an expression the way a normal function argument would be — see
-; EXROM_ENTRY_DIMN's own header (rom/exrom_checker.asm) for why.
 .array_name_dim_arg:
-    pop  af                              ; discard argc snapshot
-    pop  bc                              ; discard handler snapshot — EXROM
-                                         ; body below does its own full
-                                         ; parse, nothing here needs it
+    pop  af
+    pop  bc
     call BASIC_ARRAY_DIMN_EXROM
-    ret  c                               ; error already recorded by
-                                         ; BASIC_ARRAY_DIMN_EXROM
+    ret  c
     jp   .function_done
 
 ; ---- zero-argument functions (FREE) ----
@@ -6202,12 +6133,6 @@ BASIC_STMT_DIM:
     ENDIF
 
 ; ============================================================================
-; BASIC_ARRAY_DIMN_EXROM
-; Thin Home-side wrapper for DIMN(name, dim) — see .array_name_dim_arg
-; (BASIC_EVAL_PRIMARY) for the call site and ARRAY_EXROM_DIMN (rom/
-; exrom_arrays.asm) for the real body.
-; In/Out/Destroys: identical to ARRAY_EXROM_DIMN's own contract.
-; ============================================================================
 BASIC_ARRAY_DIMN_EXROM:
     call BASIC_CALL_EXROM_INLINE
     DW   $C08A
@@ -9005,10 +8930,6 @@ BASIC_STRFUNC_EXROM:
     INCLUDE "basic/editor_integration.asm"
     UNDEFINE EMIT_BASIC_EDITOR_EXROM_WRAPPERS
 
-BASIC_SHOW_HELP_EXROM:
-    call BASIC_CALL_EXROM_INLINE
-    DW   $C01E
-
 ; ============================================================================
 ; BASIC_FORMAT_STORAGE_STATUS_EXROM
 ; Thin Home-side wrapper: BASIC_FORMAT_STORAGE_STATUS and its own
@@ -10612,7 +10533,15 @@ BASIC_RUN:
                                          ; see include/sysvars.inc's
                                          ; own ARRAYS_END header
 
+    ld   a, (STORAGE_REQUEST_TYPE)
+    inc  a
+    jr   z, .autorun_start
     call MEM_LINE_FIRST
+    jr   .loop
+.autorun_start:
+    xor  a
+    ld   (STORAGE_REQUEST_TYPE), a       ; consume the one-shot marker
+    ld   hl, (CUR_EXEC_STMT)
 .loop:
     ld   a, h
     or   l
@@ -11293,13 +11222,7 @@ FUNCTION_TABLE:
     DW KW_FN_HIT, BASIC_EVAL_PRIMARY.call_hit
     DB 2
     DW   0
-ARGC_ARRAYNAME EQU 101   ; sentinel FUNC_CALL_ARGC value: DIMN's own
-                         ; one argument is a bare array-name LETTER,
-                         ; never evaluated as an expression at all,
-                         ; unlike every real 0/1/2-arg numeric function
-                         ; (see ARGC_STR1's own precedent for the same
-                         ; reasoning, one value higher so the two
-                         ; sentinels can never collide)
+ARGC_ARRAYNAME EQU 101
 
 KW_FN_ABS: DB "ABS", 0
 KW_FN_SGN: DB "SGN", 0
@@ -11380,7 +11303,6 @@ KW_FN_INKEY: DB "INKEY$", 0       ; called as INKEY$() -- the "(" is
 ; Home-only.
     INCLUDE "include/checker_keywords.inc"
 KW_RUN:   DB "RUN", 0
-KW_HELP:  DB "HELP", 0
 KW_AND:     DB "AND", 0
 KW_OR:      DB "OR", 0
 KW_NOT:     DB "NOT", 0

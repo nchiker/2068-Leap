@@ -2,10 +2,9 @@
 
 ## Current constraints
 
-The pre-extension DEF-FN build had 3 Home-ROM bytes and 75 EXROM bytes free.
-After the CPLOT gateway, DEF-FN parser consolidation, and `INSTR`, the build
-leaves 4 Home-ROM bytes and 1 EXROM byte after adding the generalized grammar
-descriptor and loadable BLOCK. The dynamic BASIC pool is `$8427-$BFFF`
+The current post-autorun/prompted-INPUT build leaves 29 Home-ROM bytes and
+2 EXROM bytes free after adding the generalized grammar descriptor and
+loadable BLOCK. The dynamic BASIC pool is `$8427-$BFFF`
 (15,321 bytes). Storage already writes the
 stock 17-byte header shape: type, ten-character name, length, autostart, and
 program-length fields. Extending that header is unnecessary for the first set
@@ -13,7 +12,7 @@ of features and would reduce compatibility.
 
 ## Recommended storage sequence
 
-1. **Program autorun**
+1. **Program autorun — implemented**
    - Syntax: `SAVE "name" LINE expression`.
    - Store the resolved target in the existing autostart field; retain `$8000`
      (`STORAGE_NO_AUTOSTART`) for ordinary program saves.
@@ -153,31 +152,29 @@ decoder from a generated Direct Recording TZX.
 
 These are planning ranges from the current call paths, not byte-exact promises.
 Each accepted feature still needs an assembler-built spike and a final
-Home/EXROM delta. Available production padding is 4 Home bytes plus 1 EXROM
+Home/EXROM delta. Available production padding is 29 Home bytes plus 2 EXROM
 bytes; those budgets are separate and cannot be freely combined.
 
 | Addition | Preliminary ROM cost | Current fit assessment |
 |---|---:|---|
-| Program autorun (`SAVE ... LINE`) | ~70-120 Home, ~20-50 EXROM | Best next storage feature, but requires recovery first |
+| Program autorun (`SAVE ... LINE`) | Implemented and covered by success, malformed, zero, and out-of-range tests | Complete |
 | Minimal numeric, one-argument `DEF FN` | **238 Home, 102 EXROM measured** | Implemented spike; fits but leaves only 3 Home/75 EXROM, so consolidation is required before another command |
 | `INSTR(haystack$,needle$)` | Implemented; current build includes its two-string parser and search semantics | Complete and covered by `tests/instr.txt` |
 | `FILL$(pattern$,length)` | Exact individual cost not yet isolated; shares the prior 113-Home-byte total | Size after `INSTR`; lower priority and cannot fit the current 3-byte Home remainder |
-| Prompted `INPUT "text"; A` / `A$` | Measured 62 EXROM bytes for the smallest complete runtime+checker spike; current build has 35 free, so it overflows by 27 | Requires a further EXROM recovery pass or a carefully measured Home/EXROM split; builds on the existing input engine and adds no keyword |
+| Prompted `INPUT "text"; A` / `A$` | Implemented as a literal-prompt grammar in runtime and checker | Complete; retains bounded numeric/string input |
 | Two-dimensional numeric arrays | Prior complete build was ~26 bytes over Home when Home-resident, or ~69 bytes over EXROM when moved there, under the then-current layout | Reassess after CPLOT/gateway; the measured 128-byte net Home recovery makes the shared-parser design plausible but tighter than first estimated |
 | Raw `CODE` SAVE/LOAD | ~180-300 Home, ~80-150 EXROM | Borderline alone; unlikely to coexist with `DEF FN` in current padding without relocation/savings |
 | `SCREEN$` shorthand after CODE | ~25-60 total | Likely fits once CODE exists |
-| `VERIFY` | ~50-100 total | Smallest likely addition, but even it requires recovery first |
+| `VERIFY` | Measured prototype cost about 45 Home + 145 EXROM bytes | Rejected as poor value; stock Timex shares substantially more parser infrastructure |
 | Typed numeric/string-array `DATA` | ~300-550 total | Does not safely fit with the higher priorities in current padding |
 | Header/storage detail command | ~100-180 total | Possible, but lower value than autorun/DEF FN/CODE |
 | `CAT` | Unknown, likely >200 | Defer until semantics and transport behavior are specified |
 | RAM BASIC-extension gateway | **116 Home, 24 EXROM measured**; CPLOT module is 132 RAM bytes | Implemented single-slot proof; net CPLOT trade is +128 Home, -14 EXROM, +2 BASIC RAM bytes |
 
-Recommended next order from the completed DEF-FN/INSTR/extension build is:
-recover ROM, implement program autorun, then measure `VERIFY`, prompted INPUT,
-and CODE in that order. Two-dimensional arrays follow only if that measured
-remainder funds the already-proven shared-parser design. Keep only features
-whose assembled deltas and regression coverage fit both ROMs independently;
-the present 1-byte margins cannot fund another resident feature.
+The completed sequence now includes DEF FN, INSTR, external BLOCK/CPLOT,
+program autorun, and prompted INPUT. VERIFY was measured and rejected. Raw
+CODE storage and two-dimensional arrays remain candidates, but the current
+29-byte Home and 2-byte EXROM margins require another recovery decision first.
 
 ## Capacity recovery and optional feature tradeoffs
 

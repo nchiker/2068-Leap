@@ -39,6 +39,23 @@ case "${1:-program}" in
         home_source=rom/test_storage_extension_roundtrip.asm
         test_name=storage_extension_roundtrip
         ;;
+    autorun_roundtrip)
+        extra_defs=(-DSTORAGE_TEST_ROUNDTRIP -DSTORAGE_TEST_FAKE_SEND)
+        home_rom=test_storage_autorun_roundtrip.bin
+        home_source=rom/test_storage_autorun_roundtrip.asm
+        test_name=storage_autorun_roundtrip
+        ;;
+    autorun_zero|autorun_trailing|autorun_out_of_range)
+        extra_defs=(-DSTORAGE_TEST_ROUNDTRIP -DSTORAGE_TEST_FAKE_SEND)
+        case "$1" in
+            autorun_zero) extra_defs+=(-DSTORAGE_TEST_AUTORUN_INVALID -DSTORAGE_TEST_AUTORUN_ZERO) ;;
+            autorun_trailing) extra_defs+=(-DSTORAGE_TEST_AUTORUN_INVALID -DSTORAGE_TEST_AUTORUN_TRAILING) ;;
+            autorun_out_of_range) extra_defs+=(-DSTORAGE_TEST_AUTORUN_OUT_OF_RANGE) ;;
+        esac
+        home_rom=test_storage_autorun_roundtrip.bin
+        home_source=rom/test_storage_autorun_roundtrip.asm
+        test_name="storage_$1"
+        ;;
     *)
         echo "unknown storage test mode: $1" >&2
         exit 2

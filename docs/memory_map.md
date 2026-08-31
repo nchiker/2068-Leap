@@ -10,7 +10,7 @@ Status: DRAFT — living document, updated alongside code.
 | $4000-$57FF   | 6K    | Screen display file (bitmap), standard Spectrum-compatible layout |
 | $5800-$5AFF   | 768B  | Screen attributes |
 | $5B00-$7FFF   | ~10.3K | Reserved for the video hardware's own use (see below) — nothing this project owns lives here |
-| $8000-$BFFF   | 16K | System variables (`include/sysvars.inc`, starting at $8000) followed by the dynamic BASIC program/array/scalar pool (`PROG_AREA_START`=$8434 through $BFFF; 15,308 bytes) |
+| $8000-$BFFF   | 16K | System variables (`include/sysvars.inc`, starting at $8000) followed by the dynamic BASIC program/array/scalar pool (`PROG_AREA_START`=$8427 through $BFFF; 15,321 bytes) |
 | $C000-$E7FF   | 10K | Transient `FILL` visited bitmap and coordinate stack while HOME RAM is mapped; no state here survives or overlaps an EXROM call |
 | $E800-$F0FF   | 2.25K | Persistent sprite image/background buffers; chunk 7 remains visible during EXROM calls |
 | $F100-$F327   | 552B | Persistent label table, UDGs, editor/LOAD-name buffer, and detokenizer buffer |

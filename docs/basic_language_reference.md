@@ -621,6 +621,10 @@ caught and fixed before it ever shipped).
 | `INPUT` | Read a line of input into a variable, classic BASIC style |
 | `INKEY$()` | Read one keypress without waiting — implemented (2026-08-22), see below |
 
+`INPUT` accepts numeric and string targets, with an optional literal prompt:
+`INPUT "Age: ";A` or `INPUT "Name: ";A$`. The prompt is not yet a general
+string expression.
+
 **`INKEY$()` — implemented, returns a real string (2026-08-22)**:
 called with empty parens, `INKEY$()`, matching this dialect's own
 zero-argument-function convention (`FREE()`/`PI()`), not real classic

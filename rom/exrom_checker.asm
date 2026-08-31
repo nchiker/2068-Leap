@@ -250,13 +250,10 @@ EXROM_ENTRY_LOAD:
 
     ORG $C01E
 EXROM_ENTRY_HELP:
-    ; In/Out/Destroys: identical to BASIC_SHOW_HELP's own original
-    ; contract (HL = topic-name text pointer in, Destroys: AF, BC, DE,
-    ; HL, no meaningful output) — bare trampoline, same shape as the
-    ; three checker entries above and unlike SAVE/LOAD's, needs no
-    ; argument massaging.
+    ; Retired HELP slot reused for the storage qualifier parser. B selects
+    ; LOAD (0) or SAVE (1); the fixed ABI address remains unchanged.
     call EXROM_VERIFY_KTAB_MAGIC
-    jp   BASIC_SHOW_HELP
+    jp   BASIC_PARSE_STORAGE_QUALIFIER_EXROM
 
     ORG $C024
 EXROM_ENTRY_CALCULATE:
@@ -478,21 +475,7 @@ EXROM_ENTRY_EDITOR_BLOCK_DELETE:
 
     ORG $C08A
 EXROM_ENTRY_DIMN:
-    ; Bare trampoline into ARRAY_EXROM_DIMN (rom/exrom_arrays.asm, new
-    ; content — this file's own INCLUDE below pulls it in) — DIMN's
-    ; real body, moved out to EXROM 2026-08-22 (multi-dimensional
-    ; arrays' own budget cost forced it out, same "cold statement,
-    ; move it whole" pattern SAVE/LOAD/HELP/the editor/SPRITE/SOUND
-    ; already used).
-    ; Unlike every other EXROM_ENTRY_* stub, this one does its OWN full
-    ; argument parsing from EXPR_PARSE_PTR rather than receiving pre-
-    ; parsed input — DIMN(name)'s argument is a bare array-name letter,
-    ; never evaluated as an expression, so there's no single Home-side
-    ; value to hand across a normal In register the way every numeric
-    ; function argument otherwise would be.
-    ; In: none (reads EXPR_PARSE_PTR itself). Out: carry clear + HL =
-    ; result, EXPR_PARSE_PTR advanced past the closing ")"; carry set
-    ; + error already recorded otherwise. Destroys: AF, BC, DE, HL
+    ; DIMN's EXROM-resident parser/lookup body.
     call EXROM_VERIFY_KTAB_MAGIC
     jp   ARRAY_EXROM_DIMN
 
@@ -1314,6 +1297,26 @@ BASIC_CHECK_STATEMENT_CONTENT:
 
 .check_input:
     call KTAB_BASIC_SKIP_SPACES
+    IFNDEF EDITOR_TEST_EXROM
+    ld   a, (hl)
+    cp   '"'
+    jr   nz, .input_target
+    inc  hl
+.input_prompt:
+    ld   a, (hl)
+    or   a
+    jr   z, .input_fail
+    inc  hl
+    cp   '"'
+    jr   nz, .input_prompt
+    call KTAB_BASIC_SKIP_SPACES
+    ld   a, (hl)
+    cp   ';'
+    jr   nz, .input_fail
+    inc  hl
+    call KTAB_BASIC_SKIP_SPACES
+.input_target:
+    ENDIF
     ld   a, (hl)
     call KTAB_BASIC_VALIDATE_VAR_LETTER
     jr   c, .input_fail
@@ -1444,6 +1447,68 @@ BASIC_PARSE_DEF_FN_SHARED:
     jp   KTAB_BASIC_EXPECT_STATEMENT_END
 .bad:
     pop  bc
+    scf
+    ret
+
+; Shared trailing qualifier parser for immediate SAVE/LOAD commands.
+; B=0 for LOAD (plain program or EXT), B=1 for SAVE (also LINE index).
+; LINE stores a 1-based statement index in the stock autostart header field.
+BASIC_PARSE_STORAGE_QUALIFIER_EXROM:
+    push bc
+    call KTAB_BASIC_SKIP_SPACES
+    ld   a, (hl)
+    or   a
+    jr   z, .program
+    ld   de, KW_EXT
+    call KTAB_BASIC_MATCH_KEYWORD_BOUNDARY
+    jr   nc, .extension_tail
+    pop  bc
+    ld   a, b
+    or   a
+    jr   z, .bad_unstacked
+    push bc
+    ld   de, KW_LINE
+    call KTAB_BASIC_MATCH_KEYWORD_BOUNDARY
+    jr   c, .bad
+    call KTAB_BASIC_SKIP_SPACES
+    call KTAB_BASIC_EVAL_EXPR
+    jr   c, .bad
+    ld   a, d
+    or   e
+    jr   z, .bad                         ; indices are 1-based
+    ld   (STORAGE_HEADER_BUF + STORAGE_HEADER_AUTOSTART_OFF), de
+    call KTAB_BASIC_SKIP_SPACES
+    ld   a, (hl)
+    or   a
+    jr   z, .program_keep_autostart
+    cp   $0D
+    jr   nz, .bad
+.program_keep_autostart:
+    pop  bc
+    ld   a, STORAGE_PROGRAM_TYPE
+    or   a
+    ret
+.extension_tail:
+    call KTAB_BASIC_SKIP_SPACES
+    ld   a, (hl)
+    or   a
+    jr   z, .extension
+    cp   $0D
+    jr   nz, .bad
+.extension:
+    pop  bc
+    ld   a, STORAGE_EXTENSION_TYPE
+    ret
+.program:
+    ld   de, STORAGE_NO_AUTOSTART
+    ld   (STORAGE_HEADER_BUF + STORAGE_HEADER_AUTOSTART_OFF), de
+    pop  bc
+    ld   a, STORAGE_PROGRAM_TYPE
+    or   a
+    ret
+.bad:
+    pop  bc
+.bad_unstacked:
     scf
     ret
 

@@ -37,6 +37,10 @@ test: all
 	tools/run_storage_named_load_test.sh extension_wildcard
 	tools/run_storage_named_load_test.sh extension_save_missing
 	tools/run_storage_named_load_test.sh extension_roundtrip
+	tools/run_storage_named_load_test.sh autorun_roundtrip
+	tools/run_storage_named_load_test.sh autorun_zero
+	tools/run_storage_named_load_test.sh autorun_trailing
+	tools/run_storage_named_load_test.sh autorun_out_of_range
 	tools/run_all_tests.sh
 
 budget: build
@@ -58,7 +62,6 @@ block-extension: build
 	tools/sjasmplus_strict.sh rom/extensions/block_test.asm
 	tools/sjasmplus_strict.sh rom/test_extension_clear_inject.asm --sym=rom/test_extension_clear_inject.sym
 	tools/sjasmplus_strict.sh rom/extensions/block_clear_test.asm
-
 audit-basic: build
 	python3 tools/report_basic_routines.py basic/basic.asm build/test_basic.sym
 

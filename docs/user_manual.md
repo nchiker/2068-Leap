@@ -74,7 +74,7 @@ PRINT "HELLO"
 
 Then type `RUN` alone on its own line and press ENTER to execute the
 whole stored program. `RUN` is not a program statement — like `NEW`,
-`LIST`, `EDIT`, `SAVE`, `LOAD`, and `HELP`, it's an **immediate command**:
+`LIST`, `EDIT`, `SAVE`, and `LOAD`, it's an **immediate command**:
 typed alone and committed, it executes right away instead of being added
 to the program (see [Immediate commands](#14-immediate-commands)).
 
@@ -199,14 +199,10 @@ A **runtime** error (one the static check pass can't catch — e.g.
 program the moment it happens and shows the error message plus the
 failing statement's own text, rather than silently doing nothing.
 
-### HELP
+### Editor key reference
 
-`HELP`, typed alone like `RUN`, lists available topics full-screen —
-press any key to return to the editor exactly where you left off (mid-
-edit line, error highlighting, and scroll position are all preserved).
-
-`HELP EDITOR` shows the navigation-key summary above, directly from the
-ROM:
+The former resident `HELP` command was removed to recover ROM for program
+autorun and prompted INPUT. This manual preserves its editor-key summary:
 
 ```
 EDITOR HELP
@@ -225,9 +221,6 @@ PREV ERROR SYM SHIFT+S
 PRESS ANY KEY TO RETURN
 ```
 
-`HELP <anything else>` falls back to the same topic list as bare `HELP`
-— an unrecognized topic name isn't treated as an error.
-
 ## 3. Loading and saving with Fuse
 
 `SAVE "<name>"` and `LOAD "<name>"` transfer the current program to and
@@ -245,6 +238,9 @@ the payload. See `docs/tape_compatibility.md` for the exact contract.
 
 - **`SAVE "name"`** — saves the whole current program under that name
   (up to 10 characters).
+- **`SAVE "name" LINE n`** — saves the program with a one-based autorun
+  statement index. Loading it starts at statement `n`; an out-of-range value
+  leaves the program loaded without running it.
 - **`LOAD "name"`** — loads a program by name; the name on tape must
   match exactly, or `LOAD` fails.
 - **`LOAD ""`** (empty name) — a wildcard: loads whatever program is
@@ -657,12 +653,12 @@ writes with `:` instead: `SOUND 8,15 : SOUND 0,200`.
 
 | Statement/function | Effect |
 |---|---|
-| `INPUT <var>` | Reads a numeric scalar or string scalar. `INPUT N` accepts digits and an optional `-`; `INPUT N$` accepts up to 31 printable characters. ENTER commits the value. Unrecognized keys (including DELETE) are ignored |
+| `INPUT ["prompt";] <var>` | Reads a numeric or string scalar. The optional literal prompt is printed before input. `INPUT N` accepts digits and an optional `-`; `INPUT N$` accepts up to 31 printable characters. ENTER commits the value |
 | `INKEY$()` | Function — the currently-pressed key as a one-character string, or `""` if nothing is pressed. Doesn't wait — call it every loop iteration to poll: `IF INKEY$() = "Q" THEN END` |
 | `STICK(device)` | Function — reads a joystick through the AY-3-8912's I/O port. `device` is `1` or `2`; anything else raises `INVALID ARGUMENT`. Device 1 returns a 4-bit direction value; device 2 (a real hardware asymmetry, not a design choice here) only returns a single bit |
 
-`INPUT` reads either a numeric or string scalar. A prompt-string form
-(`INPUT "Name: "; A$`) is not yet implemented; print the prompt first.
+The prompt must currently be a quoted literal followed by `;`, for example
+`INPUT "Name: ";A$`; it is not a general string expression.
 
 ## 13. Memory and machine code
 
@@ -691,7 +687,6 @@ that behave this way:
 | `EDIT <label>` | Rebuilds the label table (so this works even before the program has ever been `RUN`) and jumps straight to that label's line |
 | `DELETE <start>,<end>` | Removes a 1-based inclusive range of lines — see [The editor](#2-the-editor) |
 | `SAVE "name"` / `LOAD "name"` / `LOAD ""` | Tape transfer — see [Loading and saving with Fuse](#3-loading-and-saving-with-fuse) |
-| `HELP` / `HELP <topic>` | Full-screen topic list or a specific topic — see [The editor](#2-the-editor) |
 
 ## 15. Function reference
 
@@ -780,7 +775,6 @@ description of each.
 | `FOR` / `NEXT` | [5](#5-control-flow) |
 | `GOSUB` / `RETurn` | [4](#4-program-structure--labels-instead-of-line-numbers), [5](#5-control-flow) |
 | `GOTO` | [4](#4-program-structure--labels-instead-of-line-numbers) |
-| `HELP` | [2](#2-the-editor), [14](#14-immediate-commands) |
 | `IF` / `THEN` / `ELSEIF` / `ELSE` / `END IF` | [5](#5-control-flow) |
 | `INK` | [8](#8-screen-output) |
 | `INPUT` | [12](#12-input) |
@@ -950,8 +944,6 @@ Worth knowing before you go looking for something that isn't there:
   built. Use `GOTO`/`GOSUB`/`IF`/`FOR` for everything today.
 - **No `DATA`/`RESTORE`/`READ`** — use a `DIM`'d array instead.
 - **No multi-dimensional arrays.** Numeric and string arrays are one-dimensional.
-- **No prompt-string form for `INPUT`.** Print a prompt immediately before
-  `INPUT` instead.
 - **`OVER 1` XOR-plots both text and graphics.** Printing or plotting the
   same shape twice at the same position restores the original bitmap.
 - **`COS`/`TAN`/`EXP`/`LN`/`LOG10`/`FILL$` are not implemented.**

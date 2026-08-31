@@ -9,6 +9,41 @@
 
 BASIC_STMT_INPUT_EXROM:
     call KTAB_BASIC_SKIP_SPACES
+    IFNDEF EDITOR_TEST_EXROM
+    ld   a, (hl)
+    cp   '"'
+    jr   nz, .target
+    inc  hl
+.prompt:
+    ld   a, (hl)
+    or   a
+    jp   z, .prompt_fail
+    cp   '"'
+    jr   z, .prompt_done
+    push hl
+    push af
+    ld   a, (BASIC_OUTPUT_COL)
+    ld   c, a
+    ld   a, (BASIC_OUTPUT_ROW)
+    ld   b, a
+    pop  af
+    ld   d, 5
+    call KTAB_BASIC_INPUT_SERVICE
+    ld   hl, BASIC_OUTPUT_COL
+    inc  (hl)
+    pop  hl
+    inc  hl
+    jr   .prompt
+.prompt_done:
+    inc  hl
+    call KTAB_BASIC_SKIP_SPACES
+    ld   a, (hl)
+    cp   ';'
+    jp   nz, .prompt_fail
+    inc  hl
+    call KTAB_BASIC_SKIP_SPACES
+.target:
+    ENDIF
     ld   a, (hl)
     call KTAB_BASIC_VALIDATE_VAR_LETTER
     ret  c
@@ -90,6 +125,11 @@ BASIC_STMT_INPUT_EXROM:
     ld   a, 7
     sub  b
     ld   c, a
+    IFNDEF EDITOR_TEST_EXROM
+    ld   a, (BASIC_OUTPUT_COL)
+    add  a, c
+    ld   c, a
+    ENDIF
     ld   a, (BASIC_OUTPUT_ROW)
     ld   b, a
     pop  af
@@ -127,12 +167,23 @@ BASIC_STMT_INPUT_EXROM:
     pop  de
     ret
 
+    IFNDEF EDITOR_TEST_EXROM
+.prompt_fail:
+    scf
+    ret
+    ENDIF
+
 ; A = character, INPUT_BUF = zero-based column/count after increment.
 .echo_char:
     push af
     ld   a, (INPUT_BUF)
     dec  a
     ld   c, a
+    IFNDEF EDITOR_TEST_EXROM
+    ld   a, (BASIC_OUTPUT_COL)
+    add  a, c
+    ld   c, a
+    ENDIF
     ld   a, (BASIC_OUTPUT_ROW)
     ld   b, a
     pop  af

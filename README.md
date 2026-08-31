@@ -148,11 +148,9 @@ budgets and pass `make check`; BASIC changes should include a fixture in
    line with DELETE when it's already empty, or in one keystroke with
    CAPS SHIFT+1, insert a blank line before
    the current one with CAPS SHIFT+ENTER, status line showing which
-   line you're on, automatic scrolling, **and a `HELP` command**: `HELP`
-   alone lists topics, `HELP <name>` shows one, full-screen, dismissed
-   by any key — a small static topic table, easy to extend with more
-   topics later — see `docs/programmers_reference.md` for exact scope
-   and "Testing basic/" below) — interpreter loop, calling
+   line you're on and automatic scrolling (the former resident `HELP`
+   screen was retired for ROM space; its editor-key reference remains in
+   `docs/user_manual.md`) — interpreter loop, calling
    kernel/editor for line entry. **`IF`/`ELSEIF`/`ELSE`/`END IF`**
    (block form, plus a single-line `IF <cond> THEN <stmt>` short form),
    with `= <> < > <= >=` and non-short-circuiting `AND`/`OR`/`NOT` — see
@@ -202,7 +200,7 @@ budgets and pass `make check`; BASIC changes should include a fixture in
    memory dump confirmed the underlying delete itself was always
    correct, but the SCREEN kept showing stale content afterward
    (`DELETE` never told the redraw system a structural change had
-   happened, unlike `NEW`/`RUN`/`HELP`, which all do) — fixed with
+   happened, unlike `NEW`/`RUN`, which both do) — fixed with
    one missing `BASIC_RESET_ROW_SHADOW` call. **User-confirmed
    `EDIT <label>` now works correctly, and `DELETE`'s redraw fix also
    worked** — the next report ("still deletes the wrong line") turned
@@ -221,7 +219,7 @@ budgets and pass `make check`; BASIC changes should include a fixture in
    since there's nothing ongoing left to warn about once the bad text
    is already gone.
    **User found a real bug affecting all six immediate commands**
-   (`RUN`/`NEW`/`HELP`/`LIST`/`EDIT`/`DELETE`): navigating to an
+   (`RUN`/`NEW`/`LIST`/`EDIT`/`DELETE`): navigating to an
    *existing* line and editing its text to read something like
    `DELETE 3,3` would EXECUTE it as a command instead of committing
    the edit — the original stored text was never replaced at all
