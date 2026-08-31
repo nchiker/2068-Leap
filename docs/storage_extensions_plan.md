@@ -4,9 +4,9 @@
 
 The pre-extension DEF-FN build had 3 Home-ROM bytes and 75 EXROM bytes free.
 After the CPLOT gateway, DEF-FN parser consolidation, and `INSTR`, the build
-leaves 7 Home-ROM bytes and 5 EXROM bytes after implementing extension-aware
-tape storage. The dynamic BASIC pool is `$842B-$BFFF`
-(15,310 bytes). Storage already writes the
+leaves 1 Home-ROM byte and 1 EXROM byte after adding the generalized grammar
+descriptor and loadable BLOCK. The dynamic BASIC pool is `$8427-$BFFF`
+(15,321 bytes). Storage already writes the
 stock 17-byte header shape: type, ten-character name, length, autostart, and
 program-length fields. Extending that header is unnecessary for the first set
 of features and would reduce compatibility.
@@ -108,7 +108,8 @@ callbacks under an explicit ABI.
 The proof uses the fixed `$F400-$F5FF` upper-RAM window rather than changing the
 compile-time `$C000` BASIC-pool ceiling. Never place persistent extension code
 in storage/FILL transient scratch or in a bank that disappears during EXROM
-paging. The 130-byte CPLOT module leaves `$F482-$F5FF` unused; the whole window
+paging. The 132-byte CPLOT and 168-byte BLOCK modules each fit independently;
+the whole window
 leaves 2,304 bytes of genuine stack headroom at `$F600-$FEFF`. A generalized allocator
 remains deferred pending a new stack measurement with the window reserved.
 
@@ -118,7 +119,7 @@ attribute calculation, pixel writing, and the OVER-state accessor through those
 veneers, so its binary contains no movable ROM routine or sysvar addresses.
 Future slots must be appended without reordering existing ones.
 
-Removed resident `CPLOT` is now the proof extension: its 130-byte RAM module
+Removed resident `CPLOT` is the two-expression proof extension: its 132-byte RAM module
 exercises two numeric arguments plus graphics output. The single-slot gateway
 costs 116 Home and 24 EXROM bytes; removing resident CPLOT recovered 244 Home
 and 10 EXROM bytes, a net gain of 128 Home at a cost of 14 EXROM.
@@ -133,29 +134,31 @@ type, size, checksum, and ABI version before calling the installer at `$F400`;
 any failure leaves the registry unpublished. Unlike program `LOAD ""`, an
 extension LOAD requires an explicit filename; `LOAD "" EXT` is rejected.
 
-### Extension follow-up to-do
+The registry carries a non-executable grammar descriptor. Grammar 0 is
+`expr,expr`; grammar 1 reuses LINE's `expr,expr TO expr,expr` parser and exposes
+the four byte-sized coordinates at fixed ABI addresses. The checker interprets
+the same descriptor without calling RAM. BLOCK is the first grammar-1 module,
+measures 168 bytes, and has executed after loading through Fuse's live pulse
+decoder from a generated Direct Recording TZX.
 
-- Repackage the removed `BLOCK x0,y0 TO x1,y1` implementation as a
-  position-independent module for the existing `$F400-$F5FF` window.
-- Build a padded 512-byte tape-ready BLOCK image using only the frozen v1
-  service veneers; append ABI services only if BLOCK cannot be expressed with
-  the current table.
-- Add deterministic install/use, unloaded rejection, `NEW` clearing, and
-  `SAVE "name" EXT` / `LOAD "name" EXT` round-trip coverage. Preserve
-  `tests/extensions/block.txt` as the behavioral parity fixture.
-- Document the resulting module size and verify its graphics output against the
-  former resident implementation before treating BLOCK as restored.
+### Extension follow-up status
+
+- Completed: BLOCK is position-independent, uses the existing service veneers
+  plus fixed grammar-argument ABI bytes, and fits in 168 bytes.
+- Completed: installed use, reversed corners, unloaded rejection, `NEW`
+  clearing, deterministic extension SAVE/LOAD round-trip infrastructure, and
+  live pulse-level BLOCK LOAD are covered.
 
 ## Preliminary fit review
 
 These are planning ranges from the current call paths, not byte-exact promises.
 Each accepted feature still needs an assembler-built spike and a final
-Home/EXROM delta. Available production padding is 7 Home bytes plus 5 EXROM
+Home/EXROM delta. Available production padding is 1 Home byte plus 1 EXROM
 bytes; those budgets are separate and cannot be freely combined.
 
 | Addition | Preliminary ROM cost | Current fit assessment |
 |---|---:|---|
-| Program autorun (`SAVE ... LINE`) | ~70-120 Home, ~20-50 EXROM | Likely fits alone; best first storage feature |
+| Program autorun (`SAVE ... LINE`) | ~70-120 Home, ~20-50 EXROM | Best next storage feature, but requires recovery first |
 | Minimal numeric, one-argument `DEF FN` | **238 Home, 102 EXROM measured** | Implemented spike; fits but leaves only 3 Home/75 EXROM, so consolidation is required before another command |
 | `INSTR(haystack$,needle$)` | Implemented; current build includes its two-string parser and search semantics | Complete and covered by `tests/instr.txt` |
 | `FILL$(pattern$,length)` | Exact individual cost not yet isolated; shares the prior 113-Home-byte total | Size after `INSTR`; lower priority and cannot fit the current 3-byte Home remainder |
@@ -163,15 +166,18 @@ bytes; those budgets are separate and cannot be freely combined.
 | Two-dimensional numeric arrays | Prior complete build was ~26 bytes over Home when Home-resident, or ~69 bytes over EXROM when moved there, under the then-current layout | Reassess after CPLOT/gateway; the measured 128-byte net Home recovery makes the shared-parser design plausible but tighter than first estimated |
 | Raw `CODE` SAVE/LOAD | ~180-300 Home, ~80-150 EXROM | Borderline alone; unlikely to coexist with `DEF FN` in current padding without relocation/savings |
 | `SCREEN$` shorthand after CODE | ~25-60 total | Likely fits once CODE exists |
-| `VERIFY` | ~50-100 total | Likely small because receiver verify mode already exists, but command/status paths remain |
+| `VERIFY` | ~50-100 total | Smallest likely addition, but even it requires recovery first |
 | Typed numeric/string-array `DATA` | ~300-550 total | Does not safely fit with the higher priorities in current padding |
 | Header/storage detail command | ~100-180 total | Possible, but lower value than autorun/DEF FN/CODE |
 | `CAT` | Unknown, likely >200 | Defer until semantics and transport behavior are specified |
-| RAM BASIC-extension gateway | **116 Home, 24 EXROM measured**; CPLOT module is 121 RAM bytes | Implemented single-slot proof; net CPLOT trade is +128 Home, -14 EXROM, +2 BASIC RAM bytes |
+| RAM BASIC-extension gateway | **116 Home, 24 EXROM measured**; CPLOT module is 132 RAM bytes | Implemented single-slot proof; net CPLOT trade is +128 Home, -14 EXROM, +2 BASIC RAM bytes |
 
-Recommended sizing order: build a non-committing `DEF FN` spike first because
-it has the greatest uncertainty, then autorun, then CODE. Keep only features
-whose measured image deltas and regression coverage fit both ROMs independently.
+Recommended next order from the completed DEF-FN/INSTR/extension build is:
+recover ROM, implement program autorun, then measure `VERIFY`, prompted INPUT,
+and CODE in that order. Two-dimensional arrays follow only if that measured
+remainder funds the already-proven shared-parser design. Keep only features
+whose assembled deltas and regression coverage fit both ROMs independently;
+the present 1-byte margins cannot fund another resident feature.
 
 ## Capacity recovery and optional feature tradeoffs
 

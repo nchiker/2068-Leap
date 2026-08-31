@@ -538,12 +538,12 @@ gives `OVER` for `PLOT`/`DRAW`/`CIRCLE`, not just `PRINT`).
 |---|---|
 | `PLOT <x>,<y>` | Set one pixel — implemented, via `kernel/graphics`'s `GFX_WRITE_PIXEL` |
 | `LINE <x0>,<y0> TO <x1>,<y1>` | Draw a line between two points — implemented, via `kernel/graphics`'s `GFX_LINE` (Bresenham's algorithm, integer-only) |
-| `BLOCK <x0>,<y0> TO <x1>,<y1>` | Removed from the resident ROM on 2026-08-30 to fund extension-aware tape storage; retained as the next loadable-extension candidate |
+| `BLOCK <x0>,<y0> TO <x1>,<y1>` | Optional 168-byte loadable extension. Preserves the former resident syntax, including reversed-corner normalization |
 | `CIRCLE <x>,<y>,<r>` | Draw a circle outline — implemented, via `kernel/graphics`'s `GFX_CIRCLE` (midpoint circle algorithm, integer-only). A radius that pushes the circle past the screen edge is simply clipped there, same as any other out-of-range point |
 | `FILL <x>,<y>` | Flood fill the connected region from that seed point — implemented, via `kernel/graphics`'s `GFX_FILL`. 4-connected, using an explicit bounded stack (2048 entries) rather than recursion; a large enough enclosed region can exhaust it, at which point the fill simply stops expanding further rather than crashing — see the programmer's reference for the real numbers behind that size |
 | `POINT(x,y)` | Function — `1` if that pixel is currently set, `0` if not; implemented, via `kernel/graphics`'s `GFX_READ_PIXEL`. QL-named deliberately (`GFX_READ_PIXEL` is the write-side's read-back counterpart, `PLOT` stays the imperative Sinclair-flavored write) |
 | `ATTR(row,col)` | Function — reads the normal 32×24 screen's attribute byte through the shared bounded attribute-address primitive; returns `0` for an out-of-range row or column |
-| `CPLOT <cx>,<cy>` | Optional loadable extension. The 121-byte reference module registers the natural syntax and draws a coarse 2x2-per-cell block; `cx` is clamped to 0-63 and `cy` to 0-47. Without the module, CPLOT is a syntax error |
+| `CPLOT <cx>,<cy>` | Optional 132-byte loadable extension. It registers the natural syntax and draws a coarse 2x2-per-cell block; `cx` is clamped to 0-63 and `cy` to 0-47. Without the module, CPLOT is a syntax error |
 | `MODE <n>` | Switch video mode — implemented, via `kernel/graphics`'s `GFX_SET_MODE`. `n` is `0` (Normal) or `1` (High Resolution Graphics — same 256x192 bitmap, finer 8x1 attribute resolution); anything else is a runtime `INVALID MODE` error, not silently clamped |
 | `ULAPLUS <n>` | Enable (`1`) or disable (`0`) the ULAplus palette extension. Other values produce `INVALID ARGUMENT`. |
 | `PALETTE <index>,<value>` | Write ULAplus palette register 0-63 with a value from 0-255 in `GGGRRRBB` format. Out-of-range values produce `INVALID ARGUMENT`. |

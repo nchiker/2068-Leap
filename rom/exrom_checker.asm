@@ -972,7 +972,11 @@ BASIC_CHECK_STATEMENT_CONTENT:
     jr   nz, .no_extension
     ld   de, (EXTENSION_NAME_PTR)
     call KTAB_BASIC_MATCH_KEYWORD_BOUNDARY
-    jp   nc, .check_at                  ; v1 registry grammar: expr,expr
+    jr   c, .no_extension
+    ld   a, (EXTENSION_GRAMMAR)
+    or   a
+    jp   nz, .check_line
+    jp   .check_at
 .no_extension:
     call BASIC_CHECK_STR_ASSIGNMENT
     jp   nc, .ok                          ; string assignment handled

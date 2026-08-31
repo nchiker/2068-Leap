@@ -4,6 +4,7 @@ cd "$(dirname "$0")/.."
 
 extra_defs=()
 home_rom=test_storage_named_load.bin
+home_source=rom/test_storage_named_load.asm
 test_name=storage_named_load
 case "${1:-program}" in
     program) ;;
@@ -32,13 +33,19 @@ case "${1:-program}" in
         home_rom=test_storage_extension_load.bin
         test_name=storage_extension_save_missing
         ;;
+    extension_roundtrip)
+        extra_defs=(-DSTORAGE_TEST_EXTENSION -DSTORAGE_TEST_ROUNDTRIP -DSTORAGE_TEST_FAKE_SEND)
+        home_rom=test_storage_extension_roundtrip.bin
+        home_source=rom/test_storage_extension_roundtrip.asm
+        test_name=storage_extension_roundtrip
+        ;;
     *)
         echo "unknown storage test mode: $1" >&2
         exit 2
         ;;
 esac
 tools/sjasmplus_strict.sh -DSTORAGE_TEST_FAKE_RECEIVE "${extra_defs[@]}" rom/exrom_build.asm
-tools/sjasmplus_strict.sh -DEDITOR_AUTO_OMIT_DEF_FN "${extra_defs[@]}" rom/test_storage_named_load.asm
+tools/sjasmplus_strict.sh -DEDITOR_AUTO_OMIT_DEF_FN "${extra_defs[@]}" "$home_source"
 pkill -9 -x fuse 2>/dev/null || true
 DISPLAY=:1 fuse --no-sound --machine ts2068 \
     --rom-ts2068-0 "$home_rom" \

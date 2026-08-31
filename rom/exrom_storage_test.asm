@@ -2,6 +2,41 @@
 ; STORAGE_LOAD itself remains unmodified: header search, filename matching,
 ; progress callbacks, data handling, and state transitions all execute.
 
+STORAGE_TEST_CAPTURE_HEADER EQU $E000
+STORAGE_TEST_CAPTURE_DATA   EQU $E100
+STORAGE_TEST_CAPTURE_FLAGS  EQU $E300
+
+    IFDEF STORAGE_TEST_FAKE_SEND
+STORAGE_TEST_SEND_BLOCK:
+    cp   STORAGE_TYPE_HEADER
+    jr   z, .header
+    cp   STORAGE_TYPE_DATA
+    jr   nz, .fail
+    push ix
+    pop  hl
+    ld   de, STORAGE_TEST_CAPTURE_DATA
+    ld   bc, EXTENSION_MODULE_LIMIT - EXTENSION_MODULE_BASE
+    ldir
+    ld   a, 2
+    ld   (STORAGE_TEST_CAPTURE_FLAGS), a
+    or   a
+    ret
+.header:
+    push ix
+    pop  hl
+    ld   de, STORAGE_TEST_CAPTURE_HEADER
+    ld   bc, STORAGE_HEADER_PAYLOAD_LEN
+    ldir
+    ld   a, 1
+    ld   (STORAGE_TEST_CAPTURE_FLAGS), a
+    or   a
+    ret
+.fail:
+    scf
+    ret
+    ENDIF
+
+    IFDEF STORAGE_TEST_FAKE_RECEIVE
 STORAGE_TEST_RECEIVE_BLOCK:
     cp   STORAGE_TYPE_HEADER
     jr   z, .header
@@ -9,6 +44,10 @@ STORAGE_TEST_RECEIVE_BLOCK:
     jr   nz, .fail
     push ix
     pop  de
+    IFDEF STORAGE_TEST_ROUNDTRIP
+    ld   hl, STORAGE_TEST_CAPTURE_DATA
+    ld   bc, EXTENSION_MODULE_LIMIT - EXTENSION_MODULE_BASE
+    ELSE
     IFDEF STORAGE_TEST_EXTENSION
     ld   hl, STORAGE_TEST_MODULE
     ld   bc, STORAGE_TEST_MODULE_LEN
@@ -16,13 +55,18 @@ STORAGE_TEST_RECEIVE_BLOCK:
     ld   hl, STORAGE_TEST_PROGRAM
     ld   bc, STORAGE_TEST_PROGRAM_LEN
     ENDIF
+    ENDIF
     ldir
     or   a
     ret
 .header:
     push ix
     pop  de
+    IFDEF STORAGE_TEST_ROUNDTRIP
+    ld   hl, STORAGE_TEST_CAPTURE_HEADER
+    ELSE
     ld   hl, STORAGE_TEST_HEADER
+    ENDIF
     ld   bc, STORAGE_HEADER_PAYLOAD_LEN
     ldir
     or   a
@@ -30,6 +74,7 @@ STORAGE_TEST_RECEIVE_BLOCK:
 .fail:
     scf
     ret
+    ENDIF
 
 STORAGE_TEST_HEADER:
     IFDEF STORAGE_TEST_EXTENSION
@@ -65,9 +110,10 @@ STORAGE_TEST_PROGRAM_LEN EQU $ - STORAGE_TEST_PROGRAM
 STORAGE_TEST_MODULE:
     DB $21, $10, $F4                 ; ld hl,$F410 (name)
     DB $11, $17, $F4                 ; ld de,$F417 (exec)
+    DB $0E, $00                      ; ld c,0 (expr,expr grammar)
     DB $CD, LOW EXT_SERVICE_REGISTER, HIGH EXT_SERVICE_REGISTER
     DB $C9                           ; ret
-    DS 6, 0
+    DS 4, 0
     DB "TSTEXT",0
     DB $B7,$C9                       ; or a / ret
 STORAGE_TEST_MODULE_LEN EQU $ - STORAGE_TEST_MODULE

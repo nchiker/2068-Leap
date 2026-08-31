@@ -1,4 +1,4 @@
-.PHONY: all build check smoke-build test budget audit-basic manual clean cplot-extension
+.PHONY: all build check smoke-build test budget audit-basic manual clean cplot-extension block-extension
 
 all: check build
 
@@ -36,6 +36,7 @@ test: all
 	tools/run_storage_named_load_test.sh extension_bad_version
 	tools/run_storage_named_load_test.sh extension_wildcard
 	tools/run_storage_named_load_test.sh extension_save_missing
+	tools/run_storage_named_load_test.sh extension_roundtrip
 	tools/run_all_tests.sh
 
 budget: build
@@ -49,6 +50,14 @@ cplot-extension: build
 	tools/sjasmplus_strict.sh rom/extensions/cplot_test.asm
 	tools/sjasmplus_strict.sh rom/test_extension_clear_inject.asm --sym=rom/test_extension_clear_inject.sym
 	tools/sjasmplus_strict.sh rom/extensions/cplot_clear_test.asm
+
+block-extension: build
+	mkdir -p build/extensions
+	tools/sjasmplus_strict.sh rom/extensions/block.asm
+	tools/sjasmplus_strict.sh rom/test_extension_inject.asm --sym=rom/test_extension_inject.sym
+	tools/sjasmplus_strict.sh rom/extensions/block_test.asm
+	tools/sjasmplus_strict.sh rom/test_extension_clear_inject.asm --sym=rom/test_extension_clear_inject.sym
+	tools/sjasmplus_strict.sh rom/extensions/block_clear_test.asm
 
 audit-basic: build
 	python3 tools/report_basic_routines.py basic/basic.asm build/test_basic.sym

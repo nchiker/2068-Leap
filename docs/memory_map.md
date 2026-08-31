@@ -147,7 +147,8 @@ purpose, cross-referenced from the Programmer's Reference.
   retains a separate lower-RAM pool because the static checker can run while
   an uncommitted edit line is live. The pool now occupies `$F328-$F3A7` in
   always-visible chunk 7. `DEF FN` uses the next seven bytes; the extension
-  registry/service ABI and fixed module window occupy `$F3AF-$F5FF`, leaving
+  registry/service ABI, grammar descriptor/four argument bytes, and fixed
+  module window occupy `$F3AF-$F5FF`, leaving
   2,304 bytes (`$F600-$FEFF`) below the machine stack. A canary-based valid nested-expression run measured a
   126-byte peak, so this retains more than 23 times that observed usage.
 - **Label table**: the current top-level implementation is working and

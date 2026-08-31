@@ -28,6 +28,7 @@ CPLOT_EXTENSION_INSTALL:
     jr   nz, .abi_fail
     ld   hl, CPLOT_EXTENSION_NAME
     ld   de, CPLOT_EXTENSION_EXEC
+    ld   c, 0
     call EXT_SERVICE_REGISTER
     ld   hl, 0
     ret

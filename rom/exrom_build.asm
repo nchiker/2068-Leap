@@ -56,6 +56,10 @@
     INCLUDE "rom/exrom_storage.asm"      ; STORAGE_SAVE/STORAGE_LOAD
     IFDEF STORAGE_TEST_FAKE_RECEIVE
         INCLUDE "rom/exrom_storage_test.asm"
+    ELSE
+        IFDEF STORAGE_TEST_FAKE_SEND
+            INCLUDE "rom/exrom_storage_test.asm"
+        ENDIF
     ENDIF
     INCLUDE "rom/exrom_format.asm"       ; shared formatting utilities
                                          ; and everything they call —
@@ -103,6 +107,10 @@
         DS   $E000 - $, $FF
         SAVEBIN "exrom_storage_test.bin", $C000, $2000
     ELSE
+        IFDEF STORAGE_TEST_FAKE_SEND
+            DS   $E000 - $, $FF
+            SAVEBIN "exrom_storage_test.bin", $C000, $2000
+        ELSE
         IFDEF EDITOR_TEST_EXROM
             INCLUDE "rom/exrom_editor_test_payload.asm"
             DS   $E000 - $, $FF
@@ -110,5 +118,6 @@
         ELSE
             DS   $E000 - $, $FF          ; pad to a full 8K image
             SAVEBIN "exrom.bin", $C000, $2000
+        ENDIF
         ENDIF
     ENDIF

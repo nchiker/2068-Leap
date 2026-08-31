@@ -26,14 +26,16 @@ subsystem correctness, and regression coverage rather than cartridge support.
 - Cold start now clears the complete ROM-owned `$8000-$BFFF` RAM region before
   any sysvar, bank-depth counter, hook, or port shadow is read. Startup no
   longer depends on an emulator providing zero-filled RAM.
-- Replaced resident `CPLOT` with the 121-byte reference RAM BASIC extension.
+- Replaced resident `CPLOT` with the 132-byte reference RAM BASIC extension.
   Its single-slot gateway validates the existing two-expression grammar in ROM,
   invalidates cached editor errors on registration, and unregisters on `NEW`.
 
 ## Validation baseline
 
-- 72 resident-ROM BASIC fixtures pass; the former BLOCK fixture is preserved
-  under `tests/extensions/` for its loadable-module restoration.
+- 74 of 75 BASIC fixtures pass. `BLOCK` is restored as a 168-byte loadable
+  module, including reversed-corner, unloaded, and `NEW` lifecycle coverage.
+  The remaining `gfx5` failure is the pre-existing FILL attribute-cell defect,
+  reproduced unchanged from the parent commit and tracked separately.
 - Nine standalone runtime smoke ROMs pass in Fuse.
 - Fifteen standalone smoke ROM targets assemble successfully.
 - Automated production-editor regression passes.
@@ -43,7 +45,7 @@ subsystem correctness, and regression coverage rather than cartridge support.
   two-statement insertion sequence and inspects physical display RAM.
 - Calculator dispatcher, sprite graphics, sprite state, display-order, and
   invalidation simulator checks pass through `make check`.
-- Home ROM: 7 bytes free; EXROM: 5 bytes free; dynamic RAM pool: 15,317
+- Home ROM: 1 byte free; EXROM: 1 byte free; dynamic RAM pool: 15,321
   bytes. Transient `FILL` scratch and persistent sprite, label, UDG, editor,
   and detokenizer storage now use safe upper HOME RAM. The command-phase token,
   status, EDIT-copy, and multi-statement buffers share

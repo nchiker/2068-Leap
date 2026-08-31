@@ -1311,16 +1311,16 @@ GFX_PIXEL_OVER:      DEFS 1           ; 1 byte — GFX_WRITE_PIXEL's own OVER
 ; above, just with more values in play than either of those needed.
 ; BASIC_STMT_LINE fills every one of these in directly before calling
 ; GFX_LINE, rather than GFX_LINE taking any register parameters at all.
-GFX_LINE_X0:         DEFS 1           ; 1 byte — start point (0-255)
-GFX_LINE_Y0:         DEFS 1           ; 1 byte — start point (0-191);
+GFX_LINE_X0          EQU EXTENSION_ARG0 ; stable ABI byte; start x
+GFX_LINE_Y0          EQU EXTENSION_ARG1 ; stable ABI byte; start y
                                  ; also GFX_LINE's own "current point"
                                  ; while the loop runs, advanced by
                                  ; GFX_LINE_SX/SY each iteration
-GFX_LINE_X1:         DEFS 1           ; 1 byte — end point, read-only once
+GFX_LINE_X1          EQU EXTENSION_ARG2 ; stable ABI byte; end x
                                  ; the loop starts (the termination
                                  ; check compares GFX_LINE_X0/Y0
                                  ; against these)
-GFX_LINE_Y1:         DEFS 1           ; 1 byte — end point
+GFX_LINE_Y1          EQU EXTENSION_ARG3 ; stable ABI byte; end y
 GFX_LINE_ATTR:       DEFS 1           ; 1 byte — attribute byte, passed
                                  ; through to GFX_WRITE_PIXEL unchanged
                                  ; every iteration
@@ -2499,6 +2499,11 @@ EXT_SERVICE_PRINT_ATTR   EQU $F3BA
 EXT_SERVICE_WRITE_PIXEL  EQU $F3BD
 EXT_SERVICE_READ_OVER    EQU $F3C0
 EXT_SERVICE_TABLE_END    EQU $F3C3
+EXTENSION_GRAMMAR        EQU $F3C3       ; 0=expr,expr; 1=LINE-shaped
+EXTENSION_ARG0           EQU $F3C4
+EXTENSION_ARG1           EQU $F3C5
+EXTENSION_ARG2           EQU $F3C6
+EXTENSION_ARG3           EQU $F3C7
 EXT_SERVICE_ABI_VERSION  EQU 1
 EXTENSION_REG_MAGIC   EQU $5845       ; "EX" little-endian
 EXTENSION_MODULE_BASE EQU $F400
@@ -2510,7 +2515,7 @@ EXTENSION_MODULE_LIMIT EQU $F600
     ASSERT EXT_SERVICE_WRITE_PIXEL == EXT_SERVICE_PRINT_ATTR + 3
     ASSERT EXT_SERVICE_READ_OVER == EXT_SERVICE_WRITE_PIXEL + 3
     ASSERT EXT_SERVICE_TABLE_END == EXT_SERVICE_READ_OVER + 3
-    ASSERT EXT_SERVICE_TABLE_END <= EXTENSION_MODULE_BASE
+    ASSERT EXTENSION_ARG3 + 1 <= EXTENSION_MODULE_BASE
     ASSERT EXTENSION_MODULE_LIMIT <= $FF00
 STR_FUNC_POOL_NEXT:  DEFS 1           ; 1 byte — next free slot (0-4); reset
                                 ; to 0 at MEM_INIT/BASIC_RUN as a safety

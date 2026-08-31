@@ -659,7 +659,11 @@ STORAGE_SAVE:
     ld   a, STORAGE_TYPE_HEADER
     ld   ix, STORAGE_HEADER_BUF
     ld   de, STORAGE_HEADER_PAYLOAD_LEN
+    IFDEF STORAGE_TEST_FAKE_SEND
+    call STORAGE_TEST_SEND_BLOCK
+    ELSE
     call STORAGE_SEND_BLOCK
+    ENDIF
 
     ld   a, 10
     ld   (STORAGE_PROGRESS_PCT), a
@@ -669,7 +673,11 @@ STORAGE_SAVE:
     pop  de                               ; caller's real data length
     pop  ix                               ; caller's real data pointer
     ld   a, STORAGE_TYPE_DATA
+    IFDEF STORAGE_TEST_FAKE_SEND
+    call STORAGE_TEST_SEND_BLOCK
+    ELSE
     call STORAGE_SEND_BLOCK               ; stock format: one data block
+    ENDIF
 
     ld   a, 2
     ld   (STORAGE_OP_STATE), a            ; SAVED

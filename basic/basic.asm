@@ -2087,11 +2087,9 @@ BASIC_DO_LOAD:
     sbc  hl, de
     jr   nz, .extension_invalid
     ld   hl, (STORAGE_HEADER_BUF + 13)
+    dec  hl
     ld   a, h
-    or   a
-    jr   nz, .extension_invalid
-    ld   a, l
-    cp   EXT_SERVICE_ABI_VERSION
+    or   l
     jr   nz, .extension_invalid
     call EXTENSION_MODULE_BASE
     jr   c, .extension_invalid
@@ -7458,6 +7456,17 @@ BASIC_STMT_FILL:
 ; Destroys: AF, BC, DE, HL
 ; ============================================================================
 BASIC_STMT_LINE:
+    call BASIC_PARSE_LINE_ARGS
+    ret  c
+    jp   GFX_LINE
+
+BASIC_STMT_EXTENSION_LINE:
+    call BASIC_PARSE_LINE_ARGS
+    ret  c
+    ld   hl, (EXTENSION_EXEC_PTR)
+    jp   (hl)
+
+BASIC_PARSE_LINE_ARGS:
     call BASIC_EVAL_EXPR
     jp   c, BASIC_RAISE_SYNTAX_ERROR
     ld   a, e
@@ -7492,8 +7501,7 @@ BASIC_STMT_LINE:
 
     call BASIC_COMPUTE_PRINT_ATTR
     ld   (GFX_LINE_ATTR), a
-    call GFX_LINE
-    or   a
+    ; BASIC_COMPUTE_PRINT_ATTR returns through an OR path, so carry is clear.
     ret
 
 
@@ -9994,6 +10002,9 @@ BASIC_TRY_EXTENSION:
     ld   de, (EXTENSION_NAME_PTR)
     call BASIC_MATCH_KEYWORD_BOUNDARY
     ret  c
+    ld   a, (EXTENSION_GRAMMAR)
+    or   a
+    jp   nz, BASIC_STMT_EXTENSION_LINE
     call BASIC_EVAL_EXPR
     jr   c, .matched
     push de
@@ -10016,29 +10027,27 @@ BASIC_TRY_EXTENSION:
 ; Registration is the only supported way to publish a module: write pointers
 ; first, invalidate the editor verdict cache, then publish the magic atomically.
 ; PoC modules are restricted to the fixed $F400-$F5FF upper-RAM window.
-; In: HL=name, DE=execute callback. Out: carry set if either is outside window.
+; In: HL=name, DE=execute callback, C=grammar (0=expr,expr; 1=LINE-shaped).
+; Out: carry set if either pointer is outside the module window.
 BASIC_EXTENSION_REGISTER:
     ld   a, h
+    and  $FE
     cp   HIGH EXTENSION_MODULE_BASE
-    jr   c, .register_fail
-    cp   HIGH EXTENSION_MODULE_LIMIT
-    jr   nc, .register_fail
+    jr   nz, .register_fail
     ld   a, d
+    and  $FE
     cp   HIGH EXTENSION_MODULE_BASE
-    jr   c, .register_fail
-    cp   HIGH EXTENSION_MODULE_LIMIT
-    jr   nc, .register_fail
+    jr   nz, .register_fail
     ld   (EXTENSION_NAME_PTR), hl
     ld   (EXTENSION_EXEC_PTR), de
+    ld   a, c
+    ld   (EXTENSION_GRAMMAR), a
     xor  a
     ld   (STATUS_CHECK_VALID), a
-    ld   bc, EXTENSION_REG_MAGIC
-    ld   (EXTENSION_MAGIC), bc
+    ld   hl, EXTENSION_REG_MAGIC
+    ld   (EXTENSION_MAGIC), hl
     ret
 .register_fail:
-    xor  a
-    ld   (EXTENSION_MAGIC), a
-    ld   (EXTENSION_MAGIC+1), a
     scf
     ret
 
