@@ -3,7 +3,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-sjasmplus rom/test_suite_inject.asm --sym=rom/test_suite_inject.sym
+tools/sjasmplus_strict.sh rom/test_suite_inject.asm --sym=rom/test_suite_inject.sym
 python3 tools/fuse_suite_inject.py demos/showcase.txt /tmp/showcase_validation.dbg
 pkill -9 -x fuse 2>/dev/null || true
 sleep 1
@@ -15,7 +15,7 @@ DISPLAY=:1 nohup fuse --no-sound --machine ts2068 \
 fuse_pid=$!
 # Collision sound pauses make total duration depend on how many sprite
 # overlaps occur; allow the worst case plus emulator startup margin.
-sleep 35
+sleep 45
 
 win="$(DISPLAY=:1 xwininfo -root -tree 2>/dev/null | grep -oP '0x[0-9a-f]+(?= "Fuse)' | head -1 || true)"
 if [ -z "$win" ]; then

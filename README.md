@@ -82,10 +82,13 @@ examples/   sample BASIC/assembly programs once there's something to run
 - `docs/loadable_basic_extensions.md` is the implementation contract for RAM
   BASIC statement modules: memory layout, ABI, grammars, tape format, tests,
   and guidance for deciding which features belong outside the base ROM.
-- `demos/showcase.txt` demonstrates structured flow, High Resolution Graphics,
-  ULAplus, arrays, sprites and collision, AY sound, strings, and text XOR. Run
+- `demos/showcase.txt` demonstrates the expanded BASIC RAM, `DEF FN`, structured
+  flow, pixel/line/circle graphics, ULAplus, arrays, sprites, AY sound, strings,
+  and pixel XOR without requiring a loadable keyword. Run
   it interactively with `tools/run_demo.sh showcase`; its timed completion is
-  checked by `tools/validate_showcase.sh`.
+  checked by `tools/validate_showcase.sh`. The debugger-injection harness can
+  leave a cosmetic FLASH cursor on the first visible listing row until the
+  first navigation key; this has not been reproduced in the production ROM.
 
 ## Contributing
 

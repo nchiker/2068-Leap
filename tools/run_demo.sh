@@ -17,8 +17,8 @@
 # run_suite_test.sh uses for the regression suite, adapted to drop into
 # the real editor instead of running once and hanging. No ROM-baked
 # size limit and no tools/fuse_load_inject.py-style 255-byte cap; real
-# ceiling is whatever fits the dynamic pool (currently up to 1871
-# bytes of program text).
+# ceiling is whatever fits the dynamic pool (currently up to 15,322
+# bytes of program text before runtime variables/arrays consume it).
 set -e
 cd "$(dirname "$0")/.."
 
@@ -28,9 +28,10 @@ if [ -z "$name" ]; then
     exit 1
 fi
 
-if [ ! -f rom/demo_inject.bin ] || [ ! -f rom/demo_inject.sym ]; then
-    sjasmplus rom/demo_inject.asm --sym=rom/demo_inject.sym
-fi
+# Always rebuild: this harness includes the live product sources and movable
+# Home-ROM addresses, so a cached binary can silently demonstrate yesterday's
+# ROM after a code or layout change.
+tools/sjasmplus_strict.sh rom/demo_inject.asm --sym=rom/demo_inject.sym
 
 python3 tools/fuse_demo_inject.py "demos/${name}.txt" "/tmp/demo_${name}.dbg"
 

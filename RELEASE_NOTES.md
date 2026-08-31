@@ -51,6 +51,9 @@ subsystem correctness, and regression coverage rather than cartridge support.
 - Added loadable `INVERT x0,y0 TO x1,y1` without consuming Home ROM or EXROM.
   Its fixtures cover inclusive and reversed rectangles, applying twice to
   restore the bitmap, unloaded rejection, and `NEW` clearing.
+- Expanded the interactive showcase to use the 15,322-byte BASIC pool without
+  requiring an external keyword. It now demonstrates `DEF FN`, `FREE()`,
+  ULAplus graphics, sprites, and continuous two-channel AY melody/accompaniment.
 - Fixed control-stack state leaking between executions: `RUN` now clears FOR
   and GOSUB depths, including frames abandoned by a runtime `GOTO`. A dedicated
   two-RUN regression harness reproduces the former failure.

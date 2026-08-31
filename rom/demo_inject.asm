@@ -11,7 +11,7 @@
 ; harness's 8-bit compare loop, not a real limit — see that script's
 ; own header). This sidesteps both: INJECT_POINT below is a stable
 ; breakpoint (same natural-pause-point technique test_suite_inject.asm
-; already uses — MEM_INIT/KBD_ISR_INIT/EI have already run for real by
+; already uses — MEM_COLD_INIT/MEM_INIT/KBD_ISR_INIT/EI have already run for real by
 ; then) where tools/fuse_demo_inject.py pokes a program's bytes at
 ; PROG_AREA_START and sets PROG_END, then lets execution resume
 ; normally into a REAL `call BASIC_COMMAND_LOOP` — the actual
@@ -31,7 +31,7 @@
 ; available memory (VARS_START - PROG_AREA_START — see include/
 ; sysvars.inc's own "Scalar variables in the dynamic pool" section for
 ; why that's the ceiling now, not the fixed PROG_AREA_MAX), currently
-; up to 1871 bytes for program text before the program's own arrays/
+; up to 15,322 bytes for program text before the program's own arrays/
 ; scalars start eating into the same pool at runtime.
 ;
 ; Since nothing demo-specific is baked into this file, it never needs
@@ -80,6 +80,7 @@ RST_38:
 
 COLD_START:
     ld   sp, $FF00
+    call MEM_COLD_INIT
     call MEM_INIT
     call KBD_ISR_INIT
     im   1

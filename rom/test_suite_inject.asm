@@ -18,7 +18,7 @@
 ; This harness applies that same technique to the whole regression
 ; suite, not just SAVE/LOAD: INJECT_POINT below is a stable breakpoint
 ; address (same "fixed trampoline" reasoning EXROM_ENTRY_LOAD/SAVE and
-; COLD_START itself already rely on) where MEM_INIT/KBD_ISR_INIT/EI
+; COLD_START itself already rely on) where MEM_COLD_INIT/MEM_INIT/KBD_ISR_INIT/EI
 ; have ALREADY run for real, and the NEXT instruction is a REAL,
 ; properly stack-balanced `call BASIC_RUN` — tools/fuse_suite_inject.py
 ; generates a .dbg script that pokes the test program's bytes at
@@ -82,6 +82,7 @@ RST_38:
 
 COLD_START:
     ld   sp, $FF00
+    call MEM_COLD_INIT
     call MEM_INIT
     call KBD_ISR_INIT
     im   1

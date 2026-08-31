@@ -14,7 +14,7 @@ of pass/fail regression testing — the harness never rebuilds per demo,
 and there's no artificial size cap the way tools/fuse_load_inject.py's
 own 255-byte limit is (an artifact of ITS verification harness's 8-bit
 compare loop). Real ceiling is whatever fits in the dynamic pool
-(PROG_AREA_START..VARS_START, currently up to 1871 bytes of program
+(PROG_AREA_START..VARS_START, currently up to 15,322 bytes of program
 text before the program's own arrays/scalars start eating into the
 same space at runtime).
 
