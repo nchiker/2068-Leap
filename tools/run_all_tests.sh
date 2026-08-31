@@ -21,7 +21,7 @@ cd "$(dirname "$0")/.."
 
 EXPECTED_CYAN="err1 snd3 ulaplus_bad_mode ulaplus_bad_index ulaplus_bad_value"
 EXPECTED_RED="mem2"
-EXPECTED_BLACK="extension_unloaded extension_new_clear block_unloaded block_new_clear"
+EXPECTED_BLACK="extension_unloaded extension_new_clear block_unloaded block_new_clear frame_unloaded frame_new_clear"
 
 is_expected_cyan() {
     local name="$1"
@@ -47,7 +47,7 @@ is_expected_black() {
     return 1
 }
 
-make cplot-extension block-extension >/tmp/build_extensions.log 2>&1 || exit 1
+make cplot-extension block-extension frame-extension >/tmp/build_extensions.log 2>&1 || exit 1
 
 pass=0
 fail=0
@@ -67,6 +67,13 @@ for f in tests/*.txt; do
         RAM_EXTENSION_BIN=build/extensions/block_clear_test.bin \
         RAM_EXTENSION_CLEAR=1 \
             bash tools/run_suite_test.sh "$name" > "/tmp/run_${name}.log" 2>&1
+    elif [ "$name" = "frame" ] || [ "$name" = "frame_over" ]; then
+        RAM_EXTENSION_BIN=build/extensions/frame_test.bin \
+            bash tools/run_suite_test.sh "$name" > "/tmp/run_${name}.log" 2>&1
+    elif [ "$name" = "frame_new_clear" ]; then
+        RAM_EXTENSION_BIN=build/extensions/frame_clear_test.bin \
+        RAM_EXTENSION_CLEAR=1 \
+            bash tools/run_suite_test.sh "$name" > "/tmp/run_${name}.log" 2>&1
     elif [ "$name" = "extension_register" ]; then
         RAM_EXTENSION_BIN=build/extensions/cplot_test.bin \
         RAM_EXTENSION_SEED_CACHE=1 \
@@ -74,6 +81,9 @@ for f in tests/*.txt; do
     elif [ "$name" = "extension_new_clear" ]; then
         RAM_EXTENSION_BIN=build/extensions/cplot_clear_test.bin \
         RAM_EXTENSION_CLEAR=1 \
+            bash tools/run_suite_test.sh "$name" > "/tmp/run_${name}.log" 2>&1
+    elif [ "$name" = "run_state" ]; then
+        RUN_STATE_TEST=1 \
             bash tools/run_suite_test.sh "$name" > "/tmp/run_${name}.log" 2>&1
     else
         bash tools/run_suite_test.sh "$name" > "/tmp/run_${name}.log" 2>&1

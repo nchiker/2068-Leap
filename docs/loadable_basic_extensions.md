@@ -16,7 +16,7 @@ An installed extension can be written back to tape with:
 SAVE "name" EXT
 ```
 
-`CPLOT` and `BLOCK` are the reference modules. They demonstrate both supported
+`CPLOT`, `BLOCK`, and `FRAME` are the reference modules. They demonstrate both supported
 grammars, the stable service ABI, static editor checking, lifecycle handling,
 and deterministic and pulse-level tape tests.
 
@@ -168,14 +168,38 @@ round-trip behavior with only the pulse-timing transport stubbed where needed.
 through the emulator's live pulse decoder. Physical cassette/hardware
 qualification remains a separate task.
 
+### Physical cassette qualification checklist
+
+Run this unchanged for CPLOT, BLOCK, and FRAME on a TS2068 before describing
+extension tape support as hardware-qualified:
+
+1. Cold boot, load the module with an explicit filename, execute its simplest
+   valid statement, and verify visible output.
+2. `SAVE "ROUNDTRIP" EXT`, cold boot, rewind, `LOAD "ROUNDTRIP" EXT`, and
+   execute the same statement again.
+3. Confirm `NEW` unregisters it and an ordinary program `LOAD` also unregisters
+   it before searching.
+4. Try a wrong filename, truncated recording, damaged/checksum-failing data
+   block, wrong ABI version, and a non-extension header encountered first.
+   Each must fail or continue searching without publishing a registry entry.
+5. Confirm `LOAD "" EXT` is rejected and `SAVE "name" EXT` without an installed
+   module reports failure rather than stale header contents.
+6. Repeat on at least two recording levels or cassette units and record the
+   hardware, recorder, medium, and observed status milestones.
+
+This is intentionally not marked complete by emulator results. The generated
+TZX and deterministic transport tests validate framing and ROM behavior, but
+they do not cover analog signal level, motor/cable behavior, or recorder
+variation.
+
 ## Building and testing a module
 
-Use `rom/extensions/cplot.asm` and `rom/extensions/block.asm` as the canonical
-examples. Their Makefile targets build normal, injected-test, and lifecycle
-variants:
+Use `rom/extensions/cplot.asm`, `rom/extensions/block.asm`, and
+`rom/extensions/frame.asm` as the canonical examples. Their Makefile targets
+build normal, injected-test, and lifecycle variants:
 
 ```sh
-make cplot-extension block-extension
+make cplot-extension block-extension frame-extension
 ```
 
 The full project check covers the storage and extension regression tests:
@@ -229,9 +253,11 @@ default. Adding another resident keyword is justified only when it is a core
 language facility or cannot be implemented safely through a stable extension
 ABI. This is the current implementation order:
 
-1. **`FRAME x0,y0 TO x1,y1`** — draw a rectangular outline. Reuse grammar 1
-   and the existing attribute/OVER/pixel services. This should require no ROM
-   or ABI changes and is the smallest next proof.
+1. **`FRAME x0,y0 TO x1,y1` — complete.** The 212-byte module draws a
+   rectangular outline using grammar 1 and existing attribute/OVER/pixel
+   services. It adds no production ROM or ABI bytes. Tests cover reversed
+   corners, empty interiors, all four edges, OVER-twice restoration, unloaded
+   rejection, and `NEW` clearing.
 2. **`INVERT x0,y0 TO x1,y1`** — XOR every pixel in a rectangular region.
    Reuse grammar 1 and deliberately pass an enabled OVER value to the pixel
    service. Test that applying it twice restores the original bitmap.
@@ -278,6 +304,7 @@ are therefore not in the active implementation queue:
 | `SCREEN$` storage shorthand | Dependency-blocked | Small only after the underlying CODE-storage machinery exists | `CODE` storage is implemented and measured headroom remains |
 | Typed numeric/string-array `DATA` | Deferred for ROM budget | Estimated around 300-550 resident bytes and requires interpreter/data-lifetime integration | A major bank recovery or architectural overlay phase |
 | `CAT` | Deferred and unspecified | Likely more than 200 bytes; tape traversal, presentation, and transport semantics are not yet fixed | Semantics are written first and a scratch build proves a fit |
+| Printer output (`COPY`, `LPRINT`, `LLIST`) | Blocked by ABI and hardware contract | ABI v1 has no no-argument/text/list grammar, printer transport, bitmap streaming, or program-listing services. Reimplementing PRINT/LIST inside each module would freeze movable internals into tape binaries | Define the supported printer hardware and a stable output ABI; prove `COPY` first, then share text output with `LPRINT` and listing with `LLIST` |
 | Multidimensional numeric arrays | Core architectural work | Changes DIM grammar, descriptors, indexing, allocation, and persistent program data; it is not a detachable statement module | Adequate resident budget and a dedicated allocator/evaluator phase |
 | Sprites as a module | Rejected under ABI v1 | Existing subsystem is about 1 KB of EXROM, exceeds the 512-byte module window, and owns persistent display/lifecycle state | A larger overlay architecture is deliberately designed |
 | Resident `HELP` | Superseded by external plan | Keeping HELP resident would spend scarce base-ROM space on optional text | The external `HELP` roadmap item gains its required grammar/services |
@@ -296,11 +323,18 @@ storage integration.
 
 The previously planned but unimplemented math functions are `COS`, `TAN`,
 `EXP`, `LN`, and `LOG10`. They cannot be modules under ABI v1 because they are
-expression functions rather than statements. A future numeric-function gateway
-would need a resident evaluator hook, numeric argument-count descriptor,
-typed/result convention, checker parity, and stable calculator services.
+expression functions rather than statements. More importantly, the current
+integer variable/expression model truncates a special float result as soon as
+it participates in a composed expression. Adding more transcendental names
+without fixing that limitation would create impressive demonstrations but
+little general mathematical value. A future numeric-function gateway is
+therefore subordinate to either a real floating datatype or an explicitly
+composable float-result ABI. It would also need a resident evaluator hook,
+numeric argument-count descriptor, checker parity, and stable calculator
+services.
 
-If that gateway is ever justified, evaluate the functions in this order:
+After that numeric representation is designed and budgeted, evaluate the
+functions in this order:
 
 1. `COS(x)` is the strongest first proof. For degree input it can reuse the
    existing sine implementation through `COS(x) = SIN(90-x)`, so its module

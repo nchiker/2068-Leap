@@ -39,12 +39,18 @@ subsystem correctness, and regression coverage rather than cartridge support.
 
 ## Validation baseline
 
-- All 75 BASIC fixtures pass. `BLOCK` is restored as a 168-byte loadable
+- All 80 BASIC fixtures pass. `BLOCK` is restored as a 168-byte loadable
   module, including reversed-corner, unloaded, and `NEW` lifecycle coverage.
   The formerly failing `gfx5` fixture exposed a harness-only initialization
   gap: the injected runner skipped production cold boot's PAPER=7 setup.
   Full-engine `MEM_INIT` now owns that shared reset, fixing the harness while
   consolidating two production calls into one.
+- Added the 212-byte loadable `FRAME x0,y0 TO x1,y1` module without consuming
+  Home ROM or EXROM. Its tests cover all four edges, reversed corners,
+  OVER-twice restoration, unloaded rejection, and `NEW` clearing.
+- Fixed control-stack state leaking between executions: `RUN` now clears FOR
+  and GOSUB depths, including frames abandoned by a runtime `GOTO`. A dedicated
+  two-RUN regression harness reproduces the former failure.
 - Nine standalone runtime smoke ROMs pass in Fuse.
 - Fifteen standalone smoke ROM targets assemble successfully.
 - Automated production-editor regression passes.

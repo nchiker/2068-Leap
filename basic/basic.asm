@@ -10515,6 +10515,10 @@ BASIC_RUN:
                                         ; reset just above — a prior
                                         ; run's AT/TAB positioning must
                                         ; not leak into this one
+    ld   (FOR_STACK_DEPTH), a           ; a GOTO can legally escape a FOR or
+    ld   (GOSUB_STACK_DEPTH), a         ; GOSUB without popping its frame;
+                                        ; those control stacks are RUN-local
+                                        ; and must never leak into the next RUN
     ld   hl, 0
     ld   (PENDING_ERROR_MSG), hl        ; no error pending yet this RUN
     ld   (GOTO_TARGET), hl              ; no jump pending at the start

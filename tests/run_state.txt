@@ -1,0 +1,17 @@
+;; First RUN deliberately abandons both a GOSUB and a FOR frame through GOTO.
+;; The dedicated harness invokes BASIC_RUN again; scalar A persists across RUN.
+;; The second pass must see both control stacks reset to empty.
+BORDER 4
+IF A = 1 THEN GOTO second
+A = 1
+GOSUB enter
+GOTO done
+enter:
+FOR I = 1 TO 2
+GOTO done
+NEXT I
+RETURN
+second:
+IF PEEK(@FOR_STACK_DEPTH@) <> 0 THEN BORDER 2
+IF PEEK(@GOSUB_STACK_DEPTH@) <> 0 THEN BORDER 2
+done:

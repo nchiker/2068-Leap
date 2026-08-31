@@ -35,7 +35,11 @@ fi
 # sources/sysvar layout, and stale cached outputs can make address-sensitive
 # fixtures test yesterday's ROM instead of today's build.
 HARNESS_ROM=test_suite_inject.bin
-if [ -n "${RAM_EXTENSION_BIN:-}" ]; then
+if [ -n "${RUN_STATE_TEST:-}" ]; then
+    tools/sjasmplus_strict.sh rom/test_run_state_inject.asm \
+        --sym=rom/test_run_state_inject.sym
+    HARNESS_ROM=test_run_state_inject.bin
+elif [ -n "${RAM_EXTENSION_BIN:-}" ]; then
     if [ -n "${RAM_EXTENSION_CLEAR:-}" ]; then
         tools/sjasmplus_strict.sh rom/test_extension_clear_inject.asm \
             --sym=rom/test_extension_clear_inject.sym
@@ -49,6 +53,7 @@ else
     tools/sjasmplus_strict.sh rom/test_suite_inject.asm --sym=rom/test_suite_inject.sym
 fi
 
+RUN_STATE_TEST="${RUN_STATE_TEST:-}" \
 python3 tools/fuse_suite_inject.py "tests/${name}.txt" "/tmp/suite_${name}.dbg"
 
 pkill -9 -f fuse 2>/dev/null || true

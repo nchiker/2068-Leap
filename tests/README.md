@@ -84,6 +84,8 @@ than one comprehensive program, matching this project's own existing
 - `cf1.txt`–`cf7.txt` — control flow: `IF`/`ELSE`/`END IF`,
   `IF`/`ELSEIF`/`ELSE`/`END IF`, `FOR`/`NEXT`, `EXIT FOR`,
   `GOTO`/labels, `GOSUB`/`RETURN`, `CALL`/`RETURN`
+- `run_state.txt` — dedicated two-RUN harness proving that abandoned FOR and
+  GOSUB frames cannot leak into the next execution
 - `arr1.txt`–`arr6.txt` — `DIM`, numeric and fixed-length string array
   read/write, arithmetic over
   array elements, array-indexed-by-array (`A(B(0)) = 99`), `DIMN`
@@ -92,6 +94,9 @@ than one comprehensive program, matching this project's own existing
   just smoke-tested), `RANDOMISE`/`RND` determinism, `PAUSE`/`CLS`
 - `gfx1.txt`–`gfx10.txt` — pixel/block/line/circle/fill graphics,
   `POINT`, and direct attribute reads through `ATTR(row,col)`
+- `frame.txt` / `frame_over.txt` — loadable FRAME geometry, reversed corners,
+  interior exclusion, and OVER-twice bitmap restoration; unloaded and NEW-
+  clearing variants verify lifecycle behavior
 - `err1.txt` — a runtime error (`SUBSCRIPT OUT OF RANGE`) correctly
   halting execution and reaching the status-line error display,
   verified via a marker border color (see "Verdict convention for

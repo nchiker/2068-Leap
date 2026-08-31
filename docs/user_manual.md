@@ -551,6 +551,7 @@ coarser 32×24 character view of the same physical screen.
 | `PLOT x,y` | Set one pixel. `x` is 0-255, `y` is 0-191 (out-of-range `y` clamps to the last valid row) |
 | `LINE x0,y0 TO x1,y1` | Draw a straight line between two **absolute** points (not classic BASIC's relative-from-last-`PLOT` `DRAW`) |
 | `BLOCK x0,y0 TO x1,y1` | Available only when the BLOCK extension is loaded; save/load modules with `SAVE "name" EXT` and `LOAD "name" EXT` |
+| `FRAME x0,y0 TO x1,y1` | Draw a rectangle outline when the FRAME extension is loaded; reversed corners and current print/OVER attributes are supported |
 | `CIRCLE x,y,r` | Draw a circle outline centred at `x,y` with radius `r`; a circle that would extend past the edge is simply clipped there |
 | `FILL x,y` | Flood-fill the connected region starting at that pixel |
 | `POINT(x,y)` | Function — `1` if that pixel is currently set, `0` if not |

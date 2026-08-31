@@ -58,6 +58,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 HARNESS_ASM = REPO_ROOT / "rom" / "test_suite_inject.asm"
 HARNESS_SYM = REPO_ROOT / "rom" / (
     "test_stack_audit.sym" if os.environ.get("STACK_AUDIT") else
+    "test_run_state_inject.sym" if os.environ.get("RUN_STATE_TEST") else
     "test_extension_clear_inject.sym" if os.environ.get("RAM_EXTENSION_CLEAR") else
     "test_extension_inject.sym" if os.environ.get("RAM_EXTENSION_BIN") else
     "test_suite_inject.sym"

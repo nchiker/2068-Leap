@@ -140,6 +140,11 @@ INJECT_POINT:
                                      ; of a distinct yellow — still
                                      ; visibly different from any real
                                      ; fixture's own expected verdict
+    IFDEF RUN_STATE_TEST
+    call BASIC_RUN                   ; dedicated fixture deliberately runs
+                                     ; the same program twice to catch state
+                                     ; leaked across BASIC_RUN boundaries
+    ENDIF
     IFDEF STACK_AUDIT
     ld   hl, $F600
 .stack_scan:
@@ -171,6 +176,9 @@ INJECT_POINT:
 
     DS   $4000 - $, $FF
 
+    IFDEF RUN_STATE_TEST
+        SAVEBIN "test_run_state_inject.bin", $0000, $4000
+    ELSE
     IFDEF STACK_AUDIT
         SAVEBIN "test_stack_audit.bin", $0000, $4000
     ELSE
@@ -183,4 +191,5 @@ INJECT_POINT:
         ELSE
             SAVEBIN "test_suite_inject.bin", $0000, $4000
         ENDIF
+    ENDIF
     ENDIF

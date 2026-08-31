@@ -150,8 +150,11 @@ decoder from a generated Direct Recording TZX.
 - Completed: installed use, reversed corners, unloaded rejection, `NEW`
   clearing, deterministic extension SAVE/LOAD round-trip infrastructure, and
   live pulse-level BLOCK LOAD are covered.
-- Planned: future optional statement keywords are external-first. The ranked
-  queue (`FRAME`, `INVERT`, `AYREG`, `ELLIPSE`, `OUT`, `UDG`, then `HELP`) and
+- Completed: FRAME is a 212-byte grammar-1 module with no production-ROM cost;
+  reversed corners, four-edge output, OVER restoration, and lifecycle cases
+  are covered.
+- Planned: future optional statement keywords are external-first. The remaining ranked
+  queue (`INVERT`, `AYREG`, `ELLIPSE`, `OUT`, `UDG`, then `HELP`) and
   completion requirements are maintained in
   [`loadable_basic_extensions.md`](loadable_basic_extensions.md#maintained-external-keyword-roadmap).
 
@@ -176,6 +179,7 @@ bytes; those budgets are separate and cannot be freely combined.
 | Typed numeric/string-array `DATA` | ~300-550 total | Does not safely fit with the higher priorities in current padding |
 | Header/storage detail command | ~100-180 total | Possible, but lower value than autorun/DEF FN/CODE |
 | `CAT` | Unknown, likely >200 | Defer until semantics and transport behavior are specified |
+| Printer `COPY`/`LPRINT`/`LLIST` | Requires new printer transport and no-argument/text/listing ABI services | Defer; prove screen `COPY` first after hardware and stable-service contracts are specified |
 | RAM BASIC-extension gateway | **116 Home, 24 EXROM measured**; CPLOT module is 132 RAM bytes | Implemented single-slot proof; net CPLOT trade is +128 Home, -14 EXROM, +2 BASIC RAM bytes |
 
 The completed sequence now includes DEF FN, INSTR, external BLOCK/CPLOT,
