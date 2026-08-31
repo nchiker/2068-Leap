@@ -5,11 +5,38 @@ cd "$(dirname "$0")/.."
 extra_defs=()
 home_rom=test_storage_named_load.bin
 test_name=storage_named_load
-if [ "${1:-}" = "extension" ]; then
-    extra_defs=(-DSTORAGE_TEST_EXTENSION)
-    home_rom=test_storage_extension_load.bin
-    test_name=storage_extension_load
-fi
+case "${1:-program}" in
+    program) ;;
+    extension)
+        extra_defs=(-DSTORAGE_TEST_EXTENSION)
+        home_rom=test_storage_extension_load.bin
+        test_name=storage_extension_load
+        ;;
+    extension_bad_length)
+        extra_defs=(-DSTORAGE_TEST_EXTENSION -DSTORAGE_TEST_INVALID -DSTORAGE_TEST_BAD_LENGTH)
+        home_rom=test_storage_extension_load.bin
+        test_name=storage_extension_bad_length
+        ;;
+    extension_bad_version)
+        extra_defs=(-DSTORAGE_TEST_EXTENSION -DSTORAGE_TEST_INVALID -DSTORAGE_TEST_BAD_VERSION)
+        home_rom=test_storage_extension_load.bin
+        test_name=storage_extension_bad_version
+        ;;
+    extension_wildcard)
+        extra_defs=(-DSTORAGE_TEST_EXTENSION -DSTORAGE_TEST_WILDCARD)
+        home_rom=test_storage_extension_load.bin
+        test_name=storage_extension_wildcard
+        ;;
+    extension_save_missing)
+        extra_defs=(-DSTORAGE_TEST_EXTENSION -DSTORAGE_TEST_SAVE_MISSING)
+        home_rom=test_storage_extension_load.bin
+        test_name=storage_extension_save_missing
+        ;;
+    *)
+        echo "unknown storage test mode: $1" >&2
+        exit 2
+        ;;
+esac
 tools/sjasmplus_strict.sh -DSTORAGE_TEST_FAKE_RECEIVE "${extra_defs[@]}" rom/exrom_build.asm
 tools/sjasmplus_strict.sh -DEDITOR_AUTO_OMIT_DEF_FN "${extra_defs[@]}" rom/test_storage_named_load.asm
 pkill -9 -x fuse 2>/dev/null || true

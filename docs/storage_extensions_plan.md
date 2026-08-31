@@ -4,7 +4,7 @@
 
 The pre-extension DEF-FN build had 3 Home-ROM bytes and 75 EXROM bytes free.
 After the CPLOT gateway, DEF-FN parser consolidation, and `INSTR`, the build
-leaves 11 Home-ROM bytes and 27 EXROM bytes after implementing extension-aware
+leaves 7 Home-ROM bytes and 5 EXROM bytes after implementing extension-aware
 tape storage. The dynamic BASIC pool is `$842B-$BFFF`
 (15,310 bytes). Storage already writes the
 stock 17-byte header shape: type, ten-character name, length, autostart, and
@@ -130,13 +130,27 @@ Implemented tape syntax is `SAVE "name" EXT` and `LOAD "name" EXT`. Extension
 files use header type 4, require exactly the fixed 512-byte `$F400-$F5FF`
 window, and store ABI version 1 in the header autostart field. LOAD validates
 type, size, checksum, and ABI version before calling the installer at `$F400`;
-any failure leaves the registry unpublished.
+any failure leaves the registry unpublished. Unlike program `LOAD ""`, an
+extension LOAD requires an explicit filename; `LOAD "" EXT` is rejected.
+
+### Extension follow-up to-do
+
+- Repackage the removed `BLOCK x0,y0 TO x1,y1` implementation as a
+  position-independent module for the existing `$F400-$F5FF` window.
+- Build a padded 512-byte tape-ready BLOCK image using only the frozen v1
+  service veneers; append ABI services only if BLOCK cannot be expressed with
+  the current table.
+- Add deterministic install/use, unloaded rejection, `NEW` clearing, and
+  `SAVE "name" EXT` / `LOAD "name" EXT` round-trip coverage. Preserve
+  `tests/extensions/block.txt` as the behavioral parity fixture.
+- Document the resulting module size and verify its graphics output against the
+  former resident implementation before treating BLOCK as restored.
 
 ## Preliminary fit review
 
 These are planning ranges from the current call paths, not byte-exact promises.
 Each accepted feature still needs an assembler-built spike and a final
-Home/EXROM delta. Available production padding is 10 Home bytes plus 35 EXROM
+Home/EXROM delta. Available production padding is 7 Home bytes plus 5 EXROM
 bytes; those budgets are separate and cannot be freely combined.
 
 | Addition | Preliminary ROM cost | Current fit assessment |

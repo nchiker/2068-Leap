@@ -79,8 +79,9 @@ BASIC_FORMAT_STORAGE_STATUS:
     jr   z, .loaded
     cp   7
     jr   z, .program_found
-    ; only 6 remains among the values this is ever called for (the
-    ; caller already ruled out 0 before calling)
+    cp   8
+    jr   z, .save_failed
+    ; only 6 remains among the values this is ever called for
     ld   hl, MSG_LOAD_FAILED
     jp BASIC_APPEND_STR_EXROM
 
@@ -101,6 +102,9 @@ BASIC_FORMAT_STORAGE_STATUS:
     jp BASIC_APPEND_STR_EXROM
 .loaded:
     ld   hl, MSG_LOADED
+    jp BASIC_APPEND_STR_EXROM
+.save_failed:
+    ld   hl, MSG_SAVE_FAILED
     jp BASIC_APPEND_STR_EXROM
 .program_found:
     ld   hl, MSG_PROGRAM
@@ -136,6 +140,7 @@ BASIC_FORMAT_STORAGE_STATUS:
     jp BASIC_APPEND_STR_EXROM
 
 MSG_LOAD_FAILED:    DB "LOAD FAILED", 0
+MSG_SAVE_FAILED:    DB "SAVE FAILED", 0
 MSG_SAVED:          DB "SAVED 100%", 0
 MSG_LOADED:         DB "LOADED 100%", 0
 MSG_SAVING_ZERO:    DB "SAVING 0%", 0

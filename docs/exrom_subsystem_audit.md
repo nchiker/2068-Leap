@@ -4,8 +4,8 @@ Status: complete pass, reconciled for the private preview on 2026-08-27.
 
 ## Capacity and governing constraint
 
-The current V2 candidate uses `$3FF5/$4000` in Home ROM (11 bytes free)
-and ends at `$DFE5` in EXROM (27 bytes free). The shared
+The current V2 candidate uses `$3FF9/$4000` in Home ROM (7 bytes free)
+and ends at `$DFFB` in EXROM (5 bytes free). The shared
 program/array/scalar RAM pool is 15,310 bytes. These figures come from
 `make budget`; historical measurements elsewhere in the engineering journal
 are intentionally retained as snapshots of their respective changes.

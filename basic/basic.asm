@@ -1876,20 +1876,12 @@ BASIC_DO_SAVE:
                                          ; as a defensive, self-
                                          ; documenting no-op rather than
                                          ; removed
-                                         ; now (2=SAVED, or 7=SAVE
-                                         ; FAILED if the data was too
-                                         ; large) — BASIC_DRAW_STATUS_
-                                         ; LINE picks either up on its
-                                         ; own next run. STORAGE_SAVE's
-                                         ; own carry (set only on the
-                                         ; too-large case) is
-                                         ; deliberately NOT propagated
-                                         ; as this routine's own carry
-                                         ; — the SAVE command's syntax
-                                         ; was fine, only the data was
-                                         ; too big, a different kind of
-                                         ; outcome than a malformed
-                                         ; command (which would
+                                         ; now (2=SAVED) — BASIC_DRAW_
+                                         ; STATUS_LINE picks it up on
+                                         ; its own next run. The command
+                                         ; was recognized and processed,
+                                         ; a different outcome from a
+                                         ; malformed command (which would
                                          ; otherwise show INVALID
                                          ; FILENAME and fall through to
                                          ; tokenization, wrong for this
@@ -1901,7 +1893,7 @@ BASIC_DO_SAVE:
     ret
 
 .save_extension_missing:
-    ld   a, 7
+    ld   a, 8
     ld   (STORAGE_OP_STATE), a
     or   a
     ret
@@ -1920,8 +1912,9 @@ BASIC_DO_SAVE:
 ; Parses LOAD "filename" syntax — same shape as BASIC_DO_SAVE's own
 ; filename scan. The filename is now genuinely passed to STORAGE_LOAD
 ; and matched against the header found on tape — LOAD "" (empty
-; string) is the Sinclair wildcard convention, accepting whatever
-; header is found with no name check.
+; string) is the Sinclair wildcard convention for ordinary program LOAD,
+; accepting whatever program header is found with no name check. Extension
+; LOAD requires a name and rejects the wildcard form.
 ;
 ; On success, replaces the program the same way NEW does
 ; (full reset: variables cleared, cursor/view/error-count back to
@@ -1935,7 +1928,7 @@ BASIC_DO_SAVE:
 ;      BASIC_DO_SAVE); carry clear = command recognized and processed
 ;      — STORAGE_LOAD sets STORAGE_OP_STATE itself (LOADED / LOADED
 ;      WITH ERRORS / LOAD FAILED), read by BASIC_DRAW_STATUS_LINE on
-;      its own next run, same as SAVE's own STORAGE_OP_STATE=7 case
+;      its own next run
 ; Destroys: AF, BC, DE, HL, IX
 ; ============================================================================
 BASIC_DO_LOAD:
@@ -1977,13 +1970,14 @@ BASIC_DO_LOAD:
     jp   c, .malformed
     ld   (STORAGE_REQUEST_TYPE), a
 
-    ; DE = filename pointer, B = filename length (0 = wildcard)
+    ; DE = filename pointer, B = filename length. Empty names retain the
+    ; Sinclair wildcard meaning for ordinary program LOAD only; extension
+    ; modules must always be selected explicitly by name.
+    or   b                                ; A still holds the request type
+    jr   z, .load_wildcard                ; program type 0 + empty name
     ld   a, b
     or   a
-    jr   z, .load_wildcard                ; B=0 (LOAD "") — pass
-                                         ; through unchanged, no
-                                         ; padding needed for a
-                                         ; wildcard match
+    jp   z, .malformed                    ; LOAD "" EXT is ambiguous
 
     ; REAL BUG FOUND AND FIXED: STORAGE_LOAD's own filename-matching
     ; requires the caller's name to already be space-padded to exactly
@@ -8906,10 +8900,9 @@ BASIC_CHECK_STATEMENT_EXROM:
 ; Unlike BASIC_SCAN_LABELS_EXROM/BASIC_FULL_CHECK_EXROM (which never
 ; needed flag protection) both of these DO protect AF across the
 ; page-out step, same as BASIC_CHECK_STATEMENT_EXROM above:
-;   - BASIC_SAVE_EXROM: STORAGE_SAVE's own carry (set only on the
-;     too-large case) is currently ignored by BASIC_DO_SAVE (which
-;     unconditionally clears carry after this call regardless) — but
-;     preserved anyway rather than relying on that staying true.
+;   - BASIC_SAVE_EXROM: STORAGE_SAVE currently returns carry clear, but
+;     AF remains preserved across paging rather than baking that detail
+;     into the wrapper.
 ;   - BASIC_LOAD_EXROM: STORAGE_LOAD's own carry (set on total
 ;     failure) IS live-checked by its caller (BASIC_DO_LOAD's `jp c,
 ;     .load_failed`), so protecting it here isn't optional. DE

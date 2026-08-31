@@ -32,6 +32,10 @@ test: all
 	tools/run_editor_auto_test.sh insert
 	tools/run_storage_named_load_test.sh
 	tools/run_storage_named_load_test.sh extension
+	tools/run_storage_named_load_test.sh extension_bad_length
+	tools/run_storage_named_load_test.sh extension_bad_version
+	tools/run_storage_named_load_test.sh extension_wildcard
+	tools/run_storage_named_load_test.sh extension_save_missing
 	tools/run_all_tests.sh
 
 budget: build

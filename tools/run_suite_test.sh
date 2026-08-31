@@ -59,6 +59,7 @@ DISPLAY=:1 nohup fuse --machine ts2068 \
     --rom-ts2068-1 exrom.bin \
     --debugger-command "$(cat "/tmp/suite_${name}.dbg")" \
     > "/tmp/fuse_${name}.log" 2>&1 &
+FPID=$!
 disown
 sleep 2.5
 
@@ -68,14 +69,13 @@ if [ -z "$WIN" ]; then
     exit 1
 fi
 
-# liveness check -- see this project's other run_*_test.sh scripts for
-# why: a hung/frozen Fuse instance still shows a valid last-rendered
-# frame, indistinguishable from a real result by screenshot alone.
-FPID=$(pgrep -f "fuse --machine ts2068 --rom-ts2068-0 $HARNESS_ROM" | head -1)
-T1=$(ps -p "$FPID" -o time= 2>/dev/null | tr -d ' ')
+# Liveness check -- read scheduler ticks directly. `ps -o time` is rounded to
+# whole seconds and falsely reported every short fixture as stalled even while
+# Fuse was consuming CPU normally.
+T1=$(awk '{print $14 + $15}' "/proc/$FPID/stat" 2>/dev/null || true)
 sleep 1
-T2=$(ps -p "$FPID" -o time= 2>/dev/null | tr -d ' ')
-if [ "$T1" = "$T2" ]; then
+T2=$(awk '{print $14 + $15}' "/proc/$FPID/stat" 2>/dev/null || true)
+if [ -z "$T1" ] || [ -z "$T2" ] || [ "$T1" = "$T2" ]; then
     echo "WARNING: Fuse CPU time not advancing ($T1) -- possibly hung, retrying once" >&2
     pkill -9 -f fuse 2>/dev/null || true
     sleep 1
@@ -85,6 +85,7 @@ if [ "$T1" = "$T2" ]; then
         --rom-ts2068-1 exrom.bin \
         --debugger-command "$(cat "/tmp/suite_${name}.dbg")" \
         > "/tmp/fuse_${name}.log" 2>&1 &
+    FPID=$!
     disown
     sleep 2.5
 fi

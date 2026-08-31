@@ -233,8 +233,8 @@ EXROM_ENTRY_SAVE:
     ; In/Out/Destroys: identical to STORAGE_SAVE's own contract (see
     ; kernel/storage/storage.asm) — this is a bare trampoline, no
     ; argument massaging needed. HL = data pointer, DE = length in,
-    ; same as STORAGE_SAVE always took; carry-set-on-too-large is
-    ; STORAGE_SAVE's own result, untouched by this stub.
+    ; same as STORAGE_SAVE always took; its result is untouched by this
+    ; stub.
     call EXROM_VERIFY_KTAB_MAGIC
     jp   STORAGE_SAVE
 

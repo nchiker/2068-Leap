@@ -35,6 +35,26 @@ COLD_START:
     ld   hl, TEST_PROGRESS_HOOK
     ld   (STORAGE_PROGRESS_HOOK), hl
 
+    IFDEF STORAGE_TEST_SAVE_MISSING
+    ld   hl, SAVE_TEXT
+    call BASIC_DO_SAVE
+    jr   c, .fail_state
+    ld   a, (STORAGE_OP_STATE)
+    cp   8
+    jr   nz, .fail_state
+    call BASIC_FORMAT_STORAGE_STATUS_EXROM
+    ld   hl, STATUS_BUF
+    ld   de, EXPECTED_SAVE_FAILED
+    ld   b, EXPECTED_SAVE_FAILED_LEN
+.compare_save_status:
+    ld   a, (de)
+    cp   (hl)
+    jr   nz, .fail_content
+    inc  de
+    inc  hl
+    djnz .compare_save_status
+    jr   .pass
+    ELSE
     ; Match the live editor layout: BASIC_DO_LOAD receives the quote at
     ; EDIT_LINE_BUF+5 and copies the name backward into offset zero.
     ld   hl, LOAD_TEXT
@@ -44,10 +64,31 @@ COLD_START:
     ld   hl, EDIT_LINE_BUF + 5
     call BASIC_DO_LOAD
 
+    IFDEF STORAGE_TEST_WILDCARD
+    jr   nc, .fail_state
+    ld   a, (TEST_TRANSITIONS)
+    or   a
+    jr   nz, .fail_state
+    ld   hl, (EXTENSION_MAGIC)
+    ld   a, h
+    or   l
+    jr   nz, .fail_content
+    jr   .pass
+    ELSE
     ld   a, (TEST_TRANSITIONS)
     cp   %00000111
     jr   nz, .fail_state
     IFDEF STORAGE_TEST_EXTENSION
+    IFDEF STORAGE_TEST_INVALID
+    ld   a, (STORAGE_OP_STATE)
+    cp   6
+    jr   nz, .fail_state
+    ld   hl, (EXTENSION_MAGIC)
+    ld   a, h
+    or   l
+    jr   nz, .fail_content
+    jr   .pass
+    ELSE
     ld   hl, (EXTENSION_MAGIC)
     ld   de, EXTENSION_REG_MAGIC
     or   a
@@ -58,6 +99,7 @@ COLD_START:
     cp   'T'
     jr   nz, .fail_content
     jr   .pass
+    ENDIF
     ELSE
     ld   hl, (PROG_END)
     ld   de, PROG_AREA_START + EXPECTED_LEN
@@ -74,6 +116,8 @@ COLD_START:
     inc  de
     inc  hl
     djnz .compare
+    ENDIF
+    ENDIF
     ENDIF
 .pass:
     ld   a, 4
@@ -116,12 +160,22 @@ TEST_PROGRESS_HOOK:
 ; making this production sysvar deterministic test scratch here.
 TEST_TRANSITIONS EQU STORAGE_ENTRY_RETRY
 
+    IFDEF STORAGE_TEST_SAVE_MISSING
+SAVE_TEXT: DB '"TEST" EXT',0
+EXPECTED_SAVE_FAILED: DB "SAVE FAILED",0
+EXPECTED_SAVE_FAILED_LEN EQU $ - EXPECTED_SAVE_FAILED
+    ELSE
     IFDEF STORAGE_TEST_EXTENSION
+    IFDEF STORAGE_TEST_WILDCARD
+LOAD_TEXT: DB '"" EXT',0
+    ELSE
 LOAD_TEXT: DB '"TEST" EXT',0
+    ENDIF
     ELSE
 LOAD_TEXT: DB '"TEST"',0
     ENDIF
 LOAD_TEXT_LEN EQU $ - LOAD_TEXT
+    ENDIF
 EXPECTED:
     DB $17,$00,$31,$30,$20,$52,$45,$4D,$20,$4E,$41,$4D,$45
     DB $44,$20,$4C,$4F,$41,$44,$20,$54,$45,$53,$54,$0D

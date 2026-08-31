@@ -1079,8 +1079,10 @@ STORAGE_OP_STATE:    DEFS 1           ; 1 byte — what BASIC_DRAW_STATUS_
                                  ; "LOAD FAILED"), 7=matching header
                                  ; found, now receiving the data block
                                  ; ("PROGRAM: <name>", NOT one-shot —
-                                 ; see STORAGE_LOAD's own .length_ok).
-                                 ; States 2/4/5/6 are one-shot (read-
+                                 ; see STORAGE_LOAD's own .length_ok),
+                                 ; 8=SAVE rejected (one-shot
+                                 ; "SAVE FAILED").
+                                 ; States 2/4/5/6/8 are one-shot (read-
                                  ; and-cleared by BASIC_DRAW_STATUS_LINE
                                  ; on its next run); states 0/1/3/7 are
                                  ; NOT cleared automatically — the

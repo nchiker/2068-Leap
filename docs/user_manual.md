@@ -257,7 +257,8 @@ milestones: 0%, 10% after the header, and 100% after the program block.
 On success it shows `SAVED 100%` or `LOADED 100%`. An unreadable or empty
 tape reports `LOAD FAILED`.
 
-Both named `LOAD "name"` and wildcard `LOAD ""` have been confirmed in
+The wildcard applies only to programs; extension modules require an explicit
+name, so `LOAD "" EXT` is rejected. Both named `LOAD "name"` and wildcard `LOAD ""` have been confirmed in
 real Fuse round-trips.
 Fuse does not automatically start this custom ROM's loader, so open the
 tape and press Play manually after entering `LOAD`.
@@ -858,7 +859,7 @@ text, not a new statement.
 |---|---|
 | `SAVED` / `LOADED` | Success |
 | `LOAD FAILED` | Unreadable tape, or name mismatch |
-| `SAVE FAILED - TOO LARGE` | Program too big to save |
+| `SAVE FAILED` | An extension SAVE was requested with no module installed |
 | `INVALID FILENAME` | Bad `SAVE`/`LOAD` filename |
 
 **Editor**:
