@@ -119,7 +119,6 @@ STORAGE_HEADER_LENGTH_OFF    EQU 11
 STORAGE_HEADER_AUTOSTART_OFF EQU 13
 STORAGE_HEADER_PROGLEN_OFF   EQU 15
 STORAGE_HEADER_PAYLOAD_LEN   EQU 17
-STORAGE_PROGRAM_TYPE         EQU 0
 STORAGE_LOAD_DATA_TOUCHED    EQU $FF     ; failure return marker: at least
                                          ; one destination byte was written
 STORAGE_NO_AUTOSTART         EQU $8000
@@ -607,7 +606,7 @@ STORAGE_SAVE:
                                          ; archived design; renamed
                                          ; comment, same sysvar slot)
 
-    ld   a, STORAGE_PROGRAM_TYPE
+    ld   a, (STORAGE_REQUEST_TYPE)
     ld   (STORAGE_HEADER_BUF + STORAGE_HEADER_TYPE_OFF), a
     ld   de, STORAGE_HEADER_BUF + STORAGE_HEADER_NAME_OFF
     ld   a, b
@@ -640,6 +639,11 @@ STORAGE_SAVE:
     ld   hl, (STORAGE_SEND_LEN)
     ld   (STORAGE_HEADER_BUF + STORAGE_HEADER_LENGTH_OFF), hl
     ld   de, STORAGE_NO_AUTOSTART
+    ld   a, (STORAGE_REQUEST_TYPE)
+    cp   STORAGE_EXTENSION_TYPE
+    jr   nz, .autostart_ready
+    ld   de, EXT_SERVICE_ABI_VERSION
+.autostart_ready:
     ld   (STORAGE_HEADER_BUF + STORAGE_HEADER_AUTOSTART_OFF), de
     ; The stock BASIC header's second parameter is the program portion
     ; length. This ROM serializes program text only (never variables),
@@ -752,7 +756,9 @@ STORAGE_LOAD:
     ld   a, b
     ld   (STORAGE_CHECKSUM), a
     ld   a, (STORAGE_HEADER_BUF + STORAGE_HEADER_TYPE_OFF)
-    cp   STORAGE_PROGRAM_TYPE
+    ld   c, a
+    ld   a, (STORAGE_REQUEST_TYPE)
+    cp   c
     jr   nz, .header_rejected
     pop  ix                               ; caller's real destination
                                          ; pointer, restored

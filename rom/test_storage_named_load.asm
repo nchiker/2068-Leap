@@ -2,6 +2,8 @@
 ; Pair with exrom_storage_test.bin, whose only substitution is the
 ; tape-pulse receiver beneath the real STORAGE_LOAD implementation.
 
+    DEFINE FULL_ENGINE_PRESENT
+
     INCLUDE "include/hardware.inc"
     INCLUDE "include/sysvars.inc"
     DEFINE EXROM_JUMPTABLE_HOME_SIDE
@@ -45,6 +47,18 @@ COLD_START:
     ld   a, (TEST_TRANSITIONS)
     cp   %00000111
     jr   nz, .fail_state
+    IFDEF STORAGE_TEST_EXTENSION
+    ld   hl, (EXTENSION_MAGIC)
+    ld   de, EXTENSION_REG_MAGIC
+    or   a
+    sbc  hl, de
+    jr   nz, .fail_content
+    ld   hl, (EXTENSION_NAME_PTR)
+    ld   a, (hl)
+    cp   'T'
+    jr   nz, .fail_content
+    jr   .pass
+    ELSE
     ld   hl, (PROG_END)
     ld   de, PROG_AREA_START + EXPECTED_LEN
     or   a
@@ -60,6 +74,8 @@ COLD_START:
     inc  de
     inc  hl
     djnz .compare
+    ENDIF
+.pass:
     ld   a, 4
     jr   .done
 .fail_state:
@@ -100,7 +116,11 @@ TEST_PROGRESS_HOOK:
 ; making this production sysvar deterministic test scratch here.
 TEST_TRANSITIONS EQU STORAGE_ENTRY_RETRY
 
+    IFDEF STORAGE_TEST_EXTENSION
+LOAD_TEXT: DB '"TEST" EXT',0
+    ELSE
 LOAD_TEXT: DB '"TEST"',0
+    ENDIF
 LOAD_TEXT_LEN EQU $ - LOAD_TEXT
 EXPECTED:
     DB $17,$00,$31,$30,$20,$52,$45,$4D,$20,$4E,$41,$4D,$45
@@ -116,4 +136,8 @@ EXPECTED_LEN EQU $ - EXPECTED
     INCLUDE "kernel/interrupt/interrupt.asm"
     INCLUDE "kernel/bank/bank.asm"
     DS $4000 - $, $FF
+    IFDEF STORAGE_TEST_EXTENSION
+    SAVEBIN "test_storage_extension_load.bin", $0000, $4000
+    ELSE
     SAVEBIN "test_storage_named_load.bin", $0000, $4000
+    ENDIF

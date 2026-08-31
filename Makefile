@@ -31,6 +31,7 @@ test: all
 	tools/run_editor_auto_test.sh
 	tools/run_editor_auto_test.sh insert
 	tools/run_storage_named_load_test.sh
+	tools/run_storage_named_load_test.sh extension
 	tools/run_all_tests.sh
 
 budget: build

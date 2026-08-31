@@ -1819,9 +1819,13 @@ BASIC_DO_SAVE:
     inc  hl
     jr   .skip_trailing
 .check_end:
-    or   a
-    jr   nz, .malformed_cleanup          ; trailing text after the
-                                         ; closing quote
+    push de
+    push bc
+    call BASIC_PARSE_STORAGE_QUALIFIER
+    pop  bc
+    pop  de
+    jr   c, .malformed_cleanup
+    ld   (STORAGE_REQUEST_TYPE), a
 
     ; DE = filename pointer, B = filename length, TOS = data length
     push de
@@ -1831,7 +1835,22 @@ BASIC_DO_SAVE:
                                          ; stashed via EX (SP),HL above
                                          ; — this pop is what finally
                                          ; balances that one push)
+    ld   a, (STORAGE_REQUEST_TYPE)
+    or   a
+    jr   z, .save_program
+    ld   de, (EXTENSION_MAGIC)
+    ld   a, d
+    cp   HIGH EXTENSION_REG_MAGIC
+    jr   nz, .save_extension_missing
+    ld   a, e
+    cp   LOW EXTENSION_REG_MAGIC
+    jr   nz, .save_extension_missing
+    ld   de, EXTENSION_MODULE_LIMIT - EXTENSION_MODULE_BASE
+    ld   ix, EXTENSION_MODULE_BASE
+    jr   .save_call
+.save_program:
     ld   ix, PROG_AREA_START
+.save_call:
     call BASIC_SAVE_EXROM                 ; STORAGE_SAVE now lives in
                                          ; EXROM (rom/exrom_storage.
                                          ; asm) — this wrapper pages it
@@ -1879,6 +1898,12 @@ BASIC_DO_SAVE:
                                          ; recognized and processed —
                                          ; regardless of whether the
                                          ; save itself succeeded
+    ret
+
+.save_extension_missing:
+    ld   a, 7
+    ld   (STORAGE_OP_STATE), a
+    or   a
     ret
 
 .malformed_cleanup:
@@ -1944,8 +1969,13 @@ BASIC_DO_LOAD:
     inc  hl
     jr   .skip_trailing
 .check_end:
-    or   a
-    jr    nz, .malformed
+    push de
+    push bc
+    call BASIC_PARSE_STORAGE_QUALIFIER
+    pop  bc
+    pop  de
+    jp   c, .malformed
+    ld   (STORAGE_REQUEST_TYPE), a
 
     ; DE = filename pointer, B = filename length (0 = wildcard)
     ld   a, b
@@ -2013,6 +2043,16 @@ BASIC_DO_LOAD:
     ; value. STORAGE_LOAD's own bound, see its header + STORAGE_MAX_LEN
     ; in sysvars.inc. Preserve HL: it carries the filename pointer
     ; required by STORAGE_LOAD after this size calculation.
+    xor  a
+    ld   (EXTENSION_MAGIC), a
+    ld   (EXTENSION_MAGIC+1), a
+    ld   a, (STORAGE_REQUEST_TYPE)
+    or   a
+    jr   z, .load_program_setup
+    ld   de, EXTENSION_MODULE_LIMIT - EXTENSION_MODULE_BASE
+    ld   ix, EXTENSION_MODULE_BASE
+    jr   .load_ready
+.load_program_setup:
     push hl
     ld   hl, (VARS_START)
     ld   de, PROG_AREA_START
@@ -2021,6 +2061,7 @@ BASIC_DO_LOAD:
     ex   de, hl
     pop  hl
     ld   ix, PROG_AREA_START
+.load_ready:
     call BASIC_LOAD_EXROM                 ; STORAGE_LOAD now lives in
                                          ; EXROM (rom/exrom_storage.
                                          ; asm) — this wrapper pages it
@@ -2043,7 +2084,36 @@ BASIC_DO_LOAD:
                                          ; (A = 0 on success)
     jr   c, .load_failed
 
+    ld   a, (STORAGE_REQUEST_TYPE)
+    or   a
+    jr   z, .program_loaded
+    ld   hl, (STORAGE_HEADER_BUF + 11)
+    ld   de, EXTENSION_MODULE_LIMIT - EXTENSION_MODULE_BASE
+    or   a
+    sbc  hl, de
+    jr   nz, .extension_invalid
+    ld   hl, (STORAGE_HEADER_BUF + 13)
+    ld   a, h
+    or   a
+    jr   nz, .extension_invalid
+    ld   a, l
+    cp   EXT_SERVICE_ABI_VERSION
+    jr   nz, .extension_invalid
+    call EXTENSION_MODULE_BASE
+    jr   c, .extension_invalid
+    or   a
+    ret
+.extension_invalid:
+    xor  a
+    ld   (EXTENSION_MAGIC), a
+    ld   (EXTENSION_MAGIC+1), a
+    ld   a, 6
+    ld   (STORAGE_OP_STATE), a
+    or   a
+    ret
+
     ; success — DE = actual data length received
+.program_loaded:
     ld   hl, PROG_AREA_START
     add  hl, de
     ld   (PROG_END), hl
@@ -2100,6 +2170,9 @@ BASIC_DO_LOAD:
     ; before any destination write preserve the current program.
     inc  a                               ; $FF -> 0 only for dirty failure
     jr   nz, .load_failed_clean
+    ld   a, (STORAGE_REQUEST_TYPE)
+    or   a
+    jr   nz, .load_failed_clean
     call MEM_INIT
     call BASIC_RESET_EDIT_STATE
     call BASIC_RESET_ROW_SHADOW
@@ -2114,6 +2187,33 @@ BASIC_DO_LOAD:
 
 .malformed:
     scf
+    ret
+
+; Optional trailing qualifier shared by immediate SAVE and LOAD.
+; In: HL at spaces, end, or EXT. Out: A=header type, carry clear; carry set
+; for any other trailing text.
+BASIC_PARSE_STORAGE_QUALIFIER:
+    call BASIC_SKIP_SPACES
+    ld   a, (hl)
+    or   a
+    jr   z, .program
+    ld   de, KW_EXT
+    call BASIC_MATCH_KEYWORD_BOUNDARY
+    ret  c
+    call BASIC_SKIP_SPACES
+    ld   a, (hl)
+    or   a
+    jr   z, .extension
+    cp   $0D
+    jr   z, .extension
+    scf
+    ret
+.extension:
+    ld   a, STORAGE_EXTENSION_TYPE
+    ret
+.program:
+    ld   a, STORAGE_PROGRAM_TYPE
+    or   a
     ret
 
 
@@ -4555,6 +4655,8 @@ BASIC_MATCH_KEYWORD_BOUNDARY:
                                        ; restored HL/DE itself here
 
     ld   a, (hl)
+    or   a
+    jr   z, .boundary_ok
     cp   $0D
     jr   z, .boundary_ok
     cp   " "

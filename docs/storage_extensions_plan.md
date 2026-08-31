@@ -4,8 +4,8 @@
 
 The pre-extension DEF-FN build had 3 Home-ROM bytes and 75 EXROM bytes free.
 After the CPLOT gateway, DEF-FN parser consolidation, and `INSTR`, the build
-leaves 185 Home-ROM bytes and 45 EXROM bytes after removing resident BLOCK.
-The dynamic BASIC pool is `$842A-$BFFF`
+leaves 11 Home-ROM bytes and 27 EXROM bytes after implementing extension-aware
+tape storage. The dynamic BASIC pool is `$842B-$BFFF`
 (15,310 bytes). Storage already writes the
 stock 17-byte header shape: type, ten-character name, length, autostart, and
 program-length fields. Extending that header is unnecessary for the first set
@@ -122,10 +122,15 @@ Removed resident `CPLOT` is now the proof extension: its 130-byte RAM module
 exercises two numeric arguments plus graphics output. The single-slot gateway
 costs 116 Home and 24 EXROM bytes; removing resident CPLOT recovered 244 Home
 and 10 EXROM bytes, a net gain of 128 Home at a cost of 14 EXROM.
-Until `LOAD ... CODE` exists it can be installed by a small BASIC loader; CODE
-loading later provides the natural tape distribution mechanism. Measure the ROM
-gateway cost before committing to this architecture—the gateway must remain
+The dedicated trailing `EXT` qualifier now provides the tape distribution
+mechanism without exposing arbitrary-address CODE loading. The gateway remains
 materially smaller than the commands it lets the base ROM shed.
+
+Implemented tape syntax is `SAVE "name" EXT` and `LOAD "name" EXT`. Extension
+files use header type 4, require exactly the fixed 512-byte `$F400-$F5FF`
+window, and store ABI version 1 in the header autostart field. LOAD validates
+type, size, checksum, and ABI version before calling the installer at `$F400`;
+any failure leaves the registry unpublished.
 
 ## Preliminary fit review
 

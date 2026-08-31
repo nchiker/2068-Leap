@@ -43,7 +43,7 @@ subsystem correctness, and regression coverage rather than cartridge support.
   two-statement insertion sequence and inspects physical display RAM.
 - Calculator dispatcher, sprite graphics, sprite state, display-order, and
   invalidation simulator checks pass through `make check`.
-- Home ROM: 185 bytes free; EXROM: 45 bytes free; dynamic RAM pool: 15,318
+- Home ROM: 11 bytes free; EXROM: 27 bytes free; dynamic RAM pool: 15,317
   bytes. Transient `FILL` scratch and persistent sprite, label, UDG, editor,
   and detokenizer storage now use safe upper HOME RAM. The command-phase token,
   status, EDIT-copy, and multi-statement buffers share

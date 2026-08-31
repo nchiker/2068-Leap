@@ -1061,6 +1061,9 @@ STORAGE_HEADER_FILENAME_LEN EQU 10 ; NOT a sysvar address — a plain
                                  ; calling into EXROM — same shared-
                                  ; constant pattern as STORAGE_MAX_LEN
                                  ; below.
+STORAGE_PROGRAM_TYPE   EQU 0
+STORAGE_EXTENSION_TYPE EQU 4
+STORAGE_REQUEST_TYPE: DEFS 1      ; requested header type for SAVE/LOAD
 STORAGE_CMD_INVALID_FLAG:DEFS 1          ; 1 byte, 0/1 — SAVE/LOAD command
                                  ; syntax validation, unrelated to the
                                  ; tape protocol itself.

@@ -2,11 +2,19 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-sjasmplus -DSTORAGE_TEST_FAKE_RECEIVE rom/exrom_build.asm
-sjasmplus -DEDITOR_AUTO_OMIT_DEF_FN rom/test_storage_named_load.asm
+extra_defs=()
+home_rom=test_storage_named_load.bin
+test_name=storage_named_load
+if [ "${1:-}" = "extension" ]; then
+    extra_defs=(-DSTORAGE_TEST_EXTENSION)
+    home_rom=test_storage_extension_load.bin
+    test_name=storage_extension_load
+fi
+tools/sjasmplus_strict.sh -DSTORAGE_TEST_FAKE_RECEIVE "${extra_defs[@]}" rom/exrom_build.asm
+tools/sjasmplus_strict.sh -DEDITOR_AUTO_OMIT_DEF_FN "${extra_defs[@]}" rom/test_storage_named_load.asm
 pkill -9 -x fuse 2>/dev/null || true
 DISPLAY=:1 fuse --no-sound --machine ts2068 \
-    --rom-ts2068-0 test_storage_named_load.bin \
+    --rom-ts2068-0 "$home_rom" \
     --rom-ts2068-1 exrom_storage_test.bin >/tmp/storage_named_load.log 2>&1 &
 fuse_pid=$!
 trap 'kill -9 "$fuse_pid" 2>/dev/null || true' EXIT
@@ -37,7 +45,7 @@ print(image.getpixel((10, 10)))
 PYEOF
 )"
 if [ "$color" != "(0, 194, 0)" ] && [ "$color" != "(0, 181, 0)" ]; then
-    echo "storage_named_load: border=${color} -> FAIL"
+    echo "${test_name}: border=${color} -> FAIL"
     exit 1
 fi
-echo "storage_named_load: border=${color} -> PASS"
+echo "${test_name}: border=${color} -> PASS"

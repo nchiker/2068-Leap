@@ -110,6 +110,7 @@ KW_CALL:    DB "CALL", 0          ; alias for GOSUB — see BASIC_STMT_
                                  ; shares its exact statement handler
 KW_DEF:     DB "DEF", 0
 KW_FN:      DB "FN", 0
+KW_EXT:     DB "EXT", 0
 
 ; ---- error messages (uppercase, null-terminated — read by
 ; BASIC_REPORT_ERROR on the Home side, never mutated) ----
