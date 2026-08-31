@@ -4,8 +4,8 @@
 
 The current post-autorun/prompted-INPUT build leaves 29 Home-ROM bytes and
 2 EXROM bytes free after adding the generalized grammar descriptor and
-loadable BLOCK. The dynamic BASIC pool is `$8427-$BFFF`
-(15,321 bytes). Storage already writes the
+loadable BLOCK. The dynamic BASIC pool is `$8426-$BFFF`
+(15,322 bytes). Storage already writes the
 stock 17-byte header shape: type, ten-character name, length, autostart, and
 program-length fields. Extending that header is unnecessary for the first set
 of features and would reduce compatibility.

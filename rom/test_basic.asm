@@ -137,21 +137,6 @@
 ; caught by the GOTO dispatch itself, a real gap fixed alongside adding
 ; GOTO (see docs/programmers_reference.md).
 ;
-; HELP is now a real command, typed at the command line like RUN:
-;   HELP                  (lists available topics — currently just
-;                         EDITOR — full-screen, press any key to return)
-;   HELP EDITOR            (shows the editor's navigation keys and the
-;                          SYMBOL SHIFT+A/S error-navigation keys from
-;                          above, full-screen, press any key to return)
-;   HELP NOWHERE             (unrecognized topic — falls back to the
-;                            same topic list as plain HELP, not an
-;                            error)
-; Confirm the screen you were on before HELP (mid-edit line, error
-; highlighting, scroll position) is intact and redraws correctly once
-; you return — this exercises the same BASIC_RESET_ROW_SHADOW path RUN
-; uses, so a stale-shadow regression here would look like leftover
-; HELP text not being cleared, or a settled line failing to redraw.
-;
 ; This is the ongoing test exercising the FULL pipeline together:
 ; kernel/editor (typing and navigation, via basic/'s
 ; EDITOR_REDRAW_HOOK and EDITOR_NAV_HOOK, and now also the error-

@@ -777,18 +777,6 @@ LAST_STATUS_TEXT:    DEFS 33          ; 33 bytes (32 chars + null
                                  ; exact symptom right after the
                                  ; earlier status-bar toggle fix
 
-; ---- HELP command (basic/'s BASIC_SHOW_HELP) ----
-; The former HELP_PTR scratch word became dead when HELP was simplified to one
-; EXROM-resident screen: the routine loads its fixed table after GFX_CLS and
-; preserves the walk pointer on the Z80 stack around each print call.
-HELP_ROW:            DEFS 1           ; 1 byte — current screen row while
-                                 ; BASIC_SHOW_HELP's line-printing loop
-                                 ; walks a topic's text, kept in memory
-                                 ; rather than a register since
-                                 ; GFX_PRINT_STRING destroys BC (and
-                                 ; thus B, which would otherwise hold
-                                 ; the row) on every call
-
 ; ---- Structured IF/ELSEIF/ELSE/END IF ----
 IF_SCAN_POS:         DEFS 2           ; 2 bytes — BASIC_IF_SCAN_STEP/
                                  ; BASIC_RESOLVE_IF_CHAIN/

@@ -618,32 +618,6 @@ BASIC_EDITOR_BLOCK_DELETE_EXROM:
     call BASIC_CALL_EXROM_INLINE
     DW   $C084
 
-; ============================================================================
-; BASIC_SHOW_HELP_EXROM
-; Thin Home-side wrapper: BASIC_SHOW_HELP and its topic tables/text now
-; live in EXROM (rom/exrom_help.asm) — HELP's own migration, picked as
-; the lowest-risk move available: pure text data behind a display
-; routine, only ever called interactively, never from a running
-; program or any hot path. Same "page in / call the fixed entry / page
-; out" shape as every wrapper above, at EXROM_ENTRY_HELP's own $C01E
-; (rom/exrom_checker.asm's entry-stub block — see that file's own doc
-; block for why every stub lives together there regardless of which
-; file supplies the real body).
-;
-; Unlike BASIC_CHECK_STATEMENT_EXROM/BASIC_SAVE_EXROM/BASIC_LOAD_EXROM,
-; this one does NOT need BASIC_EXROM_EXIT_PROTECTED: BASIC_SHOW_HELP's
-; own original contract was already "Destroys: AF, BC, DE, HL" with no
-; meaningful output — same unprotected shape as BASIC_SCAN_LABELS_
-; EXROM/BASIC_FULL_CHECK_EXROM above, for the same reason (nothing a
-; caller relies on survives the original routine either, so there's
-; nothing to protect across the page-out step).
-;
-; In:  HL = pointer to topic-name text (BASIC_SHOW_HELP's own contract,
-;      unchanged) — BANK_PAGE_EXROM_IN only ever destroys AF (see its
-;      own header), so HL passes through into the EXROM call untouched.
-; Out: none
-; Destroys: AF, BC, DE, HL
-; ============================================================================
     ENDIF
 
     IFDEF EMIT_BASIC_EDITOR_DISPLAY

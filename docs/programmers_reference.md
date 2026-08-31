@@ -3663,6 +3663,9 @@ documented on `ERR_MSG_PTR`) — and `HELP_ROW` (1 byte), the current
 row while the line-printing loop runs, kept in memory since
 `GFX_PRINT_STRING` destroys `BC`.
 
+The resident HELP implementation was later retired for ROM space, and its
+remaining `HELP_ROW` byte was reclaimed after an independent dead-state audit.
+
 **A real, general leftover-rows bug found from the user's first test of
 this feature.** A screenshot showed rows 3-13 of the editor view still
 showing the tail of the previous `HELP EDITOR` screen after pressing a

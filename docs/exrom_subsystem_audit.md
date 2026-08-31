@@ -6,7 +6,7 @@ Status: complete pass, reconciled for the private preview on 2026-08-27.
 
 The current V2 candidate uses `$3FE3/$4000` in Home ROM (29 bytes free)
 and ends at `$DFFE` in EXROM (2 bytes free). The shared
-program/array/scalar RAM pool is 15,321 bytes. These figures come from
+program/array/scalar RAM pool is 15,322 bytes. These figures come from
 `make budget`; historical measurements elsewhere in the engineering journal
 are intentionally retained as snapshots of their respective changes.
 Another language feature therefore needs a relocation, a compact shared

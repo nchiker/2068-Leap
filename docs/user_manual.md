@@ -658,7 +658,9 @@ writes with `:` instead: `SOUND 8,15 : SOUND 0,200`.
 | `STICK(device)` | Function — reads a joystick through the AY-3-8912's I/O port. `device` is `1` or `2`; anything else raises `INVALID ARGUMENT`. Device 1 returns a 4-bit direction value; device 2 (a real hardware asymmetry, not a design choice here) only returns a single bit |
 
 The prompt must currently be a quoted literal followed by `;`, for example
-`INPUT "Name: ";A$`; it is not a general string expression.
+`INPUT "Name: ";A$`; it is not a general string expression. Prompts do not
+wrap: characters and input echo beyond column 31 are clipped by the graphics
+layer, so keep the literal short enough for the current cursor position.
 
 ## 13. Memory and machine code
 
