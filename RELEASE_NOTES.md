@@ -42,7 +42,7 @@ subsystem correctness, and regression coverage rather than cartridge support.
   two-statement insertion sequence and inspects physical display RAM.
 - Calculator dispatcher, sprite graphics, sprite state, display-order, and
   invalidation simulator checks pass through `make check`.
-- Home ROM: 21 bytes free; EXROM: 35 bytes free; dynamic RAM pool: 15,310
+- Home ROM: 10 bytes free; EXROM: 35 bytes free; dynamic RAM pool: 15,310
   bytes. Transient `FILL` scratch and persistent sprite, label, UDG, editor,
   and detokenizer storage now use safe upper HOME RAM. The command-phase token,
   status, EDIT-copy, and multi-statement buffers share
@@ -53,7 +53,8 @@ subsystem correctness, and regression coverage rather than cartridge support.
   128-byte pool so they cannot overwrite an uncommitted edit line.
 - The dedicated string-function pool now lives at `$F328-$F3A7` in
   always-visible chunk 7, increasing dynamic BASIC RAM by another 128 bytes
-  while leaving 2,897 bytes below the machine stack after DEF FN state. A canary-based valid
+  while leaving 2,304 bytes of genuine stack headroom above the fixed extension
+  state and module window. A canary-based valid
   nested-expression run observed a 126-byte peak; this is a measurement, not a
   claimed global maximum.
 - Added minimal classic numeric `DEF FN`: one single-letter function, one

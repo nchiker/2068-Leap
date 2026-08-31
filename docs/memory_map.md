@@ -16,7 +16,9 @@ Status: DRAFT — living document, updated alongside code.
 | $F100-$F327   | 552B | Persistent label table, UDGs, editor/LOAD-name buffer, and detokenizer buffer |
 | $F328-$F3A7   | 128B | Persistent string-function scratch pool, relocated from chunk 4 |
 | $F3A8-$F3AE   | 7B | Minimal numeric `DEF FN` runtime state |
-| $F3AF-$FEFF   | ~2.83K | 2,897-byte machine-stack headroom below `$FF00` |
+| $F3AF-$F3C2   | 20 | Extension registry, INSTR scratch, and fixed callable service ABI |
+| $F400-$F5FF   | 512 | Single loadable-extension module window |
+| $F600-$FEFF   | 2,304 | Genuine machine-stack headroom below `$FF00` |
 | $FF00-$FFFF   | 256B  | BASIC/machine stack (grows down from `$FF00`) |
 
 **Why `$5B00`-`$7FFF` is off-limits, not just "reserved for later":** the
@@ -144,8 +146,9 @@ purpose, cross-referenced from the Programmer's Reference.
   LOAD may reuse the already-parsed edit line, but string-function evaluation
   retains a separate lower-RAM pool because the static checker can run while
   an uncommitted edit line is live. The pool now occupies `$F328-$F3A7` in
-  always-visible chunk 7. `DEF FN` uses the next seven bytes, leaving 2,897
-  bytes (`$F3AF-$FEFF`) below the machine stack. A canary-based valid nested-expression run measured a
+  always-visible chunk 7. `DEF FN` uses the next seven bytes; the extension
+  registry/service ABI and fixed module window occupy `$F3AF-$F5FF`, leaving
+  2,304 bytes (`$F600-$FEFF`) below the machine stack. A canary-based valid nested-expression run measured a
   126-byte peak, so this retains more than 23 times that observed usage.
 - **Label table**: the current top-level implementation is working and
   checked on every commit and before `RUN`. Revisit its fixed capacity when

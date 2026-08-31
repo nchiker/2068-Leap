@@ -113,11 +113,38 @@ MEM_INIT:
                                        ; inc's own STR_FUNC_POOL header)
     ld   (EXTENSION_MAGIC), a           ; unregister RAM module before NEW/
     ld   (EXTENSION_MAGIC+1), a         ; cold boot can leave a stale target
+    IFDEF FULL_ENGINE_PRESENT
+    IFNDEF STACK_AUDIT
+    ld   hl, EXT_SERVICE_TABLE_TEMPLATE
+    ld   de, EXT_SERVICE_VERSION_ADDR
+    ld   bc, EXT_SERVICE_TABLE_TEMPLATE_END - EXT_SERVICE_TABLE_TEMPLATE
+    ldir
+    ENDIF
+    ENDIF
     ld   hl, SPRITE_SLOT_DEFINED
     ld   bc, SPRITE_SLOT_MAX * 2        ; DEFINED and SHOWN are contiguous
     call MEM_FILL_ZERO
     ld   (SPRITE_DISPLAY_DEPTH), a       ; MEM_FILL_ZERO returns A=0
     jr MEM_LABEL_TABLE_CLEAR
+
+    IFDEF FULL_ENGINE_PRESENT
+    IFNDEF STACK_AUDIT
+; Fixed RAM ABI copied at NEW/cold initialization. Modules CALL the veneer
+; addresses directly; each JP preserves the caller's stack and registers.
+EXT_SERVICE_TABLE_TEMPLATE:
+    DB EXT_SERVICE_ABI_VERSION
+    DB $C3
+    DW BASIC_EXTENSION_REGISTER
+    DB $C3
+    DW BASIC_COMPUTE_PRINT_ATTR
+    DB $C3
+    DW GFX_WRITE_PIXEL
+    DB $C3
+    DW BASIC_EXTENSION_READ_OVER
+EXT_SERVICE_TABLE_TEMPLATE_END:
+    ASSERT EXT_SERVICE_TABLE_TEMPLATE_END - EXT_SERVICE_TABLE_TEMPLATE == 13
+    ENDIF
+    ENDIF
 
 ; ============================================================================
 ; MEM_LABEL_TABLE_CLEAR

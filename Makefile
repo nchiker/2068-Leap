@@ -4,12 +4,12 @@ all: check build
 
 build:
 	mkdir -p build
-	sjasmplus --sym=build/test_basic.sym --lst=build/test_basic.lst rom/test_basic.asm
+	tools/sjasmplus_strict.sh --sym=build/test_basic.sym --lst=build/test_basic.lst rom/test_basic.asm
 	cp test_basic.bin build/test_basic.bin
-	sjasmplus --sym=build/exrom.sym --lst=build/exrom.lst rom/exrom_build.asm
+	tools/sjasmplus_strict.sh --sym=build/exrom.sym --lst=build/exrom.lst rom/exrom_build.asm
 	cp exrom.bin build/exrom.bin
 	tools/make_eightyone_dck.sh build/exrom.bin build/exrom.dck
-	sjasmplus rom/zesarux_combined.asm
+	tools/sjasmplus_strict.sh rom/zesarux_combined.asm
 
 check: build
 	python3 tools/check_asm.py
@@ -39,11 +39,11 @@ budget: build
 
 cplot-extension: build
 	mkdir -p build/extensions
-	sjasmplus rom/extensions/cplot.asm
-	sjasmplus rom/test_extension_inject.asm --sym=rom/test_extension_inject.sym
-	sjasmplus rom/extensions/cplot_test.asm
-	sjasmplus rom/test_extension_clear_inject.asm --sym=rom/test_extension_clear_inject.sym
-	sjasmplus rom/extensions/cplot_clear_test.asm
+	tools/sjasmplus_strict.sh rom/extensions/cplot.asm
+	tools/sjasmplus_strict.sh rom/test_extension_inject.asm --sym=rom/test_extension_inject.sym
+	tools/sjasmplus_strict.sh rom/extensions/cplot_test.asm
+	tools/sjasmplus_strict.sh rom/test_extension_clear_inject.asm --sym=rom/test_extension_clear_inject.sym
+	tools/sjasmplus_strict.sh rom/extensions/cplot_clear_test.asm
 
 audit-basic: build
 	python3 tools/report_basic_routines.py basic/basic.asm build/test_basic.sym

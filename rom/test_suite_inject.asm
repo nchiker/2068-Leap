@@ -1,3 +1,4 @@
+    DEFINE FULL_ENGINE_PRESENT
 ; ============================================================================
 ; rom/test_suite_inject.asm — reusable regression-suite harness, Fuse-
 ; debugger-injected instead of preload_gen.py's baked-in-ROM approach.
@@ -89,8 +90,8 @@ COLD_START:
     IFDEF STACK_AUDIT
     ; Canary the entire currently documented machine-stack headroom.
     ; The scan after BASIC_RUN records the first byte touched.
-    ld   hl, $F3AF
-    ld   bc, $FF00 - $F3AF
+    ld   hl, $F600
+    ld   bc, $FF00 - $F600
     ld   a, $A5
 .stack_fill:
     ld   (hl), a
@@ -140,7 +141,7 @@ INJECT_POINT:
                                      ; visibly different from any real
                                      ; fixture's own expected verdict
     IFDEF STACK_AUDIT
-    ld   hl, $F3AF
+    ld   hl, $F600
 .stack_scan:
     ld   a, (hl)
     cp   $A5
@@ -151,19 +152,6 @@ INJECT_POINT:
     jr   nz, .stack_scan
 .stack_found:
     ld   (STORAGE_ENTRY_RETRY), hl
-    ld   de, STATUS_BUF
-    ld   a, h
-    call STACK_HEX_BYTE
-    ld   a, l
-    call STACK_HEX_BYTE
-    xor  a
-    ld   (de), a
-    call GFX_CLS
-    call BASIC_RESET_TEXT_ATTR
-    ld   hl, STATUS_BUF
-    ld   b, 0
-    ld   c, 0
-    call GFX_PRINT_STRING
     ENDIF
 .hang:
     jr   .hang                       ; leave whatever border color the
@@ -171,27 +159,6 @@ INJECT_POINT:
                                      ; own BORDER statement — the
                                      ; verdict, same convention as
                                      ; everywhere else in this suite
-
-    IFDEF STACK_AUDIT
-STACK_HEX_BYTE:
-    push af
-    rrca
-    rrca
-    rrca
-    rrca
-    call STACK_HEX_NIBBLE
-    pop  af
-STACK_HEX_NIBBLE:
-    and  $0F
-    add  a, '0'
-    cp   '9' + 1
-    jr   c, .hex_store
-    add  a, 'A' - '9' - 1
-.hex_store:
-    ld   (de), a
-    inc  de
-    ret
-    ENDIF
 
     INCLUDE "basic/basic.asm"
     INCLUDE "kernel/memory/memory.asm"

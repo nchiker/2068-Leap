@@ -2,7 +2,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-sjasmplus --sym=rom/test_stack_audit.sym -DSTACK_AUDIT rom/test_suite_inject.asm
+tools/sjasmplus_strict.sh --sym=rom/test_stack_audit.sym -DSTACK_AUDIT rom/test_suite_inject.asm
 STACK_AUDIT=1 python3 tools/fuse_suite_inject.py tools/fixtures/stack_stress.txt /tmp/stack_audit.dbg
 pkill -9 -x fuse 2>/dev/null || true
 DISPLAY=:1 fuse --no-sound --machine ts2068 \

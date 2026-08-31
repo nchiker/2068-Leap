@@ -1,3 +1,4 @@
+    DEFINE FULL_ENGINE_PRESENT
 ; ============================================================================
 ; rom/test_basic.asm — end-to-end interpreter test
 ;

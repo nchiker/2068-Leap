@@ -45,7 +45,7 @@ for index in "${!sources[@]}"; do
     source_path="${sources[$index]}"
     name="$(basename "$source_path" .asm)"
     echo "smoke-build: ${source_path}"
-    sjasmplus \
+    tools/sjasmplus_strict.sh \
         --lst="build/smoke/${name}.lst" \
         --sym="build/smoke/${name}.sym" \
         "$source_path"

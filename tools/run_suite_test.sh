@@ -37,16 +37,16 @@ fi
 HARNESS_ROM=test_suite_inject.bin
 if [ -n "${RAM_EXTENSION_BIN:-}" ]; then
     if [ -n "${RAM_EXTENSION_CLEAR:-}" ]; then
-        sjasmplus rom/test_extension_clear_inject.asm \
+        tools/sjasmplus_strict.sh rom/test_extension_clear_inject.asm \
             --sym=rom/test_extension_clear_inject.sym
         HARNESS_ROM=test_extension_clear_inject.bin
     else
-        sjasmplus rom/test_extension_inject.asm \
+        tools/sjasmplus_strict.sh rom/test_extension_inject.asm \
             --sym=rom/test_extension_inject.sym
         HARNESS_ROM=test_extension_inject.bin
     fi
 else
-    sjasmplus rom/test_suite_inject.asm --sym=rom/test_suite_inject.sym
+    tools/sjasmplus_strict.sh rom/test_suite_inject.asm --sym=rom/test_suite_inject.sym
 fi
 
 python3 tools/fuse_suite_inject.py "tests/${name}.txt" "/tmp/suite_${name}.dbg"

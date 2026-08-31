@@ -4,7 +4,7 @@
 
 The pre-extension DEF-FN build had 3 Home-ROM bytes and 75 EXROM bytes free.
 After the CPLOT gateway, DEF-FN parser consolidation, and `INSTR`, the build
-leaves 21 Home-ROM bytes and 35 EXROM bytes. The dynamic BASIC pool is `$8432-$BFFF`
+leaves 10 Home-ROM bytes and 35 EXROM bytes. The dynamic BASIC pool is `$8432-$BFFF`
 (15,310 bytes). Storage already writes the
 stock 17-byte header shape: type, ten-character name, length, autostart, and
 program-length fields. Extending that header is unnecessary for the first set
@@ -107,17 +107,17 @@ callbacks under an explicit ABI.
 The proof uses the fixed `$F400-$F5FF` upper-RAM window rather than changing the
 compile-time `$C000` BASIC-pool ceiling. Never place persistent extension code
 in storage/FILL transient scratch or in a bank that disappears during EXROM
-paging. The 121-byte CPLOT module leaves `$F479-$F5FF` unused; the whole window
-still leaves over 2 KiB below the initial stack pointer. A generalized allocator
+paging. The 130-byte CPLOT module leaves `$F482-$F5FF` unused; the whole window
+leaves 2,304 bytes of genuine stack headroom at `$F600-$FEFF`. A generalized allocator
 remains deferred pending a new stack measurement with the window reserved.
 
-Expose a compact, versioned ROM service table rather than allowing modules to
-depend on incidental internal addresses. Initial services should cover numeric
-expression parsing, comma/end validation, error reporting, current graphics
-attributes, and stable graphics primitives. Keyword highlighting may remain
-optional; execution and static checking are the compatibility requirements.
+The v1 ABI is a version byte followed by four callable three-byte `JP` veneers
+at fixed RAM addresses `$F3B6-$F3C2`. CPLOT calls registration, current graphics
+attribute calculation, pixel writing, and the OVER-state accessor through those
+veneers, so its binary contains no movable ROM routine or sysvar addresses.
+Future slots must be appended without reordering existing ones.
 
-Removed resident `CPLOT` is now the proof extension: its 121-byte RAM module
+Removed resident `CPLOT` is now the proof extension: its 130-byte RAM module
 exercises two numeric arguments plus graphics output. The single-slot gateway
 costs 116 Home and 24 EXROM bytes; removing resident CPLOT recovered 244 Home
 and 10 EXROM bytes, a net gain of 128 Home at a cost of 14 EXROM.
@@ -130,7 +130,7 @@ materially smaller than the commands it lets the base ROM shed.
 
 These are planning ranges from the current call paths, not byte-exact promises.
 Each accepted feature still needs an assembler-built spike and a final
-Home/EXROM delta. Available production padding is 241 Home bytes plus 177 EXROM
+Home/EXROM delta. Available production padding is 10 Home bytes plus 35 EXROM
 bytes; those budgets are separate and cannot be freely combined.
 
 | Addition | Preliminary ROM cost | Current fit assessment |

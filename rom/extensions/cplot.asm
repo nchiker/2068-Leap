@@ -1,5 +1,5 @@
 ; Loadable CPLOT proof module for the single-slot BASIC extension gateway.
-; This PoC is assembled against the exact ROM symbols it targets.
+; All external calls use the fixed callable RAM service ABI.
 
     IFDEF CPLOT_EXTENSION_CLEAR_TEST_BUILD
         INCLUDE "rom/test_extension_clear_inject.sym"
@@ -23,10 +23,16 @@
     ENDIF
 
 CPLOT_EXTENSION_INSTALL:
+    ld   a, (EXT_SERVICE_VERSION_ADDR)
+    cp   EXT_SERVICE_ABI_VERSION
+    jr   nz, .abi_fail
     ld   hl, CPLOT_EXTENSION_NAME
     ld   de, CPLOT_EXTENSION_EXEC
-    call BASIC_EXTENSION_REGISTER
+    call EXT_SERVICE_REGISTER
     ld   hl, 0
+    ret
+.abi_fail:
+    scf
     ret
 
 CPLOT_EXTENSION_NAME:
@@ -51,9 +57,9 @@ CPLOT_EXTENSION_EXEC:
     add  a, a
     add  a, a
     ld   (CPLOT_BASE_Y), a
-    call BASIC_COMPUTE_PRINT_ATTR
+    call EXT_SERVICE_PRINT_ATTR
     ld   (CPLOT_ATTR), a
-    ld   a, (CURRENT_OVER)
+    call EXT_SERVICE_READ_OVER
     ld   (CPLOT_OVER), a
     xor  a
     ld   (CPLOT_DY), a
@@ -74,7 +80,7 @@ CPLOT_EXTENSION_EXEC:
     ld   a, (CPLOT_OVER)
     ld   d, a
     ld   a, (CPLOT_ATTR)
-    call GFX_WRITE_PIXEL
+    call EXT_SERVICE_WRITE_PIXEL
     ld   a, (CPLOT_DX)
     inc  a
     ld   (CPLOT_DX), a

@@ -4925,10 +4925,7 @@ BASIC_EVAL_STR_PRIMARY:
 
     call BASIC_DETECT_STRVAR
     jr   nc, .var_ref
-    ld   hl, MSG_SYNTAX_ERROR
-    call BASIC_SET_PENDING_ERROR
-    scf
-    ret
+    jp   BASIC_RAISE_SYNTAX_ERROR
 
 .literal:
     inc  hl                          ; skip opening quote
@@ -5911,10 +5908,7 @@ BASIC_ARRAY_ELEMENT_ADDR:
     ret
 .oob_pop:
     pop  de                          ; discard the data-start stash
-    ld   hl, MSG_ARRAY_SUBSCRIPT_RANGE
-    call BASIC_SET_PENDING_ERROR
-    scf
-    ret
+    jp   BASIC_RAISE_ARRAY_SUBSCRIPT_RANGE
 
 ; String-array sibling: same bounds contract, but fixed 32-byte elements.
 BASIC_STR_ARRAY_ELEMENT_ADDR:
@@ -5935,10 +5929,7 @@ BASIC_STR_ARRAY_ELEMENT_ADDR:
     ret
 .str_oob:
     pop  de
-    ld   hl, MSG_ARRAY_SUBSCRIPT_RANGE
-    call BASIC_SET_PENDING_ERROR
-    scf
-    ret
+    jp   BASIC_RAISE_ARRAY_SUBSCRIPT_RANGE
 
 ; ============================================================================
 ; BASIC_STMT_DIM
@@ -7610,10 +7601,7 @@ BASIC_STMT_GOTO:
     pop  de                              ; keep the stack balanced —
                                          ; discard, error already
                                          ; recorded below
-    ld   hl, MSG_LABEL_NOT_FOUND
-    call BASIC_SET_PENDING_ERROR
-    scf
-    ret
+    jp   BASIC_RAISE_LABEL_NOT_FOUND
 
 .found:
     pop  hl                              ; HL = stashed real source
@@ -7686,10 +7674,7 @@ BASIC_STMT_GOSUB:
     pop  de                              ; keep the stack balanced —
                                          ; discard, error already
                                          ; recorded below
-    ld   hl, MSG_LABEL_NOT_FOUND
-    call BASIC_SET_PENDING_ERROR
-    scf
-    ret
+    jp   BASIC_RAISE_LABEL_NOT_FOUND
 
 .found:
     pop  hl                              ; HL = stashed real source
@@ -8046,10 +8031,7 @@ BASIC_RESOLVE_IF_CHAIN:
     jr   .loop
 
 .missing_endif:
-    ld   hl, MSG_MISSING_ENDIF
-    call BASIC_SET_PENDING_ERROR
-    scf
-    ret
+    jp   BASIC_RAISE_MISSING_ENDIF
 
 ; ============================================================================
 ; BASIC_SKIP_TO_ENDIF
@@ -8089,10 +8071,7 @@ BASIC_SKIP_TO_ENDIF:
     ret
 
 .missing_endif:
-    ld   hl, MSG_MISSING_ENDIF
-    call BASIC_SET_PENDING_ERROR
-    scf
-    ret
+    jp   BASIC_RAISE_MISSING_ENDIF
 
 ; ============================================================================
 ; BASIC_STMT_IF
@@ -9470,6 +9449,21 @@ BASIC_RAISE_SYNTAX_ERROR:
     scf
     ret
 
+BASIC_RAISE_ARRAY_SUBSCRIPT_RANGE:
+    ld   hl, MSG_ARRAY_SUBSCRIPT_RANGE
+    jr   BASIC_RAISE_ERROR_HL
+
+BASIC_RAISE_LABEL_NOT_FOUND:
+    ld   hl, MSG_LABEL_NOT_FOUND
+    jr   BASIC_RAISE_ERROR_HL
+
+BASIC_RAISE_MISSING_ENDIF:
+    ld   hl, MSG_MISSING_ENDIF
+BASIC_RAISE_ERROR_HL:
+    call BASIC_SET_PENDING_ERROR
+    scf
+    ret
+
 ; ============================================================================
 ; BASIC_REPORT_ERROR
 ; Displays a runtime error via the SAME row-23 status-line rendering
@@ -10031,6 +10025,12 @@ BASIC_EXTENSION_REGISTER:
     ld   (EXTENSION_MAGIC), a
     ld   (EXTENSION_MAGIC+1), a
     scf
+    ret
+
+; Stable extension-ABI accessor: CURRENT_OVER is movable internal state and
+; must never be compiled as an absolute address into a tape-distributed module.
+BASIC_EXTENSION_READ_OVER:
+    ld   a, (CURRENT_OVER)
     ret
 
 ; DEF FN name(param)=expression. The static checker validates the expression;

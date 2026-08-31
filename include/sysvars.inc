@@ -2286,15 +2286,16 @@ UDG_COUNT           EQU 21
 ; Persistent UDG glyphs also live in never-paged chunk 7, immediately after
 ; the label table. Graphics calls remain able to read them while EXROM owns
 ; chunk 6. `$F328-$F3A7` holds STR_FUNC_POOL and `$F3A8-$F3AE` holds
-; minimal DEF FN state; `$F3AF-$FEFF`
-; remains available as machine-stack headroom.
+; minimal DEF FN state. Extension state occupies `$F3AF-$F3C2`, and the
+; fixed module window occupies `$F400-$F5FF`; genuine stack headroom starts
+; at `$F600`.
 UDG_TABLE            EQU $F180
     ASSERT LABEL_TABLE_TOP + LABEL_TABLE_MAXLEN == UDG_TABLE
     ASSERT UDG_TABLE + 168 == $F228
     ASSERT UDG_TABLE + 168 == EDIT_LINE_BUF
     ASSERT EDIT_LINE_BUF + EDIT_LINE_BUF_LEN == DETOK_BUF
     ASSERT DETOK_BUF + 128 == $F328
-    ASSERT $F3AF <= $FF00              ; 2897 bytes of stack headroom
+    ASSERT $F600 <= $FF00              ; 2304 bytes of stack headroom
 BLOCK_GFX_SCRATCH:   DEFS 8           ; 8 bytes, through $B351
 
 ; ---- String scalars (Phase 3, 2026-08-22) ----
@@ -2481,8 +2482,8 @@ STR_FUNC_POOL_SLOTS EQU 4
 ; reduce BASIC program space. Chunk 7 is always visible during EXROM calls.
 ; The measured valid nested-expression stress peak is 126 machine-stack
 ; bytes; placing this at the former bottom of stack headroom still leaves
-; $F3A8-$FEFF (2,904 bytes) below SP=$FF00 before DEF FN's seven-byte
-; state; the current stack headroom starts at $F3AF (2,897 bytes).
+; fixed upper-RAM state and module window remain below the genuine stack
+; headroom at `$F600-$FEFF` (2,304 bytes below SP=$FF00).
 STR_FUNC_POOL        EQU $F328
     ASSERT 128 == (STR_FUNC_POOL_SLOTS * 32)
     ASSERT STR_FUNC_POOL + 128 == $F3A8
@@ -2506,11 +2507,24 @@ EXTENSION_MAGIC       EQU $F3AF       ; 2 bytes; zero means no extension
 EXTENSION_NAME_PTR    EQU $F3B1       ; 2 bytes; null-terminated RAM keyword
 EXTENSION_EXEC_PTR    EQU $F3B3       ; 2 bytes; callback after two args parsed
 INSTR_POS             EQU $F3B5       ; current 1-based candidate position
+EXT_SERVICE_VERSION_ADDR EQU $F3B6
+EXT_SERVICE_REGISTER     EQU $F3B7    ; three-byte callable JP veneer
+EXT_SERVICE_PRINT_ATTR   EQU $F3BA
+EXT_SERVICE_WRITE_PIXEL  EQU $F3BD
+EXT_SERVICE_READ_OVER    EQU $F3C0
+EXT_SERVICE_TABLE_END    EQU $F3C3
+EXT_SERVICE_ABI_VERSION  EQU 1
 EXTENSION_REG_MAGIC   EQU $5845       ; "EX" little-endian
 EXTENSION_MODULE_BASE EQU $F400
 EXTENSION_MODULE_LIMIT EQU $F600
     ASSERT INSTR_POS + 1 == $F3B6
-    ASSERT EXTENSION_MODULE_BASE >= EXTENSION_EXEC_PTR + 2
+    ASSERT EXT_SERVICE_VERSION_ADDR == INSTR_POS + 1
+    ASSERT EXT_SERVICE_REGISTER == EXT_SERVICE_VERSION_ADDR + 1
+    ASSERT EXT_SERVICE_PRINT_ATTR == EXT_SERVICE_REGISTER + 3
+    ASSERT EXT_SERVICE_WRITE_PIXEL == EXT_SERVICE_PRINT_ATTR + 3
+    ASSERT EXT_SERVICE_READ_OVER == EXT_SERVICE_WRITE_PIXEL + 3
+    ASSERT EXT_SERVICE_TABLE_END == EXT_SERVICE_READ_OVER + 3
+    ASSERT EXT_SERVICE_TABLE_END <= EXTENSION_MODULE_BASE
     ASSERT EXTENSION_MODULE_LIMIT <= $FF00
 STR_FUNC_POOL_NEXT:  DEFS 1           ; 1 byte — next free slot (0-4); reset
                                 ; to 0 at MEM_INIT/BASIC_RUN as a safety
