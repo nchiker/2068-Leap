@@ -198,11 +198,6 @@ BASIC_COMMAND_LOOP:
     ld   a, BORDER_DEFAULT
     call GFX_SET_BORDER
 
-    call BASIC_RESET_TEXT_ATTR         ; establish default INK/PAPER/
-                                       ; FLASH/INVERSE/OVER state — same
-                                       ; "no defined power-on state"
-                                       ; reasoning as BORDER_DEFAULT
-
     xor  a
     call GFX_SET_MODE                   ; establish default video mode
                                         ; (0 = Normal) — same "no
@@ -459,13 +454,6 @@ BASIC_COMMAND_LOOP:
                                          ; of screen state GFX_CLS
                                          ; itself doesn't touch
     call GFX_SET_BORDER
-    call BASIC_RESET_TEXT_ATTR         ; same reasoning as BORDER just
-                                       ; above — NEW must reset text
-                                       ; attribute state too, not just
-                                       ; border, or a prior program's
-                                       ; INK/PAPER/FLASH/INVERSE/OVER
-                                       ; would silently leak into the
-                                       ; fresh session
     xor  a
     call GFX_SET_MODE                   ; NEW resets video mode too —
                                         ; same reasoning as BORDER/text

@@ -4,7 +4,7 @@
 
 The pre-extension DEF-FN build had 3 Home-ROM bytes and 75 EXROM bytes free.
 After the CPLOT gateway, DEF-FN parser consolidation, and `INSTR`, the build
-leaves 1 Home-ROM byte and 1 EXROM byte after adding the generalized grammar
+leaves 4 Home-ROM bytes and 1 EXROM byte after adding the generalized grammar
 descriptor and loadable BLOCK. The dynamic BASIC pool is `$8427-$BFFF`
 (15,321 bytes). Storage already writes the
 stock 17-byte header shape: type, ten-character name, length, autostart, and
@@ -153,7 +153,7 @@ decoder from a generated Direct Recording TZX.
 
 These are planning ranges from the current call paths, not byte-exact promises.
 Each accepted feature still needs an assembler-built spike and a final
-Home/EXROM delta. Available production padding is 1 Home byte plus 1 EXROM
+Home/EXROM delta. Available production padding is 4 Home bytes plus 1 EXROM
 bytes; those budgets are separate and cannot be freely combined.
 
 | Addition | Preliminary ROM cost | Current fit assessment |

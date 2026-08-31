@@ -125,6 +125,9 @@ MEM_INIT:
     ld   bc, SPRITE_SLOT_MAX * 2        ; DEFINED and SHOWN are contiguous
     call MEM_FILL_ZERO
     ld   (SPRITE_DISPLAY_DEPTH), a       ; MEM_FILL_ZERO returns A=0
+    IFDEF FULL_ENGINE_PRESENT
+    call BASIC_RESET_TEXT_ATTR           ; cold boot/NEW shared default
+    ENDIF
     jr MEM_LABEL_TABLE_CLEAR
 
     IFDEF FULL_ENGINE_PRESENT

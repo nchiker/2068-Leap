@@ -32,10 +32,12 @@ subsystem correctness, and regression coverage rather than cartridge support.
 
 ## Validation baseline
 
-- 74 of 75 BASIC fixtures pass. `BLOCK` is restored as a 168-byte loadable
+- All 75 BASIC fixtures pass. `BLOCK` is restored as a 168-byte loadable
   module, including reversed-corner, unloaded, and `NEW` lifecycle coverage.
-  The remaining `gfx5` failure is the pre-existing FILL attribute-cell defect,
-  reproduced unchanged from the parent commit and tracked separately.
+  The formerly failing `gfx5` fixture exposed a harness-only initialization
+  gap: the injected runner skipped production cold boot's PAPER=7 setup.
+  Full-engine `MEM_INIT` now owns that shared reset, fixing the harness while
+  consolidating two production calls into one.
 - Nine standalone runtime smoke ROMs pass in Fuse.
 - Fifteen standalone smoke ROM targets assemble successfully.
 - Automated production-editor regression passes.
@@ -45,7 +47,7 @@ subsystem correctness, and regression coverage rather than cartridge support.
   two-statement insertion sequence and inspects physical display RAM.
 - Calculator dispatcher, sprite graphics, sprite state, display-order, and
   invalidation simulator checks pass through `make check`.
-- Home ROM: 1 byte free; EXROM: 1 byte free; dynamic RAM pool: 15,321
+- Home ROM: 4 bytes free; EXROM: 1 byte free; dynamic RAM pool: 15,321
   bytes. Transient `FILL` scratch and persistent sprite, label, UDG, editor,
   and detokenizer storage now use safe upper HOME RAM. The command-phase token,
   status, EDIT-copy, and multi-statement buffers share
