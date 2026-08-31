@@ -16,7 +16,7 @@ An installed extension can be written back to tape with:
 SAVE "name" EXT
 ```
 
-`CPLOT`, `BLOCK`, and `FRAME` are the reference modules. They demonstrate both supported
+`CPLOT`, `BLOCK`, `FRAME`, and `INVERT` are the reference modules. They demonstrate both supported
 grammars, the stable service ABI, static editor checking, lifecycle handling,
 and deterministic and pulse-level tape tests.
 
@@ -258,9 +258,10 @@ ABI. This is the current implementation order:
    services. It adds no production ROM or ABI bytes. Tests cover reversed
    corners, empty interiors, all four edges, OVER-twice restoration, unloaded
    rejection, and `NEW` clearing.
-2. **`INVERT x0,y0 TO x1,y1`** — XOR every pixel in a rectangular region.
-   Reuse grammar 1 and deliberately pass an enabled OVER value to the pixel
-   service. Test that applying it twice restores the original bitmap.
+2. **`INVERT x0,y0 TO x1,y1` — implemented.** It XORs every pixel in the
+   inclusive rectangular region using grammar 1 and the existing pixel
+   service with OVER enabled. Its fixtures cover reversed corners, applying
+   it twice to restore the bitmap, unloaded rejection, and `NEW` clearing.
 3. **`AYREG register,value`** — write an AY-3-8912 register directly. Reuse
    grammar 0. Prefer module-local direct hardware I/O so this does not expand
    the ROM service table; validate the register range and document that this
@@ -291,7 +292,7 @@ round-trip test through the production extension path. `OUT`, `AYREG`, and
 ### Deferred and rejected feature register
 
 The roadmap must preserve measured negative decisions as well as planned work.
-The production images currently have only 29 Home-ROM bytes and 2 EXROM bytes
+The production images currently have only 19 Home-ROM bytes and 2 EXROM bytes
 free; these are separate banks and cannot be combined. The following features
 are therefore not in the active implementation queue:
 

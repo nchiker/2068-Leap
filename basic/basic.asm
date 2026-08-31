@@ -9913,7 +9913,12 @@ BASIC_TRY_EXTENSION:
     ret  c
     ld   a, (EXTENSION_GRAMMAR)
     or   a
-    jp   nz, BASIC_STMT_EXTENSION_LINE
+    jr   z, .grammar_zero
+    call BASIC_STMT_EXTENSION_LINE
+    jr   .matched                     ; callbacks may destroy B (the pixel
+                                      ; service does); publish the match here
+                                      ; instead of treating B=0 as no keyword
+.grammar_zero:
     call BASIC_EVAL_EXPR
     jr   c, .matched
     push de

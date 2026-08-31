@@ -2,7 +2,7 @@
 
 ## Current constraints
 
-The current post-autorun/prompted-INPUT build leaves 29 Home-ROM bytes and
+The current V2 build leaves 19 Home-ROM bytes and
 2 EXROM bytes free after adding the generalized grammar descriptor and
 loadable BLOCK. The dynamic BASIC pool is `$8426-$BFFF`
 (15,322 bytes). Storage already writes the
@@ -162,7 +162,7 @@ decoder from a generated Direct Recording TZX.
 
 These are planning ranges from the current call paths, not byte-exact promises.
 Each accepted feature still needs an assembler-built spike and a final
-Home/EXROM delta. Available production padding is 29 Home bytes plus 2 EXROM
+Home/EXROM delta. Available production padding is 19 Home bytes plus 2 EXROM
 bytes; those budgets are separate and cannot be freely combined.
 
 | Addition | Preliminary ROM cost | Current fit assessment |

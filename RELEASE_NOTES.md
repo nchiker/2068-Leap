@@ -39,7 +39,7 @@ subsystem correctness, and regression coverage rather than cartridge support.
 
 ## Validation baseline
 
-- All 80 BASIC fixtures pass. `BLOCK` is restored as a 168-byte loadable
+- All 83 integrated BASIC fixtures pass. `BLOCK` is restored as a 168-byte loadable
   module, including reversed-corner, unloaded, and `NEW` lifecycle coverage.
   The formerly failing `gfx5` fixture exposed a harness-only initialization
   gap: the injected runner skipped production cold boot's PAPER=7 setup.
@@ -48,6 +48,9 @@ subsystem correctness, and regression coverage rather than cartridge support.
 - Added the 212-byte loadable `FRAME x0,y0 TO x1,y1` module without consuming
   Home ROM or EXROM. Its tests cover all four edges, reversed corners,
   OVER-twice restoration, unloaded rejection, and `NEW` clearing.
+- Added loadable `INVERT x0,y0 TO x1,y1` without consuming Home ROM or EXROM.
+  Its fixtures cover inclusive and reversed rectangles, applying twice to
+  restore the bitmap, unloaded rejection, and `NEW` clearing.
 - Fixed control-stack state leaking between executions: `RUN` now clears FOR
   and GOSUB depths, including frames abandoned by a runtime `GOTO`. A dedicated
   two-RUN regression harness reproduces the former failure.
@@ -60,7 +63,7 @@ subsystem correctness, and regression coverage rather than cartridge support.
   two-statement insertion sequence and inspects physical display RAM.
 - Calculator dispatcher, sprite graphics, sprite state, display-order, and
   invalidation simulator checks pass through `make check`.
-- Home ROM: 29 bytes free; EXROM: 2 bytes free; dynamic RAM pool: 15,322
+- Home ROM: 19 bytes free; EXROM: 2 bytes free; dynamic RAM pool: 15,322
   bytes. Transient `FILL` scratch and persistent sprite, label, UDG, editor,
   and detokenizer storage now use safe upper HOME RAM. The command-phase token,
   status, EDIT-copy, and multi-statement buffers share

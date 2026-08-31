@@ -97,6 +97,9 @@ than one comprehensive program, matching this project's own existing
 - `frame.txt` / `frame_over.txt` — loadable FRAME geometry, reversed corners,
   interior exclusion, and OVER-twice bitmap restoration; unloaded and NEW-
   clearing variants verify lifecycle behavior
+- `invert.txt` — loadable INVERT inclusive rectangle, reversed corners, and
+  applying the same region twice to restore the original bitmap;
+  `invert_unloaded.txt` and `invert_new_clear.txt` verify lifecycle behavior
 - `err1.txt` — a runtime error (`SUBSCRIPT OUT OF RANGE`) correctly
   halting execution and reaching the status-line error display,
   verified via a marker border color (see "Verdict convention for
