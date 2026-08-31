@@ -553,7 +553,7 @@ coarser 32×24 character view of the same physical screen.
 |---|---|
 | `PLOT x,y` | Set one pixel. `x` is 0-255, `y` is 0-191 (out-of-range `y` clamps to the last valid row) |
 | `LINE x0,y0 TO x1,y1` | Draw a straight line between two **absolute** points (not classic BASIC's relative-from-last-`PLOT` `DRAW`) |
-| `BLOCK x0,y0 TO x1,y1` | Fill a solid rectangle — corners can be given in either order |
+| `BLOCK x0,y0 TO x1,y1` | Available only when the BLOCK extension is loaded; removed from the resident ROM to fund extension-aware tape storage |
 | `CIRCLE x,y,r` | Draw a circle outline centred at `x,y` with radius `r`; a circle that would extend past the edge is simply clipped there |
 | `FILL x,y` | Flood-fill the connected region starting at that pixel |
 | `POINT(x,y)` | Function — `1` if that pixel is currently set, `0` if not |
@@ -563,7 +563,7 @@ coarser 32×24 character view of the same physical screen.
 | `ULAPLUS n` | Enable (`1`) or disable (`0`) the ULAplus extended palette. Other values raise `INVALID ARGUMENT` |
 | `PALETTE index,value` | Program ULAplus register `index` (0-63) with an 8-bit `GGGRRRBB` colour value (0-255). Out-of-range arguments raise `INVALID ARGUMENT` |
 
-`PLOT`/`LINE`/`BLOCK`/`CIRCLE`/`CPLOT` all colour using the *current*
+`PLOT`/`LINE`/`CIRCLE` and the loadable `BLOCK`/`CPLOT` extensions colour using the *current*
 `INK`/`PAPER`/`FLASH`/`INVERSE` state, same as `PRINT` — and, unlike
 `PRINT`, they genuinely respect `OVER`: with `OVER 0` (the default) a
 pixel is set outright; with `OVER 1` it's **XOR-toggled** instead

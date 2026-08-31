@@ -7402,86 +7402,6 @@ BASIC_STMT_LINE:
 
 
 ; ============================================================================
-; BASIC_STMT_BLOCK
-; Parses BLOCK <x0-expr>,<y0-expr> TO <x1-expr>,<y1-expr> and fills the
-; rectangle between the two corners via GFX_BLOCK. Normalizes corners
-; into GFX_BLOCK_XMIN/XMAX
-; while parsing (duplicated logic, not shared — the two need different
-; comparison widths, so this mirrors LINE's own "write both sysvar
-; sets, dispatch once at the end" shape rather than trying to force
-; one normalization pass to serve both precisions). Min/max-via-CP
-; logic verified in Python before being written here (2000 random
-; pairs, zero mismatches) — the wide version reuses the identical
-; comparison shape, just on 16-bit values via SBC HL,DE's carry flag
-; (unsigned "less than", correct here since x is never negative).
-; In:  HL = pointer just past the BLOCK keyword
-; Out: none; carry set on a malformed expression, missing comma, or
-;      missing TO
-; Destroys: AF, BC, DE, HL
-; ============================================================================
-BASIC_STMT_BLOCK:
-    call BASIC_EVAL_EXPR
-    jp   c, BASIC_RAISE_SYNTAX_ERROR
-    ld   a, e
-    ld   (GFX_BLOCK_XMIN), a
-    ld   (GFX_BLOCK_XMAX), a          ; tentatively both = x0; corrected
-                                      ; once x1 is known, below
-
-    call BASIC_EXPECT_COMMA_EXPR      ; DE = y0 (or carry set, error
-                                      ; already recorded)
-    ret  c
-    ld   a, e
-    call BASIC_CLAMP_Y191
-    ld   (GFX_BLOCK_YMIN), a
-    ld   (GFX_BLOCK_YMAX), a
-
-    call BASIC_EXPECT_TO_EXPR
-    ld   a, e
-    ld   b, a                          ; B = x1
-    ld   a, (GFX_BLOCK_XMIN)           ; A = x0 (currently xmin==xmax)
-    cp   b
-    jr   c, .x1_is_max                 ; x0 < x1 -> x1 becomes xmax
-    ld   a, b
-    ld   (GFX_BLOCK_XMIN), a           ; x0 >= x1 -> x1 becomes xmin
-    jr   .x_done
-.x1_is_max:
-    ld   a, b
-    ld   (GFX_BLOCK_XMAX), a
-.x_done:
-
-    call BASIC_EXPECT_COMMA_EXPR      ; DE = y1 (or carry set, error
-                                      ; already recorded)
-    ret  c
-    ld   a, e
-    call BASIC_CLAMP_Y191
-    ld   b, a                          ; B = y1 (clamped)
-    ld   a, (GFX_BLOCK_YMIN)           ; A = y0
-    cp   b
-    jr   c, .y1_is_max
-    ld   a, b
-    ld   (GFX_BLOCK_YMIN), a
-    jr   .y_done
-.y1_is_max:
-    ld   a, b
-    ld   (GFX_BLOCK_YMAX), a
-.y_done:
-    call BASIC_EXPECT_STATEMENT_END    ; BASIC_EXPECT_STATEMENT_END fix
-    jp   c, BASIC_RAISE_SYNTAX_ERROR                ; error already recorded — all
-                                        ; parsed values are already
-                                        ; safely in sysvars by this
-                                        ; point, nothing to unwind
-
-    ld   a, (CURRENT_OVER)
-    ld   (GFX_BLOCK_OVER), a
-
-    call BASIC_COMPUTE_PRINT_ATTR
-    ld   (GFX_BLOCK_ATTR), a
-    call GFX_BLOCK
-    or   a
-    ret
-
-
-; ============================================================================
 ; BASIC_STMT_CIRCLE
 ; Parses CIRCLE <x-expr>,<y-expr>,<r-expr> and draws the outline via
 ; GFX_CIRCLE. x/y follow PLOT's own range rules (x: full byte range,
@@ -10062,7 +9982,6 @@ BASIC_EXEC_DISPATCH_TABLE:
     DW KW_TAB, BASIC_STMT_TAB
     DW KW_PLOT, BASIC_STMT_PLOT
     DW KW_LINE, BASIC_STMT_LINE
-    DW KW_BLOCK, BASIC_STMT_BLOCK
     DW KW_CIRCLE, BASIC_STMT_CIRCLE
     DW KW_FILL, BASIC_STMT_FILL
     DW KW_BEEP, BASIC_STMT_BEEP
@@ -11456,7 +11375,7 @@ KEYWORD_HILITE_TABLE:
     DW   KW_CLS, KW_REM, KW_BORDER
     DW   KW_INK, KW_PAPER, KW_FLASH, KW_BRIGHT, KW_INVERSE, KW_OVER
     DW   KW_AT, KW_TAB
-    DW   KW_PLOT, KW_LINE, KW_BLOCK, KW_CIRCLE, KW_FILL, KW_MODE
+    DW   KW_PLOT, KW_LINE, KW_CIRCLE, KW_FILL, KW_MODE
     DW   KW_ULAPLUS, KW_PALETTE
     DW   KW_POKE, KW_PAUSE, KW_RANDOMISE
     DW   KW_GOSUB, KW_RETURN, KW_CALL

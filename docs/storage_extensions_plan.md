@@ -4,7 +4,8 @@
 
 The pre-extension DEF-FN build had 3 Home-ROM bytes and 75 EXROM bytes free.
 After the CPLOT gateway, DEF-FN parser consolidation, and `INSTR`, the build
-leaves 10 Home-ROM bytes and 35 EXROM bytes. The dynamic BASIC pool is `$8432-$BFFF`
+leaves 185 Home-ROM bytes and 45 EXROM bytes after removing resident BLOCK.
+The dynamic BASIC pool is `$842A-$BFFF`
 (15,310 bytes). Storage already writes the
 stock 17-byte header shape: type, ten-character name, length, autostart, and
 program-length fields. Extending that header is unnecessary for the first set

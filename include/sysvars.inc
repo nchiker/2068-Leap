@@ -1359,25 +1359,6 @@ GFX_LINE_E2:         DEFS 2           ; 2 bytes ($6196-$6197) — this
 GFX_CLIP_ATTR:       DEFS 1           ; 1 byte
 GFX_CLIP_OVER:       DEFS 1           ; 1 byte
 
-; GFX_BLOCK_* — BLOCK's own working storage. XMIN/XMAX/YMIN/YMAX are
-; the rectangle already normalized (BASIC_STMT_BLOCK does the
-; min/max ordering while parsing, not GFX_BLOCK itself — same "policy
-; in basic/, mechanism in kernel/" split as everywhere else in this
-; file), so GFX_BLOCK never has to compare corners itself. CUR_X/CUR_Y
-; are the nested-loop cursor, advanced one pixel at a time — chosen
-; over a faster row/byte-fill approach deliberately: correctness via
-; the already-proven GFX_WRITE_PIXEL first, matching this project's
-; own "optimize only after correctness" standard; a byte-fill version
-; is a plausible future speed-up, not built.
-GFX_BLOCK_XMIN:      DEFS 1           ; 1 byte
-GFX_BLOCK_XMAX:      DEFS 1           ; 1 byte
-GFX_BLOCK_YMIN:      DEFS 1           ; 1 byte
-GFX_BLOCK_YMAX:      DEFS 1           ; 1 byte
-GFX_BLOCK_ATTR:      DEFS 1           ; 1 byte
-GFX_BLOCK_OVER:      DEFS 1           ; 1 byte
-GFX_BLOCK_CUR_X:     DEFS 1           ; 1 byte
-GFX_BLOCK_CUR_Y:     DEFS 1           ; 1 byte
-
 ; GFX_CIRCLE_* — CIRCLE's own working storage, midpoint circle
 ; algorithm. X/Y are the algorithm's own octant offsets (0..r), always
 ; bytes; D is the signed 16-bit decision variable. Verified in Python

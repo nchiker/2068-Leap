@@ -54,7 +54,7 @@ concatenation, comparisons, case conversion, slicing, `CHR$`, `STR$`, `LEN`,
 ### Graphics designed for the TS2068
 
 The bitmap API provides `PLOT`, `POINT`, absolute-coordinate `LINE`, filled
-`BLOCK`, clipped `CIRCLE`, and bounded-stack flood `FILL`; coarse `CPLOT` is
+clipped `CIRCLE` and bounded-stack flood `FILL`; `BLOCK` and coarse `CPLOT` are
 the reference RAM-loaded BASIC extension.
 Text and graphics share `INK`, `PAPER`, `BRIGHT`, `FLASH`, `INVERSE`, and
 `OVER`; `OVER 1` XOR-plots both pixels and text.

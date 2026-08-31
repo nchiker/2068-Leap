@@ -538,7 +538,7 @@ gives `OVER` for `PLOT`/`DRAW`/`CIRCLE`, not just `PRINT`).
 |---|---|
 | `PLOT <x>,<y>` | Set one pixel — implemented, via `kernel/graphics`'s `GFX_WRITE_PIXEL` |
 | `LINE <x0>,<y0> TO <x1>,<y1>` | Draw a line between two points — implemented, via `kernel/graphics`'s `GFX_LINE` (Bresenham's algorithm, integer-only) |
-| `BLOCK <x0>,<y0> TO <x1>,<y1>` | Fill a rectangle — implemented, via `kernel/graphics`'s `GFX_BLOCK`. Same grammar shape as `LINE`; the two corners can be given in any order, `BASIC_STMT_BLOCK` normalizes them |
+| `BLOCK <x0>,<y0> TO <x1>,<y1>` | Removed from the resident ROM on 2026-08-30 to fund extension-aware tape storage; retained as the next loadable-extension candidate |
 | `CIRCLE <x>,<y>,<r>` | Draw a circle outline — implemented, via `kernel/graphics`'s `GFX_CIRCLE` (midpoint circle algorithm, integer-only). A radius that pushes the circle past the screen edge is simply clipped there, same as any other out-of-range point |
 | `FILL <x>,<y>` | Flood fill the connected region from that seed point — implemented, via `kernel/graphics`'s `GFX_FILL`. 4-connected, using an explicit bounded stack (2048 entries) rather than recursion; a large enough enclosed region can exhaust it, at which point the fill simply stops expanding further rather than crashing — see the programmer's reference for the real numbers behind that size |
 | `POINT(x,y)` | Function — `1` if that pixel is currently set, `0` if not; implemented, via `kernel/graphics`'s `GFX_READ_PIXEL`. QL-named deliberately (`GFX_READ_PIXEL` is the write-side's read-back counterpart, `PLOT` stays the imperative Sinclair-flavored write) |
@@ -554,7 +554,7 @@ runtime error, or `BREAK`—disables ULAplus before the editor is shown again.
 Palette register values remain programmed, so a later `ULAPLUS 1` can reuse
 them without issuing the `PALETTE` statements again.
 
-`BLOCK` and `CIRCLE` (like `PLOT`/`LINE`) color their pixels using the
+`CIRCLE` (like `PLOT`/`LINE`) colors its pixels using the
 current `INK`/`PAPER`/`FLASH`/`INVERSE`/`OVER` state — see the shared
 paragraph above. `CPLOT` does too.
 

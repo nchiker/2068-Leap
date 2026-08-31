@@ -1608,57 +1608,6 @@ GFX_PLOT_CLIPPED:
     jp GFX_WRITE_PIXEL
 
 ; ============================================================================
-; GFX_BLOCK
-; Filled rectangle — BLOCK's mechanism. Plots every pixel in
-; [XMIN..XMAX] x [YMIN..YMAX] via GFX_WRITE_PIXEL, one pixel at a time.
-; Deliberately the simple version: correctness first, matching this
-; project's own "optimize only after correctness" standard, over a
-; faster row-at-a-time byte-fill approach (plausible future work, not
-; built — see this routine's own sysvars.inc comment).
-; In:  GFX_BLOCK_XMIN/XMAX/YMIN/YMAX/ATTR/OVER, all pre-set by the
-;      caller (BASIC_STMT_BLOCK normalizes the parsed corners into
-;      min/max order before calling — GFX_BLOCK itself never compares
-;      corners)
-; Out: none
-; Destroys: AF, BC, DE, HL
-; ============================================================================
-GFX_BLOCK:
-    ld   a, (GFX_BLOCK_YMIN)
-    ld   (GFX_BLOCK_CUR_Y), a
-.row_loop:
-    ld   a, (GFX_BLOCK_XMIN)
-    ld   (GFX_BLOCK_CUR_X), a
-.col_loop:
-    ld   a, (GFX_BLOCK_CUR_X)
-    ld   b, a
-    ld   a, (GFX_BLOCK_CUR_Y)
-    ld   c, a
-    ld   a, (GFX_BLOCK_OVER)
-    ld   d, a
-    ld   a, (GFX_BLOCK_ATTR)
-    call GFX_WRITE_PIXEL
-
-    ld   a, (GFX_BLOCK_CUR_X)
-    ld   b, a
-    ld   a, (GFX_BLOCK_XMAX)
-    cp   b
-    jr   z, .row_done
-    ld   a, (GFX_BLOCK_CUR_X)
-    inc  a
-    ld   (GFX_BLOCK_CUR_X), a
-    jr   .col_loop
-.row_done:
-    ld   a, (GFX_BLOCK_CUR_Y)
-    ld   b, a
-    ld   a, (GFX_BLOCK_YMAX)
-    cp   b
-    ret  z
-    ld   a, (GFX_BLOCK_CUR_Y)
-    inc  a
-    ld   (GFX_BLOCK_CUR_Y), a
-    jr   .row_loop
-
-; ============================================================================
 ; GFX_FILL_PUSH (internal — not in kernel_api.inc)
 ; Pushes (x,y) onto GFX_FILL_STACK. Silently does nothing if the stack
 ; is already full — graceful truncation, matching this routine's own

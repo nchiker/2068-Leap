@@ -106,7 +106,6 @@
                                  ; caller fills these in first — draws
                                  ; an absolute-coordinate line via
                                  ; Bresenham's algorithm
-    EXTERN GFX_BLOCK            ; no register args — reads GFX_BLOCK_
                                  ; XMIN/XMAX/YMIN/YMAX/ATTR/OVER
                                  ; (sysvars.inc; caller normalizes
                                  ; corner order first) — fills a
