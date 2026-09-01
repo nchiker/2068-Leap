@@ -1,4 +1,4 @@
-# 2068 Leap Programmer's Reference
+# 2068-Leap Programmer's Reference
 
 Status: DRAFT — grows one module at a time, alongside the code. Each section
 below corresponds to a kernel module; only `kernel/editor` exists so far.

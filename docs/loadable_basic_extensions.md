@@ -130,7 +130,7 @@ static editor checker. The checker never executes module code.
 | `0` | `KEYWORD expr,expr` | `BC=first`, `DE=second` 16-bit numeric results |
 | `1` | `KEYWORD expr,expr TO expr,expr` | Low bytes at `EXTENSION_ARG0..3` |
 
-Grammar 0 is used by `CPLOT` and `AYREG`. Grammar 1 is used by `BLOCK`; its four fixed
+Grammar 0 is used by `CPLOT`, `AYREG`, and `OUT`. Grammar 1 is used by `BLOCK`; its four fixed
 bytes are deliberately coordinate-sized. Registration invalidates the
 editor's cached verdict so a statement previously marked as unknown is checked
 again immediately after its extension is installed.
@@ -170,7 +170,7 @@ qualification remains a separate task.
 
 ### Physical cassette qualification checklist
 
-Run this unchanged for CPLOT, BLOCK, FRAME, INVERT, and AYREG on a TS2068 before describing
+Run this unchanged for CPLOT, BLOCK, FRAME, INVERT, AYREG, and OUT on a TS2068 before describing
 extension tape support as hardware-qualified:
 
 1. Cold boot, load the module with an explicit filename, execute its simplest
@@ -199,7 +199,7 @@ Use `rom/extensions/cplot.asm`, `rom/extensions/block.asm`, and
 build normal, injected-test, and lifecycle variants:
 
 ```sh
-make cplot-extension block-extension frame-extension
+make cplot-extension block-extension frame-extension out-extension
 ```
 
 The full project check covers the storage and extension regression tests:
@@ -270,11 +270,11 @@ ABI. This is the current implementation order:
 4. **`ELLIPSE x0,y0 TO x1,y1`** — draw an ellipse bounded by two corners.
    Reuse grammar 1 and the pixel services. Build and measure the integer
    rasterizer before accepting it; it must fit wholly within 512 bytes.
-5. **`OUT port,value`** — perform low-level Z80 output using grammar 0. This is
-   a useful traditional programming facility and needs no ROM callback, but it
-   is intentionally advanced: arbitrary ports can alter paging, display mode,
-   interrupts, or attached hardware. Test benign ports and document unsafe
-   TS2068 paging/control ports rather than pretending the operation is safe.
+5. **`OUT port,value` — complete.** The 39-byte grammar-0 module performs a
+   native `OUT (C),A`, accepting the full 16-bit Z80 port and validating data
+   as 0-255 before touching hardware. Fixtures cover a benign full-address
+   write, visible ULA border output, invalid data, unloaded rejection, and
+   `NEW` clearing. Hardware-control risks are explicitly documented.
 6. **`UDG character,address`** — install one eight-byte character bitmap from
    RAM using grammar 0. First define a stable destination/renderer contract;
    do not compile a movable internal font/sysvar address into the module. Add a
@@ -292,12 +292,13 @@ The candidates after AYREG were re-measured against the current ABI and
 | Candidate | Measured result | Decision |
 |---|---:|---|
 | `ELLIPSE x0,y0 TO x1,y1` | The resident circle rasterizer and its plotting helpers occupy 368 bytes (`$37B5-$3924`). A module gets 512 bytes total and needs roughly 30 bytes for installation/name before its own wider two-radius arithmetic | Still plausible with grammar 1 and the pixel service, but tight. Require a complete assembler-built midpoint-ellipse spike; do not promise it from a surface estimate |
-| `OUT port,value` | A complete position-independent grammar-0 spike assembles to 39 RAM bytes, including 16-bit port and 8-bit data validation | Strong next implementation after ELLIPSE; zero resident/ABI cost. Hardware-risk documentation and benign-port tests are mandatory |
+| `OUT port,value` | Complete position-independent grammar-0 module: 39 RAM bytes, including 16-bit port and 8-bit data validation | Implemented with zero resident/ABI cost and hardware-side-effect coverage |
 | `UDG character,address` | The smallest safe resident copy service is 23 Home bytes; its callable ABI veneer adds 3 more, for at least 26 Home bytes plus 3 fixed RAM bytes before the module itself | Does not fit the zero-resident-ROM rule or the 12-byte Home margin. Defer; direct `POKE` remains available |
 
 These numbers deliberately distinguish a complete module spike (`OUT`), a
 measured existing-algorithm bound (`ELLIPSE`), and a measured minimum resident
-dependency (`UDG`). Only the first is implementation-ready today.
+dependency (`UDG`). `OUT` is now implemented; `ELLIPSE` remains the next
+assembler-built fit experiment.
 
 For every roadmap module, “complete” means more than assembling: it needs an
 installed-use fixture, unloaded rejection, `NEW`/ordinary-LOAD clearing,
@@ -308,7 +309,7 @@ round-trip test through the production extension path. `OUT`, `AYREG`, and
 ### Deferred and rejected feature register
 
 The roadmap must preserve measured negative decisions as well as planned work.
-The production images currently have only 12 Home-ROM bytes and 2 EXROM bytes
+The production images currently have only 1 Home-ROM byte and 2 EXROM bytes
 free; these are separate banks and cannot be combined. The following features
 are therefore not in the active implementation queue:
 

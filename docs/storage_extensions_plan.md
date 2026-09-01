@@ -2,9 +2,9 @@
 
 ## Current constraints
 
-The current V2 build leaves 12 Home-ROM bytes and
-2 EXROM bytes free after adding the generalized grammar descriptor and
-loadable BLOCK. The dynamic BASIC pool is `$8426-$BFFF`
+The current V2 build leaves 1 Home-ROM byte and
+2 EXROM bytes free after the post-LOAD editor fixes and the generalized
+loadable-extension work. The dynamic BASIC pool is `$8426-$BFFF`
 (15,322 bytes). Storage already writes the
 stock 17-byte header shape: type, ten-character name, length, autostart, and
 program-length fields. Extending that header is unnecessary for the first set
@@ -157,7 +157,8 @@ decoder from a generated Direct Recording TZX.
   inclusive/reversed rectangles, double-application restoration, unloaded
   rejection, and `NEW` clearing are covered.
 - Planned: future optional statement keywords are external-first. The remaining ranked
-  queue (`ELLIPSE`, `OUT`, `UDG`, then `HELP`) and
+  queue (`ELLIPSE`, then the currently blocked `UDG` and `HELP`; `OUT` is
+  complete) and
   completion requirements are maintained in
   [`loadable_basic_extensions.md`](loadable_basic_extensions.md#maintained-external-keyword-roadmap).
 
@@ -165,7 +166,7 @@ decoder from a generated Direct Recording TZX.
 
 These are planning ranges from the current call paths, not byte-exact promises.
 Each accepted feature still needs an assembler-built spike and a final
-Home/EXROM delta. Available production padding is 12 Home bytes plus 2 EXROM
+Home/EXROM delta. Available production padding is 1 Home byte plus 2 EXROM
 bytes; those budgets are separate and cannot be freely combined.
 
 | Addition | Preliminary ROM cost | Current fit assessment |

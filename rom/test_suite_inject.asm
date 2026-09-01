@@ -84,9 +84,18 @@ COLD_START:
     ld   sp, $FF00
     call MEM_COLD_INIT
     call MEM_INIT
-    call KBD_ISR_INIT
+    ; No fixture accepts keyboard input. MEM_COLD_INIT already leaves the
+    ; interrupt-owned state safely zeroed, so the interactive ROM's explicit
+    ; KBD_ISR_INIT call is unnecessary here. Omitting it also keeps this
+    ; run-once harness within the production ROM's now one-byte margin.
+    ; The two-pass RUN-state fixture performs no keyboard or timing work and
+    ; exits by its border verdict, so it can leave interrupts disabled.  This
+    ; also gives its extra `call BASIC_RUN` enough harness-only ROM space now
+    ; that the production image has only a one-byte margin.
+    IFNDEF RUN_STATE_TEST
     im   1
     ei
+    ENDIF
 
     IFDEF STACK_AUDIT
     ; Canary the entire currently documented machine-stack headroom.

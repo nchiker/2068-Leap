@@ -1,10 +1,11 @@
-# 2068 Leap V2 prerelease candidate
+# 2068-Leap — Release 1 Beta
 
-This candidate develops V2 independently on `develop/v2` while the V1 private
-preview remains available on `release/v1`. It concentrates on ROM headroom,
-subsystem correctness, and regression coverage rather than cartridge support.
+2068-Leap Release 1 Beta is the first public beta of the redesigned Timex Sinclair 2068
+ROM. It concentrates on a practical full-screen BASIC environment, ROM
+headroom, subsystem correctness, and regression coverage rather than cartridge
+support.
 
-## V2 changes
+## Release 1 Beta highlights
 
 - Recovered ROM space with symbol-derived BASIC audits and table-driven BASIC
   execution, numeric-function, and EXROM checker dispatch.
@@ -39,7 +40,7 @@ subsystem correctness, and regression coverage rather than cartridge support.
 
 ## Validation baseline
 
-- All 88 integrated BASIC fixtures pass. `BLOCK` is restored as a 168-byte loadable
+- All 92 integrated BASIC fixtures pass. `BLOCK` is restored as a 168-byte loadable
   module, including reversed-corner, unloaded, and `NEW` lifecycle coverage.
   The formerly failing `gfx5` fixture exposed a harness-only initialization
   gap: the injected runner skipped production cold boot's PAPER=7 setup.
@@ -54,6 +55,9 @@ subsystem correctness, and regression coverage rather than cartridge support.
 - Added the 53-byte loadable `AYREG register,value` module. It uses the
   existing two-expression grammar and performs native AY port I/O locally,
   consuming no Home ROM, EXROM, or new ABI service bytes.
+- Added the 39-byte loadable `OUT port,value` module. It accepts the complete
+  16-bit Z80 port address, validates byte-sized data before touching hardware,
+  and likewise consumes no Home ROM, EXROM, or ABI service bytes.
 - Fixed successful program LOAD leaving the editor's append sentinel with a
   hardcoded statement index of zero. Loaded programs now publish their real
   statement count. A second post-load defect in the word-wrap row cache is
@@ -105,9 +109,9 @@ subsystem correctness, and regression coverage rather than cartridge support.
   unchanged. This recovered 11 Home-ROM and 71 EXROM bytes without changing
   RAM, fixed entry addresses, or the KTAB ABI.
 
-## Candidate boundaries
+## Beta boundaries
 
-- V2 is not cartridge-focused; cartridge support and a public cartridge ABI
+- Release 1 Beta is not cartridge-focused; cartridge support and a public cartridge ABI
   remain deferred.
 - Eight fixed sprite slots reserve 2,352 bytes including metadata and display
   ordering. Reducing or dynamically allocating them remains a future option.
@@ -115,8 +119,9 @@ subsystem correctness, and regression coverage rather than cartridge support.
   `HIDE` and `MOVE` must follow reverse display order.
 - The calculator is a focused internal arithmetic service, not a complete
   implementation of the original Sinclair calculator literal set.
-- Programs use 2068 Leap's structured, line-number-free representation and
+- Programs use 2068-Leap's structured, line-number-free representation and
   are not byte-compatible with stock tokenized Sinclair BASIC programs.
 
-No V2 tag is assigned by this document. Tagging follows clean-build emulator
-verification and explicit selection of the next prerelease version.
+The GitHub beta tag should be created only after a clean build, the complete
+emulator validation gate, final Word-manual generation, and packaging of the
+documented ROM and extension artifacts.

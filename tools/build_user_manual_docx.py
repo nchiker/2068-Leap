@@ -17,6 +17,49 @@ from docx.shared import Inches, Pt, RGBColor
 ROOT = Path(__file__).resolve().parent.parent
 SOURCE = ROOT / "docs" / "user_manual.md"
 OUTPUT = ROOT / "docs" / "2068_Leap_Users_Manual.docx"
+BOOKMARK_ID = 0
+
+
+def markdown_anchor(text):
+    """Return the GitHub-style anchor used by this manual's Markdown links."""
+    text = re.sub(r"[`*_]", "", text).lower().strip()
+    text = re.sub(r"[^\w\s-]", "", text)
+    return re.sub(r"\s", "-", text)
+
+
+def bookmark_name(anchor):
+    """Map a Markdown anchor to a valid, stable Word bookmark name."""
+    return "md_" + re.sub(r"[^A-Za-z0-9_]", "_", anchor)
+
+
+def add_bookmark(paragraph, anchor):
+    global BOOKMARK_ID
+    BOOKMARK_ID += 1
+    start = OxmlElement("w:bookmarkStart")
+    start.set(qn("w:id"), str(BOOKMARK_ID))
+    start.set(qn("w:name"), bookmark_name(anchor))
+    end = OxmlElement("w:bookmarkEnd")
+    end.set(qn("w:id"), str(BOOKMARK_ID))
+    paragraph._p.insert(0, start)
+    paragraph._p.append(end)
+
+
+def add_internal_hyperlink(paragraph, label, target):
+    hyperlink = OxmlElement("w:hyperlink")
+    hyperlink.set(qn("w:anchor"), bookmark_name(target.lstrip("#")))
+    hyperlink.set(qn("w:history"), "1")
+    run = OxmlElement("w:r")
+    properties = OxmlElement("w:rPr")
+    color = OxmlElement("w:color")
+    color.set(qn("w:val"), "1F4E79")
+    underline = OxmlElement("w:u")
+    underline.set(qn("w:val"), "single")
+    properties.extend((color, underline))
+    text = OxmlElement("w:t")
+    text.text = label
+    run.extend((properties, text))
+    hyperlink.append(run)
+    paragraph._p.append(hyperlink)
 
 
 def shade(cell_or_paragraph, fill):
@@ -62,11 +105,10 @@ def add_inline(paragraph, text):
             run.bold = True
         else:
             label, target = re.match(r"\[([^]]+)\]\(([^)]+)\)", token).groups()
-            run = paragraph.add_run(label)
-            run.font.color.rgb = RGBColor(0x1F, 0x4E, 0x79)
-            run.underline = True
-            run.font.size = Pt(9)
-            run._r.set(qn("w:rsidRPr"), target[:8].encode().hex()[:8])
+            if target.startswith("#"):
+                add_internal_hyperlink(paragraph, label, target)
+            else:
+                paragraph.add_run(label)
         cursor = match.end()
     paragraph.add_run(text[cursor:])
 
@@ -118,17 +160,17 @@ def configure(document):
 
     for sec in document.sections:
         header = sec.header.paragraphs[0]
-        header.text = "TIMEX SINCLAIR 2068  •  REDESIGNED BASIC ROM"
+        header.text = "2068-LEAP  •  TIMEX SINCLAIR 2068"
         header.alignment = WD_ALIGN_PARAGRAPH.RIGHT
         header.runs[0].font.size = Pt(8)
         header.runs[0].font.color.rgb = RGBColor(0x66, 0x66, 0x66)
         footer = sec.footer.paragraphs[0]
         footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        footer.add_run("TS2068 BASIC User's Manual   •   ")
+        footer.add_run("2068-Leap User's Manual   •   ")
         add_field(footer, "PAGE")
 
 
-def parse(document, lines):
+def parse(document, lines, page_break_sections=True):
     index = 0
     in_code = False
     code_lines = []
@@ -171,10 +213,13 @@ def parse(document, lines):
             if level == 1 and first_h1:
                 first_h1 = False
             else:
-                if level == 2:
-                    document.add_page_break()
                 paragraph = document.add_heading(level=level)
+                if level == 2 and page_break_sections:
+                    # A standalone break paragraph can be pushed onto a blank
+                    # page when the preceding section ends at a page boundary.
+                    paragraph.paragraph_format.page_break_before = True
                 add_inline(paragraph, heading.group(2))
+                add_bookmark(paragraph, markdown_anchor(heading.group(2)))
             index += 1
             continue
 
@@ -237,16 +282,16 @@ def main():
 
     title = document.add_paragraph(style="Title")
     title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    title.add_run("TS2068 BASIC")
+    title.add_run("2068-Leap")
     subtitle = document.add_paragraph()
     subtitle.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    run = subtitle.add_run("User's Manual\nRedesigned Timex Sinclair 2068 ROM")
+    run = subtitle.add_run("User's Manual\nTimex Sinclair 2068 ROM")
     run.font.size = Pt(17)
     run.font.color.rgb = RGBColor(0x2E, 0x75, 0xB6)
     document.add_paragraph("\n")
     edition = document.add_paragraph()
     edition.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    edition.add_run(f"Project edition • {date.today().isoformat()}").italic = True
+    edition.add_run(f"Release 1 Beta • {date.today().isoformat()}").italic = True
     document.add_page_break()
 
     document.add_heading("Contents", level=1)
@@ -266,10 +311,10 @@ def main():
     document.add_page_break()
 
     parse(document, SOURCE.read_text().splitlines())
-    document.core_properties.title = "TS2068 BASIC User's Manual"
-    document.core_properties.subject = "Redesigned Timex Sinclair 2068 ROM"
-    document.core_properties.author = "TS2068 Redesigned ROM Project"
-    document.core_properties.keywords = "TS2068, Timex Sinclair, BASIC, ROM"
+    document.core_properties.title = "2068-Leap User's Manual"
+    document.core_properties.subject = "2068-Leap Release 1 Beta"
+    document.core_properties.author = "2068-Leap Project"
+    document.core_properties.keywords = "TS2068, Timex Sinclair, BASIC, ROM, Release 1 Beta"
     output.parent.mkdir(parents=True, exist_ok=True)
     document.save(output)
     print(f"Wrote {output}")

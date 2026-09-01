@@ -19,9 +19,9 @@
 set -u
 cd "$(dirname "$0")/.."
 
-EXPECTED_CYAN="ayreg_bad_register ayreg_bad_value err1 snd3 ulaplus_bad_mode ulaplus_bad_index ulaplus_bad_value"
+EXPECTED_CYAN="ayreg_bad_register ayreg_bad_value out_bad_value err1 snd3 ulaplus_bad_mode ulaplus_bad_index ulaplus_bad_value"
 EXPECTED_RED="mem2"
-EXPECTED_BLACK="ayreg_unloaded ayreg_new_clear extension_unloaded extension_new_clear block_unloaded block_new_clear frame_unloaded frame_new_clear invert_unloaded invert_new_clear"
+EXPECTED_BLACK="ayreg_unloaded ayreg_new_clear out_unloaded out_new_clear extension_unloaded extension_new_clear block_unloaded block_new_clear frame_unloaded frame_new_clear invert_unloaded invert_new_clear"
 
 is_expected_cyan() {
     local name="$1"
@@ -47,7 +47,7 @@ is_expected_black() {
     return 1
 }
 
-make cplot-extension block-extension frame-extension invert-extension ayreg-extension >/tmp/build_extensions.log 2>&1 || exit 1
+make cplot-extension block-extension frame-extension invert-extension ayreg-extension out-extension >/tmp/build_extensions.log 2>&1 || exit 1
 
 pass=0
 fail=0
@@ -55,6 +55,7 @@ failed_names=()
 
 for f in tests/*.txt; do
     name=$(basename "$f" .txt)
+    rm -f "/tmp/suite_${name}.png"
     pkill -9 -x fuse 2>/dev/null
     sleep 0.5
     if [ "$name" = "gfx6" ]; then
@@ -65,6 +66,13 @@ for f in tests/*.txt; do
             bash tools/run_suite_test.sh "$name" > "/tmp/run_${name}.log" 2>&1
     elif [ "$name" = "ayreg_new_clear" ]; then
         RAM_EXTENSION_BIN=build/extensions/ayreg_clear_test.bin \
+        RAM_EXTENSION_CLEAR=1 \
+            bash tools/run_suite_test.sh "$name" > "/tmp/run_${name}.log" 2>&1
+    elif [ "$name" = "out" ] || [ "$name" = "out_bad_value" ]; then
+        RAM_EXTENSION_BIN=build/extensions/out_test.bin \
+            bash tools/run_suite_test.sh "$name" > "/tmp/run_${name}.log" 2>&1
+    elif [ "$name" = "out_new_clear" ]; then
+        RAM_EXTENSION_BIN=build/extensions/out_clear_test.bin \
         RAM_EXTENSION_CLEAR=1 \
             bash tools/run_suite_test.sh "$name" > "/tmp/run_${name}.log" 2>&1
     elif [ "$name" = "block" ]; then

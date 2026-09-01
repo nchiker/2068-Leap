@@ -1,6 +1,6 @@
-# 2068 Leap
+# 2068-Leap
 
-2068 Leap is an alternate-history ROM for the Timex Sinclair 2068: structured BASIC, a
+2068-Leap is an alternate-history ROM for the Timex Sinclair 2068: structured BASIC, a
 real full-screen editor, AY sound, and TS2068-specific graphics, built as
 documented kernel modules instead of the tangled monolith of the original
 ROM — while still fitting a stock 48K machine and staying instant-on.
@@ -11,15 +11,15 @@ Fuse, ZEsarUX, or the ULAplus project.
 
 ## Status
 
-Working integrated ROM: full-screen editor, structured BASIC, graphics,
-sound, EXROM banking, and TS2068-framed SAVE/LOAD are assembled and tested
-under Fuse. The automated language regression suite currently contains
-88 integrated BASIC fixtures. Use `make budget`, `make check`, and `make test` for
+**Release 1 Beta candidate.** The integrated ROM provides a full-screen editor,
+structured BASIC, graphics, sound, EXROM banking, and TS2068-framed SAVE/LOAD.
+These subsystems are assembled and tested under Fuse. The automated language regression suite currently contains
+92 integrated BASIC fixtures. Use `make budget`, `make check`, and `make test` for
 the current reproducible build and validation entry points. `make check`
 also assembles nine standalone boot/kernel smoke ROMs; `make smoke-build`
 runs that build-only compatibility check directly. `make test` executes
 the deterministic memory and math smoke ROMs in Fuse before running the
-88-fixture integrated language suite; the other smoke ROMs remain visual,
+92-fixture integrated language suite; the other smoke ROMs remain visual,
 keyboard, or tape-interactive checks.
 
 ## Quick start
@@ -50,8 +50,8 @@ ZEsarUX 13 with ULAplus enabled. An optional patch for Fuse based on
 Apply it from a compatible Fuse source tree with `git am <patch-file>`, then
 build and install Fuse normally.
 
-This is pre-1.0 software. Keep backups of programs saved with development
-builds because the native program payload may still evolve.
+This is beta software. Keep backups of programs saved with beta builds because
+the native program payload may still evolve before the final Release 1 build.
 
 ## Layout
 
@@ -77,6 +77,11 @@ examples/   sample BASIC/assembly programs once there's something to run
 - `docs/user_manual.md` is the maintained, example-driven user manual.
 - `docs/2068_Leap_Users_Manual.docx` is its styled Word edition;
   rebuild it with `make manual`.
+- `docs/emulator_setup.md` maps the GitHub release assets to tested Fuse,
+  ZEsarUX, and EightyOne 1.41 configurations.
+- `docs/whats_new_release_1_beta.md` and its styled Word edition explain the
+  user-visible changes since Public Preview 1, including the expanded BASIC
+  memory pool.
 - `docs/technical_overview.md` is the shareable architectural and feature
   overview for people interested in how the redesigned ROM differs.
 - `docs/loadable_basic_extensions.md` is the implementation contract for RAM
@@ -89,6 +94,10 @@ examples/   sample BASIC/assembly programs once there's something to run
   checked by `tools/validate_showcase.sh`. The debugger-injection harness can
   leave a cosmetic FLASH cursor on the first visible listing row until the
   first navigation key; this has not been reproduced in the production ROM.
+
+Build the complete GitHub release tree with `make release-assets`. It writes
+the four emulator images, all six extension TZX files, documentation, and a
+SHA-256 manifest beneath `build/release/`.
 
 ## Contributing
 
@@ -172,7 +181,7 @@ budgets and pass `make check`; BASIC changes should include a fixture in
    for how the attribute byte is computed and applied. **User-confirmed
    working**: a real bug (an attribute value silently failing to write
    because it lived in a ROM-resident byte instead of RAM) was found
-   via a memory dump and fixed — colours now genuinely apply. **`OVER
+   via a memory dump and fixed — colors now genuinely apply. **`OVER
    <n>`** is stored and validated the same way but doesn't affect
    drawing yet (documented gap — needs a new XOR-plotting
    `kernel/graphics` routine). `NEW`/cold boot now reset text-attribute
@@ -469,7 +478,7 @@ sjasmplus rom/main.asm
 fuse --machine ts2068 --rom-ts2068-0 rom0.bin --rom-ts2068-1 <any 8K file>
 ```
 
-Expect the border to cycle through all 8 colours. `--rom-ts2068-1` doesn't
+Expect the border to cycle through all 8 colors. `--rom-ts2068-1` doesn't
 matter yet — nothing in Milestone 0 uses the Exrom bank — any 8K file
 (even all zeros) works as a placeholder. If the border doesn't cycle, the
 bug is in `rom/main.asm`'s vector table or stack init, not in anything

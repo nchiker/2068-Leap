@@ -95,3 +95,19 @@ plain-text model. `C`=`?` is confirmed and mapped.
   `PORT_AY_REG`/`PORT_AY_DATA`.
 - TS2068 Home/Exrom banking port behaviour — see `include/hardware.inc`'s
   `TODO` on `PORT_BANK_HOME`/`PORT_BANK_EXROM`.
+
+## Loadable OUT command
+
+The optional 39-byte `OUT port,value` module emits the Z80 `OUT (C),A`
+instruction, so all 16 bits of the first argument appear on the address bus.
+Only the data range (0-255) is restricted. This deliberately exposes hardware:
+
+- low byte `$FE` reaches the ULA family decode and can change border/MIC/EAR;
+- low byte `$F4` is reserved by this ROM for TS2068 Home/EXROM banking and can
+  replace the currently visible memory bank;
+- `$F5`/`$F6` are used for AY register/data access; and
+- expansion hardware may decode addresses unknown to the base machine.
+
+Tests use `$1234` as a benign unclaimed address and `$00FE` only to set a
+visible green border. These tests prove instruction and argument behaviour,
+not that arbitrary ports are safe.

@@ -1,4 +1,4 @@
-# Contributing to 2068 Leap
+# Contributing to 2068-Leap
 
 Contributions, bug reports, emulator results, and real-hardware test reports
 are welcome.

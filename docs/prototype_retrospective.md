@@ -1,6 +1,6 @@
-# Prototype retrospective: designing the next 2068 Leap
+# Prototype retrospective: designing the next 2068-Leap
 
-2068 Leap proved that a much richer TS2068 environment can fit in the original
+2068-Leap proved that a much richer TS2068 environment can fit in the original
 16K Home ROM plus 8K EXROM architecture. It also accumulated constraints in
 the order prototypes usually do: features arrived before stable subsystem
 boundaries, ROM placement was optimized late, and tests grew around bugs found
