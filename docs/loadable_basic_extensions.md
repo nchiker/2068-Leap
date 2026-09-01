@@ -16,7 +16,7 @@ An installed extension can be written back to tape with:
 SAVE "name" EXT
 ```
 
-`CPLOT`, `BLOCK`, `FRAME`, and `INVERT` are the reference modules. They demonstrate both supported
+`CPLOT`, `BLOCK`, `FRAME`, `INVERT`, and `AYREG` are the reference modules. They demonstrate both supported
 grammars, the stable service ABI, static editor checking, lifecycle handling,
 and deterministic and pulse-level tape tests.
 
@@ -130,7 +130,7 @@ static editor checker. The checker never executes module code.
 | `0` | `KEYWORD expr,expr` | `BC=first`, `DE=second` 16-bit numeric results |
 | `1` | `KEYWORD expr,expr TO expr,expr` | Low bytes at `EXTENSION_ARG0..3` |
 
-Grammar 0 is used by `CPLOT`. Grammar 1 is used by `BLOCK`; its four fixed
+Grammar 0 is used by `CPLOT` and `AYREG`. Grammar 1 is used by `BLOCK`; its four fixed
 bytes are deliberately coordinate-sized. Registration invalidates the
 editor's cached verdict so a statement previously marked as unknown is checked
 again immediately after its extension is installed.
@@ -170,7 +170,7 @@ qualification remains a separate task.
 
 ### Physical cassette qualification checklist
 
-Run this unchanged for CPLOT, BLOCK, and FRAME on a TS2068 before describing
+Run this unchanged for CPLOT, BLOCK, FRAME, INVERT, and AYREG on a TS2068 before describing
 extension tape support as hardware-qualified:
 
 1. Cold boot, load the module with an explicit filename, execute its simplest
@@ -262,10 +262,11 @@ ABI. This is the current implementation order:
    inclusive rectangular region using grammar 1 and the existing pixel
    service with OVER enabled. Its fixtures cover reversed corners, applying
    it twice to restore the bitmap, unloaded rejection, and `NEW` clearing.
-3. **`AYREG register,value`** — write an AY-3-8912 register directly. Reuse
-   grammar 0. Prefer module-local direct hardware I/O so this does not expand
-   the ROM service table; validate the register range and document that this
-   is a low-level command independent of the resident `SOUND` feature.
+3. **`AYREG register,value` — complete.** The 53-byte grammar-0 module writes
+   native AY register 0-15 and data 0-255 directly through ports `$F5/$F6`.
+   Both full 16-bit arguments are validated before either port is touched. It
+   adds no production ROM/ABI bytes; fixtures cover both range boundaries,
+   invalid register/data, unloaded rejection, and `NEW` clearing.
 4. **`ELLIPSE x0,y0 TO x1,y1`** — draw an ellipse bounded by two corners.
    Reuse grammar 1 and the pixel services. Build and measure the integer
    rasterizer before accepting it; it must fit wholly within 512 bytes.
@@ -282,6 +283,21 @@ ABI. This is the current implementation order:
 7. **`HELP`** — package help text/display as an optional module after ROM
    recovery. It requires a no-argument grammar and stable text/screen/key
    services, so it follows all modules that work with ABI v1 unchanged.
+
+### Measured next-candidate gate
+
+The candidates after AYREG were re-measured against the current ABI and
+19-Home/2-EXROM-byte production budget:
+
+| Candidate | Measured result | Decision |
+|---|---:|---|
+| `ELLIPSE x0,y0 TO x1,y1` | The resident circle rasterizer and its plotting helpers occupy 368 bytes (`$37B5-$3924`). A module gets 512 bytes total and needs roughly 30 bytes for installation/name before its own wider two-radius arithmetic | Still plausible with grammar 1 and the pixel service, but tight. Require a complete assembler-built midpoint-ellipse spike; do not promise it from a surface estimate |
+| `OUT port,value` | A complete position-independent grammar-0 spike assembles to 39 RAM bytes, including 16-bit port and 8-bit data validation | Strong next implementation after ELLIPSE; zero resident/ABI cost. Hardware-risk documentation and benign-port tests are mandatory |
+| `UDG character,address` | The smallest safe resident copy service is 23 Home bytes; its callable ABI veneer adds 3 more, for at least 26 Home bytes plus 3 fixed RAM bytes before the module itself | Does not fit the zero-resident-ROM rule or the 19-byte Home margin. Defer; direct `POKE` remains available |
+
+These numbers deliberately distinguish a complete module spike (`OUT`), a
+measured existing-algorithm bound (`ELLIPSE`), and a measured minimum resident
+dependency (`UDG`). Only the first is implementation-ready today.
 
 For every roadmap module, “complete” means more than assembling: it needs an
 installed-use fixture, unloaded rejection, `NEW`/ordinary-LOAD clearing,

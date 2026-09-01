@@ -585,6 +585,7 @@ a design note, not code.
 |---|---|
 | `BEEP <duration>,<pitch>` | Square-wave tone via the speaker — implemented (2026-08-22), see below |
 | `SOUND <register>,<data>` | Write directly to the AY-3-8912 PSG — implemented (2026-08-22), see below |
+| `AYREG <register>,<data>` | Optional 53-byte loadable extension using native AY register numbers 0-15 and data 0-255; unavailable until its RAM module is installed |
 
 **`BEEP <duration>,<pitch>` — implemented, but deliberately NOT the
 real command's grammar (2026-08-22)**. Real classic BASIC's `BEEP`

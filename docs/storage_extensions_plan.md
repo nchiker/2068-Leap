@@ -157,7 +157,7 @@ decoder from a generated Direct Recording TZX.
   inclusive/reversed rectangles, double-application restoration, unloaded
   rejection, and `NEW` clearing are covered.
 - Planned: future optional statement keywords are external-first. The remaining ranked
-  queue (`AYREG`, `ELLIPSE`, `OUT`, `UDG`, then `HELP`) and
+  queue (`ELLIPSE`, `OUT`, `UDG`, then `HELP`) and
   completion requirements are maintained in
   [`loadable_basic_extensions.md`](loadable_basic_extensions.md#maintained-external-keyword-roadmap).
 
@@ -186,7 +186,7 @@ bytes; those budgets are separate and cannot be freely combined.
 | RAM BASIC-extension gateway | **116 Home, 24 EXROM measured**; CPLOT module is 132 RAM bytes | Implemented single-slot proof; net CPLOT trade is +128 Home, -14 EXROM, +2 BASIC RAM bytes |
 
 The completed sequence now includes DEF FN, INSTR, external BLOCK/CPLOT/FRAME/INVERT,
-program autorun, and prompted INPUT. VERIFY was measured and rejected. Raw
+external AYREG, program autorun, and prompted INPUT. VERIFY was measured and rejected. Raw
 CODE storage and two-dimensional arrays remain candidates, but the current
 19-byte Home and 2-byte EXROM margins require another recovery decision first.
 

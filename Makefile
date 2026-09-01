@@ -1,4 +1,4 @@
-.PHONY: all build check smoke-build test budget audit-basic manual clean cplot-extension block-extension frame-extension invert-extension
+.PHONY: all build check smoke-build test budget audit-basic manual clean cplot-extension block-extension frame-extension invert-extension ayreg-extension
 
 all: check build
 
@@ -78,6 +78,14 @@ invert-extension: build
 	tools/sjasmplus_strict.sh rom/extensions/invert_test.asm
 	tools/sjasmplus_strict.sh rom/test_extension_clear_inject.asm --sym=rom/test_extension_clear_inject.sym
 	tools/sjasmplus_strict.sh rom/extensions/invert_clear_test.asm
+
+ayreg-extension: build
+	mkdir -p build/extensions
+	tools/sjasmplus_strict.sh rom/extensions/ayreg.asm
+	tools/sjasmplus_strict.sh rom/test_extension_inject.asm --sym=rom/test_extension_inject.sym
+	tools/sjasmplus_strict.sh rom/extensions/ayreg_test.asm
+	tools/sjasmplus_strict.sh rom/test_extension_clear_inject.asm --sym=rom/test_extension_clear_inject.sym
+	tools/sjasmplus_strict.sh rom/extensions/ayreg_clear_test.asm
 audit-basic: build
 	python3 tools/report_basic_routines.py basic/basic.asm build/test_basic.sym
 

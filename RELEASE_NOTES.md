@@ -39,7 +39,7 @@ subsystem correctness, and regression coverage rather than cartridge support.
 
 ## Validation baseline
 
-- All 83 integrated BASIC fixtures pass. `BLOCK` is restored as a 168-byte loadable
+- All 88 integrated BASIC fixtures pass. `BLOCK` is restored as a 168-byte loadable
   module, including reversed-corner, unloaded, and `NEW` lifecycle coverage.
   The formerly failing `gfx5` fixture exposed a harness-only initialization
   gap: the injected runner skipped production cold boot's PAPER=7 setup.
@@ -51,6 +51,9 @@ subsystem correctness, and regression coverage rather than cartridge support.
 - Added loadable `INVERT x0,y0 TO x1,y1` without consuming Home ROM or EXROM.
   Its fixtures cover inclusive and reversed rectangles, applying twice to
   restore the bitmap, unloaded rejection, and `NEW` clearing.
+- Added the 53-byte loadable `AYREG register,value` module. It uses the
+  existing two-expression grammar and performs native AY port I/O locally,
+  consuming no Home ROM, EXROM, or new ABI service bytes.
 - Expanded the interactive showcase to use the 15,322-byte BASIC pool without
   requiring an external keyword. It now demonstrates `DEF FN`, `FREE()`,
   ULAplus graphics, sprites, and continuous two-channel AY melody/accompaniment.

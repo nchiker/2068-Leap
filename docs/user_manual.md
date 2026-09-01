@@ -645,6 +645,7 @@ Captured images remain defined and can be shown again; `HIT()` returns `0` and
 |---|---|
 | `BEEP duration,pitch` | A square-wave tone through the speaker. **Not** the real Sinclair `BEEP`'s musical-note/seconds grammar — both arguments here are raw integers: `duration` is a count of full waveform cycles, `pitch` is the busy-wait length per half-cycle (bigger = slower toggling = lower pitch) |
 | `SOUND register,data` | Writes directly to the AY-3-8912 sound chip's registers — `register` is 1-16 (anything else raises `INVALID SOUND REGISTER`), `data` is the byte written to it. This one *is* the real Sinclair `SOUND` command's actual register-level behaviour |
+| `AYREG register,data` | Optional loadable low-level AY command. Uses native register numbers 0-15 and data 0-255; invalid values are rejected before the chip is touched. Load it with `LOAD "name" EXT` first |
 
 The real `SOUND` command accepts a semicolon-chained list of register
 pairs on one line; that grammar isn't recognized here — chain multiple
