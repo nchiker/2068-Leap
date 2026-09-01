@@ -116,6 +116,21 @@ COLD_START:
     inc  de
     inc  hl
     djnz .compare
+
+    ; A program LOAD must leave the editor on the append sentinel with its
+    ; index equal to the number of statements bulk-loaded.  The canned payload
+    ; contains one statement; the old hardcoded-zero reset produced a phantom
+    ; cursor on long programs because redraw could not place the sentinel.
+    ld   hl, (CUR_EDIT_POS)
+    inc  hl
+    ld   a, h
+    or   l
+    jr   nz, .fail_content
+    ld   hl, (CUR_EDIT_INDEX)
+    ld   de, 1
+    or   a
+    sbc  hl, de
+    jr   nz, .fail_content
     ENDIF
     ENDIF
     ENDIF

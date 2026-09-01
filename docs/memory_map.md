@@ -132,7 +132,7 @@ purpose, cross-referenced from the Programmer's Reference.
   control-flow features; the current editor, BASIC, fill, and GOSUB stacks
   are allocated and tested.
 - Reclaim or relocate additional cold code before expanding the language;
-  the V2 candidate has 19 Home-ROM bytes and 2 EXROM bytes free.
+  the V2 candidate has 12 Home-ROM bytes and 2 EXROM bytes free.
   `make budget` is authoritative as these figures change.
 - `FILL` no longer permanently consumes 10,240 bytes below
   `PROG_AREA_START`: its visited bitmap and bounded coordinate stack occupy

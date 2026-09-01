@@ -2,7 +2,7 @@
 
 ## Current constraints
 
-The current V2 build leaves 19 Home-ROM bytes and
+The current V2 build leaves 12 Home-ROM bytes and
 2 EXROM bytes free after adding the generalized grammar descriptor and
 loadable BLOCK. The dynamic BASIC pool is `$8426-$BFFF`
 (15,322 bytes). Storage already writes the
@@ -165,7 +165,7 @@ decoder from a generated Direct Recording TZX.
 
 These are planning ranges from the current call paths, not byte-exact promises.
 Each accepted feature still needs an assembler-built spike and a final
-Home/EXROM delta. Available production padding is 19 Home bytes plus 2 EXROM
+Home/EXROM delta. Available production padding is 12 Home bytes plus 2 EXROM
 bytes; those budgets are separate and cannot be freely combined.
 
 | Addition | Preliminary ROM cost | Current fit assessment |
@@ -188,7 +188,7 @@ bytes; those budgets are separate and cannot be freely combined.
 The completed sequence now includes DEF FN, INSTR, external BLOCK/CPLOT/FRAME/INVERT,
 external AYREG, program autorun, and prompted INPUT. VERIFY was measured and rejected. Raw
 CODE storage and two-dimensional arrays remain candidates, but the current
-19-byte Home and 2-byte EXROM margins require another recovery decision first.
+12-byte Home and 2-byte EXROM margins require another recovery decision first.
 
 ## Capacity recovery and optional feature tradeoffs
 

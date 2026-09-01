@@ -287,13 +287,13 @@ ABI. This is the current implementation order:
 ### Measured next-candidate gate
 
 The candidates after AYREG were re-measured against the current ABI and
-19-Home/2-EXROM-byte production budget:
+12-Home/2-EXROM-byte production budget:
 
 | Candidate | Measured result | Decision |
 |---|---:|---|
 | `ELLIPSE x0,y0 TO x1,y1` | The resident circle rasterizer and its plotting helpers occupy 368 bytes (`$37B5-$3924`). A module gets 512 bytes total and needs roughly 30 bytes for installation/name before its own wider two-radius arithmetic | Still plausible with grammar 1 and the pixel service, but tight. Require a complete assembler-built midpoint-ellipse spike; do not promise it from a surface estimate |
 | `OUT port,value` | A complete position-independent grammar-0 spike assembles to 39 RAM bytes, including 16-bit port and 8-bit data validation | Strong next implementation after ELLIPSE; zero resident/ABI cost. Hardware-risk documentation and benign-port tests are mandatory |
-| `UDG character,address` | The smallest safe resident copy service is 23 Home bytes; its callable ABI veneer adds 3 more, for at least 26 Home bytes plus 3 fixed RAM bytes before the module itself | Does not fit the zero-resident-ROM rule or the 19-byte Home margin. Defer; direct `POKE` remains available |
+| `UDG character,address` | The smallest safe resident copy service is 23 Home bytes; its callable ABI veneer adds 3 more, for at least 26 Home bytes plus 3 fixed RAM bytes before the module itself | Does not fit the zero-resident-ROM rule or the 12-byte Home margin. Defer; direct `POKE` remains available |
 
 These numbers deliberately distinguish a complete module spike (`OUT`), a
 measured existing-algorithm bound (`ELLIPSE`), and a measured minimum resident
@@ -308,7 +308,7 @@ round-trip test through the production extension path. `OUT`, `AYREG`, and
 ### Deferred and rejected feature register
 
 The roadmap must preserve measured negative decisions as well as planned work.
-The production images currently have only 19 Home-ROM bytes and 2 EXROM bytes
+The production images currently have only 12 Home-ROM bytes and 2 EXROM bytes
 free; these are separate banks and cannot be combined. The following features
 are therefore not in the active implementation queue:
 

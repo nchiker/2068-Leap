@@ -2075,6 +2075,17 @@ BASIC_DO_LOAD:
                                          ; loaded, so start over the
                                          ; same way NEW/cold boot do
 
+    ; RESET_EDIT_STATE can hardcode index zero for NEW because NEW's program
+    ; is empty.  LOAD has just bulk-replaced the program, bypassing the normal
+    ; per-statement commit path that increments CUR_EDIT_INDEX, so publish the
+    ; real statement count while CUR_EDIT_POS remains the append sentinel.
+    ; Without this, a long loaded program is rendered from the top as though
+    ; its new-line cursor were index zero; the sentinel cannot fit, and the
+    ; final cursor draw reuses a stale BASIC_ACTIVE_ROW (the visible phantom
+    ; cursor reported after LOAD).
+    call BASIC_COUNT_STATEMENTS
+    ld   (CUR_EDIT_INDEX), de
+
     call GFX_CLS
     ld   a, BORDER_DEFAULT
     call GFX_SET_BORDER
