@@ -1127,6 +1127,7 @@ BASIC_SCROLL_TO_FIT:
                                                 ; identical call already
                                                 ; relies on
     ld   (SCROLL_TOP_PTR), hl
+    ld   b, 0                                    ; viewport-not-moved flag
 
 .fit_check:
     ld   a, (SCROLL_OWN_ROWS)
@@ -1140,13 +1141,30 @@ BASIC_SCROLL_TO_FIT:
     ld   de, 24
     or   a
     sbc  hl, de
-    ret  c                                       ; total <= 23: fits,
-                                                 ; nothing to do
+    jr   nc, .advance_view                       ; total >= 24: the target
+                                                ; still does not fit
+
+    ; BASIC_ROWS_BEFORE_INDEX populated ROW_COUNT_CACHE for the viewport
+    ; that was current when this routine began.  If the loop below advanced
+    ; VIEW_TOP_INDEX, those entries now describe statements that have left
+    ; the screen, while BASIC_REDRAW_PROGRAM consumes them starting at the
+    ; NEW viewport.  A differing wrap count could therefore make rendering
+    ; reach row 23 before drawing the active sentinel, after which the common
+    ; cursor tail flashed a stale BASIC_ACTIVE_ROW (observed after loading the
+    ; showcase: a ghost cursor on its first visible statement).  Rebuild the
+    ; cache once for the settled viewport.  This is deliberately outside the
+    ; advance loop, retaining the incremental scroll calculation's speed.
+    ld   a, b
+    or   a
+    ret  z                                       ; cache already describes
+                                                ; this unchanged viewport
+    jp   BASIC_ROWS_BEFORE_INDEX                 ; rebuild once after moving
 
     ; doesn't fit yet — advance VIEW_TOP_INDEX past whatever statement
     ; currently sits at its top, subtracting THAT statement's own row
     ; count from the running total (one BASIC_STMT_ROW_COUNT call)
     ; instead of re-summing the whole window again
+.advance_view:
     ld   hl, (SCROLL_TOP_PTR)
     call BASIC_STMT_ROW_COUNT                    ; A = the leaving
                                                 ; statement's own row
@@ -1161,6 +1179,8 @@ BASIC_SCROLL_TO_FIT:
     ld   hl, (SCROLL_TOP_PTR)
     call MEM_LINE_NEXT
     ld   (SCROLL_TOP_PTR), hl
+    ld   b, 1                                    ; both calls above destroy B;
+                                                ; set the flag afterward
 
     ld   hl, (VIEW_TOP_INDEX)
     inc  hl
