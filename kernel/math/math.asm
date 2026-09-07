@@ -693,13 +693,13 @@ MATH_RND16:
                                               ; negative dividend below
 
     pop  de                                    ; DE = x (saved earlier)
-    call MATH_MOD16                              ; HL MOD DE — both
+    jp   MATH_MOD16                              ; HL MOD DE — both
                                                 ; operands non-negative
                                                 ; here, so this is a
                                                 ; plain modulo, MOD16's
                                                 ; dividend-sign handling
-                                                ; never triggers
-    ret
+                                                ; never triggers; tail
+                                                ; call -- 1 byte saved
 
 .zero_result:
     ld   hl, 0

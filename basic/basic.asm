@@ -2491,9 +2491,7 @@ BASIC_EVAL_TERM:
                                           ; caller here has actual
                                           ; context kernel/math doesn't
     ld   hl, MSG_DIVISION_BY_ZERO
-    call BASIC_SET_PENDING_ERROR
-    scf
-    ret
+    jp   BASIC_RAISE_ERROR_HL
 
 .divide_ok:
     ; Routed through the RST $28 calculator engine (rom/exrom_calc.asm's
@@ -2872,9 +2870,7 @@ BASIC_EVAL_PRIMARY:
 
 .array_read_not_dimmed:
     ld   hl, MSG_ARRAY_NOT_DIMMED
-    call BASIC_SET_PENDING_ERROR
-    scf
-    ret
+    jp   BASIC_RAISE_ERROR_HL
 .array_read_fail_pop:
     pop  de                                   ; balance the letter
                                               ; stash — error already
@@ -3143,6 +3139,8 @@ BASIC_EVAL_PRIMARY:
                                          ; ends with the result in HL,
                                          ; then .function_done does the
                                          ; final swap into DE)
+    call STR_FUNC_POOL_RELEASE           ; AF-only; HL (the result)
+                                         ; already computed above
     jp   .function_done
 
 .str_arg_len:
@@ -3152,6 +3150,8 @@ BASIC_EVAL_PRIMARY:
                                          ; LEN wants
     ld   l, a
     ld   h, 0                            ; HL = result
+    call STR_FUNC_POOL_RELEASE           ; AF-only; HL (the result)
+                                         ; already computed above
     jp   .function_done
 
 .str_arg_code:
@@ -3162,9 +3162,13 @@ BASIC_EVAL_PRIMARY:
     ld   a, (hl)                         ; first content byte
     ld   l, a
     ld   h, 0
+    call STR_FUNC_POOL_RELEASE           ; AF-only; HL (the result)
+                                         ; already computed above
     jp   .function_done
 .str_arg_code_empty:
     ld   hl, 0
+    call STR_FUNC_POOL_RELEASE           ; AF-only; HL (the result)
+                                         ; already computed above
     jp   .function_done
 
 .str_arg_pool_fail:
@@ -3457,9 +3461,7 @@ BASIC_EVAL_PRIMARY:
     jr   .function_done
 .stick_bad_arg:
     ld   hl, MSG_INVALID_ARGUMENT
-    call BASIC_SET_PENDING_ERROR
-    scf
-    ret
+    jp   BASIC_RAISE_ERROR_HL
 
 .call_hit:
     ; HIT(slot1,slot2) — HL/DE already hold the two parsed arguments,
@@ -5516,9 +5518,7 @@ STR_FUNC_POOL_ACQUIRE:
     ret
 .exhausted:
     ld   hl, MSG_EXPRESSION_TOO_COMPLEX
-    call BASIC_SET_PENDING_ERROR
-    scf
-    ret
+    jp   BASIC_RAISE_ERROR_HL
 
 ; In: none. Out: none. Destroys: AF.
 STR_FUNC_POOL_RELEASE:
@@ -5880,9 +5880,7 @@ BASIC_VAR_FIND_OR_CREATE:
     ld   hl, MSG_ARRAY_OUT_OF_MEMORY   ; same underlying condition
                                        ; (dynamic pool exhausted), just
                                        ; from the scalar side now too
-    call BASIC_SET_PENDING_ERROR
-    scf
-    ret
+    jp   BASIC_RAISE_ERROR_HL
 
 ; ============================================================================
 ; BASIC_ARRAY_PARSE_SUBSCRIPTS
@@ -6024,9 +6022,7 @@ BASIC_STMT_DIM:
     jr   z, .dim_set_error
     ld   hl, MSG_ARRAY_OUT_OF_MEMORY
 .dim_set_error:
-    call BASIC_SET_PENDING_ERROR
-    scf
-    ret
+    jp   BASIC_RAISE_ERROR_HL
 
     IF 0
     call BASIC_SKIP_SPACES
@@ -6145,19 +6141,13 @@ BASIC_STMT_DIM:
 
 .bad_size:
     ld   hl, MSG_INVALID_ARRAY_SIZE
-    call BASIC_SET_PENDING_ERROR
-    scf
-    ret
+    jp   BASIC_RAISE_ERROR_HL
 .already_dimmed:
     ld   hl, MSG_ARRAY_ALREADY_DIMMED
-    call BASIC_SET_PENDING_ERROR
-    scf
-    ret
+    jp   BASIC_RAISE_ERROR_HL
 .out_of_memory:
     ld   hl, MSG_ARRAY_OUT_OF_MEMORY
-    call BASIC_SET_PENDING_ERROR
-    scf
-    ret
+    jp   BASIC_RAISE_ERROR_HL
 .dim_bad_syntax_pop:
     pop  af                              ; balance the letter stash
     jp   BASIC_RAISE_SYNTAX_ERROR
@@ -7243,9 +7233,7 @@ BASIC_STMT_MODE:
     ret
 .invalid:
     ld   hl, MSG_INVALID_MODE
-    call BASIC_SET_PENDING_ERROR
-    scf
-    ret
+    jp   BASIC_RAISE_ERROR_HL
 
 ; ============================================================================
 ; BASIC_STMT_BEEP
@@ -7332,9 +7320,7 @@ BASIC_STMT_SOUND:
     ret
 .bad_register:
     ld   hl, MSG_INVALID_SOUND_REGISTER
-    call BASIC_SET_PENDING_ERROR
-    scf
-    ret
+    jp   BASIC_RAISE_ERROR_HL
 .comma_fail:
     pop  de                              ; keep the stack balanced —
                                          ; error already recorded
@@ -7665,9 +7651,7 @@ BASIC_STMT_GOSUB:
 
 .stack_overflow:
     ld   hl, MSG_GOSUB_TOO_DEEP
-    call BASIC_SET_PENDING_ERROR
-    scf
-    ret
+    jp   BASIC_RAISE_ERROR_HL
 
 ; ============================================================================
 ; BASIC_GOSUB_PUSH_RETURN
@@ -7784,9 +7768,7 @@ BASIC_STMT_RETURN:
 
 .empty:
     ld   hl, MSG_RETURN_WITHOUT_GOSUB
-    call BASIC_SET_PENDING_ERROR
-    scf
-    ret
+    jp   BASIC_RAISE_ERROR_HL
 
 ; ============================================================================
 ; BASIC_MATCH_ENDIF
@@ -8249,9 +8231,7 @@ BASIC_SKIP_TO_NEXT:
 
 .missing_next:
     ld   hl, MSG_MISSING_NEXT
-    call BASIC_SET_PENDING_ERROR
-    scf
-    ret
+    jp   BASIC_RAISE_ERROR_HL
 
 ; ============================================================================
 ; BASIC_FOR_ENTRY_ADDR
@@ -8609,9 +8589,7 @@ BASIC_STMT_NEXT:
 
 .no_for:
     ld   hl, MSG_NEXT_WITHOUT_FOR
-    call BASIC_SET_PENDING_ERROR
-    scf
-    ret
+    jp   BASIC_RAISE_ERROR_HL
 
 .end_fail:
     pop  bc                                ; keep the stack balanced —
@@ -8677,9 +8655,7 @@ BASIC_STMT_EXIT:
                                            ; the program runs out first
 .no_for:
     ld   hl, MSG_EXIT_WITHOUT_FOR
-    call BASIC_SET_PENDING_ERROR
-    scf
-    ret
+    jp   BASIC_RAISE_ERROR_HL
 
 ; ============================================================================
 ; BASIC_SPRITE_EXROM
@@ -9129,8 +9105,10 @@ CALC_EXIT_TRAMPOLINE:
     ld   a, (CALC_ERROR_CODE)
     or   a
     ret  z
-    call CALC_REPORT_ERROR
-    ret
+    jp   CALC_REPORT_ERROR         ; tail call: CALC_REPORT_ERROR's own
+                                   ; ret lands on the same true-original-
+                                   ; caller return address a call+ret
+                                   ; here would have -- 1 byte saved
 
 ; Converts CALC_ERROR_CODE into the BASIC error channel. The specific
 ; division and numeric-range messages are retained; malformed bytecode,
@@ -9146,9 +9124,7 @@ CALC_REPORT_ERROR:
     jr   z, .record
     ld   hl, MSG_CALCULATOR_ERROR
 .record:
-    call BASIC_SET_PENDING_ERROR
-    scf
-    ret
+    jp   BASIC_RAISE_ERROR_HL
 
 ; ============================================================================
 ; BASIC_EXROM_EXIT_PROTECTED
@@ -9183,13 +9159,19 @@ BASIC_EXROM_EXIT_PROTECTED:
 ;     EXROM target -> BASIC_EXROM_EXIT_PROTECTED -> original caller
 ;
 ; Thus the inline word is data, never executed, and every primary register
-; reaches the EXROM entry exactly as it did through the former wrappers.
+; EXCEPT AF reaches the EXROM entry exactly as it did through the former
+; wrappers: BANK_PAGE_EXROM_IN runs right before the jump into the target
+; and its own contract is "Destroys: AF" (kernel/bank/bank.asm), so AF is
+; whatever paging left it as, not the original caller's value. No current
+; EXROM entry point documents AF as a meaningful input, so this is latent,
+; not live — but the next one that wants AF preserved must not assume this
+; trampoline gives it that for free.
 ; This project and its interrupt handler do not use EXX anywhere else;
 ; alternate BC/DE/HL are explicitly scratch here. If that changes, this
 ; contract must be revisited.
 ;
 ; In/Out: defined by the selected EXROM entry
-; Destroys: alternate BC/DE/HL, plus whatever the selected entry destroys
+; Destroys: AF, alternate BC/DE/HL, plus whatever the selected entry destroys
 ; ==========================================================================
 BASIC_CALL_EXROM_INLINE:
     ; check-asm: allow-early-pop -- intentionally consumes this routine's
@@ -9204,8 +9186,10 @@ BASIC_CALL_EXROM_INLINE:
     push hl                             ; target returns to protected OUT
     push de                             ; trampoline RET enters target
     exx
-    call BANK_PAGE_EXROM_IN
-    ret
+    jp   BANK_PAGE_EXROM_IN        ; tail call: its own ret pops the
+                                   ; EXROM-target address pushed above,
+                                   ; same as call+ret here would have --
+                                   ; 1 byte saved
 
 
 ; ============================================================================
@@ -9408,9 +9392,7 @@ BASIC_SET_PENDING_ERROR:
 ; ============================================================================
 BASIC_RAISE_SYNTAX_ERROR:
     ld   hl, MSG_SYNTAX_ERROR
-    call BASIC_SET_PENDING_ERROR
-    scf
-    ret
+    jr   BASIC_RAISE_ERROR_HL
 
 BASIC_RAISE_ARRAY_SUBSCRIPT_RANGE:
     ld   hl, MSG_ARRAY_SUBSCRIPT_RANGE
@@ -10689,8 +10671,7 @@ BASIC_RUN:
     ; exit boundary means future statements cannot accidentally bypass
     ; the lifecycle rule.  Every future BASIC_RUN exit must branch here
     ; rather than returning directly.
-    call BASIC_ULAPLUS_DISABLE
-    ret
+    jp   BASIC_ULAPLUS_DISABLE     ; tail call -- 1 byte saved
 
 ; Select the ULAplus mode register and clear its enable bit.  This is
 ; kept in Home ROM because BASIC_RUN can return while EXROM is paged

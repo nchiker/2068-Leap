@@ -101,14 +101,10 @@ ARRAY_EXROM_DIMN:
 
 .dimn_not_dimmed:
     ld   hl, MSG_ARRAY_NOT_DIMMED
-    call KTAB_BASIC_SET_PENDING_ERROR
-    scf
-    ret
+    jp   EXROM_RAISE_PENDING_ERROR       ; shared tail, rom/exrom_checker.asm
 .dimn_fail_pop:
     pop  bc                              ; discard kind stash
     pop  af                              ; discard the letter stash
 .dimn_syntax_fail:
     ld   hl, MSG_SYNTAX_ERROR
-    call KTAB_BASIC_SET_PENDING_ERROR
-    scf
-    ret
+    jp   EXROM_RAISE_PENDING_ERROR       ; shared tail, rom/exrom_checker.asm

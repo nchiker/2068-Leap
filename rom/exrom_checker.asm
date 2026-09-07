@@ -982,9 +982,7 @@ BASIC_CHECK_STATEMENT_CONTENT:
     jp   nc, .ok
 
     ld   hl, MSG_SYNTAX_ERROR
-    call KTAB_BASIC_SET_PENDING_ERROR
-    scf
-    ret
+    jp   EXROM_RAISE_PENDING_ERROR
 
 .check_if:
     call KTAB_BASIC_SKIP_SPACES
@@ -1027,13 +1025,11 @@ BASIC_CHECK_STATEMENT_CONTENT:
                                          ; the shared success tail
 
 .syntax_fail:
-    ld   hl, MSG_SYNTAX_ERROR
-    call KTAB_BASIC_SET_PENDING_ERROR            ; won't overwrite a more
+    ld   hl, MSG_SYNTAX_ERROR              ; won't overwrite a more
                                            ; specific error already
                                            ; recorded deeper in the
                                            ; condition's own evaluation
-    scf
-    ret
+    jp   EXROM_RAISE_PENDING_ERROR
 
 .check_for:
     call KTAB_BASIC_PARSE_FOR_HEADER            ; shared with BASIC_STMT_FOR's
@@ -1336,9 +1332,7 @@ BASIC_CHECK_STATEMENT_CONTENT:
     jr   nc, .ok
 .input_fail:
     ld   hl, MSG_SYNTAX_ERROR
-    call KTAB_BASIC_SET_PENDING_ERROR
-    scf
-    ret
+    jp   EXROM_RAISE_PENDING_ERROR
 
 .check_goto:
     call KTAB_BASIC_SKIP_SPACES
@@ -1356,9 +1350,7 @@ BASIC_CHECK_STATEMENT_CONTENT:
     jr   nz, .goto_have_ident
 
     ld   hl, MSG_SYNTAX_ERROR
-    call KTAB_BASIC_SET_PENDING_ERROR
-    scf
-    ret
+    jp   EXROM_RAISE_PENDING_ERROR
 
 .goto_have_ident:
     push de                              ; stash the real source
@@ -1372,9 +1364,7 @@ BASIC_CHECK_STATEMENT_CONTENT:
                                          ; discard, error already
                                          ; recorded below
     ld   hl, MSG_LABEL_NOT_FOUND
-    call KTAB_BASIC_SET_PENDING_ERROR
-    scf
-    ret
+    jp   EXROM_RAISE_PENDING_ERROR
 
 .goto_found:
     pop  hl                              ; HL = stashed real source
@@ -1758,6 +1748,27 @@ BASIC_CHECK_PROGRAM:
     ld   hl, (SCAN_STMT_POS)
     call KTAB_MEM_LINE_NEXT
     jr   .loop
+
+; ============================================================================
+; EXROM_RAISE_PENDING_ERROR — shared tail: record HL's message as the
+; pending error, then fail with carry set. Replaces 8 identical inline
+; `call KTAB_BASIC_SET_PENDING_ERROR / scf / ret` copies scattered across
+; this file, exrom_arrays.asm, and exrom_strfuncs.asm (shrink-z80 pass,
+; 2026-09-07 — EXROM was 2 bytes from its 8K ceiling; factoring this one
+; shared tail alone frees ~11, well clear of every other EXROM-internal
+; `jp`/`call` site elsewhere in this file needing no jump-table entry,
+; since none of this crosses the Home/EXROM page boundary). Deliberately
+; NOT reused by exrom_sprite.asm's own SPRITE_RAISE_ERROR, which kept
+; its own local copy — see that routine's own header for why (a z80sim
+; unit test extracts exrom_sprite.asm in isolation without this file).
+; In:  HL = message pointer
+; Out: carry set (always)
+; Destroys: AF (KTAB_BASIC_SET_PENDING_ERROR's own contract)
+; ============================================================================
+EXROM_RAISE_PENDING_ERROR:
+    call KTAB_BASIC_SET_PENDING_ERROR
+    scf
+    ret
 
 
 ; ============================================================================

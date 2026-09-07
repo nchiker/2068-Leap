@@ -869,6 +869,13 @@ BASIC_SPRITE_HIT:
 ; adding one just for these two call sites. MSG_SYNTAX_ERROR is shared
 ; text (include/checker_keywords.inc, INCLUDEd on both sides), so no
 ; new string data needed here either.
+;
+; Deliberately NOT redirected to rom/exrom_checker.asm's own
+; EXROM_RAISE_PENDING_ERROR (the shrink-z80 pass that added that shared
+; tail elsewhere in EXROM, 2026-09-07): tools/z80sim/test_sprite_basic_
+; driver.py extracts this file's BASIC_STMT_SPRITE..SPRITE_BASIC_TEST_END
+; block in isolation and does not link exrom_checker.asm, so a cross-
+; file jp here would break that test rather than save the 2 bytes.
 ; ============================================================================
 SPRITE_RAISE_SYNTAX_ERROR:
     ld   hl, MSG_SYNTAX_ERROR

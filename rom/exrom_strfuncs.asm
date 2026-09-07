@@ -110,9 +110,7 @@ STRFUNC_EXROM:
     ret
 .chr_bad:
     ld   hl, MSG_INVALID_ARGUMENT
-    call KTAB_BASIC_SET_PENDING_ERROR
-    scf
-    ret
+    jp   EXROM_RAISE_PENDING_ERROR       ; shared tail, rom/exrom_checker.asm
 
 ; ---- STR$(n) — n formatted as a decimal string ----
 .f_str:
