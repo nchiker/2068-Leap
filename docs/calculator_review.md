@@ -77,33 +77,72 @@ alias location, but it no longer stores a doubled table index.
 Both found live under ZEsarUX while verifying an unrelated size-reduction
 refactor of `CALC_OP_MUL`/`CALC_OP_DIV` (`rom/exrom_calc.asm`,
 factored their inlined accumulate/shift/compare/subtract loops into shared
-`CALC_ADD8`/`CALC_SHL8`/`CALC_CMP4`/`CALC_SUB4` primitives). Both confirmed
-**pre-existing**, not introduced by that refactor — reproduced byte-identical
-wrong output by reverting to the pre-refactor code and re-running the same
-input before restoring the change. Neither was fixed; both are out of scope
-for a behavior-preserving size pass and need their own dedicated
-investigation (this project's own standard: Python-verify the fix before
-writing any Z80, the same discipline `CALC_OP_MUL`/`CALC_OP_DIV`'s own
-existing header comments already document for the current implementation).
+`CALC_ADD8`/`CALC_SHL8`/`CALC_CMP4`/`CALC_SUB4` primitives).
 
-- **Large multiply gives a wildly wrong result.** `PRINT 12345*6789` prints
-  `-10339` instead of the correct `83810205`. Confirmed live, not a display
-  artifact — the sign is wrong too (both operands positive, real product
-  positive). Suspected area: `CALC_OP_MUL`'s `.cm_compute_exp` exponent-sum/
-  bias-subtract block (`rom/exrom_calc.asm`, right after the main 32-
-  iteration shift-and-add loop) or the top-4-byte selection into
-  `CALC_UNP_A+2..+5` at `.cm_store_exp` — not yet root-caused, only
-  reproduced. `2*3` and `7*8` both multiply correctly, so this is specific to
-  operands whose product needs a large exponent/mantissa combination, not a
-  blanket multiply failure.
-- **Division results only display their truncated integer part.** `PRINT
-  10/4` shows `2` (not `2.5`), `PRINT 1/3` shows `0`, `PRINT 100/7` shows
-  `14`. Consistent pattern across three different divisors — looks like a
-  number-to-string formatting limitation (no fractional digits ever
-  rendered), not a division *arithmetic* error, but not confirmed either way
-  yet. Could plausibly be the same root cause as the multiply bug above (a
-  shared pack/format path) or a fully separate formatting-only issue —
-  worth checking both before assuming they're related.
+**Update (2026-09-13, root-caused):** both findings below turned out to be
+about `basic/basic.asm`'s expression evaluator, not the calculator engine at
+all — `CALC_OP_MUL`/`CALC_OP_DIV` themselves were never even reached for
+either case, confirmed by temporarily logging `CALC_UNP_A`/`CALC_UNP_B` to
+idle scratch RAM inside `CALC_OP_MUL` and reading it back via ZRCP after
+`PRINT 12345*6789`: all zero bytes, meaning that routine's own unpack step
+never ran. One of the two is a real, confirmed, currently-unfixed bug; the
+other turned out not to be a bug at all. See `BASIC_EVAL_TERM`
+(`basic/basic.asm:2438`) for both operators' real implementation.
+
+- **CONFIRMED BUG: `*` silently wraps on overflow, no error, no float
+  promotion.** `BASIC_EVAL_TERM`'s `.do_mul` (`basic/basic.asm:2454`) calls
+  `kernel/math/math.asm`'s `MATH_MULTIPLY16` directly for every numeric `*` —
+  a 16-bit signed multiply whose own documented contract is "product
+  (signed, **truncated to 16 bits**)", with no overflow check at the call
+  site. `PRINT 12345*6789` reaches exactly this path (the calculator engine
+  is never invoked for `*` at all — confirmed by the all-zero debug scratch
+  above) and prints `-10339`. This is not a corner case: `83810205 mod 65536`
+  interpreted as signed 16-bit is exactly `-10339` (confirmed via a direct
+  Python check), so this affects *any* multiplication whose true product
+  exceeds &plusmn;32767 &mdash; a genuinely common range for a BASIC (`200*200`
+  already overflows). `2*3` and `7*8` multiply correctly only because their
+  products happen to fit in 16 bits.
+
+  Not yet fixed — this touches the single hottest code path in the whole
+  language (every `*` in every program) and deserves the same care as any
+  other calculator-engine change. Two candidate fixes, neither implemented:
+  1. **Detect overflow, raise `NUMERIC OVERFLOW`** (matches this project's
+     own existing pattern for `CALC_OP_MUL`/`CALC_OP_DIV`'s exponent
+     overflow). Minimal, safe, but "silently wrong" becomes "loudly
+     rejected" rather than "correctly computed" for the overflow case.
+     Detection approach: since neither `MATH_UMUL16` nor `MATH_MULTIPLY16`
+     expose a widened result or an overflow flag, the cheapest check reusing
+     already-verified primitives is a divide-back: after `product =
+     MATH_MULTIPLY16(a,b)`, if `a != 0` and `MATH_DIVIDE16(product,a) != b`,
+     truncation occurred. This is a standard, generally-reliable technique
+     for two's-complement multiply-overflow detection, but has one known
+     pathological edge case (`a=-1, b=-32768` — the one dividend with no
+     positive two's-complement counterpart) worth explicitly testing in the
+     Python model before trusting it, not just asserting it's fine.
+  2. **Auto-promote to the float engine and let the result be a real
+     float**, matching genuine Sinclair BASIC's own transparent int/float
+     mixing. More correct, but a real language-semantics change (the
+     evaluator's whole "DE holds a 16-bit int result" convention would need
+     to accommodate a float result for every arithmetic operator down the
+     chain, not just `*`) — a design decision, not just a bug fix.
+
+  Whichever approach: Python-verify against many cases (including known
+  edge cases: `-32768*-1`, `-1*-32768`, the exact `12345*6789` case above,
+  and ordinary in-range values that must NOT be flagged) before writing any
+  Z80, matching this project's own established discipline for calculator
+  changes.
+
+- **NOT a bug: `/` is deliberately integer division, not float division.**
+  `BASIC_EVAL_TERM`'s `.divide_ok` (`basic/basic.asm:2492`) converts both
+  operands to float, calls the real `CALC_OP_DIV`, then immediately converts
+  the result back to a truncated integer via `CALC_FP_TO_INT_HOME` — its own
+  comment says so explicitly ("truncated-toward-zero quotient") and clears
+  `FUNC_RESULT_IS_FLOAT` right after, the same as `+`/`-`/`*` do. `PRINT
+  10/4` showing `2` (not `2.5`) is this BASIC's intentional, documented `/`
+  semantics (matching C's integer division, not Python's `/`), not a
+  formatting gap or an arithmetic error. The previous entry here speculating
+  this "looks like a number-to-string formatting limitation... not confirmed
+  either way" was investigated and found to be simply wrong — retracted.
 
 ## Known gap, deliberately not fixed yet: `CALC_PACK` truncates instead of rounding
 
@@ -126,6 +165,19 @@ logic against many cases before writing any Z80), which is real, separate
 work from the size-reduction pass above. Deliberately deferred rather than
 rushed alongside the bug findings above — worth doing as its own dedicated
 pass.
+
+**Scope, clarified while investigating the two bug reports above:**
+`CALC_OP_MUL`/`CALC_OP_DIV` (and therefore this truncation gap) are **not**
+reachable from ordinary BASIC `*`/`/` at all — both operators use
+`kernel/math/math.asm`'s 16-bit integer routines instead (see the bug entry
+above). Grepping every `rst $28` call site in `basic/basic.asm` for a
+multiply literal (`$04`) shows the calculator engine's multiply/divide are
+only ever invoked from `BASIC_SQR_FLOAT`/`BASIC_SIN_FLOAT`/`BASIC_RAD_FLOAT`/
+`BASIC_DEG_FLOAT`'s own internal computation (Newton's-method square root,
+Taylor-series sine, degree/radian conversion) — this truncation gap affects
+the precision of `SQR`/`SIN`/`COS`/`RAD`/`DEG` specifically, not general
+arithmetic. Still worth fixing on its own merits, but lower urgency and
+narrower blast radius than initially scoped.
 
 With the safety contracts established, sparse dispatch-table compression is a
 reasonable size optimization provided all simulator, smoke, editor, and BASIC
