@@ -367,12 +367,18 @@ GFX_SET_BORDER:
 ;      a freshly-generated block-graphics glyph, or UDG_TABLE+offset
 ;      for a UDG); carry set if the character has no glyph at all
 ;      (caller's choice what to do — GFX_PUTCHAR treats it as a space)
-; Destroys: AF, BC, HL — the punctuation-table scan uses B as its loop
-;      counter, so B is NOT preserved. This was documented wrong for a
-;      while (claimed only AF/HL) and caused a real bug in GFX_PUTCHAR,
-;      which read B (its row parameter) after this call without saving
-;      it first — fixed in GFX_PUTCHAR by protecting BC around this
-;      call, not by changing what this routine touches.
+; Destroys: AF, BC, E, HL — the punctuation-table scan uses B as its
+;      loop counter, so B is NOT preserved. This was documented wrong
+;      for a while (claimed only AF/HL) and caused a real bug in
+;      GFX_PUTCHAR, which read B (its row parameter) after this call
+;      without saving it first — fixed in GFX_PUTCHAR by protecting BC
+;      around this call, not by changing what this routine touches.
+;      E is also not preserved: it holds a scratch copy of the input
+;      character throughout (see the routine's own first instruction),
+;      not whatever the caller had there — this was also previously
+;      undocumented (found via cross-project research comparing this
+;      routine against a sibling project's own corrected copy of the
+;      same lineage, 2026-09-13). D itself is never touched.
 ; ============================================================================
 GFX_CHAR_TO_FONT_OFFSET:
     ld   e, a                      ; E = input char, preserved across
