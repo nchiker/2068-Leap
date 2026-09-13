@@ -431,17 +431,8 @@ IO_DECODE_KEY:
     ret
 .not_row7_caps:
     ; CAPS SHIFT + anything else -> uppercase letter table
-    ld   a, b
-    add  a, a
-    add  a, a
-    add  a, b                        ; A = row*5
-    add  a, c                         ; A = row*5 + bit
-    ld   e, a
-    ld   d, 0
     ld   hl, KEY_ASCII_TABLE_UPPER
-    add  hl, de
-    ld   a, (hl)
-    ret
+    jr   .table_lookup
 
 .check_symshift:
     ld   a, (IO_SCAN_TABLE+7)        ; row 7: bit1 = SYMBOL SHIFT
@@ -466,19 +457,17 @@ IO_DECODE_KEY:
     ret
 
 .sym_table_lookup:
-    ld   a, b
-    add  a, a
-    add  a, a
-    add  a, b
-    add  a, c
-    ld   e, a
-    ld   d, 0
     ld   hl, KEY_ASCII_TABLE_SYMBOL
-    add  hl, de
-    ld   a, (hl)
-    ret
+    jr   .table_lookup
 
 .no_shift:
+    ld   hl, KEY_ASCII_TABLE
+
+; Shared tail for the three key-table lookups above (uppercase, symbol-
+; shift, no-shift) — identical row/bit -> table-offset math, only the
+; table base differs. In: B = row, C = bit, HL = table base. Destroys
+; AF, DE, HL (same as each site already documented before this dedup).
+.table_lookup:
     ld   a, b
     add  a, a
     add  a, a
@@ -486,7 +475,6 @@ IO_DECODE_KEY:
     add  a, c
     ld   e, a
     ld   d, 0
-    ld   hl, KEY_ASCII_TABLE
     add  hl, de
     ld   a, (hl)
     ret

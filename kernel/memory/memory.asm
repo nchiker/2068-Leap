@@ -624,9 +624,16 @@ MEM_BLOCK_LEN_TO_END:
 ; MEM_READ_STORE_NEW_LEN
 ; Shared step for MEM_LINE_STORE/MEM_LINE_INSERT below: reads the new
 ; statement's own content-length prefix (the first 2 bytes at
-; STORE_NEW_PTR) into STORE_NEW_LEN.
+; STORE_NEW_PTR) into STORE_NEW_LEN, and also computes STORE_NEW_TOTAL
+; (new_len + 2, the length field's own 2 bytes) — both callers used to
+; compute that same sum inline themselves a bit later; folded in here
+; since neither uses STORE_NEW_TOTAL before this point (confirmed: the
+; only things between this call and the old inline computation in each
+; caller are MEM_LINE_STORE's own space check and old-statement-removal
+; step, neither of which touches STORE_NEW_TOTAL).
 ; In:  none (reads STORE_NEW_PTR)
-; Out: DE = STORE_NEW_LEN (also stored back to that sysvar)
+; Out: DE = STORE_NEW_LEN (also stored back to that sysvar);
+;      STORE_NEW_TOTAL also set
 ; Destroys: HL
 ; ============================================================================
 MEM_READ_STORE_NEW_LEN:
@@ -635,6 +642,9 @@ MEM_READ_STORE_NEW_LEN:
     inc  hl
     ld   d, (hl)
     ld   (STORE_NEW_LEN), de
+    ld   hl, LINE_LEN_SIZE
+    add  hl, de
+    ld   (STORE_NEW_TOTAL), hl            ; new_total = new_len + 2
     ret
 
 ; ============================================================================
@@ -751,12 +761,8 @@ MEM_LINE_STORE:
 
     ; Step B — insert the new statement at STORE_POSITION, which is now
     ; exactly where the old statement used to start (everything after it
-    ; has already been shifted down to close that gap).
-    ld   hl, (STORE_NEW_LEN)
-    ld   bc, LINE_LEN_SIZE
-    add  hl, bc
-    ld   (STORE_NEW_TOTAL), hl            ; new_total = new_len + 2
-
+    ; has already been shifted down to close that gap). STORE_NEW_TOTAL
+    ; was already computed by MEM_READ_STORE_NEW_LEN above.
     call MEM_BLOCK_LEN_TO_END
     ld   (STORE_BLOCK_LEN), hl             ; reuse: block_len for the
                                           ; upward shift = PROG_END - position
@@ -816,11 +822,7 @@ MEM_LINE_INSERT:
     ld   (STORE_NEW_PTR), de
 
     call MEM_READ_STORE_NEW_LEN            ; new statement's content length
-
-    ld   hl, (STORE_NEW_LEN)
-    ld   bc, LINE_LEN_SIZE
-    add  hl, bc
-    ld   (STORE_NEW_TOTAL), hl              ; new_total = new_len + 2
+                                           ; and STORE_NEW_TOTAL, both set
 
     ; space check: PROG_END + new_total <= VARS_START
     ld   hl, (PROG_END)

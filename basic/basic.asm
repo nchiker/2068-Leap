@@ -1782,12 +1782,10 @@ BASIC_DO_SAVE:
     jr   .scan
 .closed:
     inc  hl                              ; skip closing quote
-.skip_trailing:
-    ld   a, (hl)
-    cp   " "
-    jr   nz, .check_end
-    inc  hl
-    jr   .skip_trailing
+    call BASIC_SKIP_SPACES                ; same loop as the inline
+                                          ; version this replaced —
+                                          ; only destroys AF, HL ends
+                                          ; up positioned identically
 .check_end:
     push de
     push bc
@@ -1926,12 +1924,10 @@ BASIC_DO_LOAD:
     jr   .scan
 .closed:
     inc  hl                              ; skip closing quote
-.skip_trailing:
-    ld   a, (hl)
-    cp   " "
-    jr   nz, .check_end
-    inc  hl
-    jr   .skip_trailing
+    call BASIC_SKIP_SPACES                ; same loop as the inline
+                                          ; version this replaced —
+                                          ; only destroys AF, HL ends
+                                          ; up positioned identically
 .check_end:
     push de
     push bc
@@ -5932,6 +5928,19 @@ BASIC_ARRAY_PARSE_SUBSCRIPTS:
 ; Destroys: AF, DE, HL
 ; ============================================================================
 BASIC_ARRAY_ELEMENT_ADDR:
+    ld   b, 1                        ; one doubling: index*2
+    jr   BASIC_ARRAY_ELEMENT_ADDR_CORE
+
+; String-array sibling: same bounds contract, but fixed 32-byte elements
+; — same core, just 5 doublings (index*32) instead of 1. B isn't part
+; of either routine's documented "survives" contract (Destroys: AF,
+; DE, HL only), and every call site (confirmed: basic/basic.asm lines
+; ~2842, 5094, 9538, 9643) either has nothing live in B across the
+; call or has already stashed BC on the real stack, not the register,
+; so sharing B as an internal shift-count scratch here is safe.
+BASIC_STR_ARRAY_ELEMENT_ADDR:
+    ld   b, 5                        ; five doublings: index*32
+BASIC_ARRAY_ELEMENT_ADDR_CORE:
     push hl                          ; data start — survives the bounds
                                      ; check below
     ld   hl, (ARRAY_INDEX)
@@ -5943,34 +5952,15 @@ BASIC_ARRAY_ELEMENT_ADDR:
                                       ; unsigned value here
     jr   nc, .oob_pop
     ld   hl, (ARRAY_INDEX)
-    add  hl, hl                       ; index*2
+.mul_loop:
+    add  hl, hl                       ; index * 2^B
+    djnz .mul_loop
     pop  de                           ; DE = data start
     add  hl, de                       ; HL = element address
     or   a
     ret
 .oob_pop:
     pop  de                          ; discard the data-start stash
-    jp   BASIC_RAISE_ARRAY_SUBSCRIPT_RANGE
-
-; String-array sibling: same bounds contract, but fixed 32-byte elements.
-BASIC_STR_ARRAY_ELEMENT_ADDR:
-    push hl
-    ld   hl, (ARRAY_INDEX)
-    or   a
-    sbc  hl, de
-    jr   nc, .str_oob
-    ld   hl, (ARRAY_INDEX)
-    add  hl, hl
-    add  hl, hl
-    add  hl, hl
-    add  hl, hl
-    add  hl, hl
-    pop  de
-    add  hl, de
-    or   a
-    ret
-.str_oob:
-    pop  de
     jp   BASIC_RAISE_ARRAY_SUBSCRIPT_RANGE
 
 ; ============================================================================

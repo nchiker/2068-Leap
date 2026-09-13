@@ -161,7 +161,20 @@ MATH_UDIV16:
 ; Out: HL = product (signed, truncated to 16 bits)
 ; Destroys: AF, BC, DE
 ; ============================================================================
-MATH_MULTIPLY16:
+; ============================================================================
+; MATH_SIGN_PREP (internal)
+; Shared prologue for MATH_MULTIPLY16/MATH_DIVIDE16: both operands'
+; sign-then-magnitude split is byte-identical between the two (XOR of
+; both operands' sign bits into MATH_SIGN, then absolute-value both) —
+; confirmed before factoring this out. MATH_MOD16 does NOT share this
+; (it isolates only the dividend's sign, not an XOR of both — see that
+; routine's own header), only the epilogue below.
+; In:  HL, DE (signed operands)
+; Out: HL = abs(HL), DE = abs(DE), MATH_SIGN = XOR of both original
+;      sign bits (0 = positive result, $80 = negative)
+; Destroys: AF
+; ============================================================================
+MATH_SIGN_PREP:
     ld   a, h
     xor  d
     and  %10000000                 ; isolate just the sign bit of the
@@ -173,6 +186,28 @@ MATH_MULTIPLY16:
     ex   de, hl                      ; take absolute value of DE (via
     call MATH_ABS16                    ; HL, swapped in/out — HL's own
     ex   de, hl                        ; value survives the round trip)
+    ret
+
+; ============================================================================
+; MATH_APPLY_SIGN (internal)
+; Shared epilogue for MATH_MULTIPLY16/MATH_DIVIDE16/MATH_MOD16: apply
+; whatever sign was staged in MATH_SIGN to the unsigned-magnitude
+; result already in HL. Byte-identical across all three callers before
+; factoring this out.
+; In:  HL = unsigned magnitude result, MATH_SIGN set by the caller
+; Out: HL = signed result (negated iff MATH_SIGN was $80)
+; Destroys: AF
+; ============================================================================
+MATH_APPLY_SIGN:
+    ld   a, (MATH_SIGN)
+    or   a
+    ret  z                              ; positive result, HL already
+                                        ; correct
+    jr   MATH_NEGATE16                   ; negate HL (two's complement)
+                                        ; and return directly
+
+MATH_MULTIPLY16:
+    call MATH_SIGN_PREP
 
     ld   b, d                        ; BC = abs(multiplier), for
     ld   c, e                          ; MATH_UMUL16's contract
@@ -180,13 +215,7 @@ MATH_MULTIPLY16:
                                         ; old DE (unused from here)
     call MATH_UMUL16                      ; HL = unsigned product
 
-    ld   a, (MATH_SIGN)
-    or   a
-    ret  z                              ; positive result, HL already
-                                        ; correct
-
-    jr   MATH_NEGATE16                   ; negate HL (two's complement)
-                                        ; and return directly
+    jp   MATH_APPLY_SIGN
 
 ; ============================================================================
 ; MATH_DIVIDE16
@@ -202,17 +231,7 @@ MATH_MULTIPLY16:
 ; Destroys: AF, BC, DE
 ; ============================================================================
 MATH_DIVIDE16:
-    ld   a, h
-    xor  d
-    and  %10000000
-    ld   (MATH_SIGN), a
-
-    call MATH_ABS16                   ; take absolute value of HL
-                                      ; (dividend)
-
-    ex   de, hl                      ; take absolute value of DE
-    call MATH_ABS16                    ; (divisor) via HL, swapped
-    ex   de, hl                        ; in/out
+    call MATH_SIGN_PREP
 
     ld   b, d                        ; BC = abs(divisor), for
     ld   c, e                          ; MATH_UDIV16's contract
@@ -220,12 +239,7 @@ MATH_DIVIDE16:
                                         ; (dividend, abs(HL), was already
                                         ; in HL from the steps above)
 
-    ld   a, (MATH_SIGN)
-    or   a
-    ret  z                              ; positive result, HL already
-                                        ; correct
-
-    jr   MATH_NEGATE16                   ; negate HL and return directly
+    jp   MATH_APPLY_SIGN
 
 ; ============================================================================
 ; MATH_COMPARE16
@@ -433,15 +447,10 @@ MATH_MOD16:
                                         ; (HL = quotient, unused here)
     ex   de, hl                          ; HL = remainder magnitude
 
-    ld   a, (MATH_SIGN)
-    or   a
-    ret  z                              ; dividend was non-negative
-                                        ; (or divisor was 0, giving
-                                        ; remainder 0 either way) — HL
-                                        ; already correct
-
-    jr   MATH_NEGATE16                   ; negate HL (apply the
-                                        ; dividend's sign) and return
+    jp   MATH_APPLY_SIGN                 ; apply the dividend's sign
+                                        ; (or leaves it positive if
+                                        ; divisor was 0, remainder 0
+                                        ; either way)
 
 ; ============================================================================
 ; MATH_SQRT16

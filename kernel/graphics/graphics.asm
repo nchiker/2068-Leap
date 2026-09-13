@@ -2614,19 +2614,19 @@ GFX_SPRITE_CELL_ROWCOL:
     ret
 
 ; ============================================================================
-; GFX_SPRITE_CAPTURE
-; Captures a rectangular region of the screen (bitmap + attributes)
-; into a caller-provided buffer — the "save" half of a save/restore
-; sprite pair (GFX_SPRITE_DRAW is the "restore/show" half). See this
-; section's own header above for the buffer format and cell-alignment
-; scoping.
+; GFX_SPRITE_SETUP (internal)
+; Shared prologue for GFX_SPRITE_CAPTURE/GFX_SPRITE_DRAW — bounds-checks
+; the rectangle and stages it into SPRITE_BUF_PTR/TOP_ROW/TOP_COL/W/H/
+; ROW_IDX, exactly the same regardless of which direction (capture vs
+; draw) the caller's own row/col loop below will go. Confirmed
+; byte-identical between the two routines before factoring this out.
 ; In:  B = top row (0-23), C = top col (0-31), D = width cells (1-32),
 ;      E = height cells (1-24), HL = buffer address
-; Out: carry clear on success (buffer filled); carry set + buffer
-;      untouched if the rectangle doesn't fit (GFX_SPRITE_BOUNDS_CHECK)
+; Out: carry clear on success (staged); carry set if the rectangle
+;      doesn't fit (GFX_SPRITE_BOUNDS_CHECK) — SPRITE_* state untouched
 ; Destroys: AF, BC, DE, HL
 ; ============================================================================
-GFX_SPRITE_CAPTURE:
+GFX_SPRITE_SETUP:
     call GFX_SPRITE_BOUNDS_CHECK
     ret  c
 
@@ -2641,6 +2641,24 @@ GFX_SPRITE_CAPTURE:
     ld   (SPRITE_H), a
     xor  a
     ld   (SPRITE_ROW_IDX), a
+    ret
+
+; ============================================================================
+; GFX_SPRITE_CAPTURE
+; Captures a rectangular region of the screen (bitmap + attributes)
+; into a caller-provided buffer — the "save" half of a save/restore
+; sprite pair (GFX_SPRITE_DRAW is the "restore/show" half). See this
+; section's own header above for the buffer format and cell-alignment
+; scoping.
+; In:  B = top row (0-23), C = top col (0-31), D = width cells (1-32),
+;      E = height cells (1-24), HL = buffer address
+; Out: carry clear on success (buffer filled); carry set + buffer
+;      untouched if the rectangle doesn't fit (GFX_SPRITE_BOUNDS_CHECK)
+; Destroys: AF, BC, DE, HL
+; ============================================================================
+GFX_SPRITE_CAPTURE:
+    call GFX_SPRITE_SETUP
+    ret  c
 
 .row_loop:
     xor  a
@@ -2736,20 +2754,8 @@ GFX_SPRITE_CAPTURE:
 ; Destroys: AF, BC, DE, HL
 ; ============================================================================
 GFX_SPRITE_DRAW:
-    call GFX_SPRITE_BOUNDS_CHECK
+    call GFX_SPRITE_SETUP
     ret  c
-
-    ld   (SPRITE_BUF_PTR), hl
-    ld   a, b
-    ld   (SPRITE_TOP_ROW), a
-    ld   a, c
-    ld   (SPRITE_TOP_COL), a
-    ld   a, d
-    ld   (SPRITE_W), a
-    ld   a, e
-    ld   (SPRITE_H), a
-    xor  a
-    ld   (SPRITE_ROW_IDX), a
 
 .row_loop:
     xor  a
