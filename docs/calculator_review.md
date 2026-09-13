@@ -72,6 +72,39 @@ alias location, but it no longer stores a doubled table index.
 - Calculator bytecode is internal. Any future cartridge-facing API needs a
   versioned contract rather than exposing RST `$28` accidentally.
 
+## Known bugs (confirmed, not yet fixed) — found 2026-09-13
+
+Both found live under ZEsarUX while verifying an unrelated size-reduction
+refactor of `CALC_OP_MUL`/`CALC_OP_DIV` (`rom/exrom_calc.asm`,
+factored their inlined accumulate/shift/compare/subtract loops into shared
+`CALC_ADD8`/`CALC_SHL8`/`CALC_CMP4`/`CALC_SUB4` primitives). Both confirmed
+**pre-existing**, not introduced by that refactor — reproduced byte-identical
+wrong output by reverting to the pre-refactor code and re-running the same
+input before restoring the change. Neither was fixed; both are out of scope
+for a behavior-preserving size pass and need their own dedicated
+investigation (this project's own standard: Python-verify the fix before
+writing any Z80, the same discipline `CALC_OP_MUL`/`CALC_OP_DIV`'s own
+existing header comments already document for the current implementation).
+
+- **Large multiply gives a wildly wrong result.** `PRINT 12345*6789` prints
+  `-10339` instead of the correct `83810205`. Confirmed live, not a display
+  artifact — the sign is wrong too (both operands positive, real product
+  positive). Suspected area: `CALC_OP_MUL`'s `.cm_compute_exp` exponent-sum/
+  bias-subtract block (`rom/exrom_calc.asm`, right after the main 32-
+  iteration shift-and-add loop) or the top-4-byte selection into
+  `CALC_UNP_A+2..+5` at `.cm_store_exp` — not yet root-caused, only
+  reproduced. `2*3` and `7*8` both multiply correctly, so this is specific to
+  operands whose product needs a large exponent/mantissa combination, not a
+  blanket multiply failure.
+- **Division results only display their truncated integer part.** `PRINT
+  10/4` shows `2` (not `2.5`), `PRINT 1/3` shows `0`, `PRINT 100/7` shows
+  `14`. Consistent pattern across three different divisors — looks like a
+  number-to-string formatting limitation (no fractional digits ever
+  rendered), not a division *arithmetic* error, but not confirmed either way
+  yet. Could plausibly be the same root cause as the multiply bug above (a
+  shared pack/format path) or a fully separate formatting-only issue —
+  worth checking both before assuming they're related.
+
 With the safety contracts established, sparse dispatch-table compression is a
 reasonable size optimization provided all simulator, smoke, editor, and BASIC
 regressions remain green.
