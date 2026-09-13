@@ -6,8 +6,12 @@ kernel/graphics/graphics.asm), and their two small address-math
 helpers (GFX_CELL_BITMAP_ADDR / GFX_CELL_ATTR_ADDR) plus
 GFX_SPRITE_BOUNDS_CHECK / GFX_SPRITE_CELL_ROWCOL.
 
-Not a leftover file in the tree — run manually when touching this
-feature again; not part of any CI step in this project.
+Not a leftover file in the tree — this IS part of `make check`
+(Makefile's own check target calls it directly); the header comment
+here previously claimed otherwise (stale, corrected 2026-09-13 after
+that exact gap let a missing sysvar registration reach a commit
+message claiming "make check" had verified it, when it hadn't been
+re-run after this file needed updating for a new sysvar).
 """
 import sys
 sys.path.insert(0, 'tools/z80sim')
@@ -30,6 +34,13 @@ sim.SYSVARS['SPRITE_W'] = 0x955C
 sim.SYSVARS['SPRITE_H'] = 0x955D
 sim.SYSVARS['SPRITE_ROW_IDX'] = 0x955E
 sim.SYSVARS['SPRITE_COL_IDX'] = 0x955F
+sim.SYSVARS['SPRITE_XFER_DIR'] = 0x9600  # GFX_SPRITE_TRANSFER's own
+                                          # direction flag (2026-09-13
+                                          # CAPTURE/DRAW loop-body
+                                          # merge); arbitrary scratch,
+                                          # same convention as this
+                                          # file's other manually-
+                                          # registered addresses above
 sim.SYSVARS['SPRITE_SLOT_SHOWN'] = 0x9560
 sim.SYSVARS['SPRITE_DISPLAY_DEPTH'] = 0x9568
 sim.SYSVARS['SPRITE_SLOT_MAX'] = 8

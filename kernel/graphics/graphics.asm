@@ -2644,22 +2644,28 @@ GFX_SPRITE_SETUP:
     ret
 
 ; ============================================================================
-; GFX_SPRITE_CAPTURE
-; Captures a rectangular region of the screen (bitmap + attributes)
-; into a caller-provided buffer — the "save" half of a save/restore
-; sprite pair (GFX_SPRITE_DRAW is the "restore/show" half). See this
-; section's own header above for the buffer format and cell-alignment
-; scoping.
-; In:  B = top row (0-23), C = top col (0-31), D = width cells (1-32),
-;      E = height cells (1-24), HL = buffer address
-; Out: carry clear on success (buffer filled); carry set + buffer
-;      untouched if the rectangle doesn't fit (GFX_SPRITE_BOUNDS_CHECK)
+; GFX_SPRITE_TRANSFER (internal)
+; Shared row/col loop behind GFX_SPRITE_CAPTURE/GFX_SPRITE_DRAW — same
+; nested cell loop, cell-address computation, and DE-clobber protection
+; (see the "REAL BUG FOUND 2026-08-19" note below) either way; only the
+; copy DIRECTION differs, set by SPRITE_XFER_DIR (0 = capture: screen
+; -> buffer; nonzero = draw: buffer -> screen). HL is always the screen
+; address, DE always the buffer address, in both directions — this
+; canonical convention (DRAW previously used the opposite: HL=buffer,
+; DE=screen) is what lets the two directions share one attribute-copy
+; sequence below without needing the original's two different orders
+; (CAPTURE read-after-address-compute vs DRAW read-before-address-
+; compute) — confirmed identical to the original per-direction
+; behavior by direct A/B comparison under live ZEsarUX before this
+; replaced the two separate routines.
+; Caller must have already called GFX_SPRITE_SETUP.
+; In:  none (reads SPRITE_TOP_ROW/COL/W/H/ROW_IDX and SPRITE_BUF_PTR,
+;      staged by GFX_SPRITE_SETUP; SPRITE_XFER_DIR set by the caller)
+; Out: carry clear (matches both wrappers' own "always succeeds once
+;      SETUP has passed" contract)
 ; Destroys: AF, BC, DE, HL
 ; ============================================================================
-GFX_SPRITE_CAPTURE:
-    call GFX_SPRITE_SETUP
-    ret  c
-
+GFX_SPRITE_TRANSFER:
 .row_loop:
     xor  a
     ld   (SPRITE_COL_IDX), a
@@ -2669,48 +2675,67 @@ GFX_SPRITE_CAPTURE:
                                         ; (scanline 0) — B/C untouched
                                         ; by this call (see its own
                                         ; header)
-    ld   de, (SPRITE_BUF_PTR)           ; DE = buffer write pointer
+    ld   de, (SPRITE_BUF_PTR)           ; DE = buffer pointer
 
+    ld   a, (SPRITE_XFER_DIR)
+    or   a
     ld   b, 8
-.scan_loop:
+    jr   nz, .draw_scan
+.cap_scan:
     ld   a, (hl)
     ld   (de), a
     inc  de
     ld   a, h
     add  a, 1                          ; next scanline: +256 to the
-                                       ; address (same non-linear
+                                       ; SCREEN address (same non-linear
                                        ; screen layout GFX_PUTCHAR/
                                        ; GFX_CPLOT already step through
                                        ; this same way)
     ld   h, a
-    djnz .scan_loop
-
-    ; B/C were clobbered by the DJNZ loop above — recompute before the
-    ; attribute address call, same "reload from memory, don't trust a
-    ; register survived a destructive call" discipline as GFX_CPLOT's
-    ; own scratch handling
+    djnz .cap_scan
+    jr   .scan_done
+.draw_scan:
+    ld   a, (de)
+    ld   (hl), a
+    inc  de
+    ld   a, h
+    add  a, 1
+    ld   h, a
+    djnz .draw_scan
+.scan_done:
+    ; DE now holds the buffer's attribute-slot address (buf_ptr+8)
+    ; either way — canonical DE=buffer convention, unlike the two
+    ; routines this replaced. HL (screen) is stale past this cell's
+    ; last scanline and gets recomputed below regardless.
     ;
     ; REAL BUG FOUND (2026-08-19, z80sim, not caught by inspection or
-    ; check_asm.py): DE holds the buffer's attribute-slot address at
-    ; this point (buf_ptr+8) — but GFX_CELL_ATTR_ADDR's own documented
-    ; contract destroys DE (it uses DE as scratch internally, same as
-    ; GFX_SET_ATTR's proven address math it mirrors). The original
-    ; version called GFX_SPRITE_CELL_ROWCOL/GFX_CELL_ATTR_ADDR here
-    ; with no protection, silently clobbering DE before the `ld (de),a`
-    ; below ever ran — exactly lesson 1's register-survival bug class,
-    ; this time self-inflicted rather than inherited. z80sim caught it
-    ; immediately (buffer contents correct for 8 bitmap bytes, garbage
-    ; after) where static inspection hadn't. Fix: stash DE across both
-    ; calls, same push/pop-around-a-destructive-call pattern GFX_
-    ; SPRITE_DRAW's own `push af`/`pop af` below already uses for
-    ; exactly this reason.
+    ; check_asm.py, in the original two-routine version this replaced):
+    ; DE holds the buffer's attribute-slot address at this point — but
+    ; GFX_CELL_ATTR_ADDR's own documented contract destroys DE (it uses
+    ; DE as scratch internally, same as GFX_SET_ATTR's proven address
+    ; math it mirrors). An earlier version called GFX_SPRITE_CELL_
+    ; ROWCOL/GFX_CELL_ATTR_ADDR here with no protection, silently
+    ; clobbering DE before the attribute copy below ever ran — exactly
+    ; lesson 1's register-survival bug class. Fix (still in force here):
+    ; stash DE across both calls.
     push de
     call GFX_SPRITE_CELL_ROWCOL
     call GFX_CELL_ATTR_ADDR             ; HL = screen attr addr
-    ld   a, (hl)
     pop  de                             ; DE = buffer's attribute slot,
                                         ; restored
-    ld   (de), a
+    ld   a, (SPRITE_XFER_DIR)           ; re-read fresh — the two calls
+                                        ; above destroy AF, so a value
+                                        ; loaded before them wouldn't
+                                        ; survive
+    or   a
+    jr   nz, .draw_attr
+    ld   a, (hl)                        ; capture: read screen attr
+    ld   (de), a                        ; write buffer
+    jr   .attr_done
+.draw_attr:
+    ld   a, (de)                        ; draw: read buffer attr
+    ld   (hl), a                        ; write screen
+.attr_done:
     inc  de
     ld   (SPRITE_BUF_PTR), de           ; advance past this cell's 9
                                         ; bytes total
@@ -2731,6 +2756,26 @@ GFX_SPRITE_CAPTURE:
 
     or   a                              ; success
     ret
+
+; ============================================================================
+; GFX_SPRITE_CAPTURE
+; Captures a rectangular region of the screen (bitmap + attributes)
+; into a caller-provided buffer — the "save" half of a save/restore
+; sprite pair (GFX_SPRITE_DRAW is the "restore/show" half). See this
+; section's own header above for the buffer format and cell-alignment
+; scoping.
+; In:  B = top row (0-23), C = top col (0-31), D = width cells (1-32),
+;      E = height cells (1-24), HL = buffer address
+; Out: carry clear on success (buffer filled); carry set + buffer
+;      untouched if the rectangle doesn't fit (GFX_SPRITE_BOUNDS_CHECK)
+; Destroys: AF, BC, DE, HL
+; ============================================================================
+GFX_SPRITE_CAPTURE:
+    call GFX_SPRITE_SETUP
+    ret  c
+    xor  a
+    ld   (SPRITE_XFER_DIR), a           ; 0 = capture
+    jp   GFX_SPRITE_TRANSFER
 
 ; ============================================================================
 ; GFX_SPRITE_DRAW
@@ -2756,57 +2801,6 @@ GFX_SPRITE_CAPTURE:
 GFX_SPRITE_DRAW:
     call GFX_SPRITE_SETUP
     ret  c
-
-.row_loop:
-    xor  a
-    ld   (SPRITE_COL_IDX), a
-.col_loop:
-    call GFX_SPRITE_CELL_ROWCOL         ; B = real row, C = real col
-    call GFX_CELL_BITMAP_ADDR           ; HL = screen bitmap addr
-                                        ; (scanline 0)
-    ex   de, hl                         ; DE = screen dest addr now
-    ld   hl, (SPRITE_BUF_PTR)           ; HL = buffer read pointer
-
-    ld   b, 8
-.scan_loop:
-    ld   a, (hl)
-    ld   (de), a
-    inc  hl
-    ld   a, d
-    add  a, 1                          ; next scanline: +256 to the
-                                       ; SCREEN address (DE this time,
-                                       ; not HL — source/dest swapped
-                                       ; from CAPTURE)
-    ld   d, a
-    djnz .scan_loop
-
-    ; HL now points at this cell's attribute byte in the buffer
-    ld   a, (hl)
-    inc  hl
-    ld   (SPRITE_BUF_PTR), hl           ; advance past this cell's 9
-                                        ; bytes total
-    push af                             ; stash the attribute byte —
-                                        ; GFX_SPRITE_CELL_ROWCOL/
-                                        ; GFX_CELL_ATTR_ADDR both
-                                        ; destroy A
-    call GFX_SPRITE_CELL_ROWCOL
-    call GFX_CELL_ATTR_ADDR             ; HL = screen attr addr
-    pop  af
-    ld   (hl), a
-
-    ld   a, (SPRITE_COL_IDX)
-    inc  a
-    ld   (SPRITE_COL_IDX), a
-    ld   hl, SPRITE_W
-    cp   (hl)
-    jr   c, .col_loop
-
-    ld   a, (SPRITE_ROW_IDX)
-    inc  a
-    ld   (SPRITE_ROW_IDX), a
-    ld   hl, SPRITE_H
-    cp   (hl)
-    jr   c, .row_loop
-
-    or   a                              ; success
-    ret
+    ld   a, 1
+    ld   (SPRITE_XFER_DIR), a           ; nonzero = draw
+    jp   GFX_SPRITE_TRANSFER

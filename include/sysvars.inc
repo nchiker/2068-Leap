@@ -1836,6 +1836,13 @@ SPRITE_H:            DEFS 1           ; 1 byte — height in cells (1-24)
 SPRITE_ROW_IDX:      DEFS 1           ; 1 byte — 0-based row offset from
                                 ; SPRITE_TOP_ROW, current cell
 SPRITE_COL_IDX:      DEFS 1           ; 1 byte — same, column offset
+SPRITE_XFER_DIR:     DEFS 1           ; 1 byte — GFX_SPRITE_TRANSFER's own
+                                ; direction flag: 0 = capture (screen
+                                ; -> buffer), nonzero = draw (buffer ->
+                                ; screen). Set by GFX_SPRITE_CAPTURE/
+                                ; GFX_SPRITE_DRAW before calling the
+                                ; shared transfer loop; not meaningful
+                                ; outside that one call.
 
 ; ---- BASIC-level sprite slots (2026-08-19) — SPRITE GRAB/SHOW/HIDE ----
 ; Fixed slots, not arrays — this project's BASIC has no array/named-
