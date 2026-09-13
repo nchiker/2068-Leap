@@ -2457,13 +2457,71 @@ BASIC_EVAL_TERM:
     push de
     call BASIC_EVAL_FACTOR
     jr   c, .fail_restore
-    pop  hl                              ; HL = left, DE = right
-    call MATH_MULTIPLY16                   ; HL = product
+    pop  hl                              ; HL = left (a), DE = right (b)
+    ld   (EXPR_MUL_A), hl
+    ld   (EXPR_MUL_B), de
+    call MATH_MULTIPLY16                   ; HL = product, truncated to
+                                           ; 16 bits -- MATH_MULTIPLY16's
+                                           ; own documented contract, no
+                                           ; overflow signal of its own
+    push hl                              ; stash the (possibly wrong)
+                                           ; product across the check
+                                           ; below
+
+    ; Overflow check: divide-back technique, Python-verified against
+    ; 300000+ (a,b) pairs (edge grid + random) before writing this --
+    ; if a != 0, truncation happened iff product/a != b. One
+    ; pathological case breaks the general check: a == -1 is the one
+    ; dividend with no positive two's-complement counterpart, so
+    ; MATH_DIVIDE16(product, -1) can itself silently misreport when
+    ; product is exactly -32768. Handled as an explicit special case
+    ; instead (overflow iff b == -32768) rather than folded into the
+    ; general check.
+    ld   hl, (EXPR_MUL_A)
+    ld   de, -1
+    or   a
+    sbc  hl, de
+    jr   z, .mul_check_neg1_a
+    ld   hl, (EXPR_MUL_A)
+    ld   a, h
+    or   l                               ; test HL (a) for zero -- NOT
+                                           ; `or a`, which tests A's own
+                                           ; leftover value from
+                                           ; MATH_MULTIPLY16/APPLY_SIGN
+                                           ; above, not the operand
+                                           ; (real bug, caught live: this
+                                           ; wrongly took the a==0 exit
+                                           ; for 12345*6789 whenever A
+                                           ; happened to already be 0)
+    jr   z, .mul_ok                      ; a == 0: product is always
+                                           ; exactly 0, never overflows
+    ex   de, hl                          ; DE = a
+    pop  hl                              ; HL = product
+    push hl                              ; keep product on the stack
+                                           ; for the .mul_ok path
+    call MATH_DIVIDE16                     ; HL = product / a
+    ld   de, (EXPR_MUL_B)
+    or   a
+    sbc  hl, de
+    jr   nz, .mul_overflow
+    jr   .mul_ok
+.mul_check_neg1_a:
+    ld   hl, (EXPR_MUL_B)
+    ld   de, -32768
+    or   a
+    sbc  hl, de
+    jr   z, .mul_overflow
+.mul_ok:
+    pop  hl                              ; HL = product
     ex   de, hl
     xor  a
     ld   (FUNC_RESULT_IS_FLOAT), a          ; same reasoning as "+"/"-"
                                            ; in BASIC_EVAL_EXPR above
     jr   .loop
+.mul_overflow:
+    pop  hl                              ; discard the stashed product
+    ld   hl, MSG_NUMERIC_OVERFLOW
+    jp   BASIC_RAISE_ERROR_HL
 
 .do_div:
     inc  hl
@@ -2537,7 +2595,10 @@ BASIC_EVAL_TERM:
                                     ; could otherwise show (see FUNC_
                                     ; RESULT_IS_FLOAT's own sysvars.inc
                                     ; comment)
-    jr   .loop
+    jp   .loop                     ; JP not JR -- .do_mul's new overflow
+                                    ; check pushed .loop out of JR range
+                                    ; from here (project's own recurring
+                                    ; JR-range lesson)
 
 .fail_restore:
     pop  hl

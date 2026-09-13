@@ -72,65 +72,64 @@ alias location, but it no longer stores a doubled table index.
 - Calculator bytecode is internal. Any future cartridge-facing API needs a
   versioned contract rather than exposing RST `$28` accidentally.
 
-## Known bugs (confirmed, not yet fixed) — found 2026-09-13
+## `*` overflow — fixed 2026-09-13
 
-Both found live under ZEsarUX while verifying an unrelated size-reduction
-refactor of `CALC_OP_MUL`/`CALC_OP_DIV` (`rom/exrom_calc.asm`,
-factored their inlined accumulate/shift/compare/subtract loops into shared
-`CALC_ADD8`/`CALC_SHL8`/`CALC_CMP4`/`CALC_SUB4` primitives).
+Found live under ZEsarUX while verifying an unrelated size-reduction refactor
+of `CALC_OP_MUL`/`CALC_OP_DIV` (`rom/exrom_calc.asm`, factored their inlined
+accumulate/shift/compare/subtract loops into shared `CALC_ADD8`/`CALC_SHL8`/
+`CALC_CMP4`/`CALC_SUB4` primitives). Root-caused to `basic/basic.asm`'s
+expression evaluator, not the calculator engine at all — `CALC_OP_MUL` was
+never even reached, confirmed by temporarily logging `CALC_UNP_A`/`CALC_UNP_B`
+to idle scratch RAM inside it and reading back via ZRCP after `PRINT
+12345*6789`: all zero bytes, meaning that routine's own unpack step never
+ran. See `BASIC_EVAL_TERM` (`basic/basic.asm:2438`).
 
-**Update (2026-09-13, root-caused):** both findings below turned out to be
-about `basic/basic.asm`'s expression evaluator, not the calculator engine at
-all — `CALC_OP_MUL`/`CALC_OP_DIV` themselves were never even reached for
-either case, confirmed by temporarily logging `CALC_UNP_A`/`CALC_UNP_B` to
-idle scratch RAM inside `CALC_OP_MUL` and reading it back via ZRCP after
-`PRINT 12345*6789`: all zero bytes, meaning that routine's own unpack step
-never ran. One of the two is a real, confirmed, currently-unfixed bug; the
-other turned out not to be a bug at all. See `BASIC_EVAL_TERM`
-(`basic/basic.asm:2438`) for both operators' real implementation.
+**Bug:** `BASIC_EVAL_TERM`'s `.do_mul` called `kernel/math/math.asm`'s
+`MATH_MULTIPLY16` directly for every numeric `*` — a 16-bit signed multiply
+whose own documented contract is "product (signed, **truncated to 16
+bits**)", with no overflow check at the call site. `PRINT 12345*6789` printed
+`-10339` (`83810205 mod 65536` interpreted as signed 16-bit) instead of
+erroring — not a corner case, since any product exceeding &plusmn;32767 hit
+this (`200*200` already overflows).
 
-- **CONFIRMED BUG: `*` silently wraps on overflow, no error, no float
-  promotion.** `BASIC_EVAL_TERM`'s `.do_mul` (`basic/basic.asm:2454`) calls
-  `kernel/math/math.asm`'s `MATH_MULTIPLY16` directly for every numeric `*` —
-  a 16-bit signed multiply whose own documented contract is "product
-  (signed, **truncated to 16 bits**)", with no overflow check at the call
-  site. `PRINT 12345*6789` reaches exactly this path (the calculator engine
-  is never invoked for `*` at all — confirmed by the all-zero debug scratch
-  above) and prints `-10339`. This is not a corner case: `83810205 mod 65536`
-  interpreted as signed 16-bit is exactly `-10339` (confirmed via a direct
-  Python check), so this affects *any* multiplication whose true product
-  exceeds &plusmn;32767 &mdash; a genuinely common range for a BASIC (`200*200`
-  already overflows). `2*3` and `7*8` multiply correctly only because their
-  products happen to fit in 16 bits.
+**Fix:** `.do_mul` now detects overflow via a divide-back check — after
+`product = MATH_MULTIPLY16(a,b)`, if `a != 0` and `MATH_DIVIDE16(product,a)
+!= b`, truncation occurred and `NUMERIC OVERFLOW` is raised via
+`BASIC_RAISE_ERROR_HL` instead of returning the wrong value. One
+pathological case breaks the general check (`a == -1` is the one dividend
+with no positive two's-complement counterpart, so `MATH_DIVIDE16(product,
+-1)` can itself misreport when `product` is exactly `-32768`); handled as an
+explicit special case (`a == -1`: overflow iff `b == -32768`) instead of
+folding it into the general check. Two new per-call scratch sysvars,
+`EXPR_MUL_A`/`EXPR_MUL_B` (`include/sysvars.inc`), hold the original operands
+across the `MATH_MULTIPLY16` call, which destroys HL/DE.
 
-  Not yet fixed — this touches the single hottest code path in the whole
-  language (every `*` in every program) and deserves the same care as any
-  other calculator-engine change. Two candidate fixes, neither implemented:
-  1. **Detect overflow, raise `NUMERIC OVERFLOW`** (matches this project's
-     own existing pattern for `CALC_OP_MUL`/`CALC_OP_DIV`'s exponent
-     overflow). Minimal, safe, but "silently wrong" becomes "loudly
-     rejected" rather than "correctly computed" for the overflow case.
-     Detection approach: since neither `MATH_UMUL16` nor `MATH_MULTIPLY16`
-     expose a widened result or an overflow flag, the cheapest check reusing
-     already-verified primitives is a divide-back: after `product =
-     MATH_MULTIPLY16(a,b)`, if `a != 0` and `MATH_DIVIDE16(product,a) != b`,
-     truncation occurred. This is a standard, generally-reliable technique
-     for two's-complement multiply-overflow detection, but has one known
-     pathological edge case (`a=-1, b=-32768` — the one dividend with no
-     positive two's-complement counterpart) worth explicitly testing in the
-     Python model before trusting it, not just asserting it's fine.
-  2. **Auto-promote to the float engine and let the result be a real
-     float**, matching genuine Sinclair BASIC's own transparent int/float
-     mixing. More correct, but a real language-semantics change (the
-     evaluator's whole "DE holds a 16-bit int result" convention would need
-     to accommodate a float result for every arithmetic operator down the
-     chain, not just `*`) — a design decision, not just a bug fix.
+Verified Python-first per this project's own established discipline before
+writing any Z80: the divide-back-plus-guard technique was checked against
+300,000+ `(a,b)` pairs (a full edge-value grid plus random sampling across
+the entire signed 16-bit range) with zero failures, including the exact
+`12345*6789` case, both orderings of the pathological `-1`/`-32768` pair, and
+ordinary in-range values that must NOT be flagged. A first implementation
+attempt had a real bug of its own (used `or a` — testing register A's
+leftover value from `MATH_MULTIPLY16`/`MATH_APPLY_SIGN` — where `ld a,h / or
+l` against HL was needed to test the operand for zero); caught live in
+ZEsarUX when `12345*6789` still printed the wrong value after the "fix",
+fixed, and re-verified.
 
-  Whichever approach: Python-verify against many cases (including known
-  edge cases: `-32768*-1`, `-1*-32768`, the exact `12345*6789` case above,
-  and ordinary in-range values that must NOT be flagged) before writing any
-  Z80, matching this project's own established discipline for calculator
-  changes.
+Confirmed live in ZEsarUX after the real fix: `PRINT 7*8` still prints `56`
+and `PRINT 10/4` still prints `2` (unaffected sibling code path); `PRINT
+12345*6789` and `PRINT -1*-32768` both now correctly report an error instead
+of a silently-wrong value. Both are literal-constant expressions, so this
+project's own static checker (`rom/exrom_checker.asm`'s `BASIC_CHECK_*`
+family, which validates statement grammar by calling the real expression
+evaluator — see `docs/programmers_reference.md`'s "Unified runtime error
+display" section) catches them at commit/RUN-check time rather than at
+execution time, showing `1 ERROR FOUND` on the status bar rather than a
+runtime error message. This is the same pre-existing, documented
+check-time-vs-runtime-evaluation class of behavior already noted there for
+literal division-by-zero, not something new introduced by this fix — full
+regression suite (92/92 `make test`, all `make check` targets) confirms no
+other behavior changed.
 
 - **NOT a bug: `/` is deliberately integer division, not float division.**
   `BASIC_EVAL_TERM`'s `.divide_ok` (`basic/basic.asm:2492`) converts both

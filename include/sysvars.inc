@@ -533,6 +533,15 @@ EXPR_PARSE_PTR:      DEFS 2           ; 2 bytes — basic/'s current position
                                  ; ongoing position in the source text
                                  ; that every level of recursion reads
                                  ; and advances together, by design
+EXPR_MUL_A:           DEFS 2           ; 2 bytes — BASIC_EVAL_TERM's `*`
+                                 ; overflow check: the left operand,
+                                 ; stashed here since MATH_MULTIPLY16
+                                 ; destroys HL/DE and the divide-back
+                                 ; overflow check needs the original
+                                 ; operands afterward. Pure per-call
+                                 ; scratch, same sharing rationale as
+                                 ; the kernel/math scratch below.
+EXPR_MUL_B:            DEFS 2           ; 2 bytes — same, right operand
 
 ; ---- kernel/math scratch ----
 ; All of these are pure per-call scratch, safe to share across nested
