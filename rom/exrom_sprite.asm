@@ -177,24 +177,27 @@ BASIC_SPRITE_ADD_SLOT_OFFSET:
 ;      col) or MSG_SPRITE_TOO_LARGE (w/h) already recorded otherwise
 ; Destroys: AF
 ; ============================================================================
+; CHECK_ROW/CHECK_COL share this core (identical except the exclusive
+; bound) — no caller relies on C surviving either call (Destroys: AF
+; was already the documented contract; every call site immediately
+; does ret c / ld (ARG),a with no BC use in between), so using C to
+; carry the bound in is safe.
+; In:  D:E = the value just parsed, C = exclusive upper bound
+BASIC_SPRITE_CHECK_ROWCOL_CORE:
+    ld   a, d
+    or   a
+    jr   nz, BASIC_SPRITE_RANGE_FAIL
+    ld   a, e
+    cp   c
+    jr   nc, BASIC_SPRITE_RANGE_FAIL
+    or   a
+    ret
 BASIC_SPRITE_CHECK_ROW:
-    ld   a, d
-    or   a
-    jr   nz, BASIC_SPRITE_RANGE_FAIL
-    ld   a, e
-    cp   24
-    jr   nc, BASIC_SPRITE_RANGE_FAIL
-    or   a
-    ret
+    ld   c, 24
+    jr   BASIC_SPRITE_CHECK_ROWCOL_CORE
 BASIC_SPRITE_CHECK_COL:
-    ld   a, d
-    or   a
-    jr   nz, BASIC_SPRITE_RANGE_FAIL
-    ld   a, e
-    cp   32
-    jr   nc, BASIC_SPRITE_RANGE_FAIL
-    or   a
-    ret
+    ld   c, 32
+    jr   BASIC_SPRITE_CHECK_ROWCOL_CORE
 BASIC_SPRITE_RANGE_FAIL:
     ld   hl, MSG_SPRITE_OUT_OF_RANGE
     jp   SPRITE_RAISE_ERROR
