@@ -65,8 +65,27 @@ BASIC_STMT_DIM_EXROM:
     add  hl, hl
     jr   .size_ready
 .numeric_size:
-    bit  7, h                       ; count*2 would overflow 16 bits
-    jr   nz, .out_of_memory
+    ; Reject count >= 32766, not just count >= 32768 (the old `bit 7,h`
+    ; check here). count*2 alone fits in 16 bits for any count < 32768,
+    ; but the array header's own +4 (added a few lines below) then
+    ; overflows too for count 32766/32767 specifically (32766*2+4 =
+    ; 65536, wraps to 0). That wrapped, tiny ARRAY_ALLOC_BYTES value is
+    ; what the out-of-memory check below actually tests, so it silently
+    ; passes an allocation that's really ~64K — but the zero-init loop
+    ; at .zero reloads the REAL, un-wrapped ARRAY_ALLOC_BYTES afterward
+    ; and walks that many bytes, corrupting memory across the entire
+    ; address space. CONFIRMED real bug, not theoretical: `DIM A(32767)`
+    ; typed from ordinary BASIC reaches this exact path — ARRAY_DIM_COUNT
+    ; comes straight from KTAB_BASIC_EVAL_EXPR, an ordinary signed 16-bit
+    ; expression, ordinary user input. 32765 is the largest count that
+    ; doesn't overflow (32765*2+4 = 65534, fits); 32766 is the first that
+    ; does (32766*2+4 = 65536 -> 0).
+    ld   de, 32766
+    or   a
+    sbc  hl, de
+    jr   nc, .out_of_memory          ; no borrow: count >= 32766, reject
+    ld   hl, (ARRAY_DIM_COUNT)        ; reload the real count -- SBC
+                                     ; above destroyed HL
     add  hl, hl
 .size_ready:
     ld   (ARRAY_ALLOC_BYTES), hl
