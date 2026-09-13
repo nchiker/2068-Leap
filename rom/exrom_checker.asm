@@ -718,21 +718,13 @@ BASIC_CHECK_STR_ASSIGNMENT:
     jr   nz, .strassign_fail
     inc  hl
 .strassign_skip1:
-    ld   a, (hl)
-    cp   " "
-    jr   nz, .strassign_eq
-    inc  hl
-    jr   .strassign_skip1
+    call KTAB_BASIC_SKIP_SPACES           ; leaves A = (hl), same as the
+                                          ; inline loop this replaced
 .strassign_eq:
     cp   "="
     jr   nz, .strassign_fail
     inc  hl
-.strassign_skip2:
-    ld   a, (hl)
-    cp   " "
-    jr   nz, .strassign_value
-    inc  hl
-    jr   .strassign_skip2
+    call KTAB_BASIC_SKIP_SPACES
 .strassign_value:
     ld   de, STR_EXPR_SCRATCH + 1
     ld   c, 31
@@ -822,22 +814,13 @@ BASIC_CHECK_ASSIGNMENT:
     call KTAB_BASIC_VALIDATE_VAR_LETTER
     jr   c, .fail
     inc  hl
-.skip_spaces1:
-    ld   a, (hl)
-    cp   " "
-    jr   nz, .check_equals
-    inc  hl
-    jr   .skip_spaces1
+    call KTAB_BASIC_SKIP_SPACES           ; leaves A = (hl), same as the
+                                          ; inline loop this replaced
 .check_equals:
     cp   "="
     jr   nz, .fail
     inc  hl
-.skip_spaces2:
-    ld   a, (hl)
-    cp   " "
-    jr   nz, .parse_value
-    inc  hl
-    jr   .skip_spaces2
+    call KTAB_BASIC_SKIP_SPACES
 .parse_value:
     call KTAB_BASIC_EVAL_EXPR
     jr   c, .fail
@@ -1098,7 +1081,12 @@ BASIC_CHECK_STATEMENT_CONTENT:
 
     ld   de, KW_SHOW
     call KTAB_BASIC_MATCH_KEYWORD_BOUNDARY
-    jr   nc, .check_sprite_3args
+    jp   nc, .check_circle                ; SHOW <slot>,<row>,<col> —
+                                          ; identical shape to .check_
+                                          ; circle below (expr, comma-
+                                          ; expr, comma-expr, end) —
+                                          ; shares it rather than
+                                          ; duplicating
 
     ld   de, KW_HIDE
     call KTAB_BASIC_MATCH_KEYWORD_BOUNDARY
@@ -1106,25 +1094,14 @@ BASIC_CHECK_STATEMENT_CONTENT:
 
     ld   de, KW_MOVE
     call KTAB_BASIC_MATCH_KEYWORD_BOUNDARY
-    jr   nc, .check_sprite_3args          ; MOVE <slot>,<row>,<col> —
-                                          ; identical shape to SHOW
+    jp   nc, .check_circle                ; MOVE <slot>,<row>,<col> —
+                                          ; same shape too
 
     jp   .syntax_fail
 
 .check_sprite_1arg:
     call KTAB_BASIC_EVAL_EXPR
     jp   c, .syntax_fail
-    call KTAB_BASIC_EXPECT_STATEMENT_END
-    ret  c
-    jp   .ok
-
-.check_sprite_3args:
-    call KTAB_BASIC_EVAL_EXPR
-    jp   c, .syntax_fail
-    call KTAB_BASIC_EXPECT_COMMA_EXPR
-    ret  c
-    call KTAB_BASIC_EXPECT_COMMA_EXPR
-    ret  c
     call KTAB_BASIC_EXPECT_STATEMENT_END
     ret  c
     jp   .ok

@@ -1248,19 +1248,22 @@ CALC_OP_MUL:
     ld   a, (CALC_UNP_B)
     xor  b
     ld   (CALC_SHIFT_COUNT), a       ; stash result sign
+    ; Zero CALC_MUL_ACC (8 bytes) and CALC_MUL_CAND's own high 4 bytes
+    ; (+4..+7) in one pass — CALC_MUL_ACC and CALC_MUL_CAND are
+    ; contiguous in include/sysvars.inc (ACC: DEFS 8 immediately
+    ; followed by CAND: DEFS 8), so zeroing all 16 bytes from
+    ; CALC_MUL_ACC through CALC_MUL_CAND+7 covers exactly the same
+    ; ground as the 12 individual stores this replaced — CAND+0..+3
+    ; get unconditionally overwritten with real data a few lines below
+    ; regardless, so zeroing them here too is harmless, not a
+    ; behavior change.
     xor  a
-    ld   (CALC_MUL_ACC), a
-    ld   (CALC_MUL_ACC+1), a
-    ld   (CALC_MUL_ACC+2), a
-    ld   (CALC_MUL_ACC+3), a
-    ld   (CALC_MUL_ACC+4), a
-    ld   (CALC_MUL_ACC+5), a
-    ld   (CALC_MUL_ACC+6), a
-    ld   (CALC_MUL_ACC+7), a
-    ld   (CALC_MUL_CAND+4), a
-    ld   (CALC_MUL_CAND+5), a
-    ld   (CALC_MUL_CAND+6), a
-    ld   (CALC_MUL_CAND+7), a
+    ld   hl, CALC_MUL_ACC
+    ld   b, 16
+.cm_zero_init:
+    ld   (hl), a
+    inc  hl
+    djnz .cm_zero_init
     ; FIXED: mantissaA must start in CAND's LOW 32 bits (bytes 0-3),
     ; not the high half -- the standard shift-and-add algorithm needs
     ; the multiplicand UNSHIFTED at iteration 0, growing left into the
