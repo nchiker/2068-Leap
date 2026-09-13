@@ -304,8 +304,9 @@ EDITOR_LOOP:
     push de
     jp   (hl)
 .hook_returned_only:
-    call EDITOR_REDRAW_SCREEN
-    jp   EDITOR_LOOP
+    jr   .hook_returned            ; identical tail to .hook_returned above
+                                   ; (redraw, then back to the loop) — jump
+                                   ; there instead of duplicating it
 
 ; ============================================================================
 ; EDITOR_EXIT
@@ -342,21 +343,39 @@ EDITOR_EXIT:
 ; ============================================================================
 EDITOR_SCAN_LEN:
     ld   hl, EDIT_LINE_BUF
-    ld   b, 0
-.loop:
-    ld   a, b
-    cp   EDIT_LINE_BUF_LEN
-    jr   z, .done
-    ld   a, (hl)
-    or   a
-    jr   z, .done
-    inc  hl
-    inc  b
-    jr   .loop
-.done:
+    call EDITOR_SCAN_LEN_CORE
     ld   a, b
     ld   (EDIT_CONTENT_LEN), a
     ret
+
+; ============================================================================
+; EDITOR_SCAN_LEN_CORE (internal)
+; Scans the buffer at HL for a null terminator, capped at content length
+; EDIT_LINE_BUF_LEN-1 if none is found first. That cap is the real ceiling
+; for any buffer this size in practice: EDITOR_INSERT_CHAR never lets
+; content reach EDIT_LINE_BUF_LEN itself (it refuses once content is
+; already at EDIT_LINE_BUF_LEN-1), so the cap here and EDITOR_SCAN_LEN's
+; former separate EDIT_LINE_BUF_LEN cap are equivalent for every reachable
+; buffer state — this just uses the one bound both callers can share.
+; Shared by EDITOR_SCAN_LEN (always scans EDIT_LINE_BUF) and EDITOR_
+; WRAP_CALC (scans whatever buffer its own caller passed) — same loop,
+; only the starting HL and where the result is stored afterward differ.
+; In:  HL = buffer pointer
+; Out: B = content length
+; Destroys: AF, B, HL
+; ============================================================================
+EDITOR_SCAN_LEN_CORE:
+    ld   b, 0
+.loop:
+    ld   a, b
+    cp   EDIT_LINE_BUF_LEN - 1
+    ret  z
+    ld   a, (hl)
+    or   a
+    ret  z
+    inc  hl
+    inc  b
+    jr   .loop
 
 ; ============================================================================
 ; EDITOR_INSERT_CHAR
@@ -645,19 +664,12 @@ EDITOR_REDRAW_SCREEN:
 EDITOR_WRAP_CALC:
     ld   (WRAP_TEXT_PTR), hl
 
-    ; total content length, scanning for the null terminator
-    ld   b, 0
-.scan_len_loop:
-    ld   a, b
-    cp   EDIT_LINE_BUF_LEN - 1
-    jr   z, .scan_len_done
-    ld   a, (hl)
-    or   a
-    jr   z, .scan_len_done
-    inc  hl
-    inc  b
-    jr   .scan_len_loop
-.scan_len_done:
+    ; total content length, scanning for the null terminator — shares
+    ; EDITOR_SCAN_LEN_CORE with EDITOR_SCAN_LEN (see that routine's own
+    ; header); HL is free to clobber here since WRAP_TEXT_PTR above
+    ; already holds this scan's own text pointer for the rest of this
+    ; routine, not HL itself.
+    call EDITOR_SCAN_LEN_CORE
     ld   a, b
     ld   (WRAP_REMAIN), a
 
