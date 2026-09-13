@@ -108,7 +108,7 @@ release-assets: build cplot-extension block-extension frame-extension invert-ext
 	cp README.md RELEASE_NOTES.md ANNOUNCEMENT_RELEASE_1_BETA.md LICENSE build/release/
 	cp docs/emulator_setup.md docs/whats_new_release_1_beta.md docs/2068-Leap_Whats_New_Release_1_Beta.docx docs/user_manual.md docs/2068_Leap_Users_Manual.docx build/release/docs/
 	cp demos/showcase.txt demos/smoketest.txt build/release/demos/
-	cp patches/0001-Add-ULAplus-support-for-Timex-machines.patch build/release/patches/
+	cp patches/0001-Add-ULAplus-support-for-Timex-machines.patch patches/0001-zesarux-mirror-ts2068-exrom.patch build/release/patches/
 	cd build/release && sha256sum roms/* extensions/* > SHA256SUMS.txt
 	cd build/release && zip -qrFS ../2068-Leap-Release-1-Beta.zip .
 audit-basic: build

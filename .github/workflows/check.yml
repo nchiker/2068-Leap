@@ -1,8 +1,31 @@
+# Build/check gate on every push and PR; downloadable release bundle
+# (`make release-assets`) on top of that for pushes and tags.
+#
+# What the `dist` job does, in order:
+#   1. Reuses the same pinned SjASMPlus build as `check` (cached across runs).
+#   2. `make release-assets`: assembles the production ROMs, all six
+#      loadable BASIC extension .tzx files, the EightyOne/ZEsarUX images,
+#      the user manual and what's-new docs (Markdown + DOCX), and zips
+#      them into build/2068-Leap-Release-1-Beta.zip with a SHA-256
+#      manifest.
+#   3. Publishes it:
+#        - every run (push or PR):  as a workflow artifact (Actions tab).
+#        - every push to main:      as the rolling "latest" pre-release, so
+#                                    there's a permanent download link.
+#        - every tag vX.Y[.Z...]:   as a proper versioned release with
+#                                    auto-generated notes. To cut one:
+#                                      git tag v1.2.3 && git push origin v1.2.3
 name: Source checks
 
 on:
   push:
   pull_request:
+
+# One dist build per ref at a time; a newer push cancels the older run so
+# two runs never race to update the "latest" release.
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   check:
@@ -18,3 +41,106 @@ jobs:
         run: make check
       - name: Build production ROMs and report capacity
         run: make budget
+
+  dist:
+    needs: check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # needed only by the two release-publishing steps below
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history so tag lookups work
+
+      - name: Build pinned SjASMPlus
+        run: |
+          git clone --branch v1.23.1 --depth 1 --recurse-submodules --shallow-submodules https://github.com/z00m128/sjasmplus.git /tmp/sjasmplus
+          make -C /tmp/sjasmplus
+          echo "/tmp/sjasmplus" >> "$GITHUB_PATH"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install python-docx (needed by make manual)
+        run: pip install --quiet python-docx
+
+      - name: Build the downloadable bundle (make release-assets)
+        run: |
+          make release-assets
+          ls -la build/2068-Leap-Release-1-Beta.zip
+          unzip -l build/2068-Leap-Release-1-Beta.zip
+
+      - name: Work out the version string
+        id: version
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            echo "version=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=dev-$(git log -1 --format=%cd --date=format:%Y%m%d)-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Name the bundle for this build
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          cp build/2068-Leap-Release-1-Beta.zip "build/2068-Leap-$VERSION.zip"
+          sha256sum "build/2068-Leap-$VERSION.zip" > "build/2068-Leap-$VERSION.zip.sha256"
+
+      - name: Upload bundle as a workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: 2068-Leap-${{ steps.version.outputs.version }}
+          path: |
+            build/2068-Leap-*.zip
+            build/2068-Leap-*.zip.sha256
+          if-no-files-found: error
+          retention-days: 30
+
+      # ---- publish: rolling "latest" pre-release on every main push ----
+      - name: Update the rolling "latest" pre-release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          cp "build/2068-Leap-$VERSION.zip" build/2068-Leap-latest.zip
+          sha256sum build/2068-Leap-latest.zip > build/2068-Leap-latest.zip.sha256
+
+          # Move the "latest" tag to this commit.
+          git tag -f latest
+          git push -f origin latest
+
+          title="Latest build ($VERSION)"
+          notes=$(printf '%s\n\n%s' \
+            "Automatic build of \`main\` at ${GITHUB_SHA} — a moving target, rebuilt on every push." \
+            "Download **2068-Leap-latest.zip** below. For a fixed, numbered release see the [releases page](https://github.com/${GITHUB_REPOSITORY}/releases).")
+
+          if gh release view latest >/dev/null 2>&1; then
+            # Replace the old assets rather than piling up one per push.
+            for asset in $(gh release view latest --json assets --jq '.assets[].name'); do
+              gh release delete-asset latest "$asset" --yes
+            done
+            gh release edit latest --prerelease --latest=false --title "$title" --notes "$notes"
+          else
+            gh release create latest --prerelease --latest=false --title "$title" --notes "$notes"
+          fi
+          gh release upload latest build/2068-Leap-latest.zip build/2068-Leap-latest.zip.sha256
+
+      # ---- publish: numbered release on every v* tag ----
+      - name: Publish the versioned release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          notes="2068-Leap $VERSION — download **2068-Leap-$VERSION.zip** below."
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            gh release upload "$VERSION" "build/2068-Leap-$VERSION.zip" "build/2068-Leap-$VERSION.zip.sha256" --clobber
+          else
+            gh release create "$VERSION" --title "2068-Leap $VERSION" --notes "$notes" --generate-notes \
+              "build/2068-Leap-$VERSION.zip" "build/2068-Leap-$VERSION.zip.sha256"
+          fi
