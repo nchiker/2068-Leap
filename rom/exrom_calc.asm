@@ -1299,75 +1299,22 @@ CALC_OP_MUL:
     rr   a
     ld   (CALC_UNP_B+5), a
     jr   nc, .cm_no_add
-    ; No absolute-address ADD/ADC exists on real Z80 -- route every
-    ; byte through C (free here; not the loop counter). Same lesson
-    ; as the ADDSUB engine's own fix just above: sjasmplus is the only
-    ; real ground truth for which addressing modes an opcode supports.
-    ld   a, (CALC_MUL_CAND)
-    ld   c, a
-    ld   a, (CALC_MUL_ACC)
-    add  a, c
-    ld   (CALC_MUL_ACC), a
-    ld   a, (CALC_MUL_CAND+1)
-    ld   c, a
-    ld   a, (CALC_MUL_ACC+1)
-    adc  a, c
-    ld   (CALC_MUL_ACC+1), a
-    ld   a, (CALC_MUL_CAND+2)
-    ld   c, a
-    ld   a, (CALC_MUL_ACC+2)
-    adc  a, c
-    ld   (CALC_MUL_ACC+2), a
-    ld   a, (CALC_MUL_CAND+3)
-    ld   c, a
-    ld   a, (CALC_MUL_ACC+3)
-    adc  a, c
-    ld   (CALC_MUL_ACC+3), a
-    ld   a, (CALC_MUL_CAND+4)
-    ld   c, a
-    ld   a, (CALC_MUL_ACC+4)
-    adc  a, c
-    ld   (CALC_MUL_ACC+4), a
-    ld   a, (CALC_MUL_CAND+5)
-    ld   c, a
-    ld   a, (CALC_MUL_ACC+5)
-    adc  a, c
-    ld   (CALC_MUL_ACC+5), a
-    ld   a, (CALC_MUL_CAND+6)
-    ld   c, a
-    ld   a, (CALC_MUL_ACC+6)
-    adc  a, c
-    ld   (CALC_MUL_ACC+6), a
-    ld   a, (CALC_MUL_CAND+7)
-    ld   c, a
-    ld   a, (CALC_MUL_ACC+7)
-    adc  a, c
-    ld   (CALC_MUL_ACC+7), a
+    ; ACC += CAND (8-byte add, LSB-first) via the shared CALC_ADD8 --
+    ; B (this loop's own 32-iteration counter) must survive the call,
+    ; so it's stashed on the real stack, not relied on to sit still
+    ; through CALC_ADD8's own internal DJNZ use of the same register.
+    push bc
+    ld   hl, CALC_MUL_ACC
+    ld   de, CALC_MUL_CAND
+    call CALC_ADD8
+    pop  bc
 .cm_no_add:
-    ld   a, (CALC_MUL_CAND)
-    sla  a
-    ld   (CALC_MUL_CAND), a
-    ld   a, (CALC_MUL_CAND+1)
-    rl   a
-    ld   (CALC_MUL_CAND+1), a
-    ld   a, (CALC_MUL_CAND+2)
-    rl   a
-    ld   (CALC_MUL_CAND+2), a
-    ld   a, (CALC_MUL_CAND+3)
-    rl   a
-    ld   (CALC_MUL_CAND+3), a
-    ld   a, (CALC_MUL_CAND+4)
-    rl   a
-    ld   (CALC_MUL_CAND+4), a
-    ld   a, (CALC_MUL_CAND+5)
-    rl   a
-    ld   (CALC_MUL_CAND+5), a
-    ld   a, (CALC_MUL_CAND+6)
-    rl   a
-    ld   (CALC_MUL_CAND+6), a
-    ld   a, (CALC_MUL_CAND+7)
-    rl   a
-    ld   (CALC_MUL_CAND+7), a
+    ; CAND <<= 1 (8-byte left shift, LSB-first) via the shared
+    ; CALC_SHL8 -- same B-preservation reasoning as above.
+    push bc
+    ld   hl, CALC_MUL_CAND
+    call CALC_SHL8
+    pop  bc
     ; DJNZ's displacement is +-127 bytes (lesson 2) -- this loop body
     ; is far too long for it (found by real sjasmplus, not this
     ; sandbox's z80sim, which has no range-checking at all). Plain
@@ -1378,30 +1325,11 @@ CALC_OP_MUL:
     ld   a, (CALC_MUL_ACC+7)
     bit  7, a
     jr   nz, .cm_no_renorm
-    ld   a, (CALC_MUL_ACC)
-    sla  a
-    ld   (CALC_MUL_ACC), a
-    ld   a, (CALC_MUL_ACC+1)
-    rl   a
-    ld   (CALC_MUL_ACC+1), a
-    ld   a, (CALC_MUL_ACC+2)
-    rl   a
-    ld   (CALC_MUL_ACC+2), a
-    ld   a, (CALC_MUL_ACC+3)
-    rl   a
-    ld   (CALC_MUL_ACC+3), a
-    ld   a, (CALC_MUL_ACC+4)
-    rl   a
-    ld   (CALC_MUL_ACC+4), a
-    ld   a, (CALC_MUL_ACC+5)
-    rl   a
-    ld   (CALC_MUL_ACC+5), a
-    ld   a, (CALC_MUL_ACC+6)
-    rl   a
-    ld   (CALC_MUL_ACC+6), a
-    ld   a, (CALC_MUL_ACC+7)
-    rl   a
-    ld   (CALC_MUL_ACC+7), a
+    ; ACC <<= 1 via the shared CALC_SHL8 -- loop has already exited
+    ; (B is free here), same shift shape as CAND's own per-iteration
+    ; doubling above.
+    ld   hl, CALC_MUL_ACC
+    call CALC_SHL8
     ld   c, 129
     jr   .cm_compute_exp
 .cm_no_renorm:
@@ -1560,45 +1488,13 @@ CALC_OP_DIV:
     jp   z, .cd_zero
     ld   (CALC_UNP_A+1), a           ; provisional exponent, no preshift
 
-    ; preshift decision: compare MA (CALC_UNP_A+2..+5) vs MB (CALC_UNP_B
-    ; +2..+5), MSB first — mirrors CALC_ADDSUB_ENGINE's own mantissa
-    ; tie-break compare, fully unrolled (4 bytes) rather than DJNZ'd so
-    ; nothing here needs a spare register beyond what the compare itself
-    ; uses (B holds the outer 32-iteration counter later, not yet — see
-    ; CALC_OP_MUL's own comment on why B stays untouched mid-loop; this
-    ; block runs before that counter is even loaded, so it's moot here,
-    ; but keeping the same discipline avoids a footgun if this ever gets
-    ; refactored into a shared loop)
+    ; preshift decision: is MA (CALC_UNP_A+2..+5) < MB (CALC_UNP_B+2..+5),
+    ; MSB first, via the shared CALC_CMP4 — this block runs before B is
+    ; loaded as the outer 32-iteration counter (that happens below at
+    ; .cd_setup_done), so CALC_CMP4's own internal use of B is safe here.
     ld   hl, CALC_UNP_A+2
     ld   de, CALC_UNP_B+2
-    ld   a, (de)
-    ld   c, a
-    ld   a, (hl)
-    cp   c
-    jr   c, .cd_no_preshift
-    jr   nz, .cd_preshift
-    inc  hl
-    inc  de
-    ld   a, (de)
-    ld   c, a
-    ld   a, (hl)
-    cp   c
-    jr   c, .cd_no_preshift
-    jr   nz, .cd_preshift
-    inc  hl
-    inc  de
-    ld   a, (de)
-    ld   c, a
-    ld   a, (hl)
-    cp   c
-    jr   c, .cd_no_preshift
-    jr   nz, .cd_preshift
-    inc  hl
-    inc  de
-    ld   a, (de)
-    ld   c, a
-    ld   a, (hl)
-    cp   c
+    call CALC_CMP4
     jr   c, .cd_no_preshift
     ; MA >= MB (including an exact tie) -> preshift
 .cd_preshift:
@@ -1654,51 +1550,23 @@ CALC_OP_DIV:
     jr   c, .cd_do_subtract           ; carry out of the top byte -> REM's
                                       ; true value is already >= 2^32,
                                       ; unconditionally >= MB (<2^32)
-    ld   a, (CALC_UNP_B+2)
-    ld   c, a
-    ld   a, (CALC_DIV_REM)
-    cp   c
-    jr   c, .cd_no_subtract
-    jr   nz, .cd_do_subtract
-    ld   a, (CALC_UNP_B+3)
-    ld   c, a
-    ld   a, (CALC_DIV_REM+1)
-    cp   c
-    jr   c, .cd_no_subtract
-    jr   nz, .cd_do_subtract
-    ld   a, (CALC_UNP_B+4)
-    ld   c, a
-    ld   a, (CALC_DIV_REM+2)
-    cp   c
-    jr   c, .cd_no_subtract
-    jr   nz, .cd_do_subtract
-    ld   a, (CALC_UNP_B+5)
-    ld   c, a
-    ld   a, (CALC_DIV_REM+3)
-    cp   c
+    ; is REM < MB, MSB first, via the shared CALC_CMP4 -- B (this loop's
+    ; own 32-iteration counter) must survive, stashed on the real stack.
+    push bc
+    ld   hl, CALC_DIV_REM
+    ld   de, CALC_UNP_B+2
+    call CALC_CMP4
+    pop  bc
     jr   c, .cd_no_subtract
     ; REM >= MB (including an exact tie) -> fall through to subtract
 .cd_do_subtract:
-    ld   a, (CALC_UNP_B+5)
-    ld   c, a
-    ld   a, (CALC_DIV_REM+3)
-    sub  c
-    ld   (CALC_DIV_REM+3), a
-    ld   a, (CALC_UNP_B+4)
-    ld   c, a
-    ld   a, (CALC_DIV_REM+2)
-    sbc  a, c
-    ld   (CALC_DIV_REM+2), a
-    ld   a, (CALC_UNP_B+3)
-    ld   c, a
-    ld   a, (CALC_DIV_REM+1)
-    sbc  a, c
-    ld   (CALC_DIV_REM+1), a
-    ld   a, (CALC_UNP_B+2)
-    ld   c, a
-    ld   a, (CALC_DIV_REM)
-    sbc  a, c
-    ld   (CALC_DIV_REM), a
+    ; REM -= MB (4-byte subtract, LSB-first) via the shared CALC_SUB4 --
+    ; same B-preservation reasoning as the compare above.
+    push bc
+    ld   hl, CALC_DIV_REM+3
+    ld   de, CALC_UNP_B+5
+    call CALC_SUB4
+    pop  bc
     scf                                ; this iteration's quotient bit = 1
     jr   .cd_shift_quot
 .cd_no_subtract:
@@ -1751,6 +1619,130 @@ CALC_OP_DIV:
 .cd_divzero:
     ld   a, CALC_ERR_DIVISION_BY_ZERO
     jp   CALC_ABORT_STREAM
+
+; ============================================================================
+; CALC_ADD8 (internal)
+; 8-byte add: (HL..HL+7) += (DE..DE+7), LSB-first (byte 0 is the least
+; significant), stored back into (HL..HL+7). Byte 0 uses a plain ADD
+; (discards any incoming carry, matching CALC_OP_MUL's own original
+; inline sequence); bytes 1-7 use ADC to propagate carry. Shared by
+; CALC_OP_MUL's accumulate step (was 12 near-identical LD/ADD/LD groups
+; inlined at absolute addresses -- confirmed via cross-project research
+; this session that structured-basic-poc's own N_ADD uses exactly this
+; pointer+DJNZ shape for the same job).
+; In:  HL = augend's LSB address, DE = addend's LSB address
+; Out: (HL..HL+7) = original (HL..HL+7) + (DE..DE+7); HL/DE advanced by 8
+; Destroys: AF, BC, DE, HL
+; ============================================================================
+CALC_ADD8:
+    ld   a, (de)
+    add  a, (hl)
+    ld   (hl), a
+    inc  hl
+    inc  de
+    ld   b, 7
+.loop:
+    ld   a, (de)
+    adc  a, (hl)
+    ld   (hl), a
+    inc  hl
+    inc  de
+    djnz .loop
+    ret
+
+; ============================================================================
+; CALC_SHL8 (internal)
+; 8-byte left shift by 1 bit: (HL..HL+7) <<= 1, LSB-first (byte 0 is the
+; least significant, shifted with a fresh SLA; bytes 1-7 use RL to
+; propagate carry up the chain). Shared by CALC_OP_MUL's two identical
+; 8-byte shift-left chains: CALC_MUL_CAND's own per-iteration doubling,
+; and CALC_MUL_ACC's post-loop renormalization shift -- confirmed
+; byte-for-byte structurally identical before factoring this out (only
+; the buffer being shifted differs).
+; In:  HL = value's LSB address
+; Out: (HL..HL+7) = original (HL..HL+7) << 1; HL advanced by 8
+; Destroys: AF, B, HL
+; ============================================================================
+CALC_SHL8:
+    ld   a, (hl)
+    sla  a
+    ld   (hl), a
+    inc  hl
+    ld   b, 7
+.loop:
+    ld   a, (hl)
+    rl   a
+    ld   (hl), a
+    inc  hl
+    djnz .loop
+    ret
+
+; ============================================================================
+; CALC_CMP4 (internal)
+; MSB-first unsigned 4-byte compare: is (HL..HL+3) < (DE..DE+3)? Byte 0
+; is the MOST significant byte at both addresses (matches CALC_UNP_A/B's
+; own +2..+5 mantissa layout and CALC_DIV_REM's own layout). Shared by
+; CALC_OP_DIV's two identical-shape MSB-first 4-byte compares: the
+; preshift decision (mantissa A vs mantissa B) and the main loop's own
+; remainder-vs-divisor compare -- confirmed byte-for-byte structurally
+; identical before factoring this out (only the two buffer addresses
+; differ).
+; In:  HL = first operand's MSB address, DE = second operand's MSB address
+; Out: carry SET if (HL..HL+3) < (DE..DE+3); carry CLEAR if >=
+; Destroys: AF, B, DE, HL (both advanced to one past the 4th byte on the
+;      not-taken/loop-exhausted path; callers here only use the flag)
+; ============================================================================
+CALC_CMP4:
+    ld   b, 4
+.loop:
+    ld   a, (de)
+    ld   c, a
+    ld   a, (hl)
+    cp   c
+    ret  c                    ; (hl) byte < (de) byte -> definitely less
+    jr   nz, .greater          ; (hl) byte > (de) byte -> definitely not less
+    inc  hl
+    inc  de
+    djnz .loop
+    or   a                     ; all 4 bytes equal -> not less
+    ret
+.greater:
+    or   a
+    ret
+
+; ============================================================================
+; CALC_SUB4 (internal)
+; 4-byte subtract: (HL..HL-3) -= (DE..DE-3), LSB-first (required for
+; correct borrow propagation) -- HL/DE point at the LSB (highest
+; address) of each 4-byte value on entry and are DECREMENTED as this
+; walks toward the MSB, matching CALC_DIV_REM/CALC_UNP_B's own +5-down-
+; to-+2 byte order. Byte 0 (the LSB) uses a plain SUB; the remaining 3
+; use SBC to propagate borrow. Shared by CALC_OP_DIV's main loop's own
+; subtract step (was 4 near-identical LD/SUB-or-SBC/LD groups inlined
+; at absolute addresses).
+; In:  HL = minuend's LSB address, DE = subtrahend's LSB address
+; Out: (HL..HL-3) = original (HL..HL-3) - (DE..DE-3); HL/DE decremented by 4
+; Destroys: AF, BC, DE, HL
+; ============================================================================
+CALC_SUB4:
+    ld   a, (de)
+    ld   c, a
+    ld   a, (hl)
+    sub  c
+    ld   (hl), a
+    dec  hl
+    dec  de
+    ld   b, 3
+.loop:
+    ld   a, (de)
+    ld   c, a
+    ld   a, (hl)
+    sbc  a, c
+    ld   (hl), a
+    dec  hl
+    dec  de
+    djnz .loop
+    ret
 
 ; ============================================================================
 ; Sparse calculator dispatch table. Each implemented entry is the doubled
