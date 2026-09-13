@@ -144,8 +144,8 @@ extensions, is in [`docs/emulator_setup.md`](docs/emulator_setup.md).
 
 **Release 1 Beta candidate.** The integrated ROM provides a full-screen
 editor, structured BASIC, graphics, sound, EXROM banking, and TS2068-framed
-SAVE/LOAD. The automated language regression suite contains 92 integrated
-BASIC fixtures, run under Fuse on every build. See
+SAVE/LOAD. `make test` runs the 92-fixture integrated language suite under
+Fuse on every build. See
 [`docs/whats_new_release_1_beta.md`](docs/whats_new_release_1_beta.md) for
 what's changed since Public Preview 1, or
 [`docs/development_log.md`](docs/development_log.md) for the full,
