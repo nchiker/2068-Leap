@@ -50,6 +50,14 @@ ZEsarUX 13 with ULAplus enabled. An optional patch for Fuse based on
 Apply it from a compatible Fuse source tree with `git am <patch-file>`, then
 build and install Fuse normally.
 
+**A stock, unpatched ZEsarUX 13.0 download cannot run this ROM at all** — it
+shows a blank screen, since ZEsarUX only mirrors the TS2068 EXROM into
+chunks 0-1 and this project's production editor lives in chunk 6. A required
+patch is included at
+[`patches/0001-zesarux-mirror-ts2068-exrom.patch`](patches/0001-zesarux-mirror-ts2068-exrom.patch);
+see [`docs/emulator_setup.md`](docs/emulator_setup.md#zesarux) for the build
+steps and the confirming A/B screenshots.
+
 This is beta software. Keep backups of programs saved with beta builds because
 the native program payload may still evolve before the final Release 1 build.
 

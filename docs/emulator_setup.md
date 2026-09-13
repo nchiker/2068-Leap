@@ -42,6 +42,27 @@ this custom loader's tape playback.
 
 ## ZEsarUX
 
+**A stock, unpatched ZEsarUX 13.0 download cannot run this ROM correctly —
+it shows a blank screen on boot.** This project's production editor lives
+entirely in EXROM chunk 6 (`$C000-$DFFF`), and every interactive session
+pages it in immediately (`EDITOR_INIT` runs on the very first
+`BASIC_COMMAND_LOOP` iteration). Real TS2068/TC2068 hardware mirrors the
+physical EXROM chip across all eight 8K memory chunks, since the chip's
+upper address lines aren't decoded; stock ZEsarUX 13.0 only mirrors chunk 0
+into chunk 1, so chunk 6 contains unmirrored garbage under stock ZEsarUX and
+the CPU runs off into it the moment the editor tries to start. Confirmed by
+direct A/B test against this project's own `build/ts2068rom_zesarux.bin` —
+same ROM file, same invocation below, only the ZEsarUX binary differs;
+screenshots at `docs/images/zesarux_patched_boot.png` and `docs/images/
+zesarux_stock_boot.png`.
+
+Build ZEsarUX with
+[`../patches/0001-zesarux-mirror-ts2068-exrom.patch`](../patches/0001-zesarux-mirror-ts2068-exrom.patch)
+applied — see [`../patches/README.md`](../patches/README.md) for the exact
+build steps. This is a different patch, targeting a different upstream
+project, from the Fuse ULAplus patch described above; they are unrelated to
+each other.
+
 ZEsarUX uses the single combined image:
 
 ```sh
