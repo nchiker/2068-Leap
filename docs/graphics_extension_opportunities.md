@@ -46,49 +46,85 @@ later — see that project's `core/rectfill.asm`, `core/polygon.asm`,
   worst case for this screen size (dy up to 191, dx up to 255) can reach
   446 before normalization.
 
-## Flood-fill rewrite: real opportunity, deliberately not attempted here
+## Flood-fill rewrite: attempted, algorithm verified, reverted on ROM cost
+
+**Update (2026-09-13, later in the same session):** attempted, fully
+implemented, Python-verified correct — then deliberately reverted, because
+it turned out to be a bad trade for THIS project's actual bottleneck.
 
 This project already has flood fill (`kernel/graphics/graphics.asm`'s
 `GFX_FILL`, BASIC's `FILL` statement) — unlike the graphics words above,
-this isn't a missing capability, it's a RAM-cost opportunity in working
-code.
+this isn't a missing capability, it's a RAM-cost question in working code.
 
-**Current cost, confirmed from `include/sysvars.inc`:**
+**Original cost, confirmed from `include/sysvars.inc`:**
 
 - `GFX_FILL_STACK`: 4096 bytes (2048 x/y pixel entries) — per-pixel design.
 - `GFX_FILL_VISITED`: 6144 bytes (1-bit-per-screen-pixel dedup bitmap).
 - Total: 10,240 bytes, out of a 15,322-byte RAM pool (`make budget`) — 67%.
 
-2068-Leap-Forth's own `GFX_FILL` (`kernel/graphics/graphics.asm` there)
-already made exactly this rewrite: its own `GFX_FILL_STACK` is 1024 bytes
-(512 x/y entries — spans, not individual pixels), while its own
-`GFX_FILL_VISITED` stays 6144 bytes (screen-sized dedup is needed
-regardless of stack representation, to distinguish "still background" from
-"already filled to the new color this same fill" — see that project's own
-comment on why). Porting that same span-based stack technique here would
-save roughly 3072 bytes of RAM pool (4096 -> ~1024), the same proportional
-win, without needing any extra ROM budget (a pure RAM/algorithm change, not
-new dictionary surface).
+### What was done
 
-**Why this wasn't attempted directly in this session, despite being
-well-scoped:** this project's own `GFX_FILL` header documents a real
-history — two previous subtle correctness bugs (an XOR/erase mode bug and
-a cell-granularity dedup bug), both found via real hardware testing on
-2026-08-20, both requiring the current design (OR-only writes, a separate
-per-pixel `GFX_FILL_VISITED` bitmap independent of both the bitmap write
-and the attribute cell) to fix correctly. The header also states the
-current 2048-entry stack size was deliberately re-verified in Python
-against real worst-case shapes (a solid 51x51 box, a blank 51x51 enclosed
-region, a full 256x192 screen fill) before shipping. A span-based rewrite
-is a materially different algorithm — scan each row for contiguous
-same-target spans, push one stack entry per span instead of per pixel, and
-seed new spans by scanning the rows above/below each span's own horizontal
-extent — with its own edge cases (span-boundary determination, avoiding
-double-visiting a span from both a left and right neighbor check). Given
-the working code's own documented bug history, this needs the same rigor
-that code already went through (Python-verified worst-case shapes before
-shipping, then live emulator confirmation across multiple shapes, not just
-a clean assemble) to be trustworthy — real, bounded work, but risky to rush.
+Ported 2068-Leap-Forth's own already-shipped span-based `GFX_FILL` design
+(scan each row for contiguous same-target runs, push one seed per run
+instead of per pixel, GFX_FILL_SCAN_ROW finds new runs on the row
+above/below bounded to exactly the span's own width) to this project's own
+`kernel/graphics/graphics.asm`, replacing `GFX_FILL_TRY_NEIGHBOR` with new
+`GFX_FILL_VISITED_CHECK`/`GFX_FILL_SCAN_ROW` routines and rewriting
+`GFX_FILL` itself.
+
+**Independently Python-verified before writing the change up here** (not
+just trusting 2068-Leap-Forth's own numbers): built a reference
+breadth-first flood fill and compared it pixel-for-pixel against a direct
+Python port of the exact span algorithm, over TS2068's real 256x192
+screen, across: a solid box (both a background fill around it and a
+same-value RECOLOR of the box itself — the specific trap this project's
+own `GFX_FILL` header already documents once, where target==new_val means
+the pixel's own state can't distinguish "already handled" from "still
+needs handling"), a blank enclosed square, a full-screen fill in both
+directions, a hollow ring, an irregular blob, a solid disc recolored, and
+two adversarial synthetic shapes. All matched the reference exactly.
+
+The two adversarial shapes are worth recording precisely, since they
+extend 2068-Leap-Forth's own testing: a fine single-pixel-wide "comb"
+bridged top and bottom peaked at 252 stack entries; a **more aggressive
+multi-bridge comb** (a bridge row every 3 rows, not just top/bottom, to
+test whether cascading fragmentation compounds) peaked at **15,876
+entries** — nearly 3x 2068-Leap-Forth's own reported worst case (5986) for
+their single-bridge comb. This is far beyond anything a real
+PLOT/LINE/CIRCLE/RECT-bounded paint-bucket region would produce, and the
+algorithm's own documented graceful-truncation behavior (already accepted
+for the old per-pixel version too) handles it without crashing — but it's
+a genuine data point that adversarial inputs can exceed even a generously
+sized stack, not just a small one. 512 entries (1024 bytes) — matching
+2068-Leap-Forth's own shipped size — comfortably covers every realistic
+shape tested (peak 7 entries) and a genuinely adversarial single-bridge
+comb (252).
+
+### Why it was reverted: a bad trade for this project's actual bottleneck
+
+The rewrite's Home ROM cost was measured precisely from the assembled
+listing (`build/test_basic.lst`, before/after): the old
+`GFX_FILL_TRY_NEIGHBOR` + `GFX_FILL` was 180 bytes; the new
+`GFX_FILL_VISITED_CHECK` + `GFX_FILL_SCAN_ROW` + `GFX_FILL` was 392 bytes
+— **+212 bytes of Home ROM** to save 3072 bytes of RAM pool.
+
+Home ROM had only 18 bytes free at the time (this session's own editor
+shrink pass, `76e80ee`, had just gotten EXROM to 32 free — Home ROM was
+untouched and still tight). The rewrite overflowed Home ROM by 194 bytes
+and wouldn't assemble
+(`sjasmplus_strict: refusing truncated/overflowed image`). Meanwhile the
+RAM pool already had 5082 bytes free *with the old, larger fill stack* —
+RAM was not the binding constraint for this project the way
+`NOTES_FROM_DESCENDANTS.md` item 3's general "RAM is tight for a TS2068
+project" framing assumed. Trading 212 bytes of the genuinely scarce
+resource (ROM, 18 bytes free) for 3072 bytes of the genuinely abundant one
+(RAM, 5082 bytes free) is a bad trade specifically here, even though the
+same rewrite was clearly worth it for 2068-Leap-Forth's own, differently-
+constrained ROM/RAM balance.
+
+Reverted cleanly (`kernel/graphics/graphics.asm` and `include/sysvars.inc`
+back to their prior committed state); `GFX_FILL` is unchanged from before
+this session.
 
 ## If either is picked up later
 
@@ -97,10 +133,13 @@ a clean assemble) to be trustworthy — real, bounded work, but risky to rush.
   discussion — any second-bank mechanism here will run into the same
   DOCK-vs-EXROM global-switch hardware constraint if it tries to reuse the
   DOCK slot for extra ROM capacity).
-- Flood fill: Python-verify the span algorithm against the same worst-case
-  shapes `GFX_FILL`'s own header already lists before writing any Z80,
-  then confirm under live ZEsarUX/Fuse across multiple shapes (solid
-  region, enclosed blank region, full-screen fill) the same way this
-  session verified the editor shrink pass's own behavioral-equivalence
-  claim — a register/memory read plus a real rendered screenshot, not
-  just a clean assemble.
+- Flood fill: the algorithm is proven correct (this session's own Python
+  verification above) and ready to re-apply verbatim once Home ROM has at
+  least ~212 bytes of free headroom to absorb it — a ROM-shrink pass
+  elsewhere in `kernel/graphics/graphics.asm` or another Home ROM module
+  would unlock it directly, no further algorithm work needed. Once it
+  fits, still confirm under live ZEsarUX/Fuse across multiple shapes
+  (solid region, enclosed blank region, full-screen fill, a recolor) the
+  same way this session verified the editor shrink pass — a register/
+  memory read plus a real rendered screenshot, not just a clean assemble
+  — before calling it shipped.
