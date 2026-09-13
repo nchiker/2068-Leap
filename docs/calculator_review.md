@@ -105,6 +105,28 @@ existing header comments already document for the current implementation).
   shared pack/format path) or a fully separate formatting-only issue —
   worth checking both before assuming they're related.
 
+## Known gap, deliberately not fixed yet: `CALC_PACK` truncates instead of rounding
+
+The same cross-project research pass that motivated the `CALC_ADD8`/
+`CALC_SHL8`/`CALC_CMP4`/`CALC_SUB4` refactor above also found that `CALC_PACK`
+does a straight, unconditional truncating copy with no rounding — `CALC_OP_MUL`
+explicitly keeps only the top 32 bits of its 64-bit product and silently
+discards the low 32 bits. structured-basic-poc's own pack routine
+(`N_PUBLISH`, `rom/numeric32.asm`) carries 2 guard bytes through every
+operation and rounds-to-nearest-even at pack time instead.
+
+Unlike the `CALC_ADD8`/etc. refactor (a pure, behavior-preserving
+restructuring, verified by direct A/B comparison against the original code),
+adding rounding here is a genuine **precision-changing** modification to the
+core float engine's actual output values, not a refactor — every existing
+result's low-order digit could shift. This needs the same Python-first
+verification this project's own `CALC_OP_MUL`/`CALC_OP_DIV` headers already
+document as the standard for changes to this engine (simulate the rounding
+logic against many cases before writing any Z80), which is real, separate
+work from the size-reduction pass above. Deliberately deferred rather than
+rushed alongside the bug findings above — worth doing as its own dedicated
+pass.
+
 With the safety contracts established, sparse dispatch-table compression is a
 reasonable size optimization provided all simulator, smoke, editor, and BASIC
 regressions remain green.
