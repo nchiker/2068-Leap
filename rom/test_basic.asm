@@ -463,6 +463,21 @@ COLD_START:
                                     ; $8000-$BFFF owned RAM region before
                                     ; any sysvar, hook, bank depth, or port
                                     ; shadow can be read
+
+    ; Establish a real hardware baseline on port $FF (PORT_SCLD) before
+    ; PORT_FF_SHADOW's freshly-zeroed RAM byte can be trusted by any
+    ; read-modify-write (GFX_SET_MODE, BANK_PAGE_EXROM_IN — the latter
+    ; fires almost immediately at boot, since EDITOR_INIT runs on the
+    ; first BASIC_COMMAND_LOOP iteration and the editor lives in EXROM).
+    ; MEM_COLD_INIT above only clears RAM; the real port has its own
+    ; power-on state independent of RAM on actual hardware (invisible
+    ; under emulation, where both happen to start at 0) — same bug
+    ; already found and fixed in a sibling project descended from this
+    ; module (see NOTES_FROM_DESCENDANTS.md item 2).
+    xor  a
+    ld   (PORT_FF_SHADOW), a
+    out  (PORT_SCLD), a
+
     call MEM_INIT
     call KBD_ISR_INIT                ; kernel/interrupt — must run
                                      ; before the EI below, so RST_38
