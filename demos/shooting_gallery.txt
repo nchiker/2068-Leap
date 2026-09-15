@@ -1,0 +1,291 @@
+;; demos/shooting_gallery.txt -- SHOOTING GALLERY, a real-time arcade
+;; game for 2068-Leap structured BASIC. Inspired by (not a port of)
+;; the ZX Spectrum "shooting gallery" project described at
+;; https://bumbershootsoft.wordpress.com/2026/07/18/starting-the-zx-spectrum-shooting-gallery-in-earnest/
+;; -- a blaster truck, independently-moving targets, and 16x16-ish
+;; sprite blitting over colored screen regions. Built from this
+;; project's own real primitives, verified against docs/user_manual.md:
+;; the SPRITE GRAB/SHOW/MOVE/HIDE system, INKEY$() for polling, PAUSE
+;; for real frame-accurate pacing (no busy-wait loops needed), and
+;; BEEP for sound effects.
+;;
+;; THREE REAL LIMITS FOUND THE HARD WAY WHILE SPECIFYING THIS FILE
+;; (none obvious from the user manual's own prose alone):
+;;   1. Array AND string variable names are exactly ONE letter, same as
+;;      scalar numerics (rom/exrom_checker.asm's .check_dim calls
+;;      BASIC_VALIDATE_VAR_LETTER, A-Z only) -- despite the manual's own
+;;      "DIM scores(10)" prose example. This file uses two single-
+;;      letter arrays with offset-addressed fields instead of eight
+;;      named ones:
+;;        A(15): per-target data, 3 targets x 5 fields, field*3+index
+;;          A(0..2)=col A(3..5)=dir A(6..8)=step A(9..11)=lane-index
+;;          A(12..14)=lane-row-lookup (constant: 2,7,12)
+;;        B(9): per-shot data, 3 shots x 3 fields, field*3+index
+;;          B(0..2)=row B(3..5)=col B(6..8)=active
+;;      and a single-letter string variable (A$) for the blank-row
+;;      fill string.
+;;   2. The label table is a fixed 128-byte buffer (LABEL_TABLE_MAXLEN,
+;;      kernel/memory/memory.asm) -- each label costs name-length+3
+;;      bytes. Descriptive names overflow it silently (labels past the
+;;      cutoff never register, and any GOSUB/GOTO to one of them then
+;;      fails "LABEL NOT FOUND" -- a scattered-looking failure that's
+;;      really just "too many/too long labels"). Every label here is a
+;;      single letter.
+;;   3. SPRITE HIDE/MOVE only work on the TOPMOST currently-shown
+;;      sprite -- shown sprites are a strict LIFO stack (the user
+;;      manual does say this: "HIDE and MOVE must operate in reverse
+;;      SHOW order"), which rules out freely MOVEing one of several
+;;      independently-live sprites at will. Fix used here: shots are
+;;      plain printed characters (AT/PRINT), never sprites at all, so
+;;      they can never sit "above" anything in the stack; the truck and
+;;      3 targets are the ONLY sprites, and every tick re-hides all of
+;;      them (topmost first) and re-shows them in the SAME fixed order
+;;      (truck, then target 0/1/2) at their current positions -- one
+;;      disciplined refresh cycle instead of ad-hoc per-sprite MOVEs,
+;;      so the LIFO order is never violated. Manual coordinate
+;;      comparison replaces HIT() for shot-vs-target collision, since
+;;      HIT() only compares two SHOWN sprites and shots no longer are.
+;;
+;; LABEL KEY (single letters carry no mnemonic value on their own):
+;;   b=main c=setup(sprites) d=title e=newgame f=drawbands g=showhud
+;;   h=refresh(hide+show truck/targets in stack order) i=truckmove
+;;   j=targetshow(one, used by h) l=spawntarget m=movetarget n=shiftlane
+;;   o=moveall p=fire q=checkhit r=dohit s=moveshot t=moveshots
+;;   u=handlekey v=newwave w=loselife x=checkwave y=gameloop z=gameover
+;;
+;; CONTROLS: left hand Q/A, W/S, E/D shift targets 1/2/3 between three
+;; lanes (line one up with your blaster, or dodge it away); right hand
+;; O/P move the blaster left/right, SPACE fires (up to 3 shots in
+;; flight, short cooldown). Clear each wave's required hit count before
+;; its timer runs out, or lose a life (3 lives; a lost life resets the
+;; timer/hit-tally for a fresh attempt at the SAME wave, not the
+;; difficulty). Game over shows final score against the session's own
+;; high score, then loops back into a fresh game.
+;;
+;; Run with: tools/run_demo.sh shooting_gallery
+;; (drops into the real editor with this program loaded -- type RUN)
+DIM A(15)
+DIM B(9)
+A(12)=2:A(13)=7:A(14)=12
+A$="                               "
+RANDOMISE 0
+GOSUB c
+GOSUB d
+b:
+GOSUB e
+GOSUB y
+GOSUB z
+GOTO b
+c:
+CLS
+INK 7:PAPER 0
+AT 0,0:PRINT "<>"
+SPRITE GRAB 0,0,0,2,1
+AT 0,0:PRINT "><"
+SPRITE GRAB 7,0,0,2,1
+INK 2
+AT 0,0:PRINT "()"
+SPRITE GRAB 1,0,0,2,1
+AT 0,0:PRINT "()"
+SPRITE GRAB 2,0,0,2,1
+AT 0,0:PRINT "()"
+SPRITE GRAB 3,0,0,2,1
+CLS
+RETurn
+d:
+PAPER 0:INK 7:CLS
+AT 2,6:PRINT "SHOOTING GALLERY"
+AT 6,1:PRINT "Q/A W/S E/D-MOVE TARGETS"
+AT 8,1:PRINT "O / P    -MOVE BLASTER"
+AT 10,1:PRINT "SPACE    -FIRE"
+AT 13,1:PRINT "PRESS ANY KEY TO START"
+PAUSE 0
+RETurn
+e:
+S=0:L=3:W=0:K=0:F=0:U=-1:R=0
+GOSUB f
+B(6)=0:B(7)=0:B(8)=0
+D=0:C=16
+A(9)=0:A(10)=1:A(11)=2
+A(0)=4:A(1)=14:A(2)=24
+V=0:GOSUB l
+V=1:GOSUB l
+V=2:GOSUB l
+GOSUB h
+GOSUB v
+GOSUB g
+RETurn
+f:
+CLS
+PAPER 7
+AT 0,0:PRINT A$
+PAPER 0
+FOR I=1 TO 14
+AT I,0:PRINT A$
+NEXT I
+PAPER 6
+FOR I=15 TO 19
+AT I,0:PRINT A$
+NEXT I
+PAPER 4
+FOR I=20 TO 23
+AT I,0:PRINT A$
+NEXT I
+PAPER 0
+RETurn
+g:
+PAPER 7:INK 0
+AT 0,0:PRINT "S:"+STR$(S)
+AT 0,10:PRINT "L:"+STR$(L)
+AT 0,16:PRINT "W:"+STR$(W)
+PAPER 0:INK 7
+RETurn
+h:
+IF R=1 THEN SPRITE HIDE 3
+IF R=1 THEN SPRITE HIDE 2
+IF R=1 THEN SPRITE HIDE 1
+IF R=1 THEN SPRITE HIDE U
+R=1
+X=0
+IF D=1 THEN X=7
+SPRITE SHOW X,17,C
+U=X
+V=0:GOSUB j
+V=1:GOSUB j
+V=2:GOSUB j
+RETurn
+i:
+IF Z<0 AND C>0 THEN C=C-1
+IF Z>0 AND C<30 THEN C=C+1
+IF Z<0 THEN D=1
+IF Z>0 THEN D=0
+RETurn
+j:
+SPRITE SHOW V+1,A(A(V+9)+12),A(V)
+RETurn
+l:
+A(V+3)=1:A(V+6)=0
+RETurn
+m:
+A(V+6)=A(V+6)+1
+IF A(V+6)<P THEN RETurn
+A(V+6)=0
+A(V)=A(V)+A(V+3)
+IF A(V)<=0 THEN A(V)=0:A(V+3)=1
+IF A(V)>=30 THEN A(V)=30:A(V+3)=-1
+RETurn
+n:
+X=A(V+9)+E
+IF X<0 THEN X=0
+IF X>2 THEN X=2
+A(V+9)=X
+RETurn
+o:
+FOR V=0 TO 2
+GOSUB m
+NEXT V
+RETurn
+p:
+IF F>0 THEN RETurn
+J=-1
+IF B(6)=0 THEN J=0
+IF J=-1 AND B(7)=0 THEN J=1
+IF J=-1 AND B(8)=0 THEN J=2
+IF J=-1 THEN RETurn
+B(J+6)=1
+B(J)=14
+B(J+3)=C
+INK 7:PAPER 0:AT 14,C:PRINT "*"
+BEEP 15,20
+F=4
+RETurn
+q:
+FOR M=0 TO 2
+IF B(J)=A(A(M+9)+12) AND B(J+3)=A(M) THEN V=M:GOSUB r
+IF B(J)=A(A(M+9)+12) AND B(J+3)=A(M)+1 THEN V=M:GOSUB r
+NEXT M
+RETurn
+r:
+K=K+1
+S=S+10*K
+H=H+1
+BORDER 2
+BEEP 15,60:BEEP 15,40:BEEP 20,25
+BORDER 0
+A(V)=RND(31)
+PAPER 0:INK 7:AT B(J),B(J+3):PRINT " "
+B(J+6)=0
+GOSUB g
+RETurn
+s:
+IF B(J+6)=0 THEN RETurn
+PAPER 0:INK 7:AT B(J),B(J+3):PRINT " "
+B(J)=B(J)-1
+IF B(J)<1 THEN B(J+6)=0:K=0:BEEP 30,150:RETurn
+GOSUB q
+IF B(J+6)=0 THEN RETurn
+INK 7:PAPER 0:AT B(J),B(J+3):PRINT "*"
+RETurn
+t:
+FOR J=0 TO 2
+GOSUB s
+NEXT J
+RETurn
+u:
+K$=INKEY$()
+IF K$="" THEN RETurn
+IF K$="Q" OR K$="q" THEN V=0:E=-1:GOSUB n
+IF K$="A" OR K$="a" THEN V=0:E=1:GOSUB n
+IF K$="W" OR K$="w" THEN V=1:E=-1:GOSUB n
+IF K$="S" OR K$="s" THEN V=1:E=1:GOSUB n
+IF K$="E" OR K$="e" THEN V=2:E=-1:GOSUB n
+IF K$="D" OR K$="d" THEN V=2:E=1:GOSUB n
+IF K$="O" OR K$="o" THEN Z=-1:GOSUB i
+IF K$="P" OR K$="p" THEN Z=1:GOSUB i
+IF K$=" " THEN GOSUB p
+RETurn
+v:
+IF W>0 THEN BEEP 20,50:BEEP 20,35:BEEP 20,25:BEEP 30,15
+W=W+1
+N=5+W*2
+H=0
+T=150-W*8
+IF T<60 THEN T=60
+P=14-W
+IF P<4 THEN P=4
+GOSUB g
+RETurn
+w:
+L=L-1
+BEEP 40,120:BEEP 60,160
+BORDER 1:PAUSE 15:BORDER 0
+T=150-W*8
+IF T<60 THEN T=60
+H=0
+GOSUB g
+RETurn
+x:
+IF H>=N THEN GOSUB v:RETurn
+T=T-1
+IF T<=0 THEN GOSUB w
+RETurn
+y:
+GOSUB u
+GOSUB o
+GOSUB t
+IF F>0 THEN F=F-1
+GOSUB x
+GOSUB h
+PAUSE 2
+IF L>0 THEN GOTO y
+RETurn
+z:
+BEEP 50,100:BEEP 50,140:BEEP 80,200
+IF S>G THEN G=S
+PAPER 0:INK 7:CLS
+AT 5,10:PRINT "GAME OVER"
+AT 8,8:PRINT "SCORE "+STR$(S)
+AT 10,8:PRINT "BEST  "+STR$(G)
+AT 13,8:PRINT "PRESS ANY KEY"
+PAUSE 0
+RETurn
