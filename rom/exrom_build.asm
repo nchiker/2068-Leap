@@ -98,6 +98,9 @@
                                          ; highlighting scan — the
                                          ; $C090 entry stub above
                                          ; already points here
+    INCLUDE "rom/exrom_printer.asm"       ; LPRINT/LLIST, whole body —
+                                         ; the $C0C6/$C0CC entry stub
+                                         ; above already points here
 
     IFDEF STORAGE_TEST_FAKE_RECEIVE
         DS   $E000 - $, $FF

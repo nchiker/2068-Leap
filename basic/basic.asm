@@ -492,6 +492,27 @@ BASIC_COMMAND_LOOP:
 
 .not_list:
     ld   hl, EDIT_LINE_BUF
+    ld   de, KW_LLIST
+    call BASIC_MATCH_KEYWORD
+    jr   c, .not_llist                  ; didn't even start with "LLIST"
+
+.check_llist_trailing:
+    ld   a, (hl)
+    or   a
+    jr   z, .is_llist                    ; end of line — genuinely just "LLIST"
+    cp   " "
+    jr   nz, .not_llist                    ; e.g. "LLISTING" — not LLIST alone
+    inc  hl
+    jr   .check_llist_trailing
+
+.is_llist:
+    call BASIC_LLIST_EXROM               ; prints the whole program to
+                                         ; the real ZX Printer — see
+                                         ; rom/exrom_printer.asm
+    jp   .loop
+
+.not_llist:
+    ld   hl, EDIT_LINE_BUF
     ld   de, KW_EDIT
     call BASIC_MATCH_KEYWORD
     jr   c, .not_edit                  ; didn't even start with "EDIT"
@@ -6410,17 +6431,30 @@ BASIC_ADVANCE_OUTPUT_ROW:
     ret
 
 ; ============================================================================
-; BASIC_STMT_PRINT
-; Parses and executes PRINT "string literal" or PRINT <variable> —
-; nothing else yet (no numeric expressions, no multiple comma/
-; semicolon-separated items). Silently does nothing if neither matches,
-; rather than erroring (no error reporting implemented yet).
-; In:  HL = pointer just past the PRINT keyword (and its trailing space,
-;      if any — leading spaces are skipped below)
-; Out: none
+; BASIC_EVAL_PRINT_ARG
+; Shared body for PRINT and LPRINT (rom/exrom_printer.asm's Home-side
+; caller): parses the single string-or-numeric expression both
+; statements accept and leaves HL pointing at the resulting null-
+; terminated text — a string expression's own PRINT_BUF, or the
+; decimal string BASIC_NUM_TO_STRING/BASIC_FLOAT_TO_STRING returns.
+; Extracted 2026-09-14 adding LPRINT: attribute/row/column handling is
+; deliberately NOT part of this routine (LPRINT needs none of it) —
+; each caller computes and applies its own output attributes/position
+; from the string this returns. Attribute computation itself moved to
+; AFTER this call for both callers; the old "compute attr before the
+; NUM_TO_STRING/FLOAT_TO_STRING call because it destroys BC" ordering
+; was only ever about surviving that clobber, not a real PRINT
+; requirement, and BASIC_COMPUTE_PRINT_ATTR reads nothing this routine
+; touches.
+; In:  HL = pointer just past the PRINT/LPRINT keyword (and its
+;      trailing space, if any — leading spaces are skipped below)
+; Out: success — carry clear, HL = null-terminated text to print.
+;      failure — carry set, error already recorded via
+;      BASIC_SET_PENDING_ERROR (propagated straight from whichever
+;      evaluator failed).
 ; Destroys: AF, BC, DE, HL
 ; ============================================================================
-BASIC_STMT_PRINT:
+BASIC_EVAL_PRINT_ARG:
 .skip_spaces:
     ld   a, (hl)
     cp   " "
@@ -6499,16 +6533,6 @@ BASIC_STMT_PRINT:
                                        ; survives untouched, same pattern
                                        ; as every other rolled-out site
     ret  c
-    call BASIC_COMPUTE_PRINT_ATTR         ; A = attribute byte —
-                                         ; computed before
-                                         ; BASIC_NUM_TO_STRING/BASIC_
-                                         ; FLOAT_TO_STRING since both
-                                         ; destroy BC, which the row/
-                                         ; column setup below needs
-    push af                              ; survive the calls below via
-                                        ; the stack, same reasoning as
-                                        ; every "value must survive a
-                                        ; call" case in this project
 
     ; "Function-result float" — if the expression just evaluated was
     ; exactly one bare SQR/SIN call (see FUNC_RESULT_IS_FLOAT's own
@@ -6537,17 +6561,9 @@ BASIC_STMT_PRINT:
 .print_num_int:
     call BASIC_NUM_TO_STRING             ; HL = decimal string
 .print_num_common:
-    ld   a, (BASIC_OUTPUT_ROW)
-    ld   b, a
-    ld   a, (BASIC_OUTPUT_COL)
-    ld   c, a
-    pop  af                              ; A = attribute byte again
-    ld   e, a
-    ld   a, (CURRENT_OVER)
-    ld   d, a
-    ld   a, e                            ; D = CURRENT_OVER, A = attribute
-    call GFX_PRINT_STRING_ATTR
-    jr   .printed
+    or   a                               ; carry clear — success, HL
+                                         ; already holds the string
+    ret
 
 .print_str_expr:
     pop  hl                          ; restore the original start
@@ -6582,31 +6598,57 @@ BASIC_STMT_PRINT:
                                         ; exactly what .closed expects
 .closed:
     xor  a
-    ld   (de), a                      ; null-terminate for GFX_PRINT_STRING_ATTR
-
-    call BASIC_COMPUTE_PRINT_ATTR         ; A = attribute byte —
-                                         ; computed before touching
-                                         ; BC below, same reasoning as
-                                         ; the numeric-expression path
-                                         ; above
-    push af
+    ld   (de), a                      ; null-terminate — PRINT_BUF
     ld   hl, PRINT_BUF
+    or   a                            ; carry clear — success
+    ret
+
+; ============================================================================
+; BASIC_STMT_PRINT
+; PRINT <string-expr | numeric-expr>. Evaluates the argument via
+; BASIC_EVAL_PRINT_ARG (shared with LPRINT — see that routine's own
+; header), then paints the resulting text at the current row/column in
+; the current INK/PAPER/FLASH/INVERSE/OVER attributes and advances the
+; cursor row.
+; In:  HL = pointer just past the PRINT keyword
+; Out: none; carry set on a malformed expression (already recorded)
+; Destroys: AF, BC, DE, HL
+; ============================================================================
+BASIC_STMT_PRINT:
+    call BASIC_EVAL_PRINT_ARG
+    ret  c
+    push hl                              ; the string to print — survives
+                                         ; BASIC_COMPUTE_PRINT_ATTR (BC
+                                         ; only) via the stack
+    call BASIC_COMPUTE_PRINT_ATTR         ; A = attribute byte
+    ld   e, a
     ld   a, (BASIC_OUTPUT_ROW)
     ld   b, a
     ld   a, (BASIC_OUTPUT_COL)
     ld   c, a
-    pop  af
-    ld   e, a
     ld   a, (CURRENT_OVER)
     ld   d, a
     ld   a, e                            ; D = CURRENT_OVER, A = attribute
+    pop  hl                              ; HL = string to print
     call GFX_PRINT_STRING_ATTR
-
-.printed:
     ld   a, b
     ld   (BASIC_OUTPUT_ROW), a
-.advance_row:
     jp   BASIC_ADVANCE_OUTPUT_ROW
+
+; ============================================================================
+; BASIC_STMT_LPRINT
+; LPRINT <string-expr | numeric-expr> — same argument grammar as PRINT
+; (BASIC_EVAL_PRINT_ARG above, shared), but the resulting text goes to
+; the real ZX Printer (rom/exrom_printer.asm) instead of the screen —
+; no row/column/attribute handling at all, unlike PRINT.
+; In:  HL = pointer just past the LPRINT keyword
+; Out: none; carry set on a malformed expression (already recorded)
+; Destroys: AF, BC, DE, HL
+; ============================================================================
+BASIC_STMT_LPRINT:
+    call BASIC_EVAL_PRINT_ARG
+    ret  c
+    jp   BASIC_LPRINT_EXROM
 
 ; ============================================================================
 ; BASIC_STMT_CLS
@@ -7545,10 +7587,19 @@ BASIC_STMT_INPUT:
     call BASIC_CALL_EXROM_INLINE
     DW   $C0B4
 
-; EXROM INPUT callback gateway. D selects a Home-resident service:
-; 1=parse number, 2=numeric scalar address, 3=string scalar address,
-; 4=advance output row, 5=draw one character. Each target already
-; destroys D or does not consume it, so the selector countdown is safe.
+; EXROM callback gateway (originally INPUT-only, now shared — see D=6
+; below). D selects a Home-resident service: 1=parse number, 2=numeric
+; scalar address, 3=string scalar address, 4=advance output row,
+; 5/anything else=draw one character (the unconditional final jp),
+; 6=printer glyph-row lookup (BASIC_CHAR_ROW_BYTE_SERVICE, added
+; 2026-09-14 for LPRINT/LLIST's own EXROM row renderer — rom/exrom_
+; printer.asm). Each target already destroys D or does not consume it,
+; so the selector countdown is safe. D=6 needed its own explicit check
+; (by value, not another "dec d" — see below) rather than falling
+; through like D=5 already does, since the fallthrough's target
+; (GFX_PUTCHAR) is wrong for it; confirmed no existing caller (rom/
+; exrom_input.asm, this gateway's only other user) ever passes D=6
+; before adding this case.
 BASIC_INPUT_SERVICE:
     dec  d
     jp   z, BASIC_PARSE_NUMBER
@@ -7558,7 +7609,40 @@ BASIC_INPUT_SERVICE:
     jp   z, BASIC_STR_ADDR
     dec  d
     jp   z, BASIC_ADVANCE_OUTPUT_ROW
+    ld   a, d                    ; d already holds (orig_d - 4) here —
+                                 ; orig_d==6 reads as 2, with no extra
+                                 ; dec needed (orig_d==5, the existing
+                                 ; "draw one character" case, reads as
+                                 ; 1 and still falls through below)
+    cp   2
+    jp   z, BASIC_CHAR_ROW_BYTE_SERVICE
     jp   GFX_PUTCHAR
+
+; ============================================================================
+; BASIC_CHAR_ROW_BYTE_SERVICE ( A = character, C = row 0-7 -- )
+; Reached only via BASIC_INPUT_SERVICE's own D=6 selector (see that
+; gateway's comment) — not called directly. Returns the glyph byte for
+; one raster row of one character, or 0 if the character has no glyph
+; at all (GFX_CHAR_TO_FONT_OFFSET's own carry contract) — used by
+; rom/exrom_printer.asm's PRINTER_RENDER_ROW, which cannot call
+; GFX_CHAR_TO_FONT_OFFSET directly (EXROM is a separate compilation
+; unit with no KTAB entry to spare for it — see that file's header).
+; Out: A = glyph byte for the given row
+; Destroys: AF, BC, DE, HL
+; ============================================================================
+BASIC_CHAR_ROW_BYTE_SERVICE:
+    push bc
+    call GFX_CHAR_TO_FONT_OFFSET
+    pop  bc
+    jr   c, .no_glyph
+    ld   e, c
+    ld   d, 0
+    add  hl, de
+    ld   a, (hl)
+    ret
+.no_glyph:
+    xor  a
+    ret
 
 ; ============================================================================
 ; BASIC_STMT_GOTO
@@ -8932,6 +9016,31 @@ BASIC_SOUND_EXROM:
     call BASIC_CALL_EXROM_INLINE
     DW   $C048
 
+; ============================================================================
+; BASIC_LPRINT_EXROM / BASIC_LLIST_EXROM
+; Thin Home-side wrappers: LPRINT/LLIST's real bodies live entirely in
+; EXROM (rom/exrom_printer.asm) — the printer bit-bang protocol and
+; (for LLIST) the program-line walk have no reason to be Home-resident.
+; Same "page in / call the fixed entry / page out" shape as BASIC_
+; SOUND_EXROM above, at EXROM_ENTRY_LPRINT's $C0C6 / EXROM_ENTRY_
+; LLIST's $C0CC (rom/exrom_checker.asm's own entry-stub block).
+; In:  BASIC_LPRINT_EXROM — HL = null-terminated text to print
+;      BASIC_LLIST_EXROM — none
+; Out: carry always clear on return — but with no real ZX Printer
+;      attached, LPRINT/LLIST never return at all (see rom/exrom_
+;      printer.asm's PRINT_RASTER_ROW header: this matches real
+;      Sinclair BASIC's own documented LPRINT behavior, confirmed
+;      2026-09-14 against this project's own build)
+; Destroys: AF (BASIC_LPRINT_EXROM also destroys BC, DE, HL)
+; ============================================================================
+BASIC_LPRINT_EXROM:
+    call BASIC_CALL_EXROM_INLINE
+    DW   $C0C6
+
+BASIC_LLIST_EXROM:
+    call BASIC_CALL_EXROM_INLINE
+    DW   $C0CC
+
 ; Shared wrapper for ULAPLUS (B=0) and PALETTE (B=1).
 BASIC_ULAPLUS_EXROM:
     call BANK_PAGE_EXROM_IN
@@ -10051,6 +10160,7 @@ BASIC_STMT_DEF_FN:
 ; handler pointers are intentional aliases (END/STOP, ELSEIF/ELSE, GOSUB/CALL).
 BASIC_EXEC_DISPATCH_TABLE:
     DW KW_PRINT, BASIC_STMT_PRINT
+    DW KW_LPRINT, BASIC_STMT_LPRINT
     DW KW_CLS, BASIC_STMT_CLS
     DW KW_REM, BASIC_STMT_REM
     DW KW_BORDER, BASIC_STMT_BORDER
@@ -11380,6 +11490,10 @@ KW_OR:      DB "OR", 0
 KW_NOT:     DB "NOT", 0
 KW_NEW:     DB "NEW", 0
 KW_LIST:    DB "LIST", 0
+KW_LLIST:   DB "LLIST", 0          ; immediate-only, same as LIST —
+                                  ; prints the whole program to the
+                                  ; real ZX Printer instead of the
+                                  ; screen (rom/exrom_printer.asm)
 KW_EDIT:    DB "EDIT", 0
 KW_DELETE:  DB "DELETE", 0
 KW_SAVE:    DB "SAVE", 0

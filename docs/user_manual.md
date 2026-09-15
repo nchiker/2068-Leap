@@ -686,6 +686,14 @@ right edge as well as to successive `PRINT` statements.
 | `BRIGHT <n>` | Bright variant of the current colors, `0`/`1` |
 | `INVERSE <n>` | Swap ink/paper for the next `PRINT`(s), `0`/`1` — doesn't change the underlying `INK`/`PAPER` values |
 | `OVER <n>` | `0` draws normally; `1` XOR-plots subsequent text and graphics, allowing the same glyph or shape to erase itself when drawn twice at one position |
+| `LPRINT <expr>` | Same one-expression rule as `PRINT`, but sends the text to a real ZX Printer over the printer port instead of the screen |
+
+**With no ZX Printer actually connected, `LPRINT` (and `LLIST` — see
+[Immediate commands](#15-immediate-commands)) never return** — the
+program just stops there. This matches real Sinclair BASIC's own
+documented behavior on real hardware with nothing plugged in; it is
+not a bug. Only use `LPRINT`/`LLIST` when a real (or emulated) ZX
+Printer is actually attached.
 
 **`PRINT` takes exactly one expression** — there is currently no
 `;`/`,` multi-item list the way classic BASIC's `PRINT A; B; C` works.
@@ -1212,6 +1220,7 @@ that behave this way:
 | `RUN` | Runs the whole stored program from the start, after a whole-program error check (see [The editor](#2-the-editor)) |
 | `NEW` | Clears the current program *and* every variable, back to the same fresh state as cold boot |
 | `LIST` | Jumps the editor view to the top of the program |
+| `LLIST` | Prints every stored program statement to a real ZX Printer, one per line, in program order — no argument, no line numbers (this dialect has none). Hangs if no printer is attached — see [Screen output](#8-screen-output) |
 | `EDIT <label>` | Rebuilds the label table (so this works even before the program has ever been `RUN`) and jumps straight to that label's line |
 | `DELETE <start>,<end>` | Removes a 1-based inclusive range of lines — see [The editor](#2-the-editor) |
 | `SAVE "name"` / `LOAD "name"` / `LOAD ""` | Tape transfer — see [Loading and saving with Fuse](#3-loading-and-saving-with-fuse) |
@@ -1361,7 +1370,9 @@ description of each.
 | `INVERSE` | [8](#8-screen-output) |
 | `LINE` | [9](#9-graphics) |
 | `LIST` | [15](#15-immediate-commands) |
+| `LLIST` | [15](#15-immediate-commands) |
 | `LOAD` | [3](#3-loading-and-saving-with-fuse) |
+| `LPRINT` | [8](#8-screen-output) |
 | `MODE` | [9](#9-graphics) |
 | `NEW` | [15](#15-immediate-commands) |
 | `OUT` | [13](#13-memory-and-machine-code), [14](#14-loadable-basic-extensions) |

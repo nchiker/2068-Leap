@@ -21,6 +21,23 @@ ULAPLUS_MODE_GROUP EQU 64       ; bit 0 enables the standard palette
 PORT_AY_REG         EQU $F5     ; select AY register
 PORT_AY_DATA        EQU $F6     ; write/read AY register data
 
+; ---- ZX Printer (TS2068's own add-on printer port) ----
+; Same $FB confirmed by the sibling 2068-forth project directly against
+; the real Timex Sinclair 2068 ROM Disassembly (David Anderson, 2023,
+; COPY-LINE at M0A4A) plus two independent secondhand sources (the real
+; Fuse emulator's own peripherals/printer.c, and skoolkid's Spectrum ROM
+; disassembly) that had already agreed on the same bits before the
+; verbatim source was found — a third source (the Sinclair community
+; wiki) disagreed on which bits controlled the motor and was discarded.
+; WRITE: bit 7 = stylus (1 = mark this dot), bit 2 = motor (1 = stop,
+; 0 = run), bit 1 = speed (1 = slow, 0 = fast). READ: bit 0 = 1 once
+; the print head has reached the next dot position (poll this — ANY
+; write resets it), bit 6 = "printer not configured" (abort if set),
+; bit 7 = "start of paper" (wait for this once per raster row, after
+; that row's own setup write, before sending real pixel data). See
+; rom/exrom_printer.asm's own header for the full protocol writeup.
+PORT_PRINTER        EQU $FB
+
 ; ---- TS2068 banking (Home / Exrom / Dock) ----
 ; Confirmed against the real port $F4/$FF description AND the real
 ; Timex Sinclair 2068 ROM Disassembly (David Anderson, 2023) — see

@@ -6125,5 +6125,89 @@ and now real navigation between lines. Interactive, `REPL`-style: type
 a statement, ENTER, type `RUN`, ENTER, repeat — or press `UP` to edit
 a previous line. See the test file's own header for worked examples.
 
+### LPRINT / LLIST (2026-09-14)
+
+`LPRINT` (a program statement, same single string-or-numeric-expression
+grammar as `PRINT`) and `LLIST` (immediate-only, like `LIST` — no
+argument) send output to a real ZX Printer over `PORT_PRINTER` ($FB,
+`include/hardware.inc`) instead of the screen. The low-level bit-bang
+protocol (motor/stylus/speed bits, the per-row setup write, the
+start-of-paper wait gate, the 256-dot/8-row raster format) was ported
+from the sibling `2068-forth` project's own `core/printer.asm`, whose
+header documents the full derivation against a real, verbatim Timex
+Sinclair 2068 ROM disassembly (COPY-LINE, M0A4A) and a real Fuse
+retest producing a correct raster.
+
+**Blocks forever with no printer attached.** `PRINT_RASTER_ROW` (rom/
+exrom_printer.asm) aborts early only on a printer's explicit "not
+configured" fault (port read bit 6); with no printer at all — the
+common case, since this project's own Fuse build (`fuse --help`) has
+no flag to enable ZX Printer emulation headlessly — the port floats
+and the "start of paper" bit (7) never arrives, so the wait loop spins
+forever. Confirmed directly (2026-09-14): a real `LPRINT` run under
+this environment's Fuse, no printer attached, never reached its own
+trailing statement even after 15+ seconds. This is NOT a bug — it
+matches real Sinclair BASIC's own well-documented `LPRINT` behavior on
+real hardware with no ZX Printer connected — but it does mean **no
+automated `tests/*.txt` fixture exercises LPRINT/LLIST end-to-end**
+(every fixture in that directory is a "does it reach its final BORDER"
+smoke test, and this feature can't reach one without real/emulated
+printer hardware present). What IS verified: both builds assemble
+clean (`make check`), the EXROM static checker accepts `LPRINT`'s
+grammar (`rom/exrom_checker.asm`'s `.check_print`, shared with
+`PRINT`), and the hang itself was directly observed and matches the
+documented real-hardware contract rather than looking like a crash or
+wrong jump.
+
+**Where the code lives, and why.** Almost the entire feature is EXROM-
+resident (`rom/exrom_printer.asm`) via two new fixed entry stubs,
+`EXROM_ENTRY_LPRINT` ($C0C6) and `EXROM_ENTRY_LLIST` ($C0CC) — the
+same "page in / call the fixed entry / page out" migration pattern as
+SOUND/SPRITE/HELP (see `rom/exrom_sound.asm`'s own header). Only two
+pieces are Home-resident: `BASIC_STMT_LPRINT` (`basic/basic.asm`),
+which evaluates LPRINT's argument by sharing `BASIC_EVAL_PRINT_ARG`
+with `PRINT` itself (extracted from what used to be `PRINT`'s own
+inline body — see that routine's header for the refactor), and the
+thin `BASIC_LPRINT_EXROM`/`BASIC_LLIST_EXROM` page-in wrappers.
+
+**The font-lookup problem, and how it was actually solved.** Rendering
+a raster row needs `GFX_CHAR_TO_FONT_OFFSET` (`kernel/graphics/
+graphics.asm`), which is Home-resident. EXROM is a separate
+compilation unit and can't call it directly. The obvious fix — add a
+`GFX_CHAR_TO_FONT_OFFSET` entry to the KTAB callback table
+(`include/exrom_jumptable.inc`, the mechanism `PRINTER_SEND_TEXT`'s
+own `MEM_LINE_FIRST`/`MEM_LINE_NEXT` calls already use) — was tried
+first and **failed to assemble**: that table's own fixed $0040-$00FF
+window is fully packed (`SHARED_LOWROM_END`, `include/
+shared_lowrom_data.inc`, already sits one byte under $0100 with the
+current 45 entries; a 46th pushed it 2 bytes over). Fixed instead by
+extending `BASIC_INPUT_SERVICE` (`basic/basic.asm`), an existing
+selector-dispatched gateway INPUT already used — one more selector
+value (`D=6`) reaches a new tiny wrapper, `BASIC_CHAR_ROW_BYTE_SERVICE`,
+around `GFX_CHAR_TO_FONT_OFFSET`. This needed no new KTAB slot at all,
+just a few bytes inside an already-resident routine. Confirmed safe
+against the gateway's one other caller (`rom/exrom_input.asm`), which
+never passes `D=6`.
+
+**RAM.** `PRINT_ROW_BUF` (`include/sysvars.inc`) holds only ONE 32-byte
+raster row, not a full 256-byte 8-row line buffer like `2068-forth`'s
+own version — the row renderer re-runs the font lookup once per row
+(8x more `BASIC_INPUT_SERVICE` round trips) instead of paying 256
+bytes of resident RAM for a full line buffer, on the theory that
+printer output is already mechanically slow enough (each dot column
+polls a hardware ready bit) that the extra lookups cost nothing
+observable. Total new RAM: 42 bytes, moving `PROG_AREA_START` up by
+that much (see its own sysvars.inc comment) — a real, deliberate trade
+against user program space, same shape as every other move documented
+there.
+
+**ROM budget.** Both builds assembled with headroom to spare after this
+feature landed: Home ROM at 2 bytes free, EXROM at 37 bytes free (`make
+budget`, 2026-09-14) — Home ROM in particular had no slack at all
+before the `BASIC_INPUT_SERVICE` fix above (an early version of this
+feature, using a new KTAB entry, was 175 bytes over budget with
+everything else pushed Home-resident to avoid the KTAB conflict; moving
+almost all of it back to EXROM via the gateway fix recovered that).
+
 ## Still to document
 - kernel/interrupt (not yet written)

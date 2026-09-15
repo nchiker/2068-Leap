@@ -506,6 +506,8 @@ it doesn't.
 | `INK <n>` / `PAPER <n>` / `BORDER <n>` | Foreground/background/border colour (all 0-7, implemented) — `INK`/`PAPER` set the current print colours (via `BASIC_COMPUTE_PRINT_ATTR`, applied by `PRINT` through `kernel/graphics`'s new `GFX_PRINT_STRING_ATTR`); `BORDER` sets the screen edge (`GFX_SET_BORDER`) |
 | `FLASH <n>` / `BRIGHT <n>` / `OVER <n>` / `INVERSE <n>` | Text attributes — all implemented as 0/1 state. `INVERSE 1` swaps the current ink/paper at print time without changing their stored values; `BRIGHT` sets attribute bit 6; `OVER 1` XOR-plots subsequent `PRINT` glyphs onto the existing bitmap so printing the same text twice at the same position restores the background. |
 | `CSIZE <n>` | Character size/scale — kept from SuperBASIC; useful for the extended graphics modes this ROM targets |
+| `LPRINT <string-expr \| numeric-expr>` | Same single-expression grammar as `PRINT`, but sends the text to a real ZX Printer over port `$FB` instead of the screen — usable as a program statement, same as `PRINT`. **Blocks forever if no ZX Printer is attached** (matches real Sinclair BASIC's own documented `LPRINT` behavior; confirmed 2026-09-14 under this project's own Fuse build, which has no way to enable ZX Printer emulation headlessly) — this is why no automated `tests/*.txt` fixture exercises it end-to-end. |
+| `LLIST` | Immediate-only (like `LIST` — not usable inside a running program), no argument. Prints every currently-stored program statement to the real ZX Printer, one per printed line, in program order (first to last). No line numbers are printed (this dialect has none — see labels, below). Same real-printer blocking caveat as `LPRINT`. |
 
 ### Graphics
 

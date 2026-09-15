@@ -2633,7 +2633,46 @@ HILITE_TABLE_PTR:    DEFS 2           ; 2 bytes — KEYWORD_HILITE_TABLE's own
                                 ; found" trap CALC_EXIT_TRAMPOLINE's
                                 ; own KTAB entry comment documents)
 
-PROG_AREA_START:   ; Current value $84B4. No longer a hand-tracked hex EQU
+; ---- LPRINT/LLIST printer scratch (rom/exrom_printer.asm, 2026-09-14) ----
+; A single 32-byte ROW buffer, not a full 256-byte (8-row) line buffer —
+; each raster row is rendered from source text just before it's sent,
+; re-running the char->glyph lookup once per row (8x more lookups per
+; printed line) rather than paying 256 bytes of RAM to render the whole
+; character line up front. Printer output is already mechanically slow
+; (PRINT_RASTER_ROW polls a hardware ready bit per dot column), so the
+; extra lookups cost nothing observable; the 224 bytes saved go back to
+; user program space, matching this project's standing RAM priority.
+PRINT_ROW_BUF:       DEFS 32          ; current raster row's 32 bytes
+PRINT_ROW_IDX:       DEFS 1           ; 0-7: row within the current
+                                ; 32-column printed line
+PRINT_CHUNK_ADDR:    DEFS 2           ; source text for the CURRENT
+                                ; <=32-char chunk being rendered/sent
+PRINT_CHUNK_LEN:     DEFS 1           ; 0-32: real characters in this
+                                ; chunk; the rest are space-padded
+PRINT_REMAINING:     DEFS 2           ; LPRINT's own remaining character
+                                ; count across multiple chunks
+PRINT_CUR_ADDR:      DEFS 2           ; LPRINT's own current source
+                                ; pointer across multiple chunks
+PRINT_LLIST_LINE:    DEFS 2           ; LLIST's own current program-line
+                                ; pointer while walking MEM_LINE_FIRST/
+                                ; MEM_LINE_NEXT
+
+PROG_AREA_START:   ; Current value $84DE (TO BE CONFIRMED against a
+                                ; real assembled build after this rebase
+                                ; — see this file's own "assembler-
+                                ; computed addresses" header). LPRINT/
+                                ; LLIST's own 42-byte printer scratch
+                                ; above (PRINT_ROW_BUF through PRINT_
+                                ; LLIST_LINE) moved this up by 42 bytes
+                                ; from $84B4 on 2026-09-14 — a real,
+                                ; deliberate trade against user program
+                                ; space, same shape as this file's other
+                                ; moves below; kept small (32-byte row
+                                ; buffer, not a 256-byte full line
+                                ; buffer) for exactly that reason — see
+                                ; PRINT_ROW_BUF's own comment above.
+                                ; Before that: $84B4, no longer a
+                                ; hand-tracked hex EQU
                                 ; (2026-08-23) — see
                                 ; this file's own "assembler-computed
                                 ; addresses" header. Relocating FILL's

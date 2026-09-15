@@ -173,6 +173,27 @@
 ;           here whole once the string-functions feature alone still
 ;           left Home ROM hundreds of bytes over budget; see rom/
 ;           exrom_editor.asm's own header.
+;   $C0C6 — EXROM_ENTRY_LPRINT: BASIC_STMT_LPRINT_EXROM (rom/exrom_
+;           printer.asm), bare trampoline. Home's own BASIC_STMT_LPRINT
+;           (basic/basic.asm) evaluates LPRINT's single string/numeric
+;           argument itself (sharing PRINT's own BASIC_EVAL_PRINT_ARG)
+;           and hands off only the resulting text; everything else
+;           (chunking, raster rendering, the raw PORT_PRINTER bit-bang)
+;           lives here. Font lookups (GFX_CHAR_TO_FONT_OFFSET, Home-
+;           resident) reach EXROM through the EXISTING BASIC_INPUT_
+;           SERVICE selector gateway (D=6) rather than a new dedicated
+;           KTAB entry — the KTAB window (include/exrom_jumptable.inc)
+;           is already fully packed (confirmed by trying a 46th entry
+;           there first and watching SHARED_LOWROM_END overflow past
+;           $0100), so a brand-new callback slot wasn't available; the
+;           selector gateway was.
+;   $C0CC — EXROM_ENTRY_LLIST: BASIC_STMT_LLIST_EXROM (rom/exrom_
+;           printer.asm), bare trampoline — the entire LLIST body
+;           (walking MEM_LINE_FIRST/NEXT and printing each stored
+;           statement) lives in EXROM; LLIST takes no argument.
+;           Both added 2026-09-14 — ADDRESSES TO BE CONFIRMED against
+;           this file's own real entry-stub table after this rebase,
+;           since $C0C6/$C0CC assumed no entries existed there yet.
 ; All twenty-five (as of the DIMN/multi-keyword-highlighting/sprite-HIT
 ; additions, 2026-08-22/23) are tiny fixed-size stubs at FIXED offsets
 ; so Home's
@@ -558,6 +579,17 @@ EXROM_ENTRY_DEF_FN:
     ASSERT $ == $C0C6
 
     ORG $C0C6
+EXROM_ENTRY_LPRINT:
+    call EXROM_VERIFY_KTAB_MAGIC
+    jp   BASIC_STMT_LPRINT_EXROM
+
+    ORG $C0CC
+EXROM_ENTRY_LLIST:
+    call EXROM_VERIFY_KTAB_MAGIC
+    jp   BASIC_STMT_LLIST_EXROM
+    ASSERT $ == $C0D2
+
+    ORG $C0D2
 
 ; ============================================================================
 ; EXROM_VERIFY_KTAB_MAGIC
@@ -1484,6 +1516,7 @@ BASIC_PARSE_STORAGE_QUALIFIER_EXROM:
 ; grammar is identical; END IF remains the compound pre-check above.
 CHECK_STATEMENT_DISPATCH_TABLE:
     DW KW_PRINT, BASIC_CHECK_STATEMENT_CONTENT.check_print
+    DW KW_LPRINT, BASIC_CHECK_STATEMENT_CONTENT.check_print
     DW KW_CLS, BASIC_CHECK_STATEMENT_CONTENT.ok
     DW KW_REM, BASIC_CHECK_STATEMENT_CONTENT.ok
     DW KW_BORDER, BASIC_CHECK_STATEMENT_CONTENT.check_border

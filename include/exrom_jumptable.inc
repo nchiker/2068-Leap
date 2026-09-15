@@ -339,6 +339,19 @@ KTAB_INDEX: DEFL KTAB_INDEX + 1
                                         ; avoids five fixed KTAB entries
     ENDM
 
+; NOTE (2026-09-14, LPRINT/LLIST): this table's own window ($0040-$00FF)
+; is fully packed — SHARED_LOWROM_END (shared_lowrom_data.inc) sits one
+; byte under $0100 with the current 45 entries; a 46th (tried first, so
+; LPRINT/LLIST's own EXROM raster-row renderer could call back into
+; Home's GFX_CHAR_TO_FONT_OFFSET for glyph lookups) pushed it 2 bytes
+; past $0100 and failed to assemble. Reverted in favor of a route that
+; needed no new KTAB entry at all: basic/basic.asm's own BASIC_INPUT_
+; SERVICE (KTAB_BASIC_INPUT_SERVICE, already in this table for INPUT)
+; is a small selector-dispatched gateway — extended with one more
+; selector value (D=6) reaching a new tiny Home wrapper around
+; GFX_CHAR_TO_FONT_OFFSET, at the cost of a few bytes inside an already-
+; resident routine instead of a new fixed-address slot in a window with
+; no room left for one.
 KTAB_COUNT      EQU 45
 KTAB_END        EQU KTAB_BASE + 3*KTAB_COUNT   ; must be <= $0100
 KTAB_MAGIC_ADDR EQU KTAB_END                    ; where Home stamps

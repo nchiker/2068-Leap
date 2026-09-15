@@ -41,6 +41,11 @@
     INCLUDE "include/shared_lowrom_data.inc"
 
 KW_PRINT: DB "PRINT", 0
+KW_LPRINT: DB "LPRINT", 0     ; same single-string-or-numeric-expr
+                             ; grammar as PRINT (BASIC_CHECK_STATEMENT_
+                             ; CONTENT.check_print validates both) —
+                             ; see rom/exrom_printer.asm's own header
+                             ; for what LPRINT actually does at runtime
 KW_END:   DB "END", 0
 KW_STOP:  DB "STOP", 0
 KW_INPUT: DB "INPUT", 0
