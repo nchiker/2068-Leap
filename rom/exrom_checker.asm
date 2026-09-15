@@ -191,9 +191,7 @@
 ;           printer.asm), bare trampoline — the entire LLIST body
 ;           (walking MEM_LINE_FIRST/NEXT and printing each stored
 ;           statement) lives in EXROM; LLIST takes no argument.
-;           Both added 2026-09-14 — ADDRESSES TO BE CONFIRMED against
-;           this file's own real entry-stub table after this rebase,
-;           since $C0C6/$C0CC assumed no entries existed there yet.
+;           Both added 2026-09-14.
 ; All twenty-five (as of the DIMN/multi-keyword-highlighting/sprite-HIT
 ; additions, 2026-08-22/23) are tiny fixed-size stubs at FIXED offsets
 ; so Home's

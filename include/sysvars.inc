@@ -2657,21 +2657,21 @@ PRINT_LLIST_LINE:    DEFS 2           ; LLIST's own current program-line
                                 ; pointer while walking MEM_LINE_FIRST/
                                 ; MEM_LINE_NEXT
 
-PROG_AREA_START:   ; Current value $84DE (TO BE CONFIRMED against a
-                                ; real assembled build after this rebase
-                                ; — see this file's own "assembler-
+PROG_AREA_START:   ; Current value $8455 (confirmed against a real
+                                ; assembled build, not hand-computed —
+                                ; see this file's own "assembler-
                                 ; computed addresses" header). LPRINT/
                                 ; LLIST's own 42-byte printer scratch
                                 ; above (PRINT_ROW_BUF through PRINT_
                                 ; LLIST_LINE) moved this up by 42 bytes
-                                ; from $84B4 on 2026-09-14 — a real,
-                                ; deliberate trade against user program
-                                ; space, same shape as this file's other
-                                ; moves below; kept small (32-byte row
-                                ; buffer, not a 256-byte full line
-                                ; buffer) for exactly that reason — see
-                                ; PRINT_ROW_BUF's own comment above.
-                                ; Before that: $84B4, no longer a
+                                ; on 2026-09-14 — a real, deliberate
+                                ; trade against user program space, same
+                                ; shape as this file's other moves
+                                ; below; kept small (32-byte row buffer,
+                                ; not a 256-byte full line buffer) for
+                                ; exactly that reason — see PRINT_ROW_
+                                ; BUF's own comment above.
+                                ; Before that: no longer a
                                 ; hand-tracked hex EQU
                                 ; (2026-08-23) — see
                                 ; this file's own "assembler-computed
