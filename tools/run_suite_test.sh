@@ -1,112 +1,31 @@
 #!/usr/bin/env bash
 # tools/run_suite_test.sh — inject one tests/<name>.txt program into the
-# reusable rom/test_suite_inject.bin harness via Fuse debugger scripting
-# and report its border-color verdict (green=pass, red=fail) via a
-# screenshot, for the tests/ directory's own suite.
+# ordinary interactive ROM and report its border-color verdict, via
+# ts2068-debug (ZRCP/ZEsarUX). Thin wrapper around
+# tools/debug_suite_run.py for interactive single-fixture use; see that
+# script's own module docstring for the full "why" (ported off Fuse/X11
+# screenshots and the old poke-at-a-one-shot-breakpoint injection
+# technique, 2026-09-19).
 #
 # Usage: tools/run_suite_test.sh <name>
 #   reads   tests/<name>.txt
-#   builds  rom/test_suite_inject.bin (once — cached; delete it, or its
-#           .sym, to force a rebuild after touching basic.asm/kernel/*)
-#   shows   /tmp/suite_<name>.png
+#   prints  "<name>: border=<0-7>"
 #
-# Replaces the original preload_gen.py --autorun approach (2026-08-22),
-# which baked the encoded test program straight into the same 16K ROM
-# image as basic.asm — after the Phase 4 dynamic-scalar-pool migration
-# (2026-08-23), that pushed individual test_suite_*.asm builds 83-113
-# bytes over budget even though basic.asm itself still fit rom/
-# test_basic.asm exactly. tools/fuse_suite_inject.py's own header has
-# the full writeup: the fix is injecting the test program via the Fuse
-# debugger (same technique tools/fuse_load_inject.py already proved for
-# SAVE/LOAD) instead of embedding it in the ROM image, so ROM budget is
-# permanently decoupled from test-program size. The harness binary
-# never needs rebuilding per test any more (nothing test-specific is
-# baked into it) — only the tiny .dbg injection script changes.
+# Same environment variables as before: RAM_EXTENSION_BIN,
+# RAM_EXTENSION_CLEAR, RAM_EXTENSION_SEED_CACHE, RUN_STATE_TEST.
+# (STACK_AUDIT is not yet ported -- see tools/run_stack_audit.sh.)
 set -e
 cd "$(dirname "$0")/.."
 
 name="$1"
 if [ -z "$name" ]; then
-    echo "usage: $0 <name>  (reads tests/<name>.txt)" >&2
+    echo "usage: $0 <name>  (reads tests/${name}.txt)" >&2
     exit 1
 fi
 
-# Always rebuild: the binary and its symbol table include the live product
-# sources/sysvar layout, and stale cached outputs can make address-sensitive
-# fixtures test yesterday's ROM instead of today's build.
-HARNESS_ROM=test_suite_inject.bin
-if [ -n "${RUN_STATE_TEST:-}" ]; then
-    tools/sjasmplus_strict.sh rom/test_run_state_inject.asm \
-        --sym=rom/test_run_state_inject.sym
-    HARNESS_ROM=test_run_state_inject.bin
-elif [ -n "${RAM_EXTENSION_BIN:-}" ]; then
-    if [ -n "${RAM_EXTENSION_CLEAR:-}" ]; then
-        tools/sjasmplus_strict.sh rom/test_extension_clear_inject.asm \
-            --sym=rom/test_extension_clear_inject.sym
-        HARNESS_ROM=test_extension_clear_inject.bin
-    else
-        tools/sjasmplus_strict.sh rom/test_extension_inject.asm \
-            --sym=rom/test_extension_inject.sym
-        HARNESS_ROM=test_extension_inject.bin
-    fi
-else
-    tools/sjasmplus_strict.sh rom/test_suite_inject.asm --sym=rom/test_suite_inject.sym
-fi
-
-RUN_STATE_TEST="${RUN_STATE_TEST:-}" \
-python3 tools/fuse_suite_inject.py "tests/${name}.txt" "/tmp/suite_${name}.dbg"
-
-pkill -9 -f fuse 2>/dev/null || true
-sleep 1
-DISPLAY=:1 nohup fuse --machine ts2068 \
-    --no-sound \
-    --rom-ts2068-0 "$HARNESS_ROM" \
-    --rom-ts2068-1 exrom.bin \
-    --debugger-command "$(cat "/tmp/suite_${name}.dbg")" \
-    > "/tmp/fuse_${name}.log" 2>&1 &
-FPID=$!
-disown
-sleep 2.5
-
-WIN=$(DISPLAY=:1 xwininfo -root -tree 2>/dev/null | grep -oP '0x[0-9a-f]+(?= "Fuse)')
-if [ -z "$WIN" ]; then
-    echo "no Fuse window found for ${name}" >&2
+if [ ! -f build/test_basic.bin ] || [ ! -f build/test_basic.sym ]; then
+    echo "build/test_basic.bin or .sym missing -- run 'make build' first" >&2
     exit 1
 fi
 
-# Liveness check -- read scheduler ticks directly. `ps -o time` is rounded to
-# whole seconds and falsely reported every short fixture as stalled even while
-# Fuse was consuming CPU normally.
-T1=$(awk '{print $14 + $15}' "/proc/$FPID/stat" 2>/dev/null || true)
-sleep 1
-T2=$(awk '{print $14 + $15}' "/proc/$FPID/stat" 2>/dev/null || true)
-if [ -z "$T1" ] || [ -z "$T2" ] || [ "$T1" = "$T2" ]; then
-    echo "WARNING: Fuse CPU time not advancing ($T1) -- possibly hung, retrying once" >&2
-    pkill -9 -f fuse 2>/dev/null || true
-    sleep 1
-    DISPLAY=:1 nohup fuse --machine ts2068 \
-        --no-sound \
-        --rom-ts2068-0 "$HARNESS_ROM" \
-        --rom-ts2068-1 exrom.bin \
-        --debugger-command "$(cat "/tmp/suite_${name}.dbg")" \
-        > "/tmp/fuse_${name}.log" 2>&1 &
-    FPID=$!
-    disown
-    sleep 2.5
-fi
-
-python3 - "$WIN" "/tmp/suite_${name}.png" <<'PYEOF'
-import sys
-from Xlib import display, X
-from PIL import Image
-
-win_id = int(sys.argv[1], 16)
-out = sys.argv[2]
-d = display.Display()
-win = d.create_resource_object('window', win_id)
-raw = win.get_image(0, 0, 640, 480, X.ZPixmap, 0xffffffff)
-img = Image.frombytes('RGBX', (640, 480), raw.data, 'raw', 'BGRX')
-img.convert('RGB').save(out)
-PYEOF
-
-echo "screenshot: /tmp/suite_${name}.png"
+python3 tools/debug_suite_run.py "$name" --port "${TS2068_SUITE_PORT:-10060}"
