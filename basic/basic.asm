@@ -3444,6 +3444,36 @@ BASIC_EVAL_PRIMARY:
     ; arbitrary, caller-supplied data, not a specific piece of kernel-
     ; owned hardware/sysvar state, so there's no hardware behavior to
     ; abstract (same reasoning as POKE and USR below).
+    ;
+    ; REAL BUG FOUND AND FIXED (GitHub issue #4, 2026-09-19): missing
+    ; the same BASIC_CHECK_ONLY guard STICK/USR below already carry for
+    ; this exact bug class (see STICK's own comment). BASIC_EVAL_EXPR
+    ; is also what the whole-program/live-typing checker uses to
+    ; validate an expression WITHOUT really running it, and an argument
+    ; variable like "F" in "PEEK(F)" hasn't necessarily been assigned
+    ; yet at check time — BASIC_VAR_ADDR auto-vivifies it to 0, so an
+    ; unguarded read here always peeks address 0 (Home ROM byte $F3 =
+    ; 243). That's harmless standing alone, but "PEEK(F) * 256" feeds
+    ; it into BASIC_EVAL_TERM's multiply overflow check (243*256 =
+    ; 62208, outside signed 16-bit range), which raises a real NUMERIC
+    ; OVERFLOW error purely from this bogus check-time read — with no
+    ; way for a real program to avoid it, since ANY use of PEEK(...) as
+    ; a multiplicand hits the same false rejection before RUN ever
+    ; assigns the variable its real value. "+" never showed the bug
+    ; because BASIC_EVAL_EXPR's own addition path has no overflow check
+    ; at all. Confirmed live via ts2068-debug: EXPR_MUL_A/EXPR_MUL_B
+    ; held $00F3/$0100 and PENDING_ERROR_MSG held MSG_NUMERIC_OVERFLOW
+    ; immediately after checking "T = PEEK(F) * 256" pre-fix.
+    ;
+    ; Guarded via the new shared .check_only_zero_guard (see its own
+    ; header, just above .function_done below) rather than an inline
+    ; test — USR's and STICK's own inline tests were folded into the
+    ; same shared routine alongside this fix, which nets a 2-byte Home
+    ; ROM SHRINK despite adding this guard (three inline copies, 11
+    ; bytes each, replaced by one 11-byte shared routine plus three
+    ; 3-byte call sites) — needed headroom in an already 3-bytes-free
+    ; Home ROM.
+    call .check_only_zero_guard
     ld   a, (hl)
     ld   l, a
     ld   h, 0
@@ -3475,14 +3505,12 @@ BASIC_EVAL_PRIMARY:
     ; (BASIC_FULL_CHECK_EXROM, BASIC_CHECK_STATEMENT_EXROM — see their
     ; own comments), never during real execution, so this skips the
     ; jump and returns a harmless 0 only when this expression is being
-    ; checked, not run.
-    ld   a, (BASIC_CHECK_ONLY)
-    or   a
-    jr   nz, .usr_checking_only
+    ; checked, not run. Folded into the shared .check_only_zero_guard
+    ; (see its own header near .function_done below) when PEEK picked
+    ; up the identical bug (GitHub issue #4) — same test, same
+    ; placeholder-0 result, no reason for three separate copies.
+    call .check_only_zero_guard
     call BASIC_CALL_USR
-    jr   .function_done
-.usr_checking_only:
-    ld   hl, 0
     jr   .function_done
 .call_sin:
     call BASIC_SIN_FLOAT
@@ -3517,9 +3545,9 @@ BASIC_EVAL_PRIMARY:
     ; USR/array-reads, this one isn't a crash risk, just a false
     ; positive — but the fix is the same: skip real validation when
     ; checking, matching this project's established guard exactly.
-    ld   a, (BASIC_CHECK_ONLY)
-    or   a
-    jr   nz, .stick_checking_only
+    ; Folded into the shared .check_only_zero_guard (see its own header
+    ; near .function_done below) alongside USR/PEEK.
+    call .check_only_zero_guard
     ld   a, h
     or   a
     jr   nz, .stick_bad_arg              ; high byte nonzero -> can't
@@ -3533,9 +3561,6 @@ BASIC_EVAL_PRIMARY:
     call STICK_READ                      ; HL = device (1 or 2) in,
                                          ; HL = stick value out — see
                                          ; kernel/io's own header
-    jr   .function_done
-.stick_checking_only:
-    ld   hl, 0
     jr   .function_done
 .stick_bad_arg:
     ld   hl, MSG_INVALID_ARGUMENT
@@ -3551,6 +3576,26 @@ BASIC_EVAL_PRIMARY:
     ; header (rom/exrom_sprite.asm) for why that's safe to run
     ; unconditionally even during a whole-program check pass.
     call BASIC_SPRITE_HIT_EXROM
+    jr   .function_done
+
+; ----------------------------------------------------------------------
+; .check_only_zero_guard — shared BASIC_CHECK_ONLY shortcut for USR/
+; STICK/PEEK, the three built-ins whose real body isn't safe (USR: a
+; real jump to a possibly-address-0 vector) or reliable (STICK/PEEK:
+; reads state — a variable's current VAR_TABLE value — that the check
+; pass doesn't mutate, so it can hold anything before RUN really sets
+; it) to execute during a whole-program/live-typing check pass. `call`ed
+; immediately before each one's real body: returns normally (into that
+; real body) when not checking; when checking, discards its own return
+; address instead and jumps straight to .function_done with HL = 0,
+; skipping the real body entirely. One shared copy replacing three
+; identical inline test-and-placeholder-zero sequences.
+.check_only_zero_guard:
+    ld   a, (BASIC_CHECK_ONLY)
+    or   a
+    ret  z
+    pop  hl
+    ld   hl, 0
     jr   .function_done
 
 .function_done:

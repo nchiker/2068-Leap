@@ -1,0 +1,6 @@
+BORDER 5
+F = 16384
+T = PEEK(F) * 2
+U = 2 * PEEK(F)
+IF T <> U THEN BORDER 2
+BORDER 4
