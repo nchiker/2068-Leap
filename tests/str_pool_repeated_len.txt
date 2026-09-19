@@ -1,0 +1,10 @@
+BORDER 5
+A$ = "TS2068-BENCH"
+M = 0
+I = 0
+loop:
+IF LEN(A$) > 4 THEN M = M + 1
+I = I + 1
+IF I < 10 THEN GOTO loop
+IF M <> 10 THEN BORDER 2
+BORDER 4
