@@ -41,7 +41,7 @@ milestone's gate is measured against.**
 |---|---:|---:|---:|---:|---:|---:|---|---|
 | V1 baseline | — | — | 0 (reference point) | — | — | 0 (reference point) | 95/95 regressions pass; editor/interpreter verified live | **PASS** |
 | M00 (Fuse→ts2068-debug test infra migration + 4 ts2068-debug fixes) | 0 | 0 | 0 | 0 | 0 | 0 | Suite runtime cut from ~20min (Fuse/X11) to 703s/7.4s-per-fixture (harness-grouped Python API, 4 ZEsarUX restarts for 95 fixtures instead of 95) | **95/95 PASS** — see `docs/v2/milestones/MILESTONE_00_RESULTS.md` for the full root-cause writeup (persistent-breakpoint + border-hardware-latch bugs, both fixed) — **COMPLETE** |
-| P0.1 (benchmark authoring) | 0 | 0 | 0 | 0 | 0 | 0 | N/A (no 2068-Leap code touched) | STOPPED — real execution-timing mystery hit, not resolved; see MILESTONE_00_RESULTS.md-adjacent fork report |
+| P0.1 (benchmark authoring) | 0 | 0 | 0 | 0 | 0 | 0 | N/A (no 2068-Leap code touched) | **COMPLETE** — 6 new isolated benchmarks (add/mul/div/ifbranch/varaccess/fornext) + string re-verified past its old N=3/N=4 cap, all real/reproducible; major finding: GOTO-based label loops are catastrophically expensive (existing sieve/pixel benchmarks may be stale/non-reproducible as a result) — see `~/2068-rom-benchmarks/results/2026-09-19-p01-isolated-benchmarks.md` |
 
 ## Cumulative summary (updated after every milestone)
 

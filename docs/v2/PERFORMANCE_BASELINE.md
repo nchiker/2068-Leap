@@ -1,36 +1,67 @@
-# 2068-Leap V2 — Performance Baseline (Phase 2 revision)
+# 2068-Leap V2 — Performance Baseline (Phase 2 revision, updated after P0.1)
 
 **This document supersedes the Phase 1 version.** Phase 2 explicitly
 required using only real, already-measured data and forbade inventing
-benchmark numbers. A dedicated fork inventoried exactly what real data
-exists; the result is materially sparser than Phase 1 implicitly assumed.
-This revision states plainly what is and is not known.
+benchmark numbers. P0.1 (2026-09-19) subsequently authored and ran the
+isolated benchmarks this document originally found missing — see
+`~/2068-rom-benchmarks/results/2026-09-19-p01-isolated-benchmarks.md`
+for the full writeup; this section is updated with those real results.
+
+## Major finding from P0.1: GOTO-based label loops are catastrophically expensive
+
+The single most important performance discovery this study has made.
+A GOTO-based loop (`loop: A=A+1 : I=I+1 : IF I<N THEN GOTO loop`, N=2000)
+did **not complete even after 20,000,000 Z80 opcodes (54.7 real
+seconds)**. The functionally-identical loop rewritten as
+`FOR I=1 TO N ... NEXT I` completed the same N=2000 in under 5,000,000
+opcodes. This was independently reproduced with the existing `sieve.bas`
+benchmark (GOTO-based inner-loop control flow): it did not complete
+within 10,000,000 opcodes/27.4 seconds either, meaning **the
+2026-09-15 sieve/pixel numbers below may not be reproducible/reliable as
+currently written** — flagged, not silently trusted. Likely cause
+(consistent with, not yet independently re-confirmed against,
+`CURRENT_LIMITATIONS.md`'s direct-execute-from-source finding): `GOTO`
+almost certainly re-scans the program's own source text for its target
+label on every jump, since there is no tokenizer and no pre-resolved
+jump table — `FOR`/`NEXT` has no such cost since its stack frame already
+holds the loop body's address directly. This is real, load-bearing
+evidence that any future statement-boundary/dispatch-caching REFINE
+(already a deferred stretch item) should prioritize `GOTO` target
+resolution specifically, not just general per-statement re-parse cost.
 
 ## What real, measured data actually exists (`VERIFIED`)
 
-Source: `~/2068-rom-benchmarks/results/2026-09-15-consolidated-three-rom-
-comparison.md`, git commit `5d42db5` (2026-09-17), still the newest results
-file as of this Phase 2 pass — confirmed no later run exists.
+Composite benchmarks source: `~/2068-rom-benchmarks/results/2026-09-15-
+consolidated-three-rom-comparison.md`, commit `5d42db5`. Isolated
+benchmarks source: `~/2068-rom-benchmarks/results/2026-09-19-p01-
+isolated-benchmarks.md`, all via direct-memory-injection through
+`ts2068-debug` (not typing), 2-3 runs each, every run within a set
+identical (not the full 5-run protocol — time-boxed, see that doc's
+own follow-up list).
 
 | Category | Data exists? | Number | Source/confidence |
 |---|---|---|---|
-| Integer sieve (composite: arithmetic + array + branch) | Yes | ~6.3 frames/work-unit (2068-Leap) vs. ~33.0 stock TS2068 | Real ZEsarUX ZRCP run, screenshot/memory-verified, single run |
-| Pixel/graphics (chaos-game) | Yes | ~4.7 frames/unit (2068-Leap) vs. ~55.8 stock | Same, real, single run |
-| String operations | **Data exists but is invalid** | `N=3, FRAMES=13` — the results doc's own words: *"a correctness check, not a throughput result"* | Capped at N=3 by a real defect (Issue #2); the fix appears to have landed (`9f67fee`) but **has not been re-run since** — no post-fix number exists |
-| Integer addition loop (isolated) | **No** | — | No isolated fixture exists; sieve conflates addition with array/branch cost |
-| Integer multiplication loop (isolated) | **No** | — | No isolated fixture; sieve doesn't multiply |
-| Integer division (isolated) | **No** | — | No isolated fixture |
-| `FOR`/`NEXT` overhead (isolated) | **No** | — | No isolated fixture in any of the four existing composite benchmarks |
-| `IF`/branching (isolated) | **No** | — | No isolated fixture |
-| Variable lookup/access (isolated) | **No** | — | No isolated fixture |
+| Integer sieve (composite) | **Flagged unreliable** | ~6.3 frames/work-unit (2026-09-15) | Real ZEsarUX run, but P0.1 found this exact fixture's GOTO-based control flow does not complete within 10M opcodes on a fresh re-run — the original number's measurement conditions are now in question, not confirmed reproducible |
+| Pixel/graphics (chaos-game) | Yes, not re-checked | ~4.7 frames/unit vs. ~55.8 stock | 2026-09-15, single run; not re-verified in P0.1 (not checked for GOTO usage) |
+| String operations | **Yes — fixed and reproducible** | N=2000, FRAMES=5344, RESULT=2000 (correct) | 2026-09-19, direct injection, 3 identical runs. Confirms Issue #2 (STR_FUNC_POOL leak) is genuinely fixed — the old N=3/N=4 cap is gone |
+| Integer addition loop (isolated) | **Yes** | N=2000, FRAMES=1496, RESULT=2000 (correct) | 2026-09-19, direct injection, 2 identical runs |
+| Integer multiplication loop (isolated) | **Yes** | N=2000, FRAMES=1370, RESULT=91 (correct, 7×13) | 2026-09-19, direct injection, 3 identical runs |
+| Integer division (isolated) | **Yes** | N=2000, FRAMES=1912, RESULT=14 (correct, 100÷7 truncated) | 2026-09-19, direct injection, 3 identical runs |
+| `FOR`/`NEXT` overhead (isolated) | **Yes** | N=2000, FRAMES=529, RESULT=2001 (correct) | 2026-09-19, direct injection, 3 identical runs |
+| `IF`/branching (isolated) | **Yes** | N=2000, FRAMES=2966, RESULT=1000 (correct, ~50% taken) | 2026-09-19, direct injection, 3 identical runs |
+| Variable lookup/access (isolated) | **Yes** | N=2000, FRAMES=1445, RESULT=0 (correct, self-assignment) | 2026-09-19, direct injection, 3 identical runs |
 | Procedure/function call | **No V1 baseline possible** | — | Confirmed, not assumed: V1 has no procedures beyond single-parameter `DEF FN`; there is nothing to benchmark |
-| Interpreter dispatch overhead (isolated) | **No** | — | Sieve's ~6.3 frames/unit is the closest proxy but conflates dispatch with everything else the loop does |
+| Interpreter dispatch overhead (isolated) | **No** | — | Still judged too hard to isolate cleanly; unchanged from Phase 2 |
 
-**This corrects an implicit assumption in Phase 1's `PERFORMANCE_BASELINE.md`**,
-which listed "benchmarks required" for several of these categories as
-though a baseline number was one re-run away. In most cases **no isolated
-fixture exists at all** — building one is new benchmark-authoring work, not
-a re-run.
+**Derived per-iteration costs** (subtracting the FOR/NEXT baseline of 529
+frames, ÷2000): addition ≈9.7ms, multiplication ≈8.4ms, division
+≈13.8ms (confirms the calculator round-trip cost `NUMERIC_DESIGN.md`
+predicts is real, not just architectural inference), IF/branching
+≈24.4ms (notably the most expensive of the four — worth scrutiny before
+trusting further), variable access ≈9.2ms (comparable to addition,
+consistent with scalar lookup being a short linear scan for a
+single-letter name, not separately expensive), string concatenation
+≈48.2ms (dramatically the most expensive operation measured).
 
 ## Methodology that exists and can be reused
 
@@ -45,23 +76,21 @@ benchmark or timing capability exists in `~/ts2068-debug` (it is the ZRCP
 debugging controller itself, not a benchmark harness) or in `~/2068-Leap/
 tests` (functional correctness fixtures only).
 
-## Revised action plan (replaces Phase 1's M0)
+## Action plan status (P0.1, 2026-09-19)
 
-Building the missing isolated benchmarks is real, scoped work, not a
-one-line re-run:
-
-1. Re-run the existing string benchmark past N=3 now that Issue #2 appears
-   fixed — a re-run, not new authoring.
-2. Author new isolated `.bas` fixtures for: integer addition, integer
-   multiplication, integer division, `FOR`/`NEXT` overhead, `IF`/branching,
-   variable-access. None of these exist today.
-3. Apply the already-documented 5-run statistical protocol to both the new
-   fixtures and the two existing valid composite benchmarks (sieve, pixel),
-   since every current number is a single run.
-4. Defer authoring an isolated interpreter-dispatch benchmark — genuinely
-   hard to isolate cleanly from everything else the interpreter does; treat
-   the sieve number as the best available proxy rather than inventing an
-   artificial isolation.
+1. ~~Re-run the existing string benchmark past N=3~~ — **done**, confirmed
+   fixed at N=2000.
+2. ~~Author new isolated `.bas` fixtures~~ — **done** for addition,
+   multiplication, division, `FOR`/`NEXT`, `IF`/branching, variable-access.
+3. **Not done**: the full 5-run statistical protocol (2-3 runs used
+   instead, time-boxed); re-measuring sieve/pixel (both need a GOTO-free
+   rewrite first per the major finding above, not just a re-run).
+4. Still deferred: an isolated interpreter-dispatch benchmark — unchanged,
+   still judged too hard to isolate cleanly.
+5. **New, added by this pass's own finding**: rewrite `sieve.bas`/
+   `pixel.bas`'s inner-loop control flow to use `FOR`/`NEXT` instead of
+   `GOTO` where the algorithm allows it, before trusting their numbers
+   for any V2 comparison.
 
 ## Design-change risk analysis (updated with Phase 2's numeric-design correction)
 
