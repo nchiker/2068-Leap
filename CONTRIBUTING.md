@@ -52,6 +52,20 @@ count, HELP topic coverage) against the actual source tables — this
 project has had exactly this kind of doc staleness slip through twice
 before.
 
+**When adding or editing a `tests/`/`demos/` BASIC program fixture**, run:
+```
+python3 tools/check_basic_source.py path/to/fixture.txt
+```
+Catches `DIM` bounds mistakes (a literal out-of-bounds access, or a
+`FOR x = 1 TO n` loop paired with an array `DIM`'d to that same `n` — the
+classic 0-vs-1-indexed off-by-one) and label-table budget overflow, from
+source alone, no emulator needed. Deliberately does *not* duplicate anything
+`rom/exrom_checker.asm`'s own real whole-program checker already validates
+(single-letter names, the `PRINT` string;numeric pattern) — for those, the
+actual pre-flight check is to run the real checker (type the program via
+`ts2068-debug` and read its own verdict), not a second implementation.
+Wired into `make check` against every existing fixture already.
+
 By contributing, you agree that your contribution is licensed under the MIT
 License used by this repository. Changes to the Fuse-derived material under
 `patches/` are instead contributed under GPL-2.0-or-later, matching Fuse.
