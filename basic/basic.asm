@@ -6455,12 +6455,10 @@ BASIC_ADVANCE_OUTPUT_ROW:
 ; Destroys: AF, BC, DE, HL
 ; ============================================================================
 BASIC_EVAL_PRINT_ARG:
-.skip_spaces:
-    ld   a, (hl)
-    cp   " "
-    jr   nz, .after_spaces
-    inc  hl
-    jr   .skip_spaces
+    call BASIC_SKIP_SPACES            ; same inline loop every other caller
+                                      ; already shares via this routine —
+                                      ; freed a few bytes for the
+                                      ; BASIC_EXPECT_STATEMENT_END fix below
 .after_spaces:
     ; A string-typed PRINT argument (literal, variable, or function
     ; call) goes through BASIC_EVAL_STR_EXPR — the same concatenation-
@@ -6589,6 +6587,24 @@ BASIC_EVAL_PRINT_ARG:
                                       ; starts here, but checked anyway
                                       ; rather than assumed
     jp   c, BASIC_RAISE_SYNTAX_ERROR
+    call BASIC_EXPECT_STATEMENT_END      ; BASIC_EXPECT_STATEMENT_END fix — closes
+                                        ; the asymmetry with the numeric branch
+                                        ; above (which already enforces this):
+                                        ; trailing content after a string PRINT
+                                        ; argument, e.g. the "; T" in
+                                        ; PRINT "X="; T, was silently ignored
+                                        ; instead of raising SYNTAX ERROR, which
+                                        ; then left the interpreter looking stuck
+                                        ; (nothing further ever printed) instead of
+                                        ; failing cleanly (GitHub issue #1). Checked
+                                        ; on HL (BASIC_EVAL_STR_EXPR's own advanced
+                                        ; source pointer) BEFORE the PRINT_BUF
+                                        ; indexing below touches HL/DE — this
+                                        ; routine's own contract destroys only
+                                        ; AF/HL, so B (the byte count needed below)
+                                        ; survives across it for free, no save/
+                                        ; restore needed
+    ret  c
     ld   d, 0
     ld   e, b
     ld   hl, PRINT_BUF

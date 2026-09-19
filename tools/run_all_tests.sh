@@ -21,7 +21,16 @@ cd "$(dirname "$0")/.."
 
 EXPECTED_CYAN="ayreg_bad_register ayreg_bad_value out_bad_value err1 snd3 ulaplus_bad_mode ulaplus_bad_index ulaplus_bad_value"
 EXPECTED_RED="mem2"
-EXPECTED_BLACK="ayreg_unloaded ayreg_new_clear out_unloaded out_new_clear extension_unloaded extension_new_clear block_unloaded block_new_clear frame_unloaded frame_new_clear invert_unloaded invert_new_clear"
+# print_str_semicolon (GitHub issue #1 regression: PRINT "X="; T used to
+# silently drop "; T" and print only the string half instead of raising
+# SYNTAX ERROR) is a genuinely different reason for black than the
+# extension-unloaded fixtures below: rom/test_suite_inject.asm's own
+# INJECT_POINT comment documents that a whole-program check-pass failure
+# here leaves the border at its cold-boot default (unset, i.e. black)
+# rather than a distinct color, since this harness doesn't check
+# CHECK_ERROR_COUNT the way the interactive editor does — same (0,0,0)
+# pixel, unrelated mechanism.
+EXPECTED_BLACK="ayreg_unloaded ayreg_new_clear out_unloaded out_new_clear extension_unloaded extension_new_clear block_unloaded block_new_clear frame_unloaded frame_new_clear invert_unloaded invert_new_clear print_str_semicolon"
 
 is_expected_cyan() {
     local name="$1"

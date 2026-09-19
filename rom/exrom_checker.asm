@@ -1246,44 +1246,59 @@ BASIC_CHECK_STATEMENT_CONTENT:
 
 .check_print:
     call KTAB_BASIC_SKIP_SPACES
+    push hl                               ; original start position — every probe
+                                         ; below either leaves HL untouched on
+                                         ; failure or may advance it on a match;
+                                         ; KTAB_BASIC_EVAL_STR_EXPR needs to
+                                         ; reparse the whole expression from here,
+                                         ; not from wherever a probe left off
+                                         ; (mirrors basic/basic.asm's own
+                                         ; BASIC_EVAL_PRINT_ARG exactly)
     ld   a, (hl)
     cp   '"'
-    jp   z, .ok                          ; a string literal — real
-                                        ; execution doesn't validate
-                                        ; the closing quote either, so
-                                        ; checking stays consistent
-                                        ; with that
+    jr   z, .print_str_expr              ; a string literal
 
     call KTAB_BASIC_DETECT_STRVAR
-    jp   nc, .ok                          ; a string-variable reference
-                                         ; (X$) — same lenient "don't
-                                         ; validate what follows"
-                                         ; treatment as the literal
-                                         ; case above, matching real
-                                         ; execution's own .print_strvar
-                                         ; path (basic/basic.asm's
-                                         ; BASIC_STMT_PRINT) exactly
+    jr   nc, .print_str_expr             ; a string-variable reference (X$)
 
-    ; a string-FUNCTION call (UPPER$(...), CHR$(...), ...) — same
-    ; check real execution's own .print_func_call does (basic/basic.
-    ; asm's BASIC_STMT_PRINT). REAL BUG FOUND (2026-08-22, caught by
-    ; actually running the emulator, not by static review): this
-    ; branch was missing entirely when string functions first landed —
-    ; "PRINT UPPER$(A$)" fell straight through to the numeric path
-    ; below and failed the whole-program check with a SYNTAX ERROR,
-    ; even though it executes fine at runtime. STR_EXPR_SCRATCH is the
-    ; same "safe to overwrite during a check pass" buffer BASIC_CHECK_
-    ; STR_ASSIGNMENT already uses for its own real KTAB_BASIC_EVAL_
-    ; STR_EXPR call just above in this file.
+    ; a string-FUNCTION call (UPPER$(...), CHR$(...), ...) — same probe real
+    ; execution's own BASIC_EVAL_PRINT_ARG uses (basic/basic.asm). REAL BUG
+    ; FOUND (2026-08-22, caught by actually running the emulator, not by
+    ; static review): this branch was missing entirely when string functions
+    ; first landed — "PRINT UPPER$(A$)" fell straight through to the numeric
+    ; path below and failed the whole-program check with a SYNTAX ERROR, even
+    ; though it executes fine at runtime.
     call KTAB_BASIC_TRY_EVAL_STR_FUNCTION
     jr   c, .print_not_str_func
-    ld   de, STR_EXPR_SCRATCH + 1
-    ld   c, 31
-    call KTAB_BASIC_EVAL_STR_FUNCTION_CALL
-    jp   c, .syntax_fail
-    jr   .ok
-.print_not_str_func:
+    jr   .print_str_expr
 
+.print_str_expr:
+    pop  hl                              ; restore the original start position —
+                                         ; ignore wherever the matching probe
+                                         ; above left HL; KTAB_BASIC_EVAL_STR_EXPR
+                                         ; reparses the whole expression itself
+    ld   de, STR_EXPR_SCRATCH + 1
+    ld   c, 31                            ; grammar-only check — content is
+                                         ; discarded, so STR_EXPR_SCRATCH's
+                                         ; narrower budget than real PRINT_BUF
+                                         ; is fine (same budget BASIC_CHECK_
+                                         ; STR_ASSIGNMENT already uses above)
+    call KTAB_BASIC_EVAL_STR_EXPR
+    jp   c, .syntax_fail
+    call KTAB_BASIC_EXPECT_STATEMENT_END   ; BASIC_EXPECT_STATEMENT_END fix —
+                                         ; closes the same gap fixed in real
+                                         ; execution's BASIC_EVAL_PRINT_ARG:
+                                         ; trailing content after a string
+                                         ; PRINT argument (e.g. the "; T" in
+                                         ; PRINT "X="; T) used to pass this
+                                         ; check silently instead of being
+                                         ; red-flagged before RUN (issue #1)
+    jp   c, .syntax_fail
+    jp   .ok
+
+.print_not_str_func:
+    pop  hl                              ; discard the saved original start —
+                                         ; not a string PRINT argument after all
     call KTAB_BASIC_EVAL_EXPR
     jp   c, .syntax_fail
     call KTAB_BASIC_EXPECT_STATEMENT_END       ; BASIC_EXPECT_STATEMENT_END
