@@ -144,12 +144,46 @@ def main():
     try:
         run_debug("start", "--rom", str(combined), "--port", port, "--symbols", str(REPO_ROOT / sym_path))
         run_debug("reset-known-state")
-        run_debug("break", "INJECT_POINT")
-        run_debug("run", "--max-instructions", str(MAX_INSTRUCTIONS_TO_INJECT_POINT))
 
         def poke(addr, byte_list):
             if byte_list:
                 run_debug("mem-write", f"0x{addr:04x}", "".join(f"{b:02X}" for b in byte_list))
+
+        # BORDER is a ULA hardware I/O latch, not a CPU register --
+        # reset-known-state doesn't touch it. Each fixture here gets a
+        # genuinely fresh ZEsarUX process, so this is mostly defense in
+        # depth (matching tools/run_all_tests_fast.py's own fix, needed
+        # there because it shares one session across many fixtures) --
+        # deterministically reset it the same way regardless.
+        poke(prog_area_start, [0x3E, 0x07, 0xD3, 0xFE, 0xC9])
+        regs = run_debug("regs")
+        pc, sp = regs["pc"], regs["registers"]["SP"]
+        new_sp = (sp - 2) & 0xFFFF
+        poke(new_sp, [pc & 0xFF, (pc >> 8) & 0xFF])
+        run_debug("set-register", "SP", f"0x{new_sp:04x}")
+        run_debug("set-register", "PC", f"0x{prog_area_start:04x}")
+        # A bounded run() is the wrong tool here, at any instruction
+        # count: confirmed live, once RET returns to pc (PC=0, the reset
+        # vector -- real executable ROM, not a stopping point), execution
+        # just keeps going into subsequent real boot code for whatever
+        # remains of the budget. The snippet is exactly 3 opcodes;
+        # single-step it precisely instead, stopping the instant PC
+        # returns to where it started.
+        for _ in range(10):
+            regs = run_debug("step")
+            if regs.get("pc") == pc:
+                break
+        else:
+            raise RuntimeError(f"border-reset snippet did not return to 0x{pc:04x} within 10 steps")
+
+        run_debug("break", "INJECT_POINT")
+        run_debug("run", "--max-instructions", str(MAX_INSTRUCTIONS_TO_INJECT_POINT))
+        # Must clear before the next run(): PC is sitting exactly on the
+        # still-armed "PC=010CH" condition, and some fixtures legitimately
+        # revisit that address during BASIC_RUN, re-triggering it and
+        # executing nothing further (confirmed live). run_until()'s own
+        # implementation already clears its breakpoint after use.
+        run_debug("clear-break")
 
         poke(prog_area_start, list(data))
         poke(prog_end_addr, [prog_end_value & 0xFF, (prog_end_value >> 8) & 0xFF])

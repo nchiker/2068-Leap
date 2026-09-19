@@ -37,22 +37,20 @@ EXPECTED_CYAN="ayreg_bad_register ayreg_bad_value out_bad_value err1 snd3 ulaplu
 EXPECTED_RED="mem2"
 # print_str_semicolon (GitHub issue #1 regression: PRINT "X="; T used to
 # silently drop "; T" and print only the string half instead of raising
-# SYNTAX ERROR) is a genuinely different reason for black than the
-# extension-unloaded fixtures below: rom/test_suite_inject.asm's own
-# INJECT_POINT comment documents that a whole-program check-pass failure
-# here leaves the border at its cold-boot default (unset, i.e. black)
-# rather than a distinct color.
-#
-# KNOWN OPEN ISSUE (2026-09-19, see docs/v2/milestones/MILESTONE_00_RESULTS.md):
-# this harness's true idle/boot-default border before any user statement
-# runs is very likely 4 (green), not 0 (black) as assumed here -- a
-# checker-rejected program (never reaching BASIC_RUN) can look identical,
-# via border color alone, to one that legitimately executed and reached
-# its own final BORDER 4. 8 of the 13 fixtures below (extension_unloaded,
-# frame_unloaded, and all six *_new_clear fixtures) currently fail or
-# read an unexpected color under this ambiguity. Needs a more direct
-# signal than border color (e.g. reading CHECK_ERROR_COUNT directly) to
-# fully resolve -- not yet implemented.
+# SYNTAX ERROR) uses the same signal as the extension-unloaded fixtures
+# below: rom/test_suite_inject.asm's own INJECT_POINT comment documents
+# that a whole-program check-pass failure here leaves the border at its
+# untouched boot default rather than a distinct color -- confirmed live
+# (2026-09-19) that default is 7 (white) on the current build, not 0
+# (black) as originally assumed from an older convention. Confirmed via
+# CHECK_ERROR_COUNT reads (nonzero for the plain "_unloaded" fixtures,
+# via test_suite_inject.bin) that this really is the checker correctly
+# rejecting the unregistered keyword, not a coincidental idle color --
+# see docs/v2/milestones/MILESTONE_00_RESULTS.md. Also required fixing a
+# real bug in this script itself: a hand-rolled break+run sequence must
+# clear the breakpoint before its second run(), or execution that
+# legitimately revisits INJECT_POINT's address re-triggers it and runs
+# nothing further (tools/debug_suite_run.py now does this).
 EXPECTED_BLACK="ayreg_unloaded ayreg_new_clear out_unloaded out_new_clear extension_unloaded extension_new_clear block_unloaded block_new_clear frame_unloaded frame_new_clear invert_unloaded invert_new_clear print_str_semicolon"
 
 is_expected_cyan() {
@@ -132,7 +130,7 @@ for f in tests/*.txt; do
         verdict="PASS (expected cyan)"
     elif [ "$border" = "2" ] && is_expected_red "$name"; then
         verdict="PASS (expected pre-run rejection)"
-    elif [ "$border" = "0" ] && is_expected_black "$name"; then
+    elif [ "$border" = "7" ] && is_expected_black "$name"; then
         verdict="PASS (expected unloaded rejection)"
     fi
 

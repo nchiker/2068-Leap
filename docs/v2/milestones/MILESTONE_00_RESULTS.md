@@ -140,27 +140,58 @@ in this script at all. And `cf1` (previously an unexplained failure)
 also turned out to be the same `resume()`-drops-characters bug, now
 fixed — it passes cleanly with no other change.
 
-**Final result**: 87/95 PASS, 8 FAIL, in 665s (7.0s/fixture average, 4
-ZEsarUX restarts total) — see `RESOURCE_LEDGER.md`.
+**Result after the harness/breakpoint fixes above**: 87/95 PASS, 8 FAIL,
+in 665s (7.0s/fixture average, 4 ZEsarUX restarts total).
 
-**Remaining 8, real and disclosed, not yet fixed**: `extension_unloaded`,
-`frame_unloaded` (border=5, not the expected black/idle default), and
-the six `*_new_clear` fixtures (`ayreg_new_clear`, `block_new_clear`,
-`extension_new_clear`, `frame_new_clear`, `invert_new_clear`,
-`out_new_clear`, all border=7). Root cause for a related but DIFFERENT
-4 fixtures (`ayreg_unloaded`, `block_unloaded`, `out_unloaded`,
-`invert_unloaded`) that DO now report as passing: this harness's true
-idle/boot-default border, before any user statement runs, is very
-likely **4 (green)**, not 0 (black) as originally assumed — meaning a
-checker-rejected program (which never reaches `BASIC_RUN` at all) can
-look identical, via border color alone, to a program that legitimately
-executed and reached its own final `BORDER 4`. This verdict-logic
-ambiguity needs a different, more direct signal than border color for
-this specific fixture family — e.g. reading `CHECK_ERROR_COUNT` directly
-via `mem`/`read_memory` — not yet implemented. The 8 fixtures currently
-failing are exactly the ones where that ambiguity resolves the wrong way
-or the harness reaches some other genuinely-unexpected state; this is
-real follow-up work, not silently accepted as good enough.
+## Update (same session, later still): all 8 remaining failures root-caused and fixed
+
+Two independent, real bugs, both found by tracing `CHECK_ERROR_COUNT` and
+final PC/border state directly rather than guessing from border color
+alone:
+
+**Bug 1 — an un-cleared, persistent breakpoint** (`extension_unloaded`,
+`frame_unloaded`, plus a cascading effect on some `*_new_clear`
+fixtures): a hand-rolled `break` + `run` + poke + `run` sequence never
+cleared the breakpoint after reaching `INJECT_POINT`. Breakpoints are
+persistent by design (they fire every time PC reaches that address, not
+once) — for fixtures whose execution legitimately revisits that same
+address during `BASIC_RUN`, the still-armed breakpoint re-fired on the
+second `run()` and executed nothing further. This is standard, correct
+ZRCP breakpoint semantics, not a tool bug — the actual gap was that
+`ts2068-debug`'s CLI could set a breakpoint but never clear one (`break`
+existed, `clear-break` didn't). Fixed by adding `clear-break` to
+`ts2068-debug` and calling it in both `tools/debug_suite_run.py` and
+`tools/run_all_tests_fast.py` right after reaching `INJECT_POINT`,
+matching what `run_until()`'s own internal implementation already does.
+
+**Bug 2 — `BORDER` is a persistent hardware I/O latch, not a CPU
+register** (the remaining `*_unloaded`/`*_new_clear` fixtures, plus the
+originally-mysterious "true idle default is 4 not 0" finding, which
+turned out to be a case of this same bug): `reset_to_known_state()`
+correctly resets PC/SP/AF/etc, but the ULA's border port (254) is
+untouched by a CPU reset — confirmed live and reproduced with just two
+fixtures: `err1` deliberately halts with `BORDER 5` still showing (its
+own intended behavior, a runtime error before reaching its later
+`BORDER 2`), and the *next* fixture in the same session inherits that
+stale border value if its own program is correctly rejected by the
+checker and therefore never touches `BORDER` at all — which is exactly
+the case for every "checker correctly rejected this unregistered
+extension keyword" fixture. This harness's real, hardware-level idle
+default is **7 (white)**, confirmed via `CHECK_ERROR_COUNT` reading
+nonzero (proving genuine checker rejection, not a coincidental idle
+color) across all thirteen `*_unloaded`/`*_new_clear` fixtures once this
+was fixed. Fixed by deterministically resetting the border latch
+(`LD A,7 : OUT (254),A : RET`, injected via the same register/stack
+manipulation technique as extension self-registration, single-stepped
+precisely rather than bounded-run — a bounded run of any size, even 10
+instructions, let execution continue past the `RET` into real
+subsequent boot code before the check could run) at the start of every
+fixture in `tools/run_all_tests_fast.py`, and defensively in
+`tools/debug_suite_run.py` too.
+
+**Final result: 95/95 PASS**, 703s total (7.4s/fixture, 4 ZEsarUX
+restarts for the whole suite) via `tools/run_all_tests_fast.py`. See
+`RESOURCE_LEDGER.md` for the final ledger entry.
 
 ## PROBLEMS DISCOVERED (original typing-based attempt, superseded above)
 
@@ -186,21 +217,30 @@ real follow-up work, not silently accepted as good enough.
 
 ## FOLLOW-UP WORK
 
-1. Root-cause and fix `run_state`'s verdict, then remove it from
-   `run_all_tests.sh`'s `SKIP` list.
-2. Port the remaining standalone Fuse-using developer tools listed above,
-   time permitting — none block `make test` or any Phase 0 milestone.
-3. Consider replacing the per-fixture fixed `time.sleep(2.0)` in
-   `tools/debug_suite_run.py` with a liveness poll (repeated `regs`/
-   `timex` reads while free-running, no `pause` in between) for both
-   speed and robustness against a fixture that legitimately needs more
-   than 2 seconds — noted as a TODO in that file already.
+1. ~~Root-cause and fix `run_state`'s verdict~~ — done, resolved by the
+   direct-injection revert (see update above); `SKIP` list removed from
+   `run_all_tests.sh`.
+2. ~~Root-cause the 8 remaining failures~~ — done, see update above.
+3. Port the remaining standalone Fuse-using developer tools
+   (`tools/run_stack_audit.sh`, `tools/run_demo.sh`,
+   `tools/run_demo_cursor_test.sh`, `tools/fuse_demo_inject.py`,
+   `tools/fuse_editor_inject.py`, `tools/type_basic.py`,
+   `tools/tape_gen.py`'s real-Fuse-tape-emulation use), time permitting —
+   none block `make test` or any Phase 0 milestone.
 4. `tools/fuse_suite_inject.py` is now dead code on the critical path;
    consider deleting it once the migration is confirmed stable, rather
    than leaving an unused Fuse-based implementation beside its
    replacement indefinitely.
+5. The border-reset and breakpoint-clear fixes were applied to both
+   `tools/debug_suite_run.py` and `tools/run_all_tests_fast.py`
+   independently (duplicated logic) rather than factored into one shared
+   helper module — acceptable for now given the two scripts' different
+   execution models (one-CLI-process-per-fixture vs. one persistent
+   Python session), but worth revisiting if they diverge further.
 
 ## PASS/FAIL
 
-Pending the full-suite run's completion (see `RESOURCE_LEDGER.md` for the
-final tally once available).
+**95/95 PASS** via `tools/run_all_tests_fast.py` (703s, 7.4s/fixture, 4
+ZEsarUX restarts). `tools/run_all_tests.sh` (the slower, one-ZEsarUX-
+process-per-fixture `make test` entry point, using the identical
+underlying fix set) verified separately — see `RESOURCE_LEDGER.md`.
