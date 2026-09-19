@@ -18,6 +18,11 @@ check: build
 	python3 tools/check_storage_contract.py
 	python3 tools/check_tape_fixture.py
 	python3 tools/check_commit_validation.py
+	python3 tools/test_check_basic_source.py
+	# tests/err1.txt is excluded: it's tools/run_all_tests.sh's own EXPECTED_CYAN
+	# fixture, deliberately testing an out-of-bounds DIM access -- a genuine,
+	# intentional finding here, not a regression to fail the build over.
+	python3 tools/check_basic_source.py $(filter-out tests/err1.txt,$(wildcard tests/*.txt)) demos/*.txt
 	python3 tools/z80sim/test_calc_dispatcher.py
 	python3 tools/z80sim/test_sprite_driver.py
 	python3 tools/z80sim/test_sprite_basic_driver.py
