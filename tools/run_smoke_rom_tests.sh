@@ -1,8 +1,26 @@
 #!/usr/bin/env bash
 # Execute deterministic standalone smoke ROMs and check their border verdict.
+#
+# Ported from the original Fuse/X11 screenshot-based runner (see git history) to
+# ts2068-debug (ZRCP/ZEsarUX): the old version launched a real Fuse window under
+# Xvfb, slept a fixed 2.5s guessing when the window would exist, found it via
+# xwininfo/Xlib, screenshotted it, and decoded a pixel color at (10, 10). That
+# needed a live X11 display and baked in real-time sleeps unrelated to how long
+# the ROM actually takes to run. ts2068-debug reads the border color directly off
+# the emulated ULA port (no display, no screenshot) and bounds execution by opcode
+# count instead of wall-clock sleep.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
+
+STATE_DIR="$(mktemp -d)"
+export TS2068_DEBUG_STATE_DIR="$STATE_DIR"
+PORT=10050
+cleanup() {
+    ts2068-debug --json stop >/dev/null 2>&1 || true
+    rm -rf "$STATE_DIR"
+}
+trap cleanup EXIT
 
 tests=(
     test_memory
@@ -20,72 +38,37 @@ fail=0
 
 for name in "${tests[@]}"; do
     rom_path="build/smoke/${name}.bin"
-    screenshot="/tmp/smoke_${name}.png"
-    log_path="/tmp/fuse_smoke_${name}.log"
+    combined="build/smoke/${name}_zesarux.bin"
 
     if [ ! -f "$rom_path" ]; then
         echo "smoke-runtime: missing ${rom_path}; run make smoke-build" >&2
         exit 1
     fi
 
-    pkill -9 -x fuse 2>/dev/null || true
-    sleep 1
-    DISPLAY=:1 nohup fuse --no-sound --machine ts2068 \
-        --rom-ts2068-0 "$rom_path" \
-        --rom-ts2068-1 exrom.bin \
-        > "$log_path" 2>&1 &
-    fuse_pid=$!
-    sleep 2.5
+    # ZEsarUX --romfile wants one concatenated Home+EXROM image (see ts2068-debug's
+    # own README/docs/zesarux-analysis.md); each smoke ROM is a standalone 16K Home
+    # image that pages into the real production EXROM, same as the ordinary build.
+    cat "$rom_path" exrom.bin > "$combined"
 
-    win="$(DISPLAY=:1 xwininfo -root -tree 2>/dev/null | grep -oP '0x[0-9a-f]+(?= "Fuse)' | head -1 || true)"
-    if [ -z "$win" ]; then
-        # SDL2/X11 can expose a mapped Fuse surface without a WM title.
-        # Fall back to the emulator's exact configured 640x480 window.
-        win="$(DISPLAY=:1 python3 - <<'PYEOF'
-from Xlib import display, X
-d = display.Display()
-for w in d.screen().root.query_tree().children:
-    g = w.get_geometry()
-    if w.get_attributes().map_state == X.IsViewable and (g.width, g.height) == (640, 480):
-        print(hex(w.id))
-        break
-PYEOF
-)"
-    fi
-    if [ -z "$win" ]; then
-        echo "${name}: no Fuse window found -> FAIL"
-        fail=$((fail + 1))
-        kill -9 "$fuse_pid" 2>/dev/null || true
-        wait "$fuse_pid" 2>/dev/null || true
-        continue
-    fi
+    ts2068-debug --json stop >/dev/null 2>&1 || true
+    ts2068-debug --json start --rom "$combined" --port "$PORT" >/dev/null
 
-    color="$(python3 - "$win" "$screenshot" <<'PYEOF'
-import sys
-from Xlib import X, display
-from PIL import Image
+    # Bounded, not a real-time sleep: every smoke ROM either signals PASS/FAIL (a
+    # border write) and halts in a tight `jr $`, or hangs. 500,000 opcodes is
+    # comfortably more than any of these minimal kernel-primitive tests need to
+    # reach that halt.
+    ts2068-debug --json run --max-instructions 500000 >/dev/null
 
-window_id = int(sys.argv[1], 16)
-output = sys.argv[2]
-connection = display.Display()
-window = connection.create_resource_object("window", window_id)
-raw = window.get_image(0, 0, 640, 480, X.ZPixmap, 0xFFFFFFFF)
-image = Image.frombytes("RGBX", (640, 480), raw.data, "raw", "BGRX").convert("RGB")
-image.save(output)
-print(image.getpixel((10, 10)))
-PYEOF
-)"
+    border="$(ts2068-debug --json timex | python3 -c 'import json, sys; print(json.load(sys.stdin).get("border"))')"
 
     verdict="FAIL"
-    if [ "$color" = "(0, 194, 0)" ] || [ "$color" = "(0, 181, 0)" ]; then
+    if [ "$border" = "4" ]; then
         verdict="PASS"
         pass=$((pass + 1))
     else
         fail=$((fail + 1))
     fi
-    echo "${name}: border=${color} -> ${verdict}"
-    kill -9 "$fuse_pid" 2>/dev/null || true
-    wait "$fuse_pid" 2>/dev/null || true
+    echo "${name}: border=${border} -> ${verdict}"
 done
 
 echo "----------------------------------------"
