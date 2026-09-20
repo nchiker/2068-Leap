@@ -241,6 +241,25 @@ for the full account, including a deliberate, documented scope limitation
 (one shared global parameter slot, no per-call local frame) demonstrated
 on real hardware rather than just asserted.
 
+## Update: R5 (strings) is complete
+
+rom/exrom_v2_vm_core.asm grew to 1,160 bytes (a separate 32-byte-record
+STRTAB plus five new opcodes) and rom/exrom_v2_compiler.asm grew to 2,366
+bytes (a NAME$ lexer convention, a quoted-string scanner, a separate
+compile-time string-symbol table, and string expression/assignment/
+comparison compilers). A real program combining string assignment,
+concatenation, and both ordering and equality comparison produced exactly
+correct results on real ZEsarUX hardware. Seven more real bugs were found
+via hardware execution and fixed -- four of them the exact same lesson
+(a register held across a call that clobbers it internally), proven four
+times in one milestone alone. Fifteen real bugs found and fixed via
+hardware execution total across Milestone 01/R1-R5. See the implementation
+plan's R5 section for the full account, including an honest correction to
+this document's own original ~160-170 byte R5 estimate (the real combined
+cost, 883 bytes, was priced for widening V1's existing string mechanism,
+not building a comparable one from scratch inside a new VM).
+
+
 
 ## Update: the statement-compiler spike has been built and measured
 

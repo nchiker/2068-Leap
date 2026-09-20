@@ -496,6 +496,95 @@ EXROM free).
 
 ### R5 — Strings
 
+**Status: COMPLETE, real-hardware-validated.** Grew both files: `rom/
+exrom_v2_vm_core.asm` from R1's 731 bytes to **1,160 bytes** (+429 for a
+separate 32-byte-record `STRTAB` — distinct from the numeric `SYMTAB`,
+since a 31-byte-cap string cannot fit in a 2-byte operand-stack slot — and
+five new opcodes: `PUSH_STR_LIT`, `STORE_STR_VAR`, `STR_CONCAT`,
+`STR_CMP_LT`, `STR_CMP_EQ`); `rom/exrom_v2_compiler.asm` from R4's 1,912
+bytes to **2,366 bytes** (+454 for a `NAME$` lexer convention, a quoted-
+string-literal scanner, a separate compile-time string-symbol table, and
+string expression/assignment/comparison compilers). A design choice made
+explicitly rather than assumed: this milestone's target ROM estimate
+(~160-170 bytes, from `STRING_AND_SYMBOL_DESIGN.md`'s original Phase 2
+figure) turned out far too low once measured for real — that figure
+priced widening V1's *existing* string mechanism, not building a
+comparable one from scratch inside a brand-new VM with its own separate
+value representation; the real combined cost (883 bytes across both
+files) is still small in absolute terms and well within the reserve
+`REWRITE_ROM_BUDGET.md` already accounted for.
+
+**Design decision, not a gap**: string "values" on the VM operand stack
+are just a 2-byte `STRTAB` index, pushed via the *existing* `PUSH_I16`
+opcode — no new operand-stack tag was needed, since the compiler alone
+(never the VM) tracks which values are "really" strings, via the
+distinct `TOK_STR_IDENT`/`TOK_STRING` token types. Concatenation results
+land in a small round-robin ring of temp slots (2 of them) rather than
+through any general allocator, matching this project's own standing
+"avoid inventing an allocator" discipline — sufficient because a
+string-expression temp is only ever live long enough to be immediately
+assigned or compared, per this milestone's own scoped grammar (a flat
+`+` chain, never independently-live nested sub-results).
+
+`rom/test_v2_compiler_r5.asm` compiled and executed a real program
+exercising every mechanism together — `A$="APPLE"`, `B$="BANANA"`,
+`C$=A$+B$` (concatenation), `D$=A$` (a real content copy, not aliasing),
+`IF A$<B$ THEN GOTO LESS` (a TRUE ordering comparison, since `'A'<'B'`),
+and `IF D$=A$ THEN GOTO EQ` (a TRUE equality comparison). Real ZEsarUX
+result: **every value matched exactly** — `A$="APPLE"`, `B$="BANANA"`,
+`C$="APPLEBANANA"`, `D$="APPLE"`, `F=1`, `G=1`, `H=1`.
+
+**Seven more real bugs found via ZEsarUX execution and fixed** (bringing
+this rewrite's real-hardware-caught bug total to fifteen across
+Milestone 01/R1-R5):
+1. Inserting the new `"`-literal check into `LEX_NEXT_TOKEN`'s dispatch
+   broke the *fallthrough* from the digit checks into `.ident_start` —
+   every letter silently fell into the string-literal scanner instead.
+   Real run: the very first identifier ("A$") was misread as a string
+   literal starting mid-token. Fixed with an explicit jump instead of
+   relying on label adjacency (a lesson already learned once for
+   `LEX_CLASSIFY_KEYWORD`'s R3 bug, re-learned here in a different spot).
+2. `COMPILER_INIT` never zeroed the new `STRSYM_COUNT` — the same
+   "session RAM persists across `reset`" bug already found and fixed
+   twice before (R3's `LABEL_COUNT`/`FIXUP_COUNT`), found a third time.
+3. `COMPILE_STR_FACTOR`'s string-literal copy loop kept the source content
+   pointer in `HL` across a call to `EMIT_BYTE` — which uses `HL`
+   internally as `EMIT_PTR`, clobbering it — so only a literal's first
+   byte ever reached the bytecode correctly. Fixed by using `DE` instead
+   (exactly the pattern `COMPILE_NUMBER_LITERAL` already used correctly
+   since R2 for the same reason).
+4. `OP_STR_CONCAT`'s "append b's content" phase kept its running
+   destination pointer in `DE` across a call to `VM_STR_ADDR` — which uses
+   `DE` as its own internal scratch — silently redirecting the append to
+   `STRTAB_BASE` instead of the real temp slot, corrupting whatever
+   string variable happened to occupy index 0. Root-caused by single-
+   stepping the actual instruction sequence live, the same technique that
+   found R3's `RESOLVE_ALL_FIXUPS` bug.
+5. `OP_STR_CMP_LT` and 6. `OP_STR_CMP_EQ` had the identical bug one level
+   removed: both kept a string's record address in `DE` across a call to
+   `VM_POP` — which *also* uses `DE` internally to read the popped value —
+   corrupting the saved address before the comparison could use it.
+7. (Two test-program naming mistakes, not compiler bugs, caught and
+   corrected the same way as R4's: label names `DONE1`/`DONE2` contained
+   digits, which this grammar has never supported — renamed to
+   `DONEA`/`DONEB`.)
+
+Items 3, 4, 5, and 6 are all the same underlying lesson, now proven four
+times over in this one milestone alone: **any register holding a value
+needed after a call must be saved to memory first — unconditionally,
+never "this callee probably doesn't touch that register."** `VM_STR_ADDR`
+and `VM_POP` both use `DE` internally purely as scratch, with no hint of
+that from their calling convention alone; only reading their actual bodies
+(or getting bitten by real hardware) reveals it.
+
+Shipping ROM confirmed unaffected (`make budget`: unchanged 554 HOME / 109
+EXROM free).
+
+**R5 is done. Next: R6 (hybrid numeric system — floating point).**
+
+<details>
+<summary>Original R5 plan (superseded by the COMPLETE status above; kept for the record)</summary>
+
 - **Objective**: the string system from `STRING_AND_SYMBOL_DESIGN.md`
   (31-byte-cap pool records, ordering comparisons) wired into the V2
   compiler/VM, plus multi-character string-variable names (already
@@ -510,6 +599,8 @@ EXROM free).
   whatever of `exrom_strfuncs.asm`'s 383 bytes isn't reusable as-is.
 - **Success gate**: string programs correct; ordering comparisons correct.
 - **Rollback**: revert; R1-R4 remain intact.
+
+</details>
 
 ### R6 — Hybrid numeric system (floating point)
 

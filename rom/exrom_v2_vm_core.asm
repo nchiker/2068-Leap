@@ -74,6 +74,18 @@
 ;                      recommended keeping)
 ;   16 = RET         (pops the VM call stack into VM_IP; underflow is a
 ;                      real, caught error, not undefined behavior)
+;   17 = PUSH_STR_LIT (R5 addition; operand: 1 length byte + that many
+;                      content bytes, VARIABLE length — the first such
+;                      operand in this VM; copies into the next round-
+;                      robin STRTAB temp slot, pushes that slot's index)
+;   18 = STORE_STR_VAR (R5; operand: 1 byte target STRTAB index; pops a
+;                      source index, copies its record onto the target)
+;   19 = STR_CONCAT   (R5; pops b-index, pops a-index; concatenates their
+;                      content, truncated to 31 bytes, into a fresh temp
+;                      slot; pushes that slot's index)
+;   20 = STR_CMP_LT   (R5; pops b-index, pops a-index; pushes 1 if a<b
+;                      else 0 — lexicographic content comparison)
+;   21 = STR_CMP_EQ   (R5; same, equality)
 ;
 ; VM error codes (VM_ERROR_CODE, set on any abnormal halt):
 ;   0 = no error (normal HALT)
@@ -125,6 +137,63 @@ SYM_REC_LEN:        equ 3       ; 3 bytes/record (tag + 2-byte value; no name
 TAG_INT:            equ 0
 TAG_FLOAT:          equ 1
 
+; --- R5 addition: string table (separate from the numeric SYMTAB above —
+; a 31-byte-cap string cannot fit in a 2-byte operand-stack slot, so string
+; "values" on the operand stack are always a 2-byte STRTAB INDEX, pushed
+; via the ordinary PUSH_I16 opcode reused for this purpose — see
+; docs/v2/ARCHITECTURE_B_IMPLEMENTATION_PLAN.md's R5 section for why no
+; new "push a string index" opcode was needed) ---
+STRTAB_BASE:        equ $8600   ; string records: [len:1][content:31] = 32B
+STR_REC_LEN:        equ 32
+STRTAB_MAX_VARS:    equ 4       ; named string-variable slots (indices 0-3)
+STRTAB_TEMP_COUNT:  equ 2       ; concatenation-result temp slots (4-5),
+                                 ; round-robin — no allocator, matching this
+                                 ; project's own "avoid inventing a general
+                                 ; allocator" discipline; a temp is only
+                                 ; ever live long enough to be immediately
+                                 ; STORE_STR_VAR'd or compared, per this
+                                 ; milestone's own scoped grammar (string
+                                 ; expressions are a flat '+' chain, never
+                                 ; nested independently-live sub-results)
+VM_STR_TEMP_NEXT:   equ $87A0   ; round-robin index into the temp slots (1B)
+VM_STR_LIT_LEN_TMP: equ $87A1   ; OP_PUSH_STR_LIT scratch (1 byte)
+VM_STR_LIT_TEMPIDX_TMP: equ $87A2  ; shared scratch (1 byte): the temp-slot
+                                     ; index chosen for this operation,
+                                     ; before it's turned into an absolute
+                                     ; STRTAB index
+VM_STR_TARGET_TMP:  equ $87A3   ; OP_STORE_STR_VAR scratch (1 byte)
+VM_STR_SRC_ADDR_TMP: equ $87A4  ; shared scratch (2 bytes): a source
+                                  ; record's address, saved across a second
+                                  ; VM_STR_ADDR call that would otherwise
+                                  ; overwrite it
+VM_STR_DST_ADDR_TMP: equ $87A6  ; OP_STR_CONCAT scratch (2 bytes)
+VM_STR_RUNNING_DST_TMP: equ $87AC ; OP_STR_CONCAT scratch (2 bytes): the
+                                    ; running dest-content WRITE pointer,
+                                    ; saved to memory across the second
+                                    ; VM_STR_ADDR call (for b's record) —
+                                    ; that call uses DE as its own scratch
+                                    ; internally, clobbering it; an earlier
+                                    ; version kept the running dest pointer
+                                    ; in DE across that call, so the
+                                    ; "append b's content" phase silently
+                                    ; started writing at STRTAB_BASE
+                                    ; instead of continuing the temp slot,
+                                    ; corrupting whatever record happened to
+                                    ; sit at index 0. Caught by a real
+                                    ; ZEsarUX run and confirmed by single-
+                                    ; stepping VM_STR_ADDR's own body live
+                                    ; (the seventh real register-clobber
+                                    ; bug found this way across R2-R5).
+VM_STR_CONCAT_B_TMP: equ $87A8  ; OP_STR_CONCAT scratch (1 byte): the
+                                  ; second operand's STRTAB index
+VM_STRCMP_LENA_TMP: equ $87A9   ; VM_STR_COMPARE scratch (1 byte)
+VM_STRCMP_LENB_TMP: equ $87AA   ; VM_STR_COMPARE scratch (1 byte)
+VM_STRCMP_MINLEN_TMP: equ $87AB ; VM_STR_COMPARE scratch (1 byte)
+; every one of these is real RAM, not a register held across a call or a
+; loop that itself calls something else — the standing discipline
+; established after four real register-clobber bugs found via ZEsarUX
+; execution in R2/R3 (see docs/v2/ARCHITECTURE_B_IMPLEMENTATION_PLAN.md).
+
 ; ---------------------------------------------------------------------------
 ; VM_INIT — call once before VM_RUN. Resets both stacks, error/halt flags.
 ; ---------------------------------------------------------------------------
@@ -137,6 +206,7 @@ VM_INIT:
         ld (VM_ERROR_CODE),a
         ld (VM_HALTED),a
         ld (VM_TOS_TAG),a
+        ld (VM_STR_TEMP_NEXT),a
         ret
 
 ; ---------------------------------------------------------------------------
@@ -152,7 +222,7 @@ VM_RUN:
         ld a,(hl)               ; fetch opcode
         inc hl
         ld (VM_IP),hl
-        cp 17                   ; 17 opcodes defined (0-16)
+        cp 22                   ; 22 opcodes defined (0-21)
         jp nc,VM_ERR_ILLEGAL_OPCODE
         ld l,a
         ld h,0
@@ -184,6 +254,41 @@ VM_OP_TABLE:
         dw OP_FOR_NEXT
         dw OP_CALL
         dw OP_RET
+        dw OP_PUSH_STR_LIT
+        dw OP_STORE_STR_VAR
+        dw OP_STR_CONCAT
+        dw OP_STR_CMP_LT
+        dw OP_STR_CMP_EQ
+
+; ---------------------------------------------------------------------------
+; String-table access: index (A) -> HL = record address
+; (STRTAB_BASE + index*32). Same shape as VM_SYM_ADDR, separate table.
+; ---------------------------------------------------------------------------
+VM_STR_ADDR:
+        ld l,a
+        ld h,0                  ; HL = index
+        ld d,h
+        ld e,l
+        add hl,hl               ; *2
+        add hl,hl               ; *4
+        add hl,hl               ; *8
+        add hl,hl               ; *16
+        add hl,hl               ; *32
+        ld de,STRTAB_BASE
+        add hl,de
+        ret
+
+; VM_STR_COPY — copies a whole 32-byte string record (length + content,
+; regardless of the actual length, for simplicity) from HL to DE.
+VM_STR_COPY:
+        ld b,32
+.loop:
+        ld a,(hl)
+        ld (de),a
+        inc hl
+        inc de
+        djnz .loop
+        ret
 
 ; ---------------------------------------------------------------------------
 ; Symbol access: index (A) -> HL = record address (SYMTAB_BASE + index*3).
@@ -585,6 +690,266 @@ OP_RET:
         call VM_CALL_POP        ; HL = return address
         ld (VM_IP),hl
         jp VM_RUN.loop
+
+; ===========================================================================
+; STRING OPCODE HANDLERS (R5 addition)
+;
+; Bytecode operand shapes: OP_PUSH_STR_LIT's operand is VARIABLE length
+; (1 length byte + that many content bytes) — the first variable-length
+; operand in this VM; every handler below still follows the "advance
+; VM_IP by exactly what this opcode consumed" contract other opcodes use,
+; it just has to compute how much that is at runtime instead of it being
+; fixed.
+;
+; String "values" live entirely in STRTAB, addressed by a compile-time or
+; runtime-computed index; a string reference on the operand stack is that
+; index, pushed as a perfectly ordinary TAG_INT 2-byte value via the
+; EXISTING VM_PUSH/OP_PUSH_I16 mechanism — no new operand-stack tag was
+; needed, since the compiler alone (not the VM) tracks which values are
+; "really" string indices, per this milestone's own scoped design (see
+; docs/v2/ARCHITECTURE_B_IMPLEMENTATION_PLAN.md's R5 section).
+; ===========================================================================
+
+OP_PUSH_STR_LIT:
+        ld hl,(VM_IP)
+        ld a,(hl)               ; length byte (<=31, compiler-guaranteed)
+        inc hl
+        ld (VM_IP),hl           ; VM_IP -> content start (for now)
+        ld (VM_STR_LIT_LEN_TMP),a
+        ld a,(VM_STR_TEMP_NEXT)
+        ld (VM_STR_LIT_TEMPIDX_TMP),a
+        add a,STRTAB_MAX_VARS
+        call VM_STR_ADDR        ; HL -> dest record
+        ld a,(VM_STR_LIT_LEN_TMP)
+        ld (hl),a               ; write length byte
+        inc hl                  ; HL -> dest content
+        ld de,(VM_IP)           ; DE = source content pointer (in bytecode)
+        ld a,(VM_STR_LIT_LEN_TMP)
+        or a
+        jr z,.no_copy
+        ld b,a
+.copy_loop:
+        ld a,(de)
+        ld (hl),a
+        inc hl
+        inc de
+        djnz .copy_loop
+.no_copy:
+        ld hl,(VM_IP)
+        ld a,(VM_STR_LIT_LEN_TMP)
+        ld e,a
+        ld d,0
+        add hl,de               ; VM_IP advances past the content bytes
+        ld (VM_IP),hl
+        ld a,(VM_STR_LIT_TEMPIDX_TMP)
+        inc a
+        cp STRTAB_TEMP_COUNT
+        jr c,.no_wrap
+        xor a
+.no_wrap:
+        ld (VM_STR_TEMP_NEXT),a
+        ld a,(VM_STR_LIT_TEMPIDX_TMP)
+        add a,STRTAB_MAX_VARS
+        ld l,a
+        ld h,0
+        ld a,TAG_INT
+        call VM_PUSH
+        jp VM_RUN.loop
+
+OP_STORE_STR_VAR:
+        ld hl,(VM_IP)
+        ld a,(hl)               ; target string-var index
+        inc hl
+        ld (VM_IP),hl
+        ld (VM_STR_TARGET_TMP),a
+        call VM_POP             ; HL = source index, A = tag (ignored --
+                                 ; this opcode set is string-only end to
+                                 ; end for R5's scope)
+        ld a,l
+        call VM_STR_ADDR        ; HL -> source record
+        ld (VM_STR_SRC_ADDR_TMP),hl
+        ld a,(VM_STR_TARGET_TMP)
+        call VM_STR_ADDR        ; HL -> target record
+        ex de,hl                ; DE = target record address
+        ld hl,(VM_STR_SRC_ADDR_TMP)
+        call VM_STR_COPY        ; copies HL(src) -> DE(dst), 32 bytes
+        jp VM_RUN.loop
+
+OP_STR_CONCAT:
+        call VM_POP             ; HL = b's index
+        ld a,l
+        ld (VM_STR_CONCAT_B_TMP),a
+        call VM_POP             ; HL = a's index
+        ld a,l
+        call VM_STR_ADDR        ; HL -> a's record
+        ld (VM_STR_SRC_ADDR_TMP),hl
+        ld a,(VM_STR_TEMP_NEXT)
+        ld (VM_STR_LIT_TEMPIDX_TMP),a
+        add a,STRTAB_MAX_VARS
+        call VM_STR_ADDR        ; HL -> dest record
+        ld (VM_STR_DST_ADDR_TMP),hl
+        ld hl,(VM_STR_SRC_ADDR_TMP)
+        ld a,(hl)               ; a's length
+        ld c,a                  ; C = running combined length so far
+        inc hl                  ; HL -> a's content
+        ld de,(VM_STR_DST_ADDR_TMP)
+        inc de                  ; DE -> dest content (length byte written last)
+        ld b,a
+        or a
+        jr z,.a_copy_done
+.a_copy_loop:
+        ld a,(hl)
+        ld (de),a
+        inc hl
+        inc de
+        djnz .a_copy_loop
+.a_copy_done:
+        ld (VM_STR_RUNNING_DST_TMP),de  ; DE must not survive the next
+                                           ; call across a register —
+                                           ; VM_STR_ADDR uses DE as its own
+                                           ; scratch internally (see this
+                                           ; cell's own equ comment)
+        ld a,(VM_STR_CONCAT_B_TMP)
+        call VM_STR_ADDR        ; HL -> b's record
+        ld a,(hl)               ; b's length
+        inc hl                  ; HL -> b's content
+        ld de,(VM_STR_RUNNING_DST_TMP)  ; restore the real dest pointer
+        ld b,a
+        or a
+        jr z,.b_copy_done
+.b_copy_loop:
+        ld a,c
+        cp 31
+        jr nc,.b_copy_done      ; already at the 31-byte cap: stop, truncate
+        ld a,(hl)
+        ld (de),a
+        inc hl
+        inc de
+        inc c
+        djnz .b_copy_loop
+.b_copy_done:
+        ld hl,(VM_STR_DST_ADDR_TMP)
+        ld (hl),c               ; write the final combined length byte
+        ld a,(VM_STR_LIT_TEMPIDX_TMP)
+        inc a
+        cp STRTAB_TEMP_COUNT
+        jr c,.no_wrap
+        xor a
+.no_wrap:
+        ld (VM_STR_TEMP_NEXT),a
+        ld a,(VM_STR_LIT_TEMPIDX_TMP)
+        add a,STRTAB_MAX_VARS
+        ld l,a
+        ld h,0
+        ld a,TAG_INT
+        call VM_PUSH
+        jp VM_RUN.loop
+
+OP_STR_CMP_LT:
+        call VM_POP             ; HL = b's index
+        ld a,l
+        call VM_STR_ADDR        ; HL -> b's record
+        ld (VM_STR_RUNNING_DST_TMP),hl  ; NOT "ex de,hl" then rely on DE
+                                           ; surviving the next call — VM_POP
+                                           ; uses DE as its own scratch
+                                           ; internally too (same bug class,
+                                           ; different call site; see
+                                           ; OP_STR_CONCAT's own fix and this
+                                           ; cell's equ comment)
+        call VM_POP             ; HL = a's index
+        ld a,l
+        call VM_STR_ADDR        ; HL -> a's record
+        ld de,(VM_STR_RUNNING_DST_TMP)   ; DE = b's record address (restored)
+        call VM_STR_COMPARE     ; A = 0/1/$FF
+        ld hl,0
+        cp $FF
+        jr nz,.not_less
+        inc l
+.not_less:
+        ld a,TAG_INT
+        call VM_PUSH
+        jp VM_RUN.loop
+
+OP_STR_CMP_EQ:
+        call VM_POP             ; HL = b's index
+        ld a,l
+        call VM_STR_ADDR        ; HL -> b's record
+        ld (VM_STR_RUNNING_DST_TMP),hl  ; see OP_STR_CMP_LT's own comment
+        call VM_POP             ; HL = a's index
+        ld a,l
+        call VM_STR_ADDR        ; HL -> a's record
+        ld de,(VM_STR_RUNNING_DST_TMP)   ; DE = b's record address (restored)
+        call VM_STR_COMPARE     ; A = 0/1/$FF
+        ld hl,0
+        or a
+        jr nz,.not_equal
+        inc l
+.not_equal:
+        ld a,TAG_INT
+        call VM_PUSH
+        jp VM_RUN.loop
+
+; VM_STR_COMPARE — input: HL = a's record address, DE = b's record address.
+; Output: A = 0 if equal, 1 if a>b, $FF if a<b (matches MATH_COMPARE16's
+; own convention, for consistency). Lexicographic content comparison over
+; min(lenA,lenB) bytes; ties broken by length (the shorter string is
+; "less" when one is a prefix of the other, standard lexicographic order).
+VM_STR_COMPARE:
+        ld a,(hl)
+        ld (VM_STRCMP_LENA_TMP),a
+        push hl
+        ex de,hl
+        ld a,(hl)
+        ld (VM_STRCMP_LENB_TMP),a
+        pop hl
+        ld a,(VM_STRCMP_LENA_TMP)
+        ld b,a
+        ld a,(VM_STRCMP_LENB_TMP)
+        cp b
+        jr c,.b_smaller
+        ld a,b                  ; lenA <= lenB: minlen = lenA
+        jr .have_min
+.b_smaller:
+        ld a,(VM_STRCMP_LENB_TMP)  ; minlen = lenB
+.have_min:
+        ld (VM_STRCMP_MINLEN_TMP),a
+        inc hl                    ; HL -> a's content
+        inc de                    ; DE -> b's content
+        ld a,(VM_STRCMP_MINLEN_TMP)
+        or a
+        jr z,.tiebreak
+        ld b,a
+.cmp_loop:
+        ld a,(de)                 ; A = b's byte
+        cp (hl)                   ; compare against a's byte
+        jr z,.equal_byte
+        jr c,.a_greater           ; b_byte < a_byte -> a_byte > b_byte
+        ld a,$FF                  ; b_byte > a_byte -> a_byte < b_byte
+        ret
+.a_greater:
+        ld a,1
+        ret
+.equal_byte:
+        inc hl
+        inc de
+        djnz .cmp_loop
+.tiebreak:
+        ld a,(VM_STRCMP_LENA_TMP)
+        ld b,a
+        ld a,(VM_STRCMP_LENB_TMP)
+        cp b
+        jr z,.tie_equal
+        jr c,.tie_a_greater        ; lenB < lenA -> a has a longer, equal
+                                     ; prefix -> a is greater
+        ld a,$FF                   ; lenB > lenA -> a is a proper prefix of
+                                     ; b -> a is less
+        ret
+.tie_a_greater:
+        ld a,1
+        ret
+.tie_equal:
+        xor a
+        ret
 
 ; ---------------------------------------------------------------------------
 ; Error exits — each sets VM_ERROR_CODE and VM_HALTED, then returns to the

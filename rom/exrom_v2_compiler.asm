@@ -212,6 +212,29 @@ PROC_PARAM_INDEX_TMP: equ $8B31  ; COMPILE_PROC scratch (1 byte): the
                                    ; procedure's single parameter's symbol
                                    ; index, saved across the body compile
 
+; --- R5 addition: string variables. A SEPARATE compile-time name table
+; from CSYMTAB above — "A" (numeric) and "A$" (string) are different
+; identifiers with independent index spaces, matching the runtime VM's
+; own separate SYMTAB/STRTAB split (rom/exrom_v2_vm_core.asm). ---
+STRSYM_COUNT:        equ $8B32  ; number of distinct string symbols
+STRSYMTAB_BASE:      equ $8B60  ; compile-time string-symbol name table
+STRSYM_REC_LEN:      equ 9      ; [name_len:1][name:8], same shape as CSYMTAB
+STRSYMTAB_MAX_ENTRIES: equ 4    ; matches STRTAB_MAX_VARS in the VM core —
+                                  ; the compiler and the VM must agree on
+                                  ; this bound; it is not independently
+                                  ; enforced by either side against the
+                                  ; other, a documented coupling, not a gap
+STRSYM_FIND_NAME_PTR: equ $8B33 ; STRSYM_FIND_OR_CREATE scratch (2 bytes)
+STRSYM_FIND_NAME_LEN: equ $8B35 ; (1 byte)
+CSTR_LIT_LEN_TMP:    equ $8B36  ; COMPILE_STR_FACTOR scratch (1 byte): a
+                                  ; string literal's clamped length, saved
+                                  ; across the EMIT_BYTE_OP_PUSH_STR_LIT
+                                  ; call that would otherwise clobber A
+CSTR_IDENT_INDEX_TMP: equ $8B37 ; COMPILE_STR_FACTOR scratch (1 byte): a
+                                  ; string variable's resolved index, saved
+                                  ; across the EMIT_BYTE_OP_PUSH_I16 call
+CSTR_ASSIGN_TARGET_TMP: equ $8B38 ; COMPILE_STR_ASSIGN scratch (1 byte)
+
 ; every one of the scratch cells above is real RAM (not a register
 ; held across a call, not inline ROM data) — the two bug classes this
 ; module has already found and fixed once each (docs/v2/
@@ -248,6 +271,8 @@ TOK_LT:             equ 19   ; '<' — comparison operator (R3 addition)
 TOK_KW_PROC:        equ 20   ; R4 addition
 TOK_KW_ENDP:        equ 21
 TOK_KW_CALL:        equ 22
+TOK_STRING:         equ 23   ; a "quoted" string literal (R5 addition)
+TOK_STR_IDENT:      equ 24   ; a NAME$ string-variable identifier (R5)
 
 ; ---------------------------------------------------------------------------
 ; COMPILER_INIT — call once before COMPILE_PROGRAM.
@@ -258,11 +283,13 @@ COMPILER_INIT:
         ld (COMPILE_ERROR_CODE),a
         ld (LABEL_COUNT),a       ; R3 addition — an earlier version of this
         ld (FIXUP_COUNT),a       ; routine never zeroed these two, so a
-                                  ; second compile within the same ZEsarUX
-                                  ; session (RAM is NOT cleared by `reset`,
-                                  ; only CPU registers are) inherited
-                                  ; whatever LABEL_COUNT/FIXUP_COUNT a prior
-                                  ; run had left behind, producing
+        ld (STRSYM_COUNT),a      ; R5 addition — same bug, same fix,
+                                  ; found again: a second compile within
+                                  ; the same ZEsarUX session (RAM is NOT
+                                  ; cleared by `reset`, only CPU registers
+                                  ; are) inherited whatever LABEL_COUNT/
+                                  ; FIXUP_COUNT/STRSYM_COUNT a prior run had
+                                  ; left behind, producing
                                   ; duplicate-looking label-table entries
                                   ; and eventually a real "table full"
                                   ; error — caught by a real ZEsarUX run
@@ -310,16 +337,36 @@ LEX_NEXT_TOKEN:
         jr z,.single8
         cp '<'
         jr z,.single9
+        cp '"'
+        jr z,.string_lit
         cp '0'
         jr c,.ident_start
         cp '9'+1
         jr c,.number
+        jr .ident_start          ; letters and anything else above '9'
+                                   ; fall through here — an earlier version
+                                   ; had NO explicit jump here at all and
+                                   ; instead relied on `.ident_start:`
+                                   ; textually following these digit checks
+                                   ; (true before this R5 addition), but
+                                   ; inserting `.string_lit`'s own label
+                                   ; between the digit checks and
+                                   ; `.ident_start` silently redirected
+                                   ; every letter into the string-literal
+                                   ; scanner instead. Caught by a real
+                                   ; ZEsarUX run: the very first identifier
+                                   ; in the test program ("A$") was
+                                   ; misread as a string literal starting
+                                   ; mid-token. Fixed with an explicit jump
+                                   ; rather than relying on adjacency again.
 .ident_start:
         cp 'A'
         jr c,.unknown
         cp 'Z'+1
         jr nc,.unknown
         jp LEX_SCAN_IDENT
+.string_lit:
+        jp LEX_SCAN_STRING
 .eof:
         ld a,TOK_EOF
         ld (TOK_TYPE),a
@@ -421,12 +468,63 @@ LEX_SCAN_IDENT:
         ; boundaries — see that routine — never by the lexer guessing from
         ; character adjacency, which cannot distinguish "statement start"
         ; from "the middle of an expression" on its own.)
+        ;
+        ; R5 addition: a trailing '$' (no space, matching classic BASIC's
+        ; own NAME$ string-variable convention) makes this a TOK_STR_IDENT
+        ; instead of a plain TOK_IDENT — a distinct token type, not a flag
+        ; on the same one, so every existing dispatch site that only
+        ; expects TOK_IDENT is structurally unaffected by strings existing
+        ; at all. Keyword classification is skipped for string identifiers
+        ; (no keyword in this grammar ends in '$').
+        ld a,(hl)
+        cp '$'
+        jr nz,.plain_ident
+        inc hl
+        ld (SRC_PTR),hl
+        ld a,b
+        ld (TOK_LEN),a
+        ld a,TOK_STR_IDENT
+        ld (TOK_TYPE),a
+        ret
+.plain_ident:
         ld (SRC_PTR),hl
         ld a,b
         ld (TOK_LEN),a
         ld a,TOK_IDENT
         ld (TOK_TYPE),a
         call LEX_CLASSIFY_KEYWORD
+        ret
+
+; LEX_SCAN_STRING — a "quoted" string literal (R5 addition). No escape
+; sequences (a documented happy-path gap, matching this project's own
+; established scope discipline for every milestone so far). An
+; unterminated string (EOF before a closing '"') stops at EOF rather than
+; consuming past it — a real, deliberate bounds check, not an oversight.
+LEX_SCAN_STRING:
+        ld hl,(SRC_PTR)
+        inc hl                   ; skip the opening '"'
+        ld (TOK_NAME),hl
+        ld b,0
+.loop:
+        ld a,(hl)
+        cp '"'
+        jr z,.done
+        or a
+        jr z,.done               ; unterminated: stop at EOF, don't consume it
+        inc hl
+        inc b
+        jr .loop
+.done:
+        ld a,(hl)
+        cp '"'
+        jr nz,.no_skip           ; stopped at EOF, not a real closing quote
+        inc hl
+.no_skip:
+        ld (SRC_PTR),hl
+        ld a,b
+        ld (TOK_LEN),a
+        ld a,TOK_STRING
+        ld (TOK_TYPE),a
         ret
 
 ; LEX_CLASSIFY_KEYWORD — if TOK_NAME/TOK_LEN spell one of GOTO/IF/THEN/FOR/
@@ -612,6 +710,127 @@ CSYM_ENTRY_ADDR:
         add hl,de
         ret
 
+
+; ===========================================================================
+; COMPILE-TIME STRING SYMBOL TABLE (R5 addition) — identical shape and
+; register discipline to CSYM_FIND_OR_CREATE/CSYM_ENTRY_ADDR above, over a
+; separate name table (STRSYMTAB_BASE) and count (STRSYM_COUNT), since
+; string identifiers ("A$") are a distinct namespace from numeric ones
+; ("A") — reusing the proven register discipline directly rather than
+; re-deriving it, since that discipline is exactly what R2/R3's real bugs
+; were about getting right.
+; ===========================================================================
+
+; STRSYM_FIND_OR_CREATE — input: HL = name pointer, B = name length (1-8,
+; longer names are truncated to 8 by the caller before this is reached).
+; Output: A = symbol index (0-based). Sets COMPILE_ERROR_CODE=1 and returns
+; A=0 if the table is full and the name isn't already present.
+STRSYM_FIND_OR_CREATE:
+        ld (STRSYM_FIND_NAME_PTR),hl
+        ld a,b
+        ld (STRSYM_FIND_NAME_LEN),a
+        ld c,0                  ; C = index being checked
+.scan_loop:
+        ld a,c
+        push hl
+        ld hl,STRSYM_COUNT
+        cp (hl)
+        pop hl
+        jr z,.not_found          ; reached the count: no match exists
+        ; compare STRSYMTAB_BASE + c*9's stored name against (name_ptr,name_len)
+        push bc
+        call STRSYM_ENTRY_ADDR    ; input: C = index; output: HL = entry addr
+        ld a,(hl)                ; stored name_len
+        pop bc
+        cp b
+        jr nz,.next
+        ; lengths match; compare up to B bytes
+        push hl
+        inc hl                   ; -> stored name bytes
+        ld de,(STRSYM_FIND_NAME_PTR)
+        ld a,b
+        or a
+        jr nz,.have_len
+        pop hl                   ; zero-length name (shouldn't happen — the
+                                  ; lexer never produces one — but balance
+                                  ; the stack properly rather than relying
+                                  ; on "shouldn't happen": an earlier
+                                  ; version of this branch jumped to .match
+                                  ; without this pop, a latent stack-
+                                  ; imbalance bug caught by inspection before
+                                  ; it could ever corrupt a return address)
+        jr .match
+.have_len:
+        push bc
+.cmp_loop:
+        ld a,(de)
+        cp (hl)
+        jr nz,.cmp_fail
+        inc hl
+        inc de
+        dec b
+        jr nz,.cmp_loop
+        pop bc
+        pop hl
+        jr .match
+.cmp_fail:
+        pop bc
+        pop hl
+        jr .next
+.next:
+        inc c
+        jr .scan_loop
+.match:
+        ld a,c
+        ret
+.not_found:
+        ld a,(STRSYM_COUNT)
+        cp STRSYMTAB_MAX_ENTRIES
+        jr nz,.create
+        ld a,1
+        ld (COMPILE_ERROR_CODE),a
+        xor a
+        ret
+.create:
+        ld a,(STRSYM_COUNT)
+        ld c,a
+        call STRSYM_ENTRY_ADDR    ; HL = new entry's address
+        ld a,(STRSYM_FIND_NAME_LEN)
+        ld (hl),a
+        inc hl
+        ld de,(STRSYM_FIND_NAME_PTR)
+        ld b,a
+        or a
+        jr z,.create_done
+.copy_loop:
+        ld a,(de)
+        ld (hl),a
+        inc hl
+        inc de
+        dec b
+        jr nz,.copy_loop
+.create_done:
+        ld a,(STRSYM_COUNT)
+        inc a
+        ld (STRSYM_COUNT),a
+        ld a,c
+        ret
+
+
+; STRSYM_ENTRY_ADDR — input: C = index; output: HL = STRSYMTAB_BASE + index*9.
+STRSYM_ENTRY_ADDR:
+        ld l,c
+        ld h,0                  ; HL = index
+        ld d,h
+        ld e,l                  ; DE = index
+        add hl,hl               ; *2
+        add hl,hl               ; *4
+        add hl,hl               ; *8
+        add hl,de               ; *9
+        ld de,STRSYMTAB_BASE
+        add hl,de
+        ret
+
 ; ===========================================================================
 ; BYTECODE EMITTER
 ; ===========================================================================
@@ -639,6 +858,11 @@ EMIT_OP_CMP_LT:            ld a,10 : jp EMIT_BYTE
 EMIT_OP_CMP_EQ:            ld a,11 : jp EMIT_BYTE
 EMIT_OP_CALL:              ld a,15 : jp EMIT_BYTE
 EMIT_OP_RET:               ld a,16 : jp EMIT_BYTE
+EMIT_BYTE_OP_PUSH_STR_LIT: ld a,17 : jp EMIT_BYTE
+EMIT_OP_STORE_STR_VAR:     ld a,18 : jp EMIT_BYTE
+EMIT_OP_STR_CONCAT:        ld a,19 : jp EMIT_BYTE
+EMIT_OP_STR_CMP_LT:        ld a,20 : jp EMIT_BYTE
+EMIT_OP_STR_CMP_EQ:        ld a,21 : jp EMIT_BYTE
 
 ; EMIT_PLACEHOLDER_16 — writes two dummy zero bytes (a forward-reference
 ; branch target not yet known), returns the ABSOLUTE address of the first
@@ -827,6 +1051,126 @@ COMPILE_ASSIGN_CONTINUED:
         call COMPILE_EXPR
         call EMIT_BYTE_OP_STORE_VAR
         ld a,(ASSIGN_TARGET_INDEX)
+        call EMIT_BYTE
+        ret
+
+; ===========================================================================
+; STRING EXPRESSION/STATEMENT COMPILERS (R5 addition)
+;
+; str_expr   := str_factor ('+' str_factor)*      (concatenation chain —
+;               only '+' for strings, no '-'/'*'/'/'
+; str_factor := STRING | STR_IDENT
+;
+; A string "value" is always its STRTAB index, pushed as an ordinary
+; TAG_INT 2-byte value via the existing PUSH_I16 opcode — see
+; rom/exrom_v2_vm_core.asm's own R5 header note for why no new operand-
+; stack tag was needed for this.
+; ===========================================================================
+
+COMPILE_STR_EXPR:
+        call COMPILE_STR_FACTOR
+.loop:
+        ld a,(TOK_TYPE)
+        cp TOK_PLUS
+        jr nz,.done
+        call LEX_NEXT_TOKEN
+        call COMPILE_STR_FACTOR
+        call EMIT_OP_STR_CONCAT
+        jr .loop
+.done:
+        ret
+
+COMPILE_STR_FACTOR:
+        ld a,(TOK_TYPE)
+        cp TOK_STRING
+        jr z,.literal
+        cp TOK_STR_IDENT
+        jr z,.ident
+        ld a,3                   ; unexpected character (factor could not
+        ld (COMPILE_ERROR_CODE),a ; start a string expression)
+        ret
+.literal:
+        ld a,(TOK_LEN)
+        cp 32
+        jr c,.lit_len_ok
+        ld a,31                  ; clamp to the runtime record's real cap —
+                                   ; the VM's own OP_PUSH_STR_LIT assumes
+                                   ; this invariant already holds, per its
+                                   ; own header note
+.lit_len_ok:
+        ld (CSTR_LIT_LEN_TMP),a
+        call EMIT_BYTE_OP_PUSH_STR_LIT
+        ld a,(CSTR_LIT_LEN_TMP)
+        call EMIT_BYTE            ; the length byte
+        ld de,(TOK_NAME)          ; DE, not HL — EMIT_BYTE uses HL
+                                    ; internally as the EMIT_PTR pointer,
+                                    ; clobbering it; an earlier version kept
+                                    ; the source content pointer in HL
+                                    ; across the copy loop's own EMIT_BYTE
+                                    ; calls, so only the literal's first
+                                    ; byte ever made it into the bytecode
+                                    ; correctly — caught by a real ZEsarUX
+                                    ; run decoding the actual compiled
+                                    ; bytes (the sixth real register-
+                                    ; clobber-across-an-EMIT_BYTE-call bug
+                                    ; found this way across R2-R5; see
+                                    ; COMPILE_NUMBER_LITERAL's own use of DE
+                                    ; for the exact same reason, already
+                                    ; correct since R2 — this routine just
+                                    ; didn't follow that existing example)
+        ld a,(CSTR_LIT_LEN_TMP)
+        or a
+        jr z,.lit_no_content
+        ld b,a
+.lit_copy_loop:
+        ld a,(de)
+        call EMIT_BYTE
+        inc de
+        djnz .lit_copy_loop
+.lit_no_content:
+        call LEX_NEXT_TOKEN
+        ret
+.ident:
+        ld hl,(TOK_NAME)
+        ld a,(TOK_LEN)
+        cp 9
+        jr c,.len_ok
+        ld a,8
+.len_ok:
+        ld b,a
+        call STRSYM_FIND_OR_CREATE
+        ld (CSTR_IDENT_INDEX_TMP),a
+        call EMIT_BYTE_OP_PUSH_I16
+        ld a,(CSTR_IDENT_INDEX_TMP)
+        call EMIT_BYTE
+        xor a
+        call EMIT_BYTE            ; high byte: always 0, indices are small
+        call LEX_NEXT_TOKEN
+        ret
+
+; COMPILE_STR_ASSIGN — STR_IDENT '=' str_expr
+COMPILE_STR_ASSIGN:
+        ld hl,(TOK_NAME)
+        ld a,(TOK_LEN)
+        cp 9
+        jr c,.len_ok
+        ld a,8
+.len_ok:
+        ld b,a
+        call STRSYM_FIND_OR_CREATE
+        ld (CSTR_ASSIGN_TARGET_TMP),a
+        call LEX_NEXT_TOKEN       ; consume the string identifier
+        ld a,(TOK_TYPE)
+        cp TOK_ASSIGN
+        jr z,.have_assign
+        ld a,2
+        ld (COMPILE_ERROR_CODE),a
+        ret
+.have_assign:
+        call LEX_NEXT_TOKEN       ; consume '='
+        call COMPILE_STR_EXPR
+        call EMIT_OP_STORE_STR_VAR
+        ld a,(CSTR_ASSIGN_TARGET_TMP)
         call EMIT_BYTE
         ret
 
@@ -1152,9 +1496,40 @@ COMPILE_GOTO:
 ; compiled bytecode after a real ZEsarUX run (VM_ERROR_CODE=1, illegal
 ; opcode, from branching to a nonsense address once the loop's inverted
 ; exit condition ran long enough) — not by inspection.
+; COMPILE_IF's condition may be numeric (COMPILE_EXPR, unchanged) or a
+; string comparison (R5 addition) — detected by peeking whether the
+; condition's first token is a string-shaped factor (STRING or STR_IDENT);
+; BASIC expressions are always either all-numeric or all-string, never
+; mixed, so this one-token peek is sufficient and unambiguous.
 COMPILE_IF:
         call LEX_NEXT_TOKEN     ; consume IF
-        call COMPILE_EXPR       ; condition
+        ld a,(TOK_TYPE)
+        cp TOK_STRING
+        jr z,.str_condition
+        cp TOK_STR_IDENT
+        jr z,.str_condition
+        call COMPILE_EXPR       ; numeric condition (unchanged)
+        jr .condition_done
+.str_condition:
+        call COMPILE_STR_EXPR
+        ld a,(TOK_TYPE)
+        cp TOK_LT
+        jr z,.str_lt
+        cp TOK_ASSIGN
+        jr z,.str_eq
+        ld a,3                   ; unexpected character (expected a string
+        ld (COMPILE_ERROR_CODE),a ; comparison operator)
+        ret
+.str_lt:
+        call LEX_NEXT_TOKEN
+        call COMPILE_STR_EXPR
+        call EMIT_OP_STR_CMP_LT
+        jr .condition_done
+.str_eq:
+        call LEX_NEXT_TOKEN
+        call COMPILE_STR_EXPR
+        call EMIT_OP_STR_CMP_EQ
+.condition_done:
         call EMIT_OP_JMPZ
         call EMIT_PLACEHOLDER_16   ; HL = patch address for the "skip" target
         ld (IF_SKIP_PATCH_TMP),hl
@@ -1347,9 +1722,14 @@ COMPILE_STATEMENT_LIST:
         jr z,.call_stmt
         cp TOK_IDENT
         jr z,.ident_stmt
+        cp TOK_STR_IDENT
+        jr z,.str_ident_stmt
         jp .done                  ; anything else ends compilation cleanly
                                    ; in this scope (no error-recovery exists
                                    ; yet — a later milestone's job)
+.str_ident_stmt:
+        call COMPILE_STR_ASSIGN
+        jr .after_stmt
 .ident_stmt:
         ; genuine one-token lookahead: save this identifier's name, then
         ; fetch the NEXT token. If it's ':', this was a label definition —
