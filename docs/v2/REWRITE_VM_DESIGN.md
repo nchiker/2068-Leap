@@ -193,6 +193,23 @@ point to the full ~40-opcode set now projects **≈1,100-1,150 bytes** —
 still inside, and now more reliably confirming, the 900-1,100-byte range
 this document originally estimated from the sizing spike alone.
 
+## Update: R2 (compiler foundation) is complete — a real compiler now targets the real VM
+
+`docs/v2/ARCHITECTURE_B_IMPLEMENTATION_PLAN.md`'s R2 is done:
+`rom/exrom_v2_compiler.asm` (674 real assembled bytes) — a production
+lexer, a REAL compile-time symbol table with real name storage and
+comparison (not the sizing spike's stub), a real expression compiler, and
+an assignment-statement compiler — compiled `SCORE=3+4*2:TOTAL=SCORE+
+10:SCORE=SCORE+1` to real bytecode and executed it on R1's real VM,
+producing the exactly-correct result (`SCORE=12`, `TOTAL=21`) on real
+ZEsarUX hardware, including correctly resolving a repeated multi-character
+name to the same symbol index across three separate references. Two more
+real register-clobber bugs were found this way and fixed (see the
+implementation plan's R2 section) — this rewrite has now found and fixed
+four real bugs via hardware execution across Milestone 01/R1/R2, a
+concrete demonstration that "test on real hardware, not just by
+inspection" is pulling its weight, not a formality.
+
 ## Update: the statement-compiler spike has been built and measured
 
 See `STATEMENT_COMPILER_SPIKE.md` for the full result:

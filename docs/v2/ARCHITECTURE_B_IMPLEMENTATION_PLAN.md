@@ -188,6 +188,73 @@ expression + basic statement compiler, targeting this VM).**
 
 ### R2 — Compiler foundation
 
+**Status: COMPLETE, real-hardware-validated.** `rom/exrom_v2_compiler.asm`
+(674 real assembled bytes) implements a production-quality lexer, a REAL
+compile-time symbol table (`[name_len:1][name:8]` records, real byte-by-
+byte comparison — not the sizing spikes' increment-and-return stub), a
+real 4-operator expression compiler, and an assignment-statement compiler,
+targeting R1's real VM opcode set directly. `rom/test_v2_compiler_r2.asm`
+compiled the source text `SCORE=3+4*2:TOTAL=SCORE+10:SCORE=SCORE+1` (real
+multi-character identifiers, not single letters) to real bytecode and
+executed that bytecode on R1's real VM core — the full compile-then-
+execute round trip R2's own success gate requires. Real ZEsarUX result:
+**SCORE=12, TOTAL=21 — exactly correct**, confirming both the arithmetic
+(precedence: `4*2` before `+3`) and, critically, that re-referencing an
+already-declared multi-character name (`SCORE` used three times) resolves
+to the *same* symbol index every time rather than creating duplicates.
+
+**Two more real bugs found and fixed via ZEsarUX runs, not by inspection**
+(bringing this project's real-hardware-caught bug count for the V2 rewrite
+to four, across Milestone 01, R1, and R2):
+1. `COMPILE_ASSIGN` saved the assignment target's symbol index in register
+   `C` across the call to `COMPILE_EXPR` — but `COMPILE_EXPR` calls
+   `CSYM_FIND_OR_CREATE` for any identifier inside the expression (e.g.
+   the `SCORE` in `TOTAL=SCORE+10`), and that routine uses `C` as its own
+   scan-index scratch register, clobbering the saved target before
+   `STORE_VAR` could use it. First real run: `STORE_VAR` targeted the
+   wrong symbol slot entirely (`STORE_VAR 2` instead of `STORE_VAR 0`).
+   Fixed by moving the saved index to a dedicated memory cell
+   (`ASSIGN_TARGET_INDEX`) instead of a register.
+2. `COMPILE_IDENT_LOAD` called `CSYM_FIND_OR_CREATE` (index returned in
+   `A`), then called `EMIT_BYTE_OP_LOAD_VAR` — which does `ld a,3` to load
+   the opcode value before emitting it — clobbering the real index before
+   it could be emitted as the operand. Every `LOAD_VAR` silently emitted
+   the opcode number as its own bogus operand instead of the real symbol
+   index. Second real run (after fixing bug 1): `STORE_VAR` targets were
+   now correct, but every identifier *reference* inside an expression
+   resolved to the same wrong constant. Root-caused by decoding the actual
+   compiled bytecode byte-by-byte via `ts2068-debug mem`, not by re-reading
+   the source. Fixed the same way — save to a dedicated memory cell
+   (`IDENT_LOAD_INDEX`) before the emit call, reload after.
+- Both bugs are the same underlying class: a value needed after a call to
+  one of the `EMIT_BYTE_OP_*` helpers (which load a fixed opcode number
+  into `A` or use registers as scratch) must be saved to memory first, not
+  left in a register — now documented at both fix sites and worth keeping
+  in mind for R3's larger statement compiler.
+- A third, latent (never actually triggered) stack-imbalance bug was
+  caught by inspection before assembling: a zero-length-name guard inside
+  `CSYM_FIND_OR_CREATE` jumped to its `.match` exit without popping a
+  value pushed just before it. Real identifiers are never zero-length (the
+  lexer guarantees at least one letter), so this never fired in practice,
+  but it was fixed anyway rather than left as a latent hazard.
+- ROM cost: 674 bytes (lexer 229, real symbol table 127, emitter 53,
+  expression compiler 147, assignment-statement compiler 51, program
+  driver + init 46, roughly) — within `REWRITE_VM_DESIGN.md`'s expression-
+  compiler-plus-statement-compiler estimates, on the low end because R2's
+  scope (assignment only) is narrower than the full statement set those
+  estimates costed.
+- Shipping ROM confirmed unaffected (`make budget`: unchanged 554/109
+  free; no file under `rom/`, `basic/`, `kernel/`, `include/` modified
+  except the two new, unwired files this stage added).
+
+**R2 is done. Next: R3 (program execution — extend the compiler to
+`IF`/`GOTO`/`FOR`/`NEXT` and full variable handling, using R1's VM opcodes
+that already support this — `JMPZ`, `FOR_INIT`, `FOR_NEXT` — but which R2's
+compiler doesn't yet target).**
+
+<details>
+<summary>Original R2 plan (superseded by the COMPLETE status above; kept for the record)</summary>
+
 - **Objective**: tokenizer/lexer + expression compiler + a minimal
   statement compiler (assignment only) producing real bytecode for R1's
   VM, callable standalone (not yet wired into `RUN`).
@@ -214,6 +281,8 @@ expression + basic statement compiler, targeting this VM).**
 - **Success gate**: compile-then-execute round-trip correct for
   arithmetic + assignment; V1 fully unaffected (still not wired in).
 - **Rollback**: delete the new file(s).
+
+</details>
 
 ### R3 — Program execution (branches, loops, variables)
 
