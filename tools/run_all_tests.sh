@@ -51,7 +51,7 @@ EXPECTED_RED="mem2"
 # clear the breakpoint before its second run(), or execution that
 # legitimately revisits INJECT_POINT's address re-triggers it and runs
 # nothing further (tools/debug_suite_run.py now does this).
-EXPECTED_BLACK="ayreg_unloaded ayreg_new_clear out_unloaded out_new_clear extension_unloaded extension_new_clear block_unloaded block_new_clear frame_unloaded frame_new_clear invert_unloaded invert_new_clear print_str_semicolon hit_unloaded hit_new_clear"
+EXPECTED_BLACK="ayreg_unloaded ayreg_new_clear out_unloaded out_new_clear extension_unloaded extension_new_clear block_unloaded block_new_clear frame_unloaded frame_new_clear invert_unloaded invert_new_clear print_str_semicolon hit_unloaded hit_new_clear circle_unloaded circle_new_clear fill_unloaded fill_new_clear"
 
 is_expected_cyan() {
     local name="$1"
@@ -77,7 +77,7 @@ is_expected_black() {
     return 1
 }
 
-make cplot-extension block-extension frame-extension invert-extension ayreg-extension out-extension sprite-extension >/tmp/build_extensions.log 2>&1 || exit 1
+make cplot-extension block-extension frame-extension invert-extension ayreg-extension out-extension sprite-extension shapes-extension >/tmp/build_extensions.log 2>&1 || exit 1
 
 pass=0
 fail=0
@@ -91,6 +91,7 @@ for f in tests/*.txt; do
     env_args=()
     case "$name" in
         gfx6) env_args=(RAM_EXTENSION_BIN=build/extensions/cplot_test.bin) ;;
+        gfx4|gfx5) env_args=(RAM_EXTENSION_BIN=build/extensions/shapes_test.bin) ;;
         ayreg|ayreg_bad_register|ayreg_bad_value)
             env_args=(RAM_EXTENSION_BIN=build/extensions/ayreg_test.bin) ;;
         ayreg_new_clear)
@@ -119,6 +120,8 @@ for f in tests/*.txt; do
             env_args=(RAM_EXTENSION_BIN=build/extensions/sprite_test.bin) ;;
         hit_new_clear)
             env_args=(RAM_EXTENSION_BIN=build/extensions/sprite_clear_test.bin RAM_EXTENSION_CLEAR=1) ;;
+        circle_new_clear|fill_new_clear)
+            env_args=(RAM_EXTENSION_BIN=build/extensions/shapes_clear_test.bin RAM_EXTENSION_CLEAR=1) ;;
         run_state)
             env_args=(RUN_STATE_TEST=1) ;;
     esac

@@ -1,4 +1,4 @@
-.PHONY: all build check smoke-build test budget audit-basic manual clean cplot-extension block-extension frame-extension invert-extension ayreg-extension out-extension sprite-extension release-assets
+.PHONY: all build check smoke-build test budget audit-basic manual clean cplot-extension block-extension frame-extension invert-extension ayreg-extension out-extension sprite-extension shapes-extension release-assets
 
 all: check build
 
@@ -115,7 +115,16 @@ sprite-extension: build
 	tools/sjasmplus_strict.sh rom/test_extension_clear_inject.asm --sym=rom/test_extension_clear_inject.sym
 	tools/sjasmplus_strict.sh rom/extensions/sprite_clear_test.asm
 
-release-assets: build cplot-extension block-extension frame-extension invert-extension ayreg-extension out-extension sprite-extension manual
+shapes-extension: build
+	mkdir -p build/extensions
+	tools/sjasmplus_strict.sh rom/extensions/shapes.asm
+	python3 tools/make_extension_tzx.py build/extensions/shapes.tzx SHAPES build/extensions/shapes.bin
+	tools/sjasmplus_strict.sh rom/test_extension_inject.asm --sym=rom/test_extension_inject.sym
+	tools/sjasmplus_strict.sh rom/extensions/shapes_test.asm
+	tools/sjasmplus_strict.sh rom/test_extension_clear_inject.asm --sym=rom/test_extension_clear_inject.sym
+	tools/sjasmplus_strict.sh rom/extensions/shapes_clear_test.asm
+
+release-assets: build cplot-extension block-extension frame-extension invert-extension ayreg-extension out-extension sprite-extension shapes-extension manual
 	mkdir -p build/release/roms build/release/extensions build/release/docs build/release/demos build/release/patches
 	cp build/test_basic.bin build/exrom.bin build/exrom.dck build/ts2068rom_zesarux.bin build/release/roms/
 	cp build/extensions/cplot.tzx build/extensions/block.tzx build/extensions/frame.tzx build/extensions/invert.tzx build/extensions/ayreg.tzx build/extensions/out.tzx build/extensions/sprite.tzx build/release/extensions/

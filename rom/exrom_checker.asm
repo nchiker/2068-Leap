@@ -962,11 +962,30 @@ BASIC_CHECK_STATEMENT_CONTENT:
     jr   nz, .no_extension
     ld   de, (EXTENSION_NAME_PTR)
     call KTAB_BASIC_MATCH_KEYWORD_BOUNDARY
+    jr   nc, .extension_matched
+    ld   a, (EXTENSION_SLOT_COUNT)
+    cp   2
+    jr   c, .no_extension              ; slot 1 only populated if count>=2
+    ld   de, (EXTENSION_NAME_PTR1)
+    call KTAB_BASIC_MATCH_KEYWORD_BOUNDARY
     jr   c, .no_extension
+    ld   a, (EXTENSION_GRAMMAR1)
+    jp   .extension_dispatch
+.extension_matched:
     ld   a, (EXTENSION_GRAMMAR)
+.extension_dispatch:
     or   a
-    jp   nz, .check_line
-    jp   .check_at
+    jp   z, .check_at
+    cp   3
+    jp   z, .check_circle              ; grammar 3 -- CIRCLE's own x,y,r
+                                       ; shape, reusing the checker
+                                       ; routine CIRCLE's own resident
+                                       ; dispatch used before this
+                                       ; conversion (identical grammar,
+                                       ; kept alive here instead of
+                                       ; being deleted with the rest of
+                                       ; CIRCLE's resident dispatch)
+    jp   .check_line
 .no_extension:
     call BASIC_CHECK_STR_ASSIGNMENT
     jp   nc, .ok                          ; string assignment handled
@@ -1537,8 +1556,12 @@ CHECK_STATEMENT_DISPATCH_TABLE:
     DW KW_TAB, BASIC_CHECK_STATEMENT_CONTENT.check_attr_expr
     DW KW_PLOT, BASIC_CHECK_STATEMENT_CONTENT.check_at
     DW KW_LINE, BASIC_CHECK_STATEMENT_CONTENT.check_line
-    DW KW_CIRCLE, BASIC_CHECK_STATEMENT_CONTENT.check_circle
-    DW KW_FILL, BASIC_CHECK_STATEMENT_CONTENT.check_at
+    ; KW_CIRCLE/KW_FILL removed 2026-09-19 (Phase 0 P0.4): both are now
+    ; loadable RAM extension statements (rom/extensions/shapes.asm),
+    ; not fixed resident keywords -- they fall through to
+    ; .try_assignments' own extension-registry check instead (grammar
+    ; 3 and 0 respectively; .check_circle itself is kept alive, reused
+    ; by grammar 3 -- see .try_assignments' own dispatch above).
     DW KW_BEEP, BASIC_CHECK_STATEMENT_CONTENT.check_at
     DW KW_SOUND, BASIC_CHECK_STATEMENT_CONTENT.check_at
     DW KW_DIM, BASIC_CHECK_STATEMENT_CONTENT.check_dim

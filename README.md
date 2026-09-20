@@ -144,7 +144,7 @@ extensions, is in [`docs/emulator_setup.md`](docs/emulator_setup.md).
 
 **Release 1 Beta candidate.** The integrated ROM provides a full-screen
 editor, structured BASIC, graphics, sound, EXROM banking, and TS2068-framed
-SAVE/LOAD. `make test` runs the 98-fixture integrated language suite under
+SAVE/LOAD. `make test` runs the 102-fixture integrated language suite under
 Fuse on every build. See
 [`docs/whats_new_release_1_beta.md`](docs/whats_new_release_1_beta.md) for
 what's changed since Public Preview 1, or
@@ -192,7 +192,7 @@ or a compatible newer release.
 ```sh
 make check    # build + static checks + smoke ROMs
 make budget   # report exact Home ROM / EXROM / RAM margins
-make test     # full 98-fixture regression suite (ts2068-debug/ZEsarUX)
+make test     # full 102-fixture regression suite (ts2068-debug/ZEsarUX)
 ```
 
 The production images are written to `build/test_basic.bin` (Home ROM),

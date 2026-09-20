@@ -110,17 +110,9 @@
                                  ; (sysvars.inc; caller normalizes
                                  ; corner order first) — fills a
                                  ; rectangle
-    EXTERN GFX_CIRCLE           ; no register args — reads GFX_CIRCLE_
-                                 ; XC/YC/R/ATTR/OVER (sysvars.inc) —
-                                 ; draws a circle outline (midpoint
-                                 ; circle algorithm)
-    EXTERN GFX_FILL             ; no register args — reads GFX_FILL_X/
-                                 ; Y/ATTR (sysvars.inc) — 4-connected
-                                 ; flood fill from that seed point,
-                                 ; using an explicit bounded stack
-                                 ; (GFX_FILL_STACK, 2048 entries — see
-                                 ; that sysvar's own comment for why
-                                 ; that size and how it was measured)
+    ; EXTERN GFX_CIRCLE / GFX_FILL removed 2026-09-19 (Phase 0 P0.4):
+    ; both moved to a loadable RAM extension (rom/extensions/
+    ; shapes.asm) and no longer exist as Home-resident symbols.
     EXTERN GFX_SET_MODE         ; A = mode (0 = Normal, 1 = High
                                  ; Resolution Graphics) — MODE's
                                  ; mechanism; real port $FF write via

@@ -13,14 +13,16 @@ ZERO_SAMPLES = 11
 ONE_SAMPLES = 22
 SILENCE_SAMPLES = 1200
 PILOT_PULSES = 3200
-MODULE_WINDOW_MAX = 512   # EXTENSION_MODULE_LIMIT - EXTENSION_MODULE_BASE
-                          # ($F600-$F400) -- keep in sync with include/
-                          # sysvars.inc. This is an upper BOUND on any one
-                          # module, not a fixed pad-to size (2026-09-19):
-                          # each module's own actual size is what goes on
-                          # tape, so a small extension (CPLOT, ~132 bytes)
-                          # doesn't pay to transfer 512 bytes of padding
-                          # just because the window allows a bigger one.
+MODULE_WINDOW_MAX = 1024  # EXTENSION_MODULE_LIMIT - EXTENSION_MODULE_BASE
+                          # ($F800-$F400), enlarged 2026-09-19 for the
+                          # combined CIRCLE+FILL module -- keep in sync
+                          # with include/sysvars.inc. This is an upper
+                          # BOUND on any one module, not a fixed pad-to
+                          # size: each module's own actual size is what
+                          # goes on tape, so a small extension (CPLOT,
+                          # ~132 bytes) doesn't pay to transfer 1024
+                          # bytes of padding just because the window
+                          # allows a bigger one.
 
 
 def framed(flag: int, payload: bytes) -> bytes:

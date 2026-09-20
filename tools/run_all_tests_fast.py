@@ -58,10 +58,13 @@ EXPECTED_BLACK = {
     "block_new_clear", "frame_unloaded", "frame_new_clear",
     "invert_unloaded", "invert_new_clear", "print_str_semicolon",
     "hit_unloaded", "hit_new_clear",
+    "circle_unloaded", "circle_new_clear", "fill_unloaded", "fill_new_clear",
 }
 
 RAM_EXTENSION_BIN = {
     "gfx6": "build/extensions/cplot_test.bin",
+    "gfx4": "build/extensions/shapes_test.bin",
+    "gfx5": "build/extensions/shapes_test.bin",
     "ayreg": "build/extensions/ayreg_test.bin",
     "ayreg_bad_register": "build/extensions/ayreg_test.bin",
     "ayreg_bad_value": "build/extensions/ayreg_test.bin",
@@ -80,11 +83,13 @@ RAM_EXTENSION_BIN = {
     "extension_new_clear": "build/extensions/cplot_clear_test.bin",
     "hit": "build/extensions/sprite_test.bin",
     "hit_new_clear": "build/extensions/sprite_clear_test.bin",
+    "circle_new_clear": "build/extensions/shapes_clear_test.bin",
+    "fill_new_clear": "build/extensions/shapes_clear_test.bin",
 }
 RAM_EXTENSION_CLEAR = {
     "ayreg_new_clear", "out_new_clear", "block_new_clear",
     "frame_new_clear", "invert_new_clear", "extension_new_clear",
-    "hit_new_clear",
+    "hit_new_clear", "circle_new_clear", "fill_new_clear",
 }
 RAM_EXTENSION_SEED_CACHE = {"extension_register"}
 RUN_STATE_TEST = {"run_state"}
@@ -206,7 +211,7 @@ def main():
     subprocess.run(
         ["make", "cplot-extension", "block-extension", "frame-extension",
          "invert-extension", "ayreg-extension", "out-extension",
-         "sprite-extension"],
+         "sprite-extension", "shapes-extension"],
         cwd=REPO_ROOT, check=True, capture_output=True,
     )
 

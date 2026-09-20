@@ -7487,50 +7487,11 @@ BASIC_STMT_SOUND:
                                          ; error already recorded
     ret
 
-; ============================================================================
-; BASIC_STMT_FILL
-; Parses FILL <x-expr>,<y-expr> and flood-fills the connected region
-; from that seed point via GFX_FILL. x follows PLOT's own rule (full
-; byte range, no separate clamp — it's already the natural width); y
-; clamps to 0-191 same as everywhere else. Not yet mode-2-aware — see
-; GFX_FILL's own header; same open gap CPLOT already has, not a new
-; inconsistency.
-; In:  HL = pointer just past the FILL keyword
-; Out: none; carry set on a malformed expression or missing comma
-; Destroys: AF, BC, DE, HL
-; ============================================================================
-BASIC_STMT_FILL:
-    call BASIC_EVAL_EXPR              ; DE = x
-    jp   c, BASIC_RAISE_SYNTAX_ERROR
-    ld   a, e
-    ld   (GFX_FILL_X), a              ; x is safely in memory now — no
-                                      ; register value needs to survive
-                                      ; past this point, so (unlike an
-                                      ; earlier draft of this routine)
-                                      ; there is deliberately no push/
-                                      ; pop de here. A stray pop right
-                                      ; before storing y clobbered the
-                                      ; just-computed y with this stale
-                                      ; x value — found via a real
-                                      ; hardware bug (FILL's seed
-                                      ; landing at y=x instead of its
-                                      ; own y-expression) before this
-                                      ; fix.
-    call BASIC_EXPECT_COMMA_EXPR      ; DE = y (or carry set, error
-                                      ; already recorded)
-    ret  c
-    call BASIC_EXPECT_STATEMENT_END    ; BASIC_EXPECT_STATEMENT_END fix
-    ret  c                             ; error already recorded
-    ld   a, e
-    call BASIC_CLAMP_Y191
-    ld   (GFX_FILL_Y), a
-
-    call BASIC_COMPUTE_PRINT_ATTR
-    ld   (GFX_FILL_ATTR), a
-
-    call GFX_FILL
-    or   a
-    ret
+; BASIC_STMT_FILL removed 2026-09-19 (Phase 0 P0.4): FILL is now a
+; loadable RAM extension statement (rom/extensions/shapes.asm's own
+; SHAPES_FILL_EXEC, a self-contained port of GFX_FILL and its private
+; helpers -- see that file's header). Dispatched through
+; BASIC_TRY_EXTENSION's grammar 0 path, same shape FILL already used.
 
 ; ============================================================================
 ; BASIC_STMT_LINE
@@ -7596,50 +7557,11 @@ BASIC_PARSE_LINE_ARGS:
     ret
 
 
-; ============================================================================
-; BASIC_STMT_CIRCLE
-; Parses CIRCLE <x-expr>,<y-expr>,<r-expr> and draws the outline via
-; GFX_CIRCLE. x/y follow PLOT's own range rules (x: full byte range,
-; no clamp; y: clamped to 0-191). r takes the same "low byte of the
-; evaluated expression, whatever it is" convention x already uses —
-; deliberately not given different handling than PLOT/LINE's own
-; established x-coordinate behavior; a circle whose radius pushes it
-; past the screen edge is simply clipped there by GFX_PLOT_CLIPPED,
-; the same way any circle already extending past the edge would be.
-; In:  HL = pointer just past the CIRCLE keyword
-; Out: none; carry set on a malformed expression or missing comma
-; Destroys: AF, BC, DE, HL
-; ============================================================================
-BASIC_STMT_CIRCLE:
-    call BASIC_EVAL_EXPR
-    jp   c, BASIC_RAISE_SYNTAX_ERROR
-    ld   a, e
-    ld   (GFX_CIRCLE_XC), a
-
-    call BASIC_EXPECT_COMMA_EXPR      ; DE = y (or carry set, error
-                                      ; already recorded)
-    ret  c
-    ld   a, e
-    call BASIC_CLAMP_Y191
-    ld   (GFX_CIRCLE_YC), a
-
-    call BASIC_EXPECT_COMMA_EXPR      ; DE = r (or carry set, error
-                                      ; already recorded)
-    ret  c
-    ld   a, e
-    ld   (GFX_CIRCLE_R), a
-
-    call BASIC_EXPECT_STATEMENT_END    ; BASIC_EXPECT_STATEMENT_END fix
-    ret  c                             ; error already recorded
-
-    call BASIC_COMPUTE_PRINT_ATTR
-    ld   (GFX_CIRCLE_ATTR), a
-    ld   a, (CURRENT_OVER)
-    ld   (GFX_CIRCLE_OVER), a
-
-    call GFX_CIRCLE
-    or   a
-    ret
+; BASIC_STMT_CIRCLE removed 2026-09-19 (Phase 0 P0.4): CIRCLE is now a
+; loadable RAM extension statement (rom/extensions/shapes.asm's own
+; SHAPES_CIRCLE_EXEC, a self-contained port of GFX_CIRCLE and its
+; private helpers -- see that file's header). Dispatched through
+; BASIC_TRY_EXTENSION's new grammar 3 path (x,y,r).
 
 ; ============================================================================
 ; BASIC_STMT_INPUT
@@ -10141,11 +10063,13 @@ BASIC_TRY_EXTENSION:
     ret  nz
     ld   de, (EXTENSION_NAME_PTR)
     call BASIC_MATCH_KEYWORD_BOUNDARY
-    ret  c
+    jr   c, .try_slot1
     ld   a, (EXTENSION_GRAMMAR)
     or   a
     jr   z, .grammar_zero
-    call BASIC_STMT_EXTENSION_LINE
+    cp   3
+    jr   z, .grammar_three
+    call BASIC_STMT_EXTENSION_LINE    ; grammar 1 (LINE-shaped)
     jr   .matched                     ; callbacks may destroy B (the pixel
                                       ; service does); publish the match here
                                       ; instead of treating B=0 as no keyword
@@ -10163,7 +10087,115 @@ BASIC_TRY_EXTENSION:
     jr   .matched
 .drop_first:
     pop  de
+    jr   .matched
+.grammar_three:
+    ; CIRCLE's own x,y,r shape (2026-09-19) -- see EXTENSION_SLOT_COUNT's
+    ; own sysvars.inc header for why this grammar exists. r's low byte
+    ; goes to the generic EXTENSION_ARG0 scratch byte since only BC/DE
+    ; are available for the callback's own two register-passed values.
+    call BASIC_EVAL_EXPR              ; DE = x
+    jr   c, .matched
+    push de
+    call BASIC_EXPECT_COMMA_EXPR      ; DE = y
+    jr   c, .drop_two
+    push de
+    call BASIC_EXPECT_COMMA_EXPR      ; DE = r
+    jr   c, .drop_three
+    ld   a, e
+    ld   (EXTENSION_ARG0), a
+    call BASIC_EXPECT_STATEMENT_END
+    jr   c, .drop_three
+    pop  hl                           ; y
+    pop  bc                           ; x
+    ex   de, hl                       ; BC = x, DE = y
+    ld   hl, (EXTENSION_EXEC_PTR)
+    call BASIC_CALL_USR
+    jr   .matched
+.drop_three:
+    pop  de                           ; discard y
+.drop_two:
+    pop  de                           ; discard x
+    jr   .matched
+.try_slot1:
+    ld   a, (EXTENSION_SLOT_COUNT)
+    cp   2
+    ret  c                            ; slot 1 only populated if count>=2
+    ld   ix, EXTENSION_NAME_PTR1
+    call BASIC_TRY_EXTENSION_SLOT
+    ret
 .matched:
+    push af
+    ld   b, 1
+    pop  af
+    ret
+
+; Second-slot counterpart to BASIC_TRY_EXTENSION's own inline slot-0
+; dispatch above -- same grammar 0/1/3 handling, just IX-relative (slot
+; 1's own contiguous name_ptr:2/exec_ptr:2/grammar:1 layout) instead of
+; slot 0's separate, pre-existing fixed addresses. Not unified into one
+; shared routine for both slots: slot 0's addresses predate this second
+; slot and aren't laid out the same contiguous way (kept that way
+; deliberately -- renumbering EXTENSION_NAME_PTR/EXEC_PTR/GRAMMAR is a
+; needless, real-tape-compatibility-relevant change for a HOME-byte
+; saving this milestone's own budget (freeing ~643 bytes from removing
+; GFX_FILL/GFX_CIRCLE's own resident bodies) doesn't need).
+; In: HL = statement text, IX = slot base address (name_ptr), B = 0.
+; Out: B unchanged (0) if this slot's keyword didn't match (HL
+;      preserved, caller has no further slot to try); B=1 if matched,
+;      with carry as the real callback/parse left it.
+BASIC_TRY_EXTENSION_SLOT:
+    ld   e, (ix+0)
+    ld   d, (ix+1)
+    call BASIC_MATCH_KEYWORD_BOUNDARY
+    ret  c                             ; B still 0 -- no match
+    ld   a, (ix+4)
+    or   a
+    jr   z, .slot_grammar_zero
+    cp   3
+    jr   z, .slot_grammar_three
+    call BASIC_STMT_EXTENSION_LINE
+    jr   .slot_matched
+.slot_grammar_zero:
+    call BASIC_EVAL_EXPR
+    jr   c, .slot_matched
+    push de
+    call BASIC_EXPECT_COMMA_EXPR
+    jr   c, .slot_drop_one
+    call BASIC_EXPECT_STATEMENT_END
+    jr   c, .slot_drop_one
+    pop  bc
+    ld   l, (ix+2)
+    ld   h, (ix+3)
+    call BASIC_CALL_USR
+    jr   .slot_matched
+.slot_drop_one:
+    pop  de
+    jr   .slot_matched
+.slot_grammar_three:
+    call BASIC_EVAL_EXPR
+    jr   c, .slot_matched
+    push de
+    call BASIC_EXPECT_COMMA_EXPR
+    jr   c, .slot_drop_two
+    push de
+    call BASIC_EXPECT_COMMA_EXPR
+    jr   c, .slot_drop_three
+    ld   a, e
+    ld   (EXTENSION_ARG0), a
+    call BASIC_EXPECT_STATEMENT_END
+    jr   c, .slot_drop_three
+    pop  hl
+    pop  bc
+    ex   de, hl
+    ld   l, (ix+2)
+    ld   h, (ix+3)
+    call BASIC_CALL_USR
+    jr   .slot_matched
+.slot_drop_three:
+    pop  de
+.slot_drop_two:
+    pop  de
+.slot_matched:
     push af
     ld   b, 1
     pop  af
@@ -10187,22 +10219,51 @@ BASIC_TRY_EXTENSION:
 ;     FUNCTION's own header for why a general arity field was tried and
 ;     reverted (real HOME-budget pressure).
 ; Out: carry set if either pointer is outside the module window.
+; In: HL=name, DE=execute callback, C=grammar (0=expr,expr; 1=LINE-
+;     shaped; 2=register a FUNCTION instead of a statement (always
+;     2-argument); 3=expr,expr,expr -- CIRCLE's own x,y,r shape, added
+;     2026-09-19 for the combined CIRCLE+FILL extension, see
+;     EXTENSION_SLOT_COUNT's own header in sysvars.inc). Statement
+;     registrations (grammar 0/1/3) auto-assign the next free slot via
+;     EXTENSION_SLOT_COUNT (0, then 1) instead of always writing slot
+;     0 -- every existing single-keyword extension's one registration
+;     call still lands on slot 0, unchanged. Up to 2 statement keywords
+;     and 1 function may be registered per loaded module.
+; Out: carry set if either pointer is outside the module window, or a
+;      3rd statement keyword is attempted (both slots full).
 BASIC_EXTENSION_REGISTER:
     ld   a, h
-    and  $FE
+    and  $FC
     cp   HIGH EXTENSION_MODULE_BASE
     jr   nz, .register_fail
     ld   a, d
-    and  $FE
+    and  $FC
     cp   HIGH EXTENSION_MODULE_BASE
     jr   nz, .register_fail
     ld   a, c
     cp   2
     jr   z, .register_function
+    ld   a, (EXTENSION_SLOT_COUNT)
+    or   a
+    jr   z, .slot0
+    cp   1
+    jr   z, .slot1
+    jr   .register_fail               ; already have 2 statement keywords
+.slot0:
     ld   (EXTENSION_NAME_PTR), hl
     ld   (EXTENSION_EXEC_PTR), de
-    ld   (EXTENSION_GRAMMAR), a          ; A still == C (cp doesn't
-                                         ; touch it) -- no reload needed
+    ld   a, c
+    ld   (EXTENSION_GRAMMAR), a
+    jr   .bump_count
+.slot1:
+    ld   (EXTENSION_NAME_PTR1), hl
+    ld   (EXTENSION_EXEC_PTR1), de
+    ld   a, c
+    ld   (EXTENSION_GRAMMAR1), a
+.bump_count:
+    ld   a, (EXTENSION_SLOT_COUNT)
+    inc  a
+    ld   (EXTENSION_SLOT_COUNT), a
     jr   .publish
 .register_function:
     ld   (EXTENSION_FUNC_NAME_PTR), hl
@@ -10264,8 +10325,9 @@ BASIC_EXEC_DISPATCH_TABLE:
     DW KW_TAB, BASIC_STMT_TAB
     DW KW_PLOT, BASIC_STMT_PLOT
     DW KW_LINE, BASIC_STMT_LINE
-    DW KW_CIRCLE, BASIC_STMT_CIRCLE
-    DW KW_FILL, BASIC_STMT_FILL
+    ; KW_CIRCLE/KW_FILL removed 2026-09-19 (Phase 0 P0.4): both are now
+    ; loadable RAM extension statements (rom/extensions/shapes.asm) --
+    ; see BASIC_TRY_EXTENSION's own grammar 0/3 handling instead.
     DW KW_BEEP, BASIC_STMT_BEEP
     DW KW_SOUND, BASIC_STMT_SOUND
     DW KW_DIM, BASIC_STMT_DIM
@@ -11662,7 +11724,12 @@ KEYWORD_HILITE_TABLE:
     DW   KW_CLS, KW_REM, KW_BORDER
     DW   KW_INK, KW_PAPER, KW_FLASH, KW_BRIGHT, KW_INVERSE, KW_OVER
     DW   KW_AT, KW_TAB
-    DW   KW_PLOT, KW_LINE, KW_CIRCLE, KW_FILL, KW_MODE
+    DW   KW_PLOT, KW_LINE, KW_MODE
+    ; KW_CIRCLE/KW_FILL removed 2026-09-19 (Phase 0 P0.4) -- both are now
+    ; loadable extension keywords, and no loadable extension keyword
+    ; (KW_AYREG, KW_CPLOT, etc.) has ever been in this fixed static
+    ; table; the editor's highlight scan simply doesn't know about
+    ; whatever a dynamically loaded module registers.
     DW   KW_ULAPLUS, KW_PALETTE
     DW   KW_POKE, KW_PAUSE, KW_RANDOMISE
     DW   KW_GOSUB, KW_RETURN, KW_CALL

@@ -78,8 +78,10 @@ KW_BEEP:    DB "BEEP", 0
 KW_SOUND:   DB "SOUND", 0
 KW_DIM:     DB "DIM", 0
 KW_LINE:    DB "LINE", 0
-KW_CIRCLE:  DB "CIRCLE", 0
-KW_FILL:    DB "FILL", 0
+; KW_CIRCLE/KW_FILL removed 2026-09-19 (Phase 0 P0.4): both now
+; live as private local strings inside rom/extensions/shapes.asm's own
+; install routine, not this shared table -- no code on either side
+; (Home or EXROM) references KW_CIRCLE/KW_FILL any more.
 KW_MODE:    DB "MODE", 0
 KW_ULAPLUS: DB "ULAPLUS", 0
 KW_PALETTE: DB "PALETTE", 0

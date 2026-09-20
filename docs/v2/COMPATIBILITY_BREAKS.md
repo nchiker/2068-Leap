@@ -91,6 +91,62 @@ their number.
   live-verified via `ts2068-debug` (`tests/hit.txt`,
   `tests/hit_unloaded.txt`, `tests/hit_new_clear.txt`).
 
+## Break 3 (landed, P0.4, 2026-09-19): `CIRCLE`/`FILL` moved from resident to a combined loadable extension
+
+- **Old behavior/interface**: `CIRCLE`/`FILL` always available, no load
+  step.
+- **New behavior/interface**: requires a `LOAD "SHAPES" EXT`-style step
+  before either statement is used; a whole-program check pass rejects
+  either keyword if the module isn't loaded (confirmed live: `tests/
+  circle_unloaded.txt`, `tests/circle_new_clear.txt`, `tests/
+  fill_unloaded.txt`, `tests/fill_new_clear.txt`).
+- **Reason**: both sister projects (`structured-basic-poc`'s own
+  `GRAPHICS_EXTENSION_ABI.md`, `2068-Forth`'s fixed 8-slot graphics
+  service table) independently converged on bundling related graphics
+  primitives into one extension rather than shipping either alone, so
+  the per-extension fixed overhead (registration, dispatch, entry stub)
+  is paid once. Unlike `HIT()` (Break 2), both primitives' own bodies
+  were **Home-resident** (`kernel/graphics/graphics.asm`), making this
+  a much larger, more direct Home ROM win.
+- **ROM benefit — real, measured**: HOME free space rose from 2 to
+  **554 bytes** (net **+552 bytes recovered**, `make budget`,
+  2026-09-19) — removing `GFX_CIRCLE`/`GFX_FILL` and their private
+  helpers (~586 lines) from Home more than paid for the new second
+  statement slot and grammar-3 (3-arg) dispatch path added to
+  `BASIC_TRY_EXTENSION`/`BASIC_EXTENSION_REGISTER`. EXROM free space
+  fell slightly, from 116 to **109 bytes** (net **7 bytes used**) —
+  the checker's own mirror logic (`rom/exrom_checker.asm`) needed the
+  same slot-1/grammar-3 additions, and `.check_circle`'s existing 3-expr
+  checker routine was kept alive and reused rather than duplicated.
+- **RAM benefit**: none (the module itself is 762 bytes, comfortably
+  under the newly 1,024-byte-enlarged extension window; `GFX_FILL`'s
+  own `GFX_FILL_VISITED`/`GFX_FILL_STACK` buffers are unmoved).
+- **Performance benefit/cost**: not separately measured; one new fixed
+  check per statement dispatch (grammar 0/1/3 branch), same class of
+  cost every existing extension's dispatch already pays.
+- **A real, load-bearing correctness finding this milestone's own
+  design depended on**: `GFX_FILL_VISITED`/`GFX_FILL_STACK` both live
+  inside the EXROM/Dock banking window ($C000-$DFFF, chunk 6) — safe
+  only because this module's own dispatch stays Home-resident (unlike
+  `HIT()`'s own EXROM-routed dispatch from Break 2). Routing FILL's
+  dispatch through a paged EXROM call, the way P0.3 did, would have
+  made the flood-fill's own buffer accesses silently hit the paged-in
+  EXROM/Dock content instead of RAM mid-algorithm. See
+  `rom/extensions/shapes.asm`'s own header and `MILESTONE_02_RESULTS.md`
+  for the full reasoning — this is why P0.4's dispatch mechanism, unlike
+  P0.3's, was NOT moved to EXROM (and didn't need to be, given how much
+  Home space removing the algorithm bodies themselves recovered).
+- **User-visible consequence**: `CIRCLE`/`FILL` are mature, commonly
+  used statements — this is a real break, not a rare-feature one, same
+  weight class as sprites (Break 2's original candidate framing).
+- **Migration consequence**: any V1 program using `CIRCLE` or `FILL`
+  needs a `LOAD "SHAPES" EXT` line added before first use.
+- **Status**: **landed** — `make check`/`make test` both clean
+  (102/102), live-verified via `ts2068-debug` (`tests/gfx4.txt`,
+  `tests/gfx5.txt` — the existing, unmodified `POINT()`/`ATTR()`
+  correctness checks for both primitives — plus the four new unloaded/
+  new_clear negative fixtures above).
+
 ## Break 2 follow-up (still a candidate, not landed): `SPRITE`'s own statement conversion
 
 Converting `SPRITE GRAB/SHOW/HIDE/MOVE` itself remains a real, larger

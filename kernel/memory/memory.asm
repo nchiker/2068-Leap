@@ -113,6 +113,15 @@ MEM_INIT:
                                        ; inc's own STR_FUNC_POOL header)
     ld   (EXTENSION_MAGIC), a           ; unregister RAM module before NEW/
     ld   (EXTENSION_MAGIC+1), a         ; cold boot can leave a stale target
+    ld   (EXTENSION_SLOT_COUNT), a      ; real bug caught before any build:
+                                        ; without this, a stale nonzero
+                                        ; count from a PREVIOUS module's
+                                        ; registration would make a fresh
+                                        ; module's own first statement
+                                        ; registration wrongly land on
+                                        ; slot 1 (or refuse slot 0/1
+                                        ; entirely if count was already 2)
+                                        ; instead of starting clean
     IFDEF FULL_ENGINE_PRESENT
     IFNDEF STACK_AUDIT
     ld   hl, EXT_SERVICE_TABLE_TEMPLATE

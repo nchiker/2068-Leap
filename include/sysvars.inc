@@ -2542,15 +2542,36 @@ EXTENSION_MODULE_BASE EQU $F400
 EXTENSION_FUNC_ACTIVE    EQU $F3C8       ; 1 byte; nonzero = function registered
 EXTENSION_FUNC_NAME_PTR  EQU $F3C9       ; (2 bytes)
 EXTENSION_FUNC_EXEC_PTR  EQU $F3CB       ; (2 bytes)
-; Left at the original $F600 (512-byte window) -- briefly enlarged to
-; $FA00 during this milestone's first (reverted) draft, which assumed a
-; much bigger multi-statement sprite module; HIT()'s own module is tiny
-; (well under 512 bytes), and keeping the original page-aligned window
-; lets BASIC_EXTENSION_REGISTER keep its original, cheaper "AND $FE"
-; validation trick instead of paying for a full 16-bit range check --
-; real HOME-budget pressure (see BASIC_EXTENSION_REGISTER's own header)
-; drove this back down once a real build showed the true cost.
-EXTENSION_MODULE_LIMIT EQU $F600
+; Second statement slot + grammar 3 (2026-09-19, Phase 0 P0.4 -- CIRCLE+
+; FILL combined loadable extension). Unlike sprite's SHOW/MOVE/HIDE
+; (one keyword, sub-verbs parsed internally, see the function-slot
+; header above), CIRCLE and FILL genuinely ARE two separate top-level
+; BASIC keywords that this one module needs to register together --
+; both sister projects (structured-basic-poc's GRAPHICS_EXTENSION_ABI.md,
+; 2068-Forth's fixed 8-slot graphics service table) independently
+; converged on "bundle related graphics primitives into one extension,
+; don't ship a lone-primitive one" as the right shape here, so a second
+; real statement slot earns its keep this time (unlike the reverted
+; 3-slot sprite draft). CIRCLE also needs a THIRD statement grammar:
+; neither existing shape (0: expr,expr; 1: LINE-shaped 4-expr) fits
+; CIRCLE's own x,y,r triple. Grammar 3 = expr,expr,expr; the third
+; value's low byte is stashed in the pre-existing EXTENSION_ARG0 scratch
+; byte (already used by grammar 1 for an unrelated purpose -- safe to
+; reuse since only one grammar/module is ever active at a time).
+EXTENSION_SLOT_COUNT     EQU $F3CD       ; 1 byte; 0, 1, or 2
+EXTENSION_NAME_PTR1      EQU $F3CE       ; slot 1 (2 bytes)
+EXTENSION_EXEC_PTR1      EQU $F3D0       ; (2 bytes)
+EXTENSION_GRAMMAR1       EQU $F3D2       ; (1 byte)
+; Enlarged from $F600 (512-byte window) to $F800 (1,024 bytes) for the
+; combined CIRCLE+FILL module (~643 bytes of ported algorithm plus its
+; own install/dispatch overhead) -- kept 4-page-aligned ($F400-$F7FF)
+; so BASIC_EXTENSION_REGISTER can still use the same cheap "AND $FC,
+; compare one high byte" trick (just a wider mask than the original
+; 512-byte window's "AND $FE"), not a full 16-bit range check -- this
+; project's own real-build-tested lesson from the HIT() milestone about
+; that check's relative cost, applied proactively here instead of
+; re-discovered the hard way again.
+EXTENSION_MODULE_LIMIT EQU $F800
     ASSERT INSTR_POS + 1 == $F3B6
     ASSERT EXT_SERVICE_VERSION_ADDR == INSTR_POS + 1
     ASSERT EXT_SERVICE_REGISTER == EXT_SERVICE_VERSION_ADDR + 1
@@ -2560,6 +2581,7 @@ EXTENSION_MODULE_LIMIT EQU $F600
     ASSERT EXT_SERVICE_TABLE_END == EXT_SERVICE_READ_OVER + 3
     ASSERT EXTENSION_ARG3 + 1 <= EXTENSION_MODULE_BASE
     ASSERT EXTENSION_FUNC_EXEC_PTR + 2 <= EXTENSION_MODULE_BASE
+    ASSERT EXTENSION_GRAMMAR1 + 1 <= EXTENSION_MODULE_BASE
     ASSERT EXTENSION_MODULE_LIMIT <= $FF00
 STR_FUNC_POOL_NEXT:  DEFS 1           ; 1 byte — next free slot (0-4); reset
                                 ; to 0 at MEM_INIT/BASIC_RUN as a safety
