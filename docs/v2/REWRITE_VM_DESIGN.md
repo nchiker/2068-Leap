@@ -226,6 +226,22 @@ hardware execution and fixed -- eight real bugs total across Milestone
 01/R1/R2/R3. See the implementation plan's R3 section for the full
 account.
 
+## Update: R4 (procedures) is complete
+
+`rom/exrom_v2_compiler.asm` grew to 1,912 bytes with PROC/ENDP declarations
+and CALL, reusing R1's already-existing CALL/RET opcodes and R3's
+label/fixup machinery directly rather than inventing a second resolution
+mechanism. A real program with a backward-referenced procedure and a
+forward-referenced procedure (the latter genuinely exercising
+RESOLVE_ALL_FIXUPS for a procedure entry, not just a plain label) produced
+exactly correct results on real ZEsarUX hardware, with zero new
+register-clobber or logic bugs found -- the shared GOTO/CALL resolution
+machinery's earlier fixes held. See the implementation plan's R4 section
+for the full account, including a deliberate, documented scope limitation
+(one shared global parameter slot, no per-call local frame) demonstrated
+on real hardware rather than just asserted.
+
+
 ## Update: the statement-compiler spike has been built and measured
 
 See `STATEMENT_COMPILER_SPIKE.md` for the full result:

@@ -55,13 +55,19 @@
 ;                 limitation, not a silent gap, see the loop-compiler
 ;                 section's own header note below)
 ;               | 'NEXT' IDENT                         (loop end, R3)
+;               | 'PROC' IDENT '(' IDENT ')' ':' statement (':' statement)*
+;                 'ENDP'                               (procedure decl, R4 —
+;                 one by-value parameter, no separate local-variable frame;
+;                 see the procedure-compiler section's own header note)
+;               | 'CALL' IDENT '(' expr ')'             (procedure call, R4)
 ;   expr       := term (('+' | '-') term)*
 ;   term       := factor (('*' | '/') factor)*
 ;   factor     := NUMBER | IDENT | '(' expr ')'
 ;   IDENT      := letter+ (up to 8 characters; longer names are truncated,
 ;                 not rejected — a documented limitation, not a crash;
-;                 GOTO/IF/THEN/FOR/TO/NEXT are reserved and cannot be used
-;                 as variable/label names, per LEX_CLASSIFY_KEYWORD)
+;                 GOTO/IF/THEN/FOR/TO/NEXT/PROC/ENDP/CALL are reserved and
+;                 cannot be used as variable/label names, per
+;                 LEX_CLASSIFY_KEYWORD)
 ;   NUMBER     := digit+ (encoded PUSH_I8 if 0-255, else PUSH_I16)
 ;
 ; Compile-time error codes (COMPILE_ERROR_CODE, set on any compile failure):
@@ -74,14 +80,23 @@
 ;        forward references at once — all resolved in one pass at the end,
 ;        so this is a "how many distinct forward-referenced labels can be
 ;        outstanding simultaneously" bound, not a total-GOTO-count bound)
-;   7  = undefined label (a GOTO/IF...THEN GOTO referenced a name that was
-;        never defined as a label anywhere in the program)
+;   7  = undefined label (a GOTO/IF...THEN GOTO/CALL referenced a name that
+;        was never defined as a label or procedure anywhere in the program)
 ;   8  = expected THEN after an IF condition
 ;   9  = expected GOTO after THEN (block IF is not yet supported — see the
 ;        grammar above)
 ;   10 = expected a loop variable after FOR or NEXT
 ;   11 = expected TO after a FOR loop's initial value
 ;   12 = expected a label name after GOTO (or after IF...THEN GOTO)
+;   13 = expected a procedure name after CALL
+;   14 = expected '(' after a CALL's procedure name
+;   15 = expected ')' after a CALL's argument
+;   16 = unterminated PROC (hit EOF instead of ENDP)
+;   17 = expected a procedure name after PROC
+;   18 = expected '(' after a PROC's procedure name
+;   19 = expected a parameter name after PROC's '('
+;   20 = expected ')' after a PROC's parameter name
+;   21 = expected ':' before a PROC's body
 ; ============================================================================
 
 ; ---------------------------------------------------------------------------
@@ -191,8 +206,13 @@ IF_SKIP_PATCH_TMP:   equ $8B2D   ; COMPILE_IF scratch (2 bytes): the
                                    ; false-branch's own patch address,
                                    ; distinct from BRANCH_PATCH_TMP (the
                                    ; true-branch's target)
+PROC_SKIP_PATCH_TMP: equ $8B2F   ; COMPILE_PROC scratch (2 bytes): the
+                                   ; skip-over-the-body JMP's patch address
+PROC_PARAM_INDEX_TMP: equ $8B31  ; COMPILE_PROC scratch (1 byte): the
+                                   ; procedure's single parameter's symbol
+                                   ; index, saved across the body compile
 
-; every one of the ten scratch cells above is real RAM (not a register
+; every one of the scratch cells above is real RAM (not a register
 ; held across a call, not inline ROM data) — the two bug classes this
 ; module has already found and fixed once each (docs/v2/
 ; ARCHITECTURE_B_IMPLEMENTATION_PLAN.md's R2 section) are treated as a
@@ -225,6 +245,9 @@ TOK_KW_FOR:         equ 16
 TOK_KW_TO:          equ 17
 TOK_KW_NEXT:        equ 18
 TOK_LT:             equ 19   ; '<' — comparison operator (R3 addition)
+TOK_KW_PROC:        equ 20   ; R4 addition
+TOK_KW_ENDP:        equ 21
+TOK_KW_CALL:        equ 22
 
 ; ---------------------------------------------------------------------------
 ; COMPILER_INIT — call once before COMPILE_PROGRAM.
@@ -461,7 +484,7 @@ LEX_CLASSIFY_KEYWORD:
         ret                       ; no match — TOK_TYPE stays TOK_IDENT
 
 KEYWORD_ENTRY_LEN:  equ 6         ; [len:1][text:4, unused tail ignored][token:1]
-KEYWORD_TABLE_COUNT: equ 6
+KEYWORD_TABLE_COUNT: equ 9
 
 KEYWORD_TABLE:
         db 4, "GOTO", TOK_KW_GOTO
@@ -470,6 +493,9 @@ KEYWORD_TABLE:
         db 4, "THEN", TOK_KW_THEN
         db 3, "FOR" , 0, TOK_KW_FOR
         db 4, "NEXT", TOK_KW_NEXT
+        db 4, "PROC", TOK_KW_PROC
+        db 4, "ENDP", TOK_KW_ENDP
+        db 4, "CALL", TOK_KW_CALL
 
 ; ===========================================================================
 ; COMPILE-TIME SYMBOL TABLE — real name storage, real comparison (the piece
@@ -611,6 +637,8 @@ EMIT_OP_FOR_INIT:          ld a,13 : jp EMIT_BYTE
 EMIT_OP_FOR_NEXT:          ld a,14 : jp EMIT_BYTE
 EMIT_OP_CMP_LT:            ld a,10 : jp EMIT_BYTE
 EMIT_OP_CMP_EQ:            ld a,11 : jp EMIT_BYTE
+EMIT_OP_CALL:              ld a,15 : jp EMIT_BYTE
+EMIT_OP_RET:               ld a,16 : jp EMIT_BYTE
 
 ; EMIT_PLACEHOLDER_16 — writes two dummy zero bytes (a forward-reference
 ; branch target not yet known), returns the ABSOLUTE address of the first
@@ -1287,12 +1315,24 @@ COMPILE_NEXT:
 ; separated by ':', terminated by EOF, followed by a HALT opcode and one
 ; final fixup-resolution pass.
 ; ===========================================================================
-COMPILE_PROGRAM:
-        call LEX_NEXT_TOKEN
+; COMPILE_STATEMENT_LIST — compiles statements separated by ':' until
+; TOK_EOF or TOK_KW_ENDP, WITHOUT consuming either (the caller inspects
+; TOK_TYPE afterward to tell which one it was — COMPILE_PROGRAM expects
+; EOF; COMPILE_PROC's body expects ENDP and treats EOF as an error). Entry
+; assumes the current token is already primed (the caller has already
+; called LEX_NEXT_TOKEN at least once) — this is what lets the SAME
+; routine serve both the top-level program and a procedure body, which
+; enter it at different points in an already-in-progress token stream, not
+; just "the next statement's real logic. Sharing one dispatch means a bug
+; fixed here (like COMPILE_PROGRAM's earlier ones) is fixed everywhere a
+; statement can appear, not just at the top level.
+COMPILE_STATEMENT_LIST:
 .loop:
         ld a,(TOK_TYPE)
         cp TOK_EOF
-        jr z,.done
+        jp z,.done
+        cp TOK_KW_ENDP
+        jp z,.done
         cp TOK_KW_GOTO
         jr z,.goto
         cp TOK_KW_IF
@@ -1301,9 +1341,13 @@ COMPILE_PROGRAM:
         jr z,.for
         cp TOK_KW_NEXT
         jr z,.next_stmt
+        cp TOK_KW_PROC
+        jr z,.proc
+        cp TOK_KW_CALL
+        jr z,.call_stmt
         cp TOK_IDENT
         jr z,.ident_stmt
-        jr .done                  ; anything else ends compilation cleanly
+        jp .done                  ; anything else ends compilation cleanly
                                    ; in this scope (no error-recovery exists
                                    ; yet — a later milestone's job)
 .ident_stmt:
@@ -1335,7 +1379,7 @@ COMPILE_PROGRAM:
         ret nz
         call LEX_NEXT_TOKEN        ; consume the ':', fetch the next
                                     ; statement's first token
-        jr .loop
+        jp .loop
 .goto:
         call COMPILE_GOTO
         jr .after_stmt
@@ -1347,6 +1391,12 @@ COMPILE_PROGRAM:
         jr .after_stmt
 .next_stmt:
         call COMPILE_NEXT
+        jr .after_stmt
+.proc:
+        call COMPILE_PROC
+        jr .after_stmt
+.call_stmt:
+        call COMPILE_CALL_STMT
 .after_stmt:
         ld a,(COMPILE_ERROR_CODE)
         or a
@@ -1355,10 +1405,203 @@ COMPILE_PROGRAM:
         cp TOK_COLON
         jr nz,.done
         call LEX_NEXT_TOKEN
-        jr .loop
+        jp .loop
 .done:
+        ret
+
+; COMPILE_PROGRAM — the top-level entry point. Primes the first token,
+; compiles the whole program via COMPILE_STATEMENT_LIST (which must stop
+; on EOF, not ENDP — a stray ENDP with no matching PROC is simply where
+; compilation ends, in this scope's happy-path error handling), emits the
+; final HALT, and resolves every outstanding forward reference.
+COMPILE_PROGRAM:
+        call LEX_NEXT_TOKEN
+        call COMPILE_STATEMENT_LIST
+        ld a,(COMPILE_ERROR_CODE)
+        or a
+        ret nz
         call EMIT_OP_HALT
         call RESOLVE_ALL_FIXUPS
+        ret
+
+; ===========================================================================
+; PROCEDURE STATEMENT COMPILERS (R4 addition: PROC/ENDP, CALL)
+;
+; PROC name(param) : <body> ENDP   compiles as:
+;   JMP <skip>              ; sequential fall-through skips the whole body
+;   <name label, defined HERE>:
+;   STORE_VAR param         ; consumes the argument the caller pushed
+;   <body statements>
+;   RET
+;   <skip>:                 ; sequential execution resumes here
+;
+; The procedure's own name is registered in the SAME label table GOTO
+; uses (LABEL_DEFINE/LABEL_LOOKUP/FIXUP_RECORD) — a CALL to a
+; not-yet-defined procedure (e.g. one PROC calling another declared later
+; in the program) is resolved by the exact same forward-reference fixup
+; mechanism as a forward GOTO, not a separate mechanism.
+;
+; One parameter, by value, matching this milestone's own scoped-down goal
+; (`ARCHITECTURE_B_IMPLEMENTATION_PLAN.md`'s R4: "by-value parameters,
+; one level of locals" — the parameter is a plain symbol slot, overwritten
+; on each call; there is no separate local-variable stack frame, keeping
+; this proportionate to the modest committed scope rather than building a
+; general activation-record system). Recursion is mechanically possible
+; (R1's VM call stack is a real, bounds-checked stack, not a single
+; scalar), but is not separately tested by this milestone.
+; ===========================================================================
+
+COMPILE_PROC:
+        call LEX_NEXT_TOKEN     ; consume PROC
+        ld a,(TOK_TYPE)
+        cp TOK_IDENT
+        jr z,.have_name
+        ld a,17                  ; expected a procedure name
+        ld (COMPILE_ERROR_CODE),a
+        ret
+.have_name:
+        ld hl,(TOK_NAME)
+        ld (STMT_IDENT_NAME_PTR),hl
+        ld a,(TOK_LEN)
+        ld (STMT_IDENT_NAME_LEN),a
+        call LEX_NEXT_TOKEN     ; consume the procedure name
+        call EMIT_OP_JMP
+        call EMIT_PLACEHOLDER_16   ; HL = patch address for the skip-over
+        ld (PROC_SKIP_PATCH_TMP),hl
+        ld a,(TOK_TYPE)
+        cp TOK_LPAREN
+        jr z,.have_lparen
+        ld a,18                  ; expected '(' after procedure name
+        ld (COMPILE_ERROR_CODE),a
+        ret
+.have_lparen:
+        call LEX_NEXT_TOKEN     ; consume '('
+        ld a,(TOK_TYPE)
+        cp TOK_IDENT
+        jr z,.have_param
+        ld a,19                  ; expected a parameter name
+        ld (COMPILE_ERROR_CODE),a
+        ret
+.have_param:
+        ld hl,(TOK_NAME)
+        ld a,(TOK_LEN)
+        ld b,a
+        call CSYM_FIND_OR_CREATE
+        ld (PROC_PARAM_INDEX_TMP),a
+        call LEX_NEXT_TOKEN     ; consume the parameter name
+        ld a,(TOK_TYPE)
+        cp TOK_RPAREN
+        jr z,.have_rparen
+        ld a,20                  ; expected ')' after the parameter
+        ld (COMPILE_ERROR_CODE),a
+        ret
+.have_rparen:
+        call LEX_NEXT_TOKEN     ; consume ')'
+        ld a,(TOK_TYPE)
+        cp TOK_COLON
+        jr z,.have_colon
+        ld a,21                  ; expected ':' before the procedure body
+        ld (COMPILE_ERROR_CODE),a
+        ret
+.have_colon:
+        ; define the CALL-entry label HERE — at the bytecode position that
+        ; consumes the caller's pushed argument — not at PROC's own
+        ; position (where the skip-JMP lives, never a valid call target).
+        ld hl,(STMT_IDENT_NAME_PTR)
+        ld a,(STMT_IDENT_NAME_LEN)
+        ld b,a
+        call LABEL_DEFINE
+        ld a,(COMPILE_ERROR_CODE)
+        or a
+        ret nz
+        call EMIT_BYTE_OP_STORE_VAR
+        ld a,(PROC_PARAM_INDEX_TMP)
+        call EMIT_BYTE
+        call LEX_NEXT_TOKEN     ; consume ':', prime the body's first token
+        call COMPILE_STATEMENT_LIST
+        ld a,(COMPILE_ERROR_CODE)
+        or a
+        ret nz
+        ld a,(TOK_TYPE)
+        cp TOK_KW_ENDP
+        jr z,.have_endp
+        ld a,16                  ; unterminated PROC (hit EOF, not ENDP)
+        ld (COMPILE_ERROR_CODE),a
+        ret
+.have_endp:
+        call EMIT_OP_RET
+        ld hl,(EMIT_PTR)
+        ld de,VM_CODE_BASE
+        or a
+        sbc hl,de                 ; HL = relative offset (current position)
+        ex de,hl                  ; DE = relative offset
+        ld hl,(PROC_SKIP_PATCH_TMP)
+        ld (hl),e
+        inc hl
+        ld (hl),d
+        call LEX_NEXT_TOKEN     ; consume ENDP, fetch whatever follows
+        ret
+
+; COMPILE_CALL_STMT — CALL name(arg)
+;
+; Deliberately does NOT reuse COMPILE_BRANCH_TARGET (GOTO/IF's shared
+; resolver): that routine ends by consuming the label identifier token,
+; which here has already been consumed earlier (to reach the argument
+; expression and the closing ')') — reusing it verbatim would eat an extra
+; token it shouldn't. The resolve/fixup logic itself (look up, patch
+; immediately if found, else record a fixup) is duplicated in miniature
+; rather than awkwardly parameterized, since it's small.
+COMPILE_CALL_STMT:
+        call LEX_NEXT_TOKEN     ; consume CALL
+        ld a,(TOK_TYPE)
+        cp TOK_IDENT
+        jr z,.have_name
+        ld a,13                  ; expected a procedure name after CALL
+        ld (COMPILE_ERROR_CODE),a
+        ret
+.have_name:
+        ld hl,(TOK_NAME)
+        ld (STMT_IDENT_NAME_PTR),hl
+        ld a,(TOK_LEN)
+        ld (STMT_IDENT_NAME_LEN),a
+        call LEX_NEXT_TOKEN     ; consume the procedure name
+        ld a,(TOK_TYPE)
+        cp TOK_LPAREN
+        jr z,.have_lparen
+        ld a,14                  ; expected '(' after the procedure name
+        ld (COMPILE_ERROR_CODE),a
+        ret
+.have_lparen:
+        call LEX_NEXT_TOKEN     ; consume '('
+        call COMPILE_EXPR       ; argument -> pushed onto the VM operand stack
+        ld a,(TOK_TYPE)
+        cp TOK_RPAREN
+        jr z,.have_rparen
+        ld a,15                  ; expected ')' after the argument
+        ld (COMPILE_ERROR_CODE),a
+        ret
+.have_rparen:
+        call LEX_NEXT_TOKEN     ; consume ')'
+        call EMIT_OP_CALL
+        call EMIT_PLACEHOLDER_16   ; HL = patch address
+        ld (BRANCH_PATCH_TMP),hl
+        ld hl,(STMT_IDENT_NAME_PTR)
+        ld a,(STMT_IDENT_NAME_LEN)
+        ld b,a
+        call LABEL_LOOKUP
+        jr c,.resolved
+        ld hl,(BRANCH_PATCH_TMP)
+        ld de,(STMT_IDENT_NAME_PTR)
+        ld a,(STMT_IDENT_NAME_LEN)
+        ld b,a
+        call FIXUP_RECORD
+        ret
+.resolved:
+        ld hl,(BRANCH_PATCH_TMP)
+        ld de,(LABEL_LOOKUP_RESULT)
+        ld (hl),e
+        inc hl
+        ld (hl),d
         ret
 
 COMPILER_END:

@@ -410,6 +410,67 @@ EXROM free).
 
 ### R4 — Structured language (procedures/functions)
 
+**Status: COMPLETE, real-hardware-validated.** `rom/exrom_v2_compiler.asm`
+grew from R3's 1,550 bytes to **1,912 bytes** (+362 for `PROC`/`ENDP`
+declarations and `CALL`, on top of R1's already-existing `CALL`/`RET`
+opcodes and bounds-checked VM call stack — no VM changes were needed for
+R4 at all). `rom/test_v2_compiler_r4.asm` compiled and executed a real
+program with two procedures: `PROC DOUBLE(N):RESULT=N+N:ENDP` (declared
+*before* its call site — a backward reference, resolved immediately, same
+as R3's backward `GOTO`) and `PROC TRIPLE(N):RESULTB=N+N+N:ENDP` (declared
+*after* its call site — a genuine forward reference through
+`RESOLVE_ALL_FIXUPS`, the one path R3's `GOTO` test didn't need, since a
+procedure's own body is preceded by a compiler-emitted `JMP` skipping over
+it that must ALSO be patched correctly before the fixup pass runs). Real
+ZEsarUX result: **all five checked values matched their hand-computed
+expectations exactly** (`RESULT=42`, `ANSWER=42`, `RESULTB=15`,
+`ANSWERB=15`, `FINAL=1`), including confirming that normal sequential
+execution correctly skips over both procedure bodies via their own leading
+`JMP`, landing cleanly on the final statement without ever falling into a
+body a second time.
+
+**Deliberate, documented scope limitation, not a bug**: both procedures
+use a parameter named `N` — the SAME global symbol slot, since this
+milestone's scope (per the plan's own "by-value parameters, one level of
+locals" framing) has no separate per-call local-variable frame. The test
+program deliberately exercises this (both procedures share `N`, and the
+final value left in that slot is `5`, from whichever call ran last) rather
+than avoiding it, so the behavior is demonstrated on real hardware, not
+just asserted in prose. Recursion is mechanically possible (R1's VM call
+stack is a real 6-deep bounds-checked stack) but not separately tested by
+this milestone, matching the plan's own scope note.
+
+**One test-authoring mistake caught before it became a false bug report**:
+the first version of the R4 test program used variable names `ANSWER2`/
+`RESULT2` — but the compiler's identifier grammar has always been
+`letter+` only (no digits), consistently since R2. The digit correctly
+lexed as a `NUMBER` token immediately after the letters, producing
+`COMPILE_ERROR_CODE=2` ("expected `=`"). This was the test program's bug,
+not the compiler's — traced by checking `TOK_TYPE` directly rather than
+assuming the compiler was at fault, and fixed by renaming to `ANSWERB`/
+`RESULTB`. Recorded here because it's a real example of the debugging
+discipline paying off in the other direction too — not every real-hardware
+surprise is a compiler bug, and confirming which one it is before "fixing"
+anything matters.
+
+**No new register-clobber or logic bugs were found in this milestone** —
+the first real assembled version, once the test program's own naming
+mistake was fixed, passed on the very next run. Consistent with the
+"architecture discipline" pattern established over Milestone 01/R1/R2/R3:
+`CALL`/`RETURN` reused the SAME label/fixup machinery `GOTO` already had
+validated (`LABEL_DEFINE`/`LABEL_LOOKUP`/`FIXUP_RECORD`), rather than
+inventing a second, parallel resolution mechanism — the eight real bugs
+already found and fixed in that shared machinery through R3 stayed fixed
+here too.
+
+Shipping ROM confirmed unaffected (`make budget`: unchanged 554 HOME / 109
+EXROM free).
+
+**R4 is done. Next: R5 (strings).**
+
+<details>
+<summary>Original R4 plan (superseded by the COMPLETE status above; kept for the record)</summary>
+
 - **Objective**: `CALL`/`RETURN`/parameter binding/local scope, per the
   proposed V2 procedure architecture (`STATEMENT_COMPILER_SPIKE.md`'s
   procedure family + the carried-forward ~500-byte runtime estimate).
@@ -430,6 +491,8 @@ EXROM free).
   the first real number).
 - **Success gate**: representative procedure program correct.
 - **Rollback**: revert; R1-R3 remain intact.
+
+</details>
 
 ### R5 — Strings
 
