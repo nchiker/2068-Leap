@@ -286,6 +286,93 @@ compiler doesn't yet target).**
 
 ### R3 — Program execution (branches, loops, variables)
 
+**Status: COMPLETE, real-hardware-validated.** `rom/exrom_v2_compiler.asm`
+grew from R2's 674 bytes to **1,550 bytes** (+876 for `GOTO`, `IF...THEN
+GOTO`, `FOR`/`NEXT`, real labels, and real forward-reference fixups).
+`rom/test_v2_compiler_r3.asm` compiled a genuinely nontrivial 14-statement
+program exercising every one of R3's new mechanisms together — a backward-
+referenced `IF...THEN GOTO` inside a real counting loop, a forward-
+referenced unconditional `GOTO` (the one code path Milestone 01/R1/R2 never
+exercised, since `GOTO SKIP` targets a label defined *later* in the
+program — a real test of `RESOLVE_ALL_FIXUPS`, not just `LABEL_LOOKUP`'s
+already-defined-label path), a real `FOR`/`NEXT` loop, and a negative test
+that the `GOTO` genuinely skips its target statement rather than merely not
+crashing (a sentinel variable, `BOGUS`, is set before the skip region and
+checked afterward). Real ZEsarUX result: **every one of six symbol values
+matched their hand-computed expectation exactly** (`TOTAL=15`, `COUNT=6`,
+`BOGUS=0`, `SQUARE=14`, `I=4`, `RESULT=29`).
+
+**Four more real bugs found via ZEsarUX execution and fixed** (bringing
+this rewrite's real-hardware-caught bug total to eight across Milestone
+01/R1/R2/R3):
+1. The lexer's label-vs-statement-separator disambiguation (an identifier
+   immediately followed by `:` with no space = label) misclassified any
+   *expression-internal* identifier reference that happened to be
+   immediately followed by a statement-separator `:` — e.g. the `COUNT` in
+   `TOTAL+COUNT:COUNT=COUNT+1`. Real run: `COMPILE_ERROR_CODE=3` with a
+   missing operand in the emitted bytecode. Fixed by removing the lexer-
+   level heuristic entirely and doing label detection exclusively via a
+   real one-token lookahead in `COMPILE_PROGRAM`, which only ever runs at
+   genuine statement starts and therefore cannot misfire mid-expression.
+2. `LEX_CLASSIFY_KEYWORD`'s original ad-hoc branch chain (try `GOTO`, on
+   failure try `NEXT`, which returned unconditionally on ITS failure)
+   never actually reached the `THEN` check for any input — `THEN` was dead
+   code. Real run: every `IF...THEN GOTO` failed with
+   `COMPILE_ERROR_CODE=8` ("expected THEN"), because `THEN` lexed as a
+   plain identifier. Fixed by replacing the whole ad-hoc chain with a real
+   table-driven matcher (6 fixed-width entries, one loop) — structurally
+   immune to "one candidate's failure path forgets to fall through to the
+   next" by construction.
+3. `RESOLVE_ALL_FIXUPS` never saved its own outer fixup-index (`C`) across
+   the call to `LABEL_LOOKUP`, which uses `C` internally as its own scan
+   index and does not restore it. The lookup itself succeeded and patched
+   correctly every time; the *corrupted loop counter afterward* sent the
+   outer loop into a bogus extra iteration over uninitialized fixup-table
+   memory, producing a spurious "undefined label" error despite the real
+   resolution having already worked. Root-caused by single-stepping the
+   actual instruction sequence (`ts2068-debug step`/`regs`) through a real
+   run, watching `C`'s value survive or not across the call — not visible
+   from reading the source. Fixed by saving the index to a dedicated
+   memory cell before the call.
+4. `COMPILE_NEXT` kept a 2-byte relative branch offset in `HL` across a
+   call to `EMIT_BYTE` for its low byte — but `EMIT_BYTE` itself uses `HL`
+   internally as the `EMIT_PTR` pointer, clobbering it, so the subsequent
+   `ld a,h` read `EMIT_PTR`'s own high byte instead of the offset's real
+   (always-zero, for realistic program sizes) high byte. Real run:
+   `FOR`/`NEXT` branched to a nonsense absolute address, producing
+   `VM_ERROR_CODE=1` (illegal opcode). Fixed by saving the high byte to
+   memory before the low byte's `EMIT_BYTE` call.
+
+**A fifth issue was a genuine logic bug, not a register-clobber**:
+`COMPILE_IF`'s first working version emitted only `JMPZ <label's resolved
+offset>` — but `JMPZ` branches when the popped condition **is** zero
+(false), so that compiled "jump to the label when the condition is
+false," backwards from `IF...THEN GOTO`'s actual meaning. Caught by
+decoding the real compiled bytecode after a run that produced
+`VM_ERROR_CODE=1` once the (inverted) loop ran long enough to branch
+somewhere nonsensical. Fixed to the correct three-instruction shape:
+`JMPZ <skip>` / `JMP <label>` / `<skip>:`, so a false condition falls
+through past the `GOTO` instead of taking it, and a true condition takes
+it — using a second, purely local forward-reference patch (`IF_SKIP_
+PATCH_TMP`) resolved immediately at the end of `COMPILE_IF` itself, not
+through the general fixup mechanism (its target is always known by the
+time `COMPILE_IF` finishes, unlike a `GOTO` to a label that may not exist
+yet anywhere in the program).
+
+**Known, documented limitation carried forward from R1 unchanged**: single
+active loop only (`FOR_LOOP_TOP_OFFSET`/`FOR_LOOP_VAR_INDEX` are scalars,
+matching R1's VM core's own single `VM_FOR_LIMIT` slot) — nested `FOR`/
+`NEXT` is not yet supported. Not required by this milestone's own success
+gate.
+
+Shipping ROM confirmed unaffected (`make budget`: unchanged 554 HOME / 109
+EXROM free).
+
+**R3 is done. Next: R4 (structured language — procedures/functions).**
+
+<details>
+<summary>Original R3 plan (superseded by the COMPLETE status above; kept for the record)</summary>
+
 - **Objective**: extend the compiler to `IF`/`GOTO`/`FOR`/`NEXT` and full
   variable handling (multi-character identifiers, per
   `STRING_AND_SYMBOL_DESIGN.md`'s already-agreed goal); extend the VM
@@ -318,6 +405,8 @@ compiler doesn't yet target).**
   (completes, and fast); V1 still fully unaffected.
 - **Rollback**: revert this milestone's diff; R1/R2 remain intact and
   useful on their own.
+
+</details>
 
 ### R4 — Structured language (procedures/functions)
 

@@ -1,16 +1,22 @@
 ; ============================================================================
-; rom/exrom_v2_compiler.asm — Architecture B, R2: production compiler
-; foundation (tokenizer/lexer + expression compiler + assignment-statement
-; compiler), targeting R1's real, hardware-validated VM
+; rom/exrom_v2_compiler.asm — Architecture B, R2+R3: production compiler
+; (tokenizer/lexer + expression compiler + assignment/GOTO/IF/FOR/NEXT
+; statement compilers + a real label table and forward-reference fixup
+; mechanism), targeting R1's real, hardware-validated VM
 ; (rom/exrom_v2_vm_core.asm, 17 integer-domain opcodes, 731 real bytes).
 ;
-; 2068-Leap V2 rewrite. Promotes spikes/v2_vm_sizing/compiler_sizing_spike.asm
-; and statement_compiler_spike.asm's architecture to production quality, per
-; docs/v2/ARCHITECTURE_B_IMPLEMENTATION_PLAN.md's R2 scope: "tokenizer/front
-; end + expression + basic statement compiler" — assignment only; the rest
-; of the statement grammar (IF/GOTO/FOR/CALL) is R3's job, per this plan's
-; own staging (already validated as bytecode targets by R1's VM, but not
-; re-added to the compiler here — R2 is scoped narrower on purpose).
+; 2068-Leap V2 rewrite. R2 (assignment-only) is real-hardware-validated —
+; see docs/v2/ARCHITECTURE_B_IMPLEMENTATION_PLAN.md's R2 section. This
+; revision adds R3's scope: GOTO, IF...THEN GOTO, FOR/NEXT, and the label/
+; fixup mechanism GOTO's forward references need. Promotes
+; spikes/v2_vm_sizing/statement_compiler_spike.asm's branch/loop/fixup
+; architecture to production quality (that spike's fixup routines were
+; explicitly stubbed — count-only, no real label table or patch-writing —
+; per docs/v2/STATEMENT_COMPILER_SPIKE.md's own "honest residual
+; uncertainty" section; this file's `LABEL_DEFINE`/`LABEL_LOOKUP`/
+; `FIXUP_RECORD`/`RESOLVE_ALL_FIXUPS` are real). Procedures (`CALL`/`RET`)
+; remain R4's scope, per the implementation plan's own staging, even
+; though R1's VM already supports them — R3 is scoped narrower on purpose.
 ;
 ; What is genuinely NEW here versus the two sizing spikes (not merely
 ; copied): a REAL compile-time symbol table with REAL name storage and REAL
@@ -34,21 +40,48 @@
 ; STATEMENT_COMPILER_SPIKE.md, docs/v2/ARCHITECTURE_B_IMPLEMENTATION_PLAN.md
 ; (R2).
 ;
-; Grammar this compiler accepts (R2 scope only):
+; Grammar this compiler accepts (R2+R3 scope):
 ;   program    := statement (':' statement)* EOF
-;   statement  := IDENT '=' expr
+;   statement  := IDENT ':'                          (label definition)
+;               | IDENT '=' expr                     (assignment)
+;               | 'GOTO' IDENT                        (branch, R3)
+;               | 'IF' expr 'THEN' 'GOTO' IDENT        (conditional branch, R3
+;                 — block IF/ENDIF is deferred, per the implementation
+;                 plan's own staging)
+;               | 'FOR' IDENT '=' expr 'TO' expr       (loop start, R3 —
+;                 fixed STEP=1, matching R1's VM's own FOR_NEXT opcode;
+;                 SINGLE ACTIVE LOOP ONLY, matching R1's VM's own single
+;                 VM_FOR_LIMIT slot — nested FOR/NEXT is a documented
+;                 limitation, not a silent gap, see the loop-compiler
+;                 section's own header note below)
+;               | 'NEXT' IDENT                         (loop end, R3)
 ;   expr       := term (('+' | '-') term)*
 ;   term       := factor (('*' | '/') factor)*
 ;   factor     := NUMBER | IDENT | '(' expr ')'
 ;   IDENT      := letter+ (up to 8 characters; longer names are truncated,
-;                 not rejected — a documented R2 limitation, not a crash)
+;                 not rejected — a documented limitation, not a crash;
+;                 GOTO/IF/THEN/FOR/TO/NEXT are reserved and cannot be used
+;                 as variable/label names, per LEX_CLASSIFY_KEYWORD)
 ;   NUMBER     := digit+ (encoded PUSH_I8 if 0-255, else PUSH_I16)
 ;
 ; Compile-time error codes (COMPILE_ERROR_CODE, set on any compile failure):
-;   0 = no error
-;   1 = symbol table full (more than CSYMTAB_MAX_ENTRIES distinct names)
-;   2 = expected '=' after identifier in a statement
-;   3 = unexpected character (factor could not start an expression)
+;   0  = no error
+;   1  = symbol table full (more than CSYMTAB_MAX_ENTRIES distinct names)
+;   2  = expected '=' after identifier in a statement
+;   3  = unexpected character (factor could not start an expression)
+;   5  = label table full (more than LABELTAB_MAX_ENTRIES distinct labels)
+;   6  = fixup table full (more than FIXUPTAB_MAX_ENTRIES outstanding
+;        forward references at once — all resolved in one pass at the end,
+;        so this is a "how many distinct forward-referenced labels can be
+;        outstanding simultaneously" bound, not a total-GOTO-count bound)
+;   7  = undefined label (a GOTO/IF...THEN GOTO referenced a name that was
+;        never defined as a label anywhere in the program)
+;   8  = expected THEN after an IF condition
+;   9  = expected GOTO after THEN (block IF is not yet supported — see the
+;        grammar above)
+;   10 = expected a loop variable after FOR or NEXT
+;   11 = expected TO after a FOR loop's initial value
+;   12 = expected a label name after GOTO (or after IF...THEN GOTO)
 ; ============================================================================
 
 ; ---------------------------------------------------------------------------
@@ -105,6 +138,67 @@ CSYMTAB_BASE:       equ $8900   ; compile-time symbol name table
 CSYM_REC_LEN:       equ 9       ; [name_len:1][name:8]
 CSYMTAB_MAX_ENTRIES: equ 16     ; bounded, per this module's R2 scope
 
+; --- R3 additions: labels, forward-reference fixups, FOR/NEXT loop state ---
+LABEL_COUNT:        equ $8B11   ; number of labels defined so far
+LABELTAB_BASE:      equ $8A00   ; [name_len:1][name:8][offset:2] = 11B/entry
+LABEL_REC_LEN:       equ 11
+LABELTAB_MAX_ENTRIES: equ 8
+
+FIXUP_COUNT:        equ $8B12   ; number of outstanding forward-reference fixups
+FIXUPTAB_BASE:      equ $8A60   ; [patch_addr:2][name_len:1][name:8] = 11B/entry
+FIXUP_REC_LEN:       equ 11
+FIXUPTAB_MAX_ENTRIES: equ 8
+
+LABEL_FIND_NAME_PTR: equ $8B17  ; LABEL_LOOKUP/LABEL_DEFINE scratch (2 bytes)
+LABEL_FIND_NAME_LEN: equ $8B19  ; (1 byte) — same "must be RAM, not
+                                  ; register-or-inline-data" discipline as
+                                  ; CSYM_FIND_NAME_PTR/LEN above
+LABEL_LOOKUP_RESULT: equ $8B1A  ; LABEL_LOOKUP output (2 bytes): resolved
+                                  ; offset if found
+FOR_LOOP_TOP_OFFSET: equ $8B1C  ; COMPILE_FOR/COMPILE_NEXT scratch (2 bytes):
+                                  ; the loop body's starting bytecode offset.
+                                  ; SINGLE ACTIVE LOOP ONLY — matches R1's VM
+                                  ; core's own single VM_FOR_LIMIT slot
+                                  ; (rom/exrom_v2_vm_core.asm's header
+                                  ; comment). Nested FOR/NEXT is a KNOWN,
+                                  ; DOCUMENTED limitation of this milestone,
+                                  ; not silently unsupported — a future
+                                  ; refinement would need both this compiler
+                                  ; and the VM's loop-limit storage to become
+                                  ; a real stack, not a single scalar. R3's
+                                  ; own worked examples (REWRITE_RAM_BUDGET.md's
+                                  ; SMALL/TYPICAL programs) do not require
+                                  ; nested loops, so this scope cut does not
+                                  ; block R3's actual success gate.
+FOR_LOOP_VAR_INDEX: equ $8B1E    ; COMPILE_FOR/COMPILE_NEXT scratch (1 byte)
+BRANCH_PATCH_TMP:   equ $8B1F   ; COMPILE_BRANCH_TARGET scratch (2 bytes)
+FIXUP_PATCH_TMP:    equ $8B21   ; FIXUP_RECORD scratch (2 bytes)
+FIXUP_NAME_PTR_TMP: equ $8B23   ; FIXUP_RECORD scratch (2 bytes)
+FIXUP_NAME_LEN_TMP: equ $8B25   ; FIXUP_RECORD scratch (1 byte)
+RESOLVE_PATCH_TMP:  equ $8B26   ; RESOLVE_ALL_FIXUPS scratch (2 bytes)
+STMT_IDENT_NAME_PTR: equ $8B28  ; COMPILE_PROGRAM scratch (2 bytes): the
+                                  ; current statement's leading identifier
+                                  ; name, saved BEFORE the one-token
+                                  ; lookahead that decides label-def vs.
+                                  ; assignment overwrites TOK_NAME
+STMT_IDENT_NAME_LEN: equ $8B2A   ; (1 byte)
+RESOLVE_FIXUP_INDEX: equ $8B2B   ; RESOLVE_ALL_FIXUPS scratch (1 byte) —
+                                  ; see that routine's own comment for why
+                                  ; this must be memory, not just C
+FOR_NEXT_HIGH_TMP:   equ $8B2C   ; COMPILE_NEXT scratch (1 byte) — see that
+                                   ; routine's own comment for why
+IF_SKIP_PATCH_TMP:   equ $8B2D   ; COMPILE_IF scratch (2 bytes): the
+                                   ; false-branch's own patch address,
+                                   ; distinct from BRANCH_PATCH_TMP (the
+                                   ; true-branch's target)
+
+; every one of the ten scratch cells above is real RAM (not a register
+; held across a call, not inline ROM data) — the two bug classes this
+; module has already found and fixed once each (docs/v2/
+; ARCHITECTURE_B_IMPLEMENTATION_PLAN.md's R2 section) are treated as a
+; standing discipline for every routine added in R3, not just the ones
+; that already broke
+
 ; token types
 TOK_EOF:            equ 0
 TOK_IDENT:          equ 1
@@ -118,6 +212,19 @@ TOK_SLASH:          equ 8
 TOK_LPAREN:         equ 9
 TOK_RPAREN:         equ 10
 TOK_UNKNOWN:        equ 11
+; token 12 intentionally unused: an earlier version had a TOK_LABEL_DEF
+; here, produced by the lexer via character-adjacency guessing. Removed —
+; see LEX_SCAN_IDENT's and COMPILE_PROGRAM's own comments for why (a real
+; bug, caught by a real ZEsarUX run). Label detection is now done purely
+; by COMPILE_PROGRAM's one-token lookahead, using ordinary TOK_IDENT/
+; TOK_COLON tokens.
+TOK_KW_GOTO:        equ 13
+TOK_KW_IF:          equ 14
+TOK_KW_THEN:        equ 15
+TOK_KW_FOR:         equ 16
+TOK_KW_TO:          equ 17
+TOK_KW_NEXT:        equ 18
+TOK_LT:             equ 19   ; '<' — comparison operator (R3 addition)
 
 ; ---------------------------------------------------------------------------
 ; COMPILER_INIT — call once before COMPILE_PROGRAM.
@@ -126,6 +233,19 @@ COMPILER_INIT:
         xor a
         ld (CSYM_COUNT),a
         ld (COMPILE_ERROR_CODE),a
+        ld (LABEL_COUNT),a       ; R3 addition — an earlier version of this
+        ld (FIXUP_COUNT),a       ; routine never zeroed these two, so a
+                                  ; second compile within the same ZEsarUX
+                                  ; session (RAM is NOT cleared by `reset`,
+                                  ; only CPU registers are) inherited
+                                  ; whatever LABEL_COUNT/FIXUP_COUNT a prior
+                                  ; run had left behind, producing
+                                  ; duplicate-looking label-table entries
+                                  ; and eventually a real "table full"
+                                  ; error — caught by a real ZEsarUX run
+                                  ; showing LABEL_COUNT=8 after only 2 real
+                                  ; LABEL_DEFINE calls (confirmed via a
+                                  ; write watchpoint), not by inspection
         ret
 
 ; ===========================================================================
@@ -165,6 +285,8 @@ LEX_NEXT_TOKEN:
         jr z,.single7
         cp ')'
         jr z,.single8
+        cp '<'
+        jr z,.single9
         cp '0'
         jr c,.ident_start
         cp '9'+1
@@ -202,6 +324,9 @@ LEX_NEXT_TOKEN:
         jp .advance1
 .single8:
         ld a,TOK_RPAREN
+        jp .advance1
+.single9:
+        ld a,TOK_LT
         jp .advance1
 .number:
         jp LEX_SCAN_NUMBER
@@ -260,12 +385,91 @@ LEX_SCAN_IDENT:
         inc b
         jr .loop
 .done:
+        ; Label detection is NOT done here (an earlier version checked for
+        ; an immediately-following ':' right in the lexer — a real bug: an
+        ; expression-internal identifier reference that happens to be
+        ; immediately followed by a statement-separator ':', e.g. the
+        ; "COUNT" in "TOTAL+COUNT:COUNT=COUNT+1", was misclassified as a
+        ; label definition, silently eating the ':' and corrupting
+        ; compilation. Caught by a real ZEsarUX run: COMPILE_ERROR_CODE=3
+        ; with the second operand of an ADD missing from the emitted
+        ; bytecode. Label definitions are now detected exclusively by
+        ; COMPILE_PROGRAM's own one-token lookahead at genuine statement
+        ; boundaries — see that routine — never by the lexer guessing from
+        ; character adjacency, which cannot distinguish "statement start"
+        ; from "the middle of an expression" on its own.)
         ld (SRC_PTR),hl
         ld a,b
         ld (TOK_LEN),a
         ld a,TOK_IDENT
         ld (TOK_TYPE),a
+        call LEX_CLASSIFY_KEYWORD
         ret
+
+; LEX_CLASSIFY_KEYWORD — if TOK_NAME/TOK_LEN spell one of GOTO/IF/THEN/FOR/
+; TO/NEXT exactly, overrides TOK_TYPE to that keyword's token type. Real
+; table-driven match (length check + full byte-for-byte compare — never a
+; first-letter shortcut, so e.g. "FOO" is never misclassified as FOR).
+;
+; An earlier version of this routine was an ad-hoc chain of length-guarded
+; branches (try GOTO, then NEXT, then IF, then TO, then THEN, then FOR).
+; It had a real, live bug: the length-4 branch tried GOTO, and on failure
+; jumped straight to a NEXT check that unconditionally returned on its own
+; failure — THEN (also length 4) was dead code, never reachable, for any
+; input. Caught by a real ZEsarUX run: every "IF...THEN GOTO" in a real
+; compiled program failed with COMPILE_ERROR_CODE=8 ("expected THEN"),
+; because "THEN" was never actually recognized as a keyword at all — it
+; lexed as a perfectly ordinary 4-letter identifier instead. Rewritten as a
+; real table loop specifically so this class of "one candidate's failure
+; path forgets to fall through to the next candidate" bug structurally
+; cannot happen again — the loop tries every entry unconditionally.
+LEX_CLASSIFY_KEYWORD:
+        ld hl,KEYWORD_TABLE
+        ld b,KEYWORD_TABLE_COUNT
+.loop:
+        ld a,(TOK_LEN)
+        cp (hl)                  ; stored length
+        jr nz,.next
+        push hl
+        inc hl                    ; -> keyword text
+        ld de,(TOK_NAME)
+        ld c,a                    ; C = length to compare
+.cmp_loop:
+        ld a,(de)
+        cp (hl)                  ; CP only supports (hl), not (de)
+        jr nz,.cmp_fail
+        inc hl
+        inc de
+        dec c
+        jr nz,.cmp_loop
+        ; match: the token-type byte sits 5 bytes past the entry's start
+        ; (1 length byte + 4 text bytes, fixed width regardless of the
+        ; keyword's real length)
+        pop hl
+        ld de,5
+        add hl,de
+        ld a,(hl)
+        ld (TOK_TYPE),a
+        ret
+.cmp_fail:
+        pop hl
+.next:
+        ld de,KEYWORD_ENTRY_LEN
+        add hl,de
+        dec b
+        jr nz,.loop
+        ret                       ; no match — TOK_TYPE stays TOK_IDENT
+
+KEYWORD_ENTRY_LEN:  equ 6         ; [len:1][text:4, unused tail ignored][token:1]
+KEYWORD_TABLE_COUNT: equ 6
+
+KEYWORD_TABLE:
+        db 4, "GOTO", TOK_KW_GOTO
+        db 2, "IF"  , 0, 0, TOK_KW_IF
+        db 2, "TO"  , 0, 0, TOK_KW_TO
+        db 4, "THEN", TOK_KW_THEN
+        db 3, "FOR" , 0, TOK_KW_FOR
+        db 4, "NEXT", TOK_KW_NEXT
 
 ; ===========================================================================
 ; COMPILE-TIME SYMBOL TABLE — real name storage, real comparison (the piece
@@ -401,12 +605,63 @@ EMIT_OP_SUB:               ld a,7  : jp EMIT_BYTE
 EMIT_OP_MUL:               ld a,8  : jp EMIT_BYTE
 EMIT_OP_DIV:               ld a,9  : jp EMIT_BYTE
 EMIT_OP_HALT:              xor a   : jp EMIT_BYTE
+EMIT_OP_JMP:               ld a,6  : jp EMIT_BYTE
+EMIT_OP_JMPZ:              ld a,12 : jp EMIT_BYTE
+EMIT_OP_FOR_INIT:          ld a,13 : jp EMIT_BYTE
+EMIT_OP_FOR_NEXT:          ld a,14 : jp EMIT_BYTE
+EMIT_OP_CMP_LT:            ld a,10 : jp EMIT_BYTE
+EMIT_OP_CMP_EQ:            ld a,11 : jp EMIT_BYTE
+
+; EMIT_PLACEHOLDER_16 — writes two dummy zero bytes (a forward-reference
+; branch target not yet known), returns the ABSOLUTE address of the first
+; of those two bytes in HL, for RESOLVE_ALL_FIXUPS to patch later.
+EMIT_PLACEHOLDER_16:
+        ld hl,(EMIT_PTR)
+        push hl
+        xor a
+        call EMIT_BYTE
+        call EMIT_BYTE
+        pop hl
+        ret
 
 ; ===========================================================================
 ; EXPRESSION COMPILER (real symbol resolution via CSYM_FIND_OR_CREATE, not
 ; a stub — this is the load-bearing difference from the sizing spike)
+;
+; comparison := additive (('<' | '=') additive)?     (R3 addition — a single
+;               optional trailing comparison, not chained/associative,
+;               matching classic BASIC's own IF-condition shape; needed so
+;               IF's condition can be more than "any nonzero integer")
+; additive   := term (('+' | '-') term)*
 ; ===========================================================================
-COMPILE_EXPR:
+COMPILE_EXPR:                   ; top level: comparison
+        call COMPILE_ADDITIVE
+        ld a,(TOK_TYPE)
+        cp TOK_LT
+        jr z,.do_lt
+        cp TOK_ASSIGN            ; '=' doubles as equality inside an
+                                  ; expression, same token classic BASIC
+                                  ; reuses for assignment vs. comparison by
+                                  ; context — COMPILE_ASSIGN/COMPILE_FOR
+                                  ; already consume assignment's own '='
+                                  ; themselves, before COMPILE_EXPR is ever
+                                  ; called for their right-hand side, so any
+                                  ; '=' COMPILE_EXPR itself sees is
+                                  ; genuinely a comparison
+        jr z,.do_eq
+        ret
+.do_lt:
+        call LEX_NEXT_TOKEN
+        call COMPILE_ADDITIVE
+        call EMIT_OP_CMP_LT
+        ret
+.do_eq:
+        call LEX_NEXT_TOKEN
+        call COMPILE_ADDITIVE
+        call EMIT_OP_CMP_EQ
+        ret
+
+COMPILE_ADDITIVE:
         call COMPILE_TERM
 .loop:
         ld a,(TOK_TYPE)
@@ -512,10 +767,19 @@ COMPILE_IDENT_LOAD:
 ; ===========================================================================
 ; STATEMENT COMPILER (R2 scope: assignment only)
 ; ===========================================================================
-COMPILE_ASSIGN:
-        ; entry: TOK_TYPE=TOK_IDENT, TOK_NAME/TOK_LEN describe the target
-        ld hl,(TOK_NAME)
-        ld a,(TOK_LEN)
+; COMPILE_ASSIGN_CONTINUED — entry: STMT_IDENT_NAME_PTR/LEN describe the
+; assignment target (saved by COMPILE_PROGRAM's dispatcher BEFORE its own
+; one-token lookahead decided this statement isn't a label definition);
+; TOK_TYPE is already the token immediately after the target identifier
+; (typically TOK_ASSIGN) — the dispatcher's lookahead already fetched it,
+; so this routine does NOT consume the identifier itself again. Splitting
+; the routine this way (rather than having it re-read TOK_NAME/TOK_LEN and
+; call LEX_NEXT_TOKEN itself, as an earlier version did) is what makes the
+; label-vs-assignment lookahead unambiguous — see COMPILE_PROGRAM and
+; LEX_SCAN_IDENT's own header comment for the real bug this replaced.
+COMPILE_ASSIGN_CONTINUED:
+        ld hl,(STMT_IDENT_NAME_PTR)
+        ld a,(STMT_IDENT_NAME_LEN)
         cp 9
         jr c,.len_ok
         ld a,8
@@ -524,7 +788,6 @@ COMPILE_ASSIGN:
         call CSYM_FIND_OR_CREATE
         ld (ASSIGN_TARGET_INDEX),a   ; memory, not a register — see the
                                        ; equ's own comment for why
-        call LEX_NEXT_TOKEN     ; consume the identifier
         ld a,(TOK_TYPE)
         cp TOK_ASSIGN
         jr z,.have_assign
@@ -540,8 +803,489 @@ COMPILE_ASSIGN:
         ret
 
 ; ===========================================================================
-; PROGRAM COMPILER — repeated assignment statements separated by ':',
-; terminated by EOF, followed by a HALT opcode.
+; LABEL TABLE + FORWARD-REFERENCE FIXUPS (R3 addition)
+;
+; Register discipline for every routine below matches CSYM_FIND_OR_CREATE's
+; already-validated pattern exactly (R2's own two real bugs were both
+; "a value needed after a call was left in a register instead of memory" —
+; treated as a standing rule here, not just a lesson for the routines that
+; already broke).
+; ===========================================================================
+
+; LABEL_ENTRY_ADDR — input: C = index; output: HL = LABELTAB_BASE + index*11.
+LABEL_ENTRY_ADDR:
+        ld l,c
+        ld h,0
+        ld d,h
+        ld e,l                  ; DE = index
+        add hl,hl               ; *2
+        add hl,hl               ; *4
+        add hl,hl               ; *8
+        add hl,de                ; *9
+        add hl,de                ; *10
+        add hl,de                ; *11
+        ld de,LABELTAB_BASE
+        add hl,de
+        ret
+
+; FIXUP_ENTRY_ADDR — input: C = index; output: HL = FIXUPTAB_BASE + index*11.
+FIXUP_ENTRY_ADDR:
+        ld l,c
+        ld h,0
+        ld d,h
+        ld e,l
+        add hl,hl
+        add hl,hl
+        add hl,hl
+        add hl,de
+        add hl,de
+        add hl,de
+        ld de,FIXUPTAB_BASE
+        add hl,de
+        ret
+
+; LABEL_DEFINE — input: HL = name pointer, B = name length. Records the
+; CURRENT EMIT_PTR, as an offset relative to VM_CODE_BASE, under this name.
+LABEL_DEFINE:
+        ld (LABEL_FIND_NAME_PTR),hl
+        ld a,b
+        ld (LABEL_FIND_NAME_LEN),a
+        ld a,(LABEL_COUNT)
+        cp LABELTAB_MAX_ENTRIES
+        jr nz,.have_room
+        ld a,5                  ; label table full
+        ld (COMPILE_ERROR_CODE),a
+        ret
+.have_room:
+        ld c,a
+        call LABEL_ENTRY_ADDR   ; HL -> new entry
+        ld a,(LABEL_FIND_NAME_LEN)
+        ld (hl),a
+        inc hl
+        ld b,a
+        ld de,(LABEL_FIND_NAME_PTR)
+        or a
+        jr z,.name_written
+.copy_loop:
+        ld a,(de)
+        ld (hl),a
+        inc hl
+        inc de
+        dec b
+        jr nz,.copy_loop
+.name_written:
+        ; recompute the entry address fresh rather than trust HL's position
+        ; after the variable-length copy loop above
+        ld a,(LABEL_COUNT)
+        ld c,a
+        call LABEL_ENTRY_ADDR
+        ld de,9
+        add hl,de                ; -> offset field (past name_len + 8 name bytes)
+        push hl                   ; save the offset field's address
+        ld hl,(EMIT_PTR)
+        ld de,VM_CODE_BASE
+        or a
+        sbc hl,de                 ; HL = relative offset
+        ex de,hl                  ; DE = relative offset
+        pop hl                    ; HL = offset field's address (restored)
+        ld (hl),e
+        inc hl
+        ld (hl),d
+        ld a,(LABEL_COUNT)
+        inc a
+        ld (LABEL_COUNT),a
+        ret
+
+; LABEL_LOOKUP — input: HL = name pointer, B = name length. Output: carry
+; SET if found (LABEL_LOOKUP_RESULT holds the resolved relative offset),
+; carry CLEAR if not found (not yet defined — caller records a fixup).
+LABEL_LOOKUP:
+        ld (LABEL_FIND_NAME_PTR),hl
+        ld a,b
+        ld (LABEL_FIND_NAME_LEN),a
+        ld c,0
+.scan_loop:
+        ld a,c
+        push hl
+        ld hl,LABEL_COUNT
+        cp (hl)
+        pop hl
+        jr z,.not_found
+        push bc
+        call LABEL_ENTRY_ADDR
+        ld a,(hl)                ; stored name_len
+        pop bc
+        cp b
+        jr nz,.next
+        push hl
+        inc hl
+        ld de,(LABEL_FIND_NAME_PTR)
+        ld a,b
+        or a
+        jr nz,.have_len
+        pop hl
+        jr .found_at_c
+.have_len:
+        push bc
+.cmp_loop:
+        ld a,(de)
+        cp (hl)
+        jr nz,.cmp_fail
+        inc hl
+        inc de
+        dec b
+        jr nz,.cmp_loop
+        pop bc
+        pop hl
+        jr .found_at_c
+.cmp_fail:
+        pop bc
+        pop hl
+        jr .next
+.next:
+        inc c
+        jr .scan_loop
+.found_at_c:
+        ; recompute the entry address fresh, then read its offset field
+        call LABEL_ENTRY_ADDR
+        ld de,9
+        add hl,de
+        ld e,(hl)
+        inc hl
+        ld d,(hl)
+        ld (LABEL_LOOKUP_RESULT),de
+        scf
+        ret
+.not_found:
+        or a
+        ret
+
+; FIXUP_RECORD — input: HL = patch address (absolute RAM address), DE =
+; label name pointer, B = label name length. Records a forward reference,
+; resolved once by RESOLVE_ALL_FIXUPS at the end of compilation.
+FIXUP_RECORD:
+        ld (FIXUP_PATCH_TMP),hl
+        ld (FIXUP_NAME_PTR_TMP),de
+        ld a,b
+        ld (FIXUP_NAME_LEN_TMP),a
+        ld a,(FIXUP_COUNT)
+        cp FIXUPTAB_MAX_ENTRIES
+        jr nz,.have_room
+        ld a,6                  ; fixup table full
+        ld (COMPILE_ERROR_CODE),a
+        ret
+.have_room:
+        ld c,a
+        call FIXUP_ENTRY_ADDR   ; HL -> new entry
+        ld de,(FIXUP_PATCH_TMP)
+        ld (hl),e
+        inc hl
+        ld (hl),d
+        inc hl
+        ld a,(FIXUP_NAME_LEN_TMP)
+        ld (hl),a
+        inc hl
+        ld b,a
+        ld de,(FIXUP_NAME_PTR_TMP)
+        or a
+        jr z,.done
+.copy_loop:
+        ld a,(de)
+        ld (hl),a
+        inc hl
+        inc de
+        dec b
+        jr nz,.copy_loop
+.done:
+        ld a,(FIXUP_COUNT)
+        inc a
+        ld (FIXUP_COUNT),a
+        ret
+
+; RESOLVE_ALL_FIXUPS — called once, at the end of COMPILE_PROGRAM. Patches
+; every outstanding forward reference now that every label has been
+; defined. Sets COMPILE_ERROR_CODE=7 (undefined label) and returns early
+; if any fixup's label was never defined anywhere in the program.
+RESOLVE_ALL_FIXUPS:
+        ld c,0
+.loop:
+        ld a,c
+        ld hl,FIXUP_COUNT
+        cp (hl)
+        ret z
+        ld (RESOLVE_FIXUP_INDEX),a  ; save the OUTER loop's own fixup
+                                     ; index in memory before calling
+                                     ; LABEL_LOOKUP, which uses C as its
+                                     ; own internal scan-index scratch and
+                                     ; does not restore it — an earlier
+                                     ; version kept this index only in C
+                                     ; across that call, so a successful
+                                     ; lookup (which naturally leaves C
+                                     ; equal to whatever LABELTAB index it
+                                     ; matched, not the fixup index) sent
+                                     ; this loop into a bogus extra
+                                     ; iteration over garbage fixup-table
+                                     ; memory, producing a spurious
+                                     ; "undefined label" error even though
+                                     ; the real lookup had already
+                                     ; succeeded and patched correctly.
+                                     ; Root-caused by single-stepping the
+                                     ; actual instruction sequence on real
+                                     ; ZEsarUX hardware, not by inspection —
+                                     ; the bug was invisible without
+                                     ; watching C's value survive (or not)
+                                     ; across the call.
+        call FIXUP_ENTRY_ADDR   ; HL -> entry: [patch_lo][patch_hi][name_len][name...]
+        ld e,(hl)
+        inc hl
+        ld d,(hl)                ; DE = patch address
+        inc hl
+        ld a,(hl)                ; name_len
+        inc hl                    ; HL -> name bytes (LABEL_LOOKUP's own input)
+        ld b,a                    ; B = name length (LABEL_LOOKUP's own input)
+        ld (RESOLVE_PATCH_TMP),de
+        call LABEL_LOOKUP
+        jr nc,.undefined
+        ld de,(RESOLVE_PATCH_TMP)
+        ld hl,(LABEL_LOOKUP_RESULT)
+        ld a,l
+        ld (de),a
+        inc de
+        ld a,h
+        ld (de),a
+        ld a,(RESOLVE_FIXUP_INDEX)
+        inc a
+        ld c,a
+        jr .loop
+.undefined:
+        ld a,7
+        ld (COMPILE_ERROR_CODE),a
+        ret
+
+; ===========================================================================
+; BRANCH STATEMENT COMPILERS (R3 addition: GOTO, IF...THEN GOTO)
+; ===========================================================================
+
+; COMPILE_BRANCH_TARGET — shared by COMPILE_GOTO and COMPILE_IF. Input:
+; HL = the branch opcode's placeholder patch address (from
+; EMIT_PLACEHOLDER_16); current token must be TOK_IDENT (the label name).
+; Resolves immediately if the label is already defined (backward
+; reference), otherwise records a fixup for RESOLVE_ALL_FIXUPS to patch
+; later (forward reference).
+COMPILE_BRANCH_TARGET:
+        ld (BRANCH_PATCH_TMP),hl
+        ld hl,(TOK_NAME)
+        ld a,(TOK_LEN)
+        ld b,a
+        call LABEL_LOOKUP
+        jr c,.resolved
+        ld hl,(BRANCH_PATCH_TMP)
+        ld de,(TOK_NAME)
+        ld a,(TOK_LEN)
+        ld b,a
+        call FIXUP_RECORD
+        call LEX_NEXT_TOKEN     ; consume the label identifier
+        ret
+.resolved:
+        ld hl,(BRANCH_PATCH_TMP)
+        ld de,(LABEL_LOOKUP_RESULT)
+        ld (hl),e
+        inc hl
+        ld (hl),d
+        call LEX_NEXT_TOKEN     ; consume the label identifier
+        ret
+
+; COMPILE_GOTO — GOTO <label>
+COMPILE_GOTO:
+        call LEX_NEXT_TOKEN     ; consume GOTO
+        call EMIT_OP_JMP
+        call EMIT_PLACEHOLDER_16   ; HL = patch address
+        ld a,(TOK_TYPE)
+        cp TOK_IDENT
+        jr z,.have_target
+        ld a,12                 ; expected a label name after GOTO
+        ld (COMPILE_ERROR_CODE),a
+        ret
+.have_target:
+        call COMPILE_BRANCH_TARGET
+        ret
+
+; COMPILE_IF — IF <expr> THEN GOTO <label>  (block IF/ENDIF is out of R3's
+; scope, per the implementation plan's own staging)
+; IF cond THEN GOTO label compiles as:
+;   <cond>
+;   JMPZ  <skip>          ; false -> skip over the GOTO entirely
+;   JMP   <label>         ; true  -> take the branch
+;   <skip>:               ; false fell through to here
+; An earlier version emitted only the JMPZ, with the label's OWN resolved
+; offset as its operand — backwards: JMPZ branches when the popped value
+; IS zero, so that compiled "jump to label when the condition is FALSE",
+; the opposite of "IF...THEN GOTO"'s meaning. Caught by decoding the real
+; compiled bytecode after a real ZEsarUX run (VM_ERROR_CODE=1, illegal
+; opcode, from branching to a nonsense address once the loop's inverted
+; exit condition ran long enough) — not by inspection.
+COMPILE_IF:
+        call LEX_NEXT_TOKEN     ; consume IF
+        call COMPILE_EXPR       ; condition
+        call EMIT_OP_JMPZ
+        call EMIT_PLACEHOLDER_16   ; HL = patch address for the "skip" target
+        ld (IF_SKIP_PATCH_TMP),hl
+        ld a,(TOK_TYPE)
+        cp TOK_KW_THEN
+        jr z,.have_then
+        ld a,8                   ; expected THEN
+        ld (COMPILE_ERROR_CODE),a
+        ret
+.have_then:
+        call LEX_NEXT_TOKEN     ; consume THEN
+        ld a,(TOK_TYPE)
+        cp TOK_KW_GOTO
+        jr z,.have_goto
+        ld a,9                   ; expected GOTO
+        ld (COMPILE_ERROR_CODE),a
+        ret
+.have_goto:
+        call LEX_NEXT_TOKEN     ; consume GOTO
+        ld a,(TOK_TYPE)
+        cp TOK_IDENT
+        jr z,.have_target
+        ld a,12
+        ld (COMPILE_ERROR_CODE),a
+        ret
+.have_target:
+        call EMIT_OP_JMP
+        call EMIT_PLACEHOLDER_16   ; HL = patch address for the real target
+        call COMPILE_BRANCH_TARGET ; resolves/fixups; also consumes the
+                                     ; label identifier token
+        ; patch the "skip" target to land HERE — right after the JMP —
+        ; so a false condition falls through past the GOTO instead of
+        ; taking it.
+        ld hl,(EMIT_PTR)
+        ld de,VM_CODE_BASE
+        or a
+        sbc hl,de                 ; HL = relative offset (current position)
+        ex de,hl                  ; DE = relative offset
+        ld hl,(IF_SKIP_PATCH_TMP)
+        ld (hl),e
+        inc hl
+        ld (hl),d
+        ret
+
+; ===========================================================================
+; LOOP STATEMENT COMPILERS (R3 addition: FOR/NEXT)
+;
+; SINGLE ACTIVE LOOP ONLY — matches R1's VM core's own single VM_FOR_LIMIT
+; slot (rom/exrom_v2_vm_core.asm's own header comment on OP_FOR_INIT).
+; Nested FOR/NEXT is a known, documented limitation, not a silent gap: a
+; future refinement would need both this compiler's FOR_LOOP_TOP_OFFSET/
+; FOR_LOOP_VAR_INDEX and the VM's VM_FOR_LIMIT to become real stacks. R3's
+; own success gate (a real nontrivial program compiling and running,
+; testing the compiled-branch/GOTO-catastrophe-fix claim at scale) does not
+; require nested loops.
+; ===========================================================================
+
+; COMPILE_FOR — FOR <ident> = <expr> TO <expr>  (fixed STEP=1; explicit
+; STEP is also deferred, matching R1's VM core's own FOR_NEXT opcode, which
+; only supports STEP=1)
+COMPILE_FOR:
+        call LEX_NEXT_TOKEN     ; consume FOR
+        ld a,(TOK_TYPE)
+        cp TOK_IDENT
+        jr z,.have_var
+        ld a,10                  ; expected a loop variable
+        ld (COMPILE_ERROR_CODE),a
+        ret
+.have_var:
+        ld hl,(TOK_NAME)
+        ld a,(TOK_LEN)
+        ld b,a
+        call CSYM_FIND_OR_CREATE
+        ld (FOR_LOOP_VAR_INDEX),a
+        call LEX_NEXT_TOKEN     ; consume the identifier
+        ld a,(TOK_TYPE)
+        cp TOK_ASSIGN
+        jr z,.have_assign
+        ld a,2
+        ld (COMPILE_ERROR_CODE),a
+        ret
+.have_assign:
+        call LEX_NEXT_TOKEN     ; consume '='
+        call COMPILE_EXPR       ; initial value -> VM operand stack
+        ld a,(TOK_TYPE)
+        cp TOK_KW_TO
+        jr z,.have_to
+        ld a,11                  ; expected TO
+        ld (COMPILE_ERROR_CODE),a
+        ret
+.have_to:
+        call LEX_NEXT_TOKEN     ; consume TO
+        call COMPILE_EXPR       ; limit value -> VM operand stack
+        call EMIT_OP_FOR_INIT
+        ld a,(FOR_LOOP_VAR_INDEX)
+        call EMIT_BYTE
+        ld hl,(EMIT_PTR)
+        ld de,VM_CODE_BASE
+        or a
+        sbc hl,de                ; HL = loop body's start, relative offset
+        ld (FOR_LOOP_TOP_OFFSET),hl
+        ret
+
+; COMPILE_NEXT — NEXT <ident>
+COMPILE_NEXT:
+        call LEX_NEXT_TOKEN     ; consume NEXT
+        ld a,(TOK_TYPE)
+        cp TOK_IDENT
+        jr z,.have_var
+        ld a,10
+        ld (COMPILE_ERROR_CODE),a
+        ret
+.have_var:
+        ld hl,(TOK_NAME)
+        ld a,(TOK_LEN)
+        ld b,a
+        call CSYM_FIND_OR_CREATE   ; resolves to the SAME index as the
+                                    ; matching FOR by construction (a real
+                                    ; name lookup, not a separate mechanism)
+                                    ; — this R3 scope does not separately
+                                    ; verify the name matches the innermost
+                                    ; open FOR, since only one loop can be
+                                    ; active at a time anyway (see this
+                                    ; section's header note)
+        ld (FOR_LOOP_VAR_INDEX),a
+        call LEX_NEXT_TOKEN     ; consume the identifier
+        call EMIT_OP_FOR_NEXT
+        ld a,(FOR_LOOP_VAR_INDEX)
+        call EMIT_BYTE
+        ld hl,(FOR_LOOP_TOP_OFFSET)
+        ld a,h
+        ld (FOR_NEXT_HIGH_TMP),a  ; EMIT_BYTE itself uses HL internally (as
+                                    ; the EMIT_PTR pointer) — an earlier
+                                    ; version kept this offset's high byte
+                                    ; in H across the low byte's EMIT_BYTE
+                                    ; call, which clobbers HL, so "ld a,h"
+                                    ; afterward read EMIT_PTR's own high
+                                    ; byte (e.g. $90) instead of the
+                                    ; intended offset high byte ($00) —
+                                    ; caught by a real ZEsarUX run: FOR_NEXT
+                                    ; branched to a wildly wrong absolute
+                                    ; address instead of the loop top,
+                                    ; producing VM_ERROR_CODE=1 (illegal
+                                    ; opcode) shortly after. Same bug class
+                                    ; as COMPILE_ASSIGN's and
+                                    ; COMPILE_IDENT_LOAD's earlier fixes —
+                                    ; save to memory before any call that
+                                    ; can clobber the register you still
+                                    ; need.
+        ld a,l
+        call EMIT_BYTE
+        ld a,(FOR_NEXT_HIGH_TMP)
+        call EMIT_BYTE
+        ret
+
+; ===========================================================================
+; PROGRAM COMPILER — dispatches each statement to the right compiler,
+; separated by ':', terminated by EOF, followed by a HALT opcode and one
+; final fixup-resolution pass.
 ; ===========================================================================
 COMPILE_PROGRAM:
         call LEX_NEXT_TOKEN
@@ -549,11 +1293,61 @@ COMPILE_PROGRAM:
         ld a,(TOK_TYPE)
         cp TOK_EOF
         jr z,.done
+        cp TOK_KW_GOTO
+        jr z,.goto
+        cp TOK_KW_IF
+        jr z,.if
+        cp TOK_KW_FOR
+        jr z,.for
+        cp TOK_KW_NEXT
+        jr z,.next_stmt
         cp TOK_IDENT
-        jr nz,.done              ; anything else ends compilation cleanly in
-                                  ; this R2 scope (no error statements exist
-                                  ; yet to dispatch to)
-        call COMPILE_ASSIGN
+        jr z,.ident_stmt
+        jr .done                  ; anything else ends compilation cleanly
+                                   ; in this scope (no error-recovery exists
+                                   ; yet — a later milestone's job)
+.ident_stmt:
+        ; genuine one-token lookahead: save this identifier's name, then
+        ; fetch the NEXT token. If it's ':', this was a label definition —
+        ; the ':' is consumed as an ordinary TOK_COLON here, not specially
+        ; by the lexer, so an expression-internal identifier immediately
+        ; followed by a statement-separator ':' is never affected (this
+        ; lookahead only ever runs at genuine statement start). Otherwise,
+        ; the peeked token IS the token COMPILE_ASSIGN_CONTINUED needs as
+        ; "whatever follows the target identifier" — no re-fetch needed.
+        ld hl,(TOK_NAME)
+        ld (STMT_IDENT_NAME_PTR),hl
+        ld a,(TOK_LEN)
+        ld (STMT_IDENT_NAME_LEN),a
+        call LEX_NEXT_TOKEN
+        ld a,(TOK_TYPE)
+        cp TOK_COLON
+        jr z,.label
+        call COMPILE_ASSIGN_CONTINUED
+        jr .after_stmt
+.label:
+        ld hl,(STMT_IDENT_NAME_PTR)
+        ld a,(STMT_IDENT_NAME_LEN)
+        ld b,a
+        call LABEL_DEFINE
+        ld a,(COMPILE_ERROR_CODE)
+        or a
+        ret nz
+        call LEX_NEXT_TOKEN        ; consume the ':', fetch the next
+                                    ; statement's first token
+        jr .loop
+.goto:
+        call COMPILE_GOTO
+        jr .after_stmt
+.if:
+        call COMPILE_IF
+        jr .after_stmt
+.for:
+        call COMPILE_FOR
+        jr .after_stmt
+.next_stmt:
+        call COMPILE_NEXT
+.after_stmt:
         ld a,(COMPILE_ERROR_CODE)
         or a
         ret nz
@@ -564,6 +1358,7 @@ COMPILE_PROGRAM:
         jr .loop
 .done:
         call EMIT_OP_HALT
+        call RESOLVE_ALL_FIXUPS
         ret
 
 COMPILER_END:

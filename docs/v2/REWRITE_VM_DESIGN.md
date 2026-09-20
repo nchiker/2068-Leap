@@ -210,6 +210,22 @@ four real bugs via hardware execution across Milestone 01/R1/R2, a
 concrete demonstration that "test on real hardware, not just by
 inspection" is pulling its weight, not a formality.
 
+## Update: R3 (branches, loops, real fixups) is complete
+
+`rom/exrom_v2_compiler.asm` grew to 1,550 bytes with GOTO, IF...THEN GOTO,
+FOR/NEXT, real labels, and real forward-reference fixups (the sizing
+spike's fixup mechanism was an explicit stub -- see
+STATEMENT_COMPILER_SPIKE.md's own "honest residual uncertainty" note). A
+real 14-statement program combining all of it -- including a forward-
+referenced GOTO (the one code path nothing before R3 exercised) and a
+real negative test that the GOTO genuinely skips its target -- produced
+exactly correct results for all six of its variables on real ZEsarUX
+hardware. Four more real register-clobber bugs plus one real logic bug (a
+backwards JMPZ in the first IF...THEN GOTO compiler) were found via
+hardware execution and fixed -- eight real bugs total across Milestone
+01/R1/R2/R3. See the implementation plan's R3 section for the full
+account.
+
 ## Update: the statement-compiler spike has been built and measured
 
 See `STATEMENT_COMPILER_SPIKE.md` for the full result:
