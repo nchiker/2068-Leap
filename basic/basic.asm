@@ -2726,6 +2726,25 @@ BASIC_EVAL_PRIMARY:
     call BASIC_TRY_EVAL_FUNCTION
     jp   nc, .do_function_call
 
+    ; V2 loadable-extension function call (HIT(n) et al.) — tried here,
+    ; same ordering reason as the built-in check just above: a multi-
+    ; letter extension function name must be recognized before the
+    ; single-letter-variable fallback below, or its first letter would
+    ; be misread as an unrelated scalar (e.g. "HIT(0)" as variable H
+    ; followed by unparseable leftover "IT(0)"). BASIC_TRY_EVAL_FUNCTION
+    ; also destroys A (see the very next comment block) — reloading A
+    ; from HL happens below regardless, so this extra call costs nothing
+    ; on top of that already-necessary reload. Inlined directly rather
+    ; than through a separate BASIC_TRY_EXTENSION_FUNCTION wrapper —
+    ; the real body is EXROM-resident (rom/exrom_sprite.asm's own
+    ; BASIC_TRY_EXTENSION_FUNCTION_EXROM_BODY, see its header) either
+    ; way, so a dedicated Home-side wrapper would just be a second,
+    ; redundant layer of the exact same 5-byte indirection this call
+    ; already performs.
+    call BASIC_CALL_EXROM_INLINE
+    DW   $C096
+    ret  nc
+
     ; REAL BUG FOUND AND FIXED (caught by tools/z80sim, not static
     ; analysis): BASIC_TRY_EVAL_FUNCTION destroys A along with
     ; AF/BC/DE/HL/IX (documented in its own header) — but everything
@@ -3565,18 +3584,6 @@ BASIC_EVAL_PRIMARY:
 .stick_bad_arg:
     ld   hl, MSG_INVALID_ARGUMENT
     jp   BASIC_RAISE_ERROR_HL
-
-.call_hit:
-    ; HIT(slot1,slot2) — HL/DE already hold the two parsed arguments,
-    ; the same 2-numeric-argument shape MOD/DIV/POINT above all share.
-    ; No BASIC_CHECK_ONLY guard needed (unlike STICK above): the real
-    ; body only ever READS sprite state (never mutates anything BASIC-
-    ; visible), and gracefully treats any invalid/not-shown slot as
-    ; "no collision" rather than erroring — see BASIC_SPRITE_HIT's own
-    ; header (rom/exrom_sprite.asm) for why that's safe to run
-    ; unconditionally even during a whole-program check pass.
-    call BASIC_SPRITE_HIT_EXROM
-    jr   .function_done
 
 ; ----------------------------------------------------------------------
 ; .check_only_zero_guard — shared BASIC_CHECK_ONLY shortcut for USR/
@@ -8871,22 +8878,12 @@ BASIC_SPRITE_EXROM:
     call BASIC_CALL_EXROM_INLINE
     DW   $C054
 
-; ============================================================================
-; BASIC_SPRITE_HIT_EXROM
-; Thin wrapper for HIT(slot1,slot2) — rom/exrom_sprite.asm's own
-; BASIC_SPRITE_HIT, reached via its dedicated entry stub ($C096, added
-; alongside SPRITE MOVE and the SPRITE_SLOT_MAX increase, 2026-08-23).
-; Takes its two slot numbers in HL/DE (not A) — deliberately: this
-; trampoline's own magic-check preamble clobbers A (see EDITOR_WRAP_
-; OFFSET_TO_ROWCOL's own header, rom/exrom_editor.asm, for the full
-; bug writeup behind that rule), and HL/DE survive it untouched.
-; In:  HL = slot1, DE = slot2
-; Out: HL = 1 or 0
-; Destroys: AF, BC, DE, HL
-; ============================================================================
-BASIC_SPRITE_HIT_EXROM:
-    call BASIC_CALL_EXROM_INLINE
-    DW   $C096
+; BASIC_SPRITE_HIT_EXROM removed 2026-09-19 (Phase 0 P0.3): HIT(slot1,
+; slot2) is now a loadable RAM extension function (rom/extensions/
+; sprite.asm) registered through BASIC_EXTENSION_REGISTER, dispatched
+; through the EXROM-resident BASIC_TRY_EXTENSION_FUNCTION_EXROM_BODY
+; (rom/exrom_sprite.asm), not a resident EXROM call to a fixed sprite-
+; only routine — see MILESTONE_01_RESULTS.md.
 
 ; ============================================================================
 ; BASIC_SCAN_LABELS_EXROM / BASIC_FULL_CHECK_EXROM /
@@ -10129,10 +10126,10 @@ BASIC_EXEC_STATEMENT_CONTENT:
     or   a
     ret
 
-; Single-slot RAM extension proof. The checker uses the same registered name
-; but validates the fixed two-numeric-expression grammar without executing RAM.
-; In: HL = original statement text. Out: B=0 no match; B=1 matched, with carry
-; from parsing or the callback. Callback receives BC=first value, DE=second.
+; Single-slot statement dispatch (unchanged in shape from before P0.3 --
+; see BASIC_EXTENSION_REGISTER's own header for why the originally-
+; planned 3-slot statement widening was reverted: sprite exposes exactly
+; one statement keyword, SPRITE, not three).
 BASIC_TRY_EXTENSION:
     ld   b, 0
     ld   de, (EXTENSION_MAGIC)
@@ -10174,8 +10171,21 @@ BASIC_TRY_EXTENSION:
 
 ; Registration is the only supported way to publish a module: write pointers
 ; first, invalidate the editor verdict cache, then publish the magic atomically.
-; PoC modules are restricted to the fixed $F400-$F5FF upper-RAM window.
-; In: HL=name, DE=execute callback, C=grammar (0=expr,expr; 1=LINE-shaped).
+; Modules are restricted to the fixed $F400-$F5FF upper-RAM window (same
+; original "AND $FE" page-aligned check every pre-P0.3 extension already
+; used -- restored 2026-09-19 after a real build showed the fuller 16-bit
+; range check this milestone tried first cost more HOME bytes than this
+; near-zero-margin ROM could absorb; the window never actually needed to
+; grow once the milestone's own scope narrowed to just HIT(), see this
+; file's revision history for the fuller writeup).
+; In: HL=name, DE=execute callback, C=grammar (0=expr,expr; 1=LINE-shaped;
+;     2=register a FUNCTION instead of the statement slot -- HL/DE mean
+;     the same thing, just stored in the function slot and dispatched
+;     from BASIC_EVAL_PRIMARY instead of the statement-keyword path).
+;     A function registration (grammar=2) is always 2-argument -- HIT()
+;     is this ABI's only client so far; see BASIC_TRY_EXTENSION_
+;     FUNCTION's own header for why a general arity field was tried and
+;     reverted (real HOME-budget pressure).
 ; Out: carry set if either pointer is outside the module window.
 BASIC_EXTENSION_REGISTER:
     ld   a, h
@@ -10186,10 +10196,21 @@ BASIC_EXTENSION_REGISTER:
     and  $FE
     cp   HIGH EXTENSION_MODULE_BASE
     jr   nz, .register_fail
+    ld   a, c
+    cp   2
+    jr   z, .register_function
     ld   (EXTENSION_NAME_PTR), hl
     ld   (EXTENSION_EXEC_PTR), de
-    ld   a, c
-    ld   (EXTENSION_GRAMMAR), a
+    ld   (EXTENSION_GRAMMAR), a          ; A still == C (cp doesn't
+                                         ; touch it) -- no reload needed
+    jr   .publish
+.register_function:
+    ld   (EXTENSION_FUNC_NAME_PTR), hl
+    ld   (EXTENSION_FUNC_EXEC_PTR), de
+    ld   (EXTENSION_FUNC_ACTIVE), a      ; A still == C == 2 here too --
+                                         ; any nonzero value satisfies
+                                         ; this flag's own "or a" check
+.publish:
     xor  a
     ld   (STATUS_CHECK_VALID), a
     ld   hl, EXTENSION_REG_MAGIC
@@ -10198,6 +10219,14 @@ BASIC_EXTENSION_REGISTER:
 .register_fail:
     scf
     ret
+
+; BASIC_TRY_EXTENSION_FUNCTION removed 2026-09-19 (Phase 0 P0.3, real
+; HOME-budget pressure): it was a thin wrapper doing nothing but
+; `call BASIC_CALL_EXROM_INLINE / DW $C096`, so BASIC_EVAL_PRIMARY's
+; own .check_var path now performs that exact call directly instead of
+; through a redundant second layer of the same indirection — see that
+; call site's own comment. The real body is EXROM-resident (rom/
+; exrom_sprite.asm's own BASIC_TRY_EXTENSION_FUNCTION_EXROM_BODY).
 
 ; Stable extension-ABI accessor: CURRENT_OVER is movable internal state and
 ; must never be compiled as an absolute address into a tape-distributed module.
@@ -11462,8 +11491,6 @@ FUNCTION_TABLE:
     DB ARGC_STR2
     DW KW_FN_DIMN, BASIC_EVAL_PRIMARY.array_name_dim_arg
     DB ARGC_ARRAYNAME
-    DW KW_FN_HIT, BASIC_EVAL_PRIMARY.call_hit
-    DB 2
     DW   0
 ARGC_ARRAYNAME EQU 101
 
@@ -11491,7 +11518,6 @@ KW_FN_CODE: DB "CODE", 0
 KW_FN_VAL: DB "VAL", 0
 KW_FN_INSTR: DB "INSTR", 0
 KW_FN_DIMN: DB "DIMN", 0
-KW_FN_HIT: DB "HIT", 0
 
 ; ============================================================================
 ; STRING_FUNCTION_TABLE

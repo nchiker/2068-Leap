@@ -1,4 +1,4 @@
-.PHONY: all build check smoke-build test budget audit-basic manual clean cplot-extension block-extension frame-extension invert-extension ayreg-extension out-extension release-assets
+.PHONY: all build check smoke-build test budget audit-basic manual clean cplot-extension block-extension frame-extension invert-extension ayreg-extension out-extension sprite-extension release-assets
 
 all: check build
 
@@ -106,10 +106,19 @@ out-extension: build
 	tools/sjasmplus_strict.sh rom/test_extension_clear_inject.asm --sym=rom/test_extension_clear_inject.sym
 	tools/sjasmplus_strict.sh rom/extensions/out_clear_test.asm
 
-release-assets: build cplot-extension block-extension frame-extension invert-extension ayreg-extension out-extension manual
+sprite-extension: build
+	mkdir -p build/extensions
+	tools/sjasmplus_strict.sh rom/extensions/sprite.asm
+	python3 tools/make_extension_tzx.py build/extensions/sprite.tzx SPRITE build/extensions/sprite.bin
+	tools/sjasmplus_strict.sh rom/test_extension_inject.asm --sym=rom/test_extension_inject.sym
+	tools/sjasmplus_strict.sh rom/extensions/sprite_test.asm
+	tools/sjasmplus_strict.sh rom/test_extension_clear_inject.asm --sym=rom/test_extension_clear_inject.sym
+	tools/sjasmplus_strict.sh rom/extensions/sprite_clear_test.asm
+
+release-assets: build cplot-extension block-extension frame-extension invert-extension ayreg-extension out-extension sprite-extension manual
 	mkdir -p build/release/roms build/release/extensions build/release/docs build/release/demos build/release/patches
 	cp build/test_basic.bin build/exrom.bin build/exrom.dck build/ts2068rom_zesarux.bin build/release/roms/
-	cp build/extensions/cplot.tzx build/extensions/block.tzx build/extensions/frame.tzx build/extensions/invert.tzx build/extensions/ayreg.tzx build/extensions/out.tzx build/release/extensions/
+	cp build/extensions/cplot.tzx build/extensions/block.tzx build/extensions/frame.tzx build/extensions/invert.tzx build/extensions/ayreg.tzx build/extensions/out.tzx build/extensions/sprite.tzx build/release/extensions/
 	cp README.md RELEASE_NOTES.md ANNOUNCEMENT_RELEASE_1_BETA.md LICENSE build/release/
 	cp docs/emulator_setup.md docs/whats_new_release_1_beta.md docs/2068-Leap_Whats_New_Release_1_Beta.docx docs/user_manual.md docs/2068_Leap_Users_Manual.docx build/release/docs/
 	cp demos/showcase.txt demos/smoketest.txt build/release/demos/

@@ -57,6 +57,7 @@ EXPECTED_BLACK = {
     "extension_unloaded", "extension_new_clear", "block_unloaded",
     "block_new_clear", "frame_unloaded", "frame_new_clear",
     "invert_unloaded", "invert_new_clear", "print_str_semicolon",
+    "hit_unloaded", "hit_new_clear",
 }
 
 RAM_EXTENSION_BIN = {
@@ -77,10 +78,13 @@ RAM_EXTENSION_BIN = {
     "invert_new_clear": "build/extensions/invert_clear_test.bin",
     "extension_register": "build/extensions/cplot_test.bin",
     "extension_new_clear": "build/extensions/cplot_clear_test.bin",
+    "hit": "build/extensions/sprite_test.bin",
+    "hit_new_clear": "build/extensions/sprite_clear_test.bin",
 }
 RAM_EXTENSION_CLEAR = {
     "ayreg_new_clear", "out_new_clear", "block_new_clear",
     "frame_new_clear", "invert_new_clear", "extension_new_clear",
+    "hit_new_clear",
 }
 RAM_EXTENSION_SEED_CACHE = {"extension_register"}
 RUN_STATE_TEST = {"run_state"}
@@ -201,7 +205,8 @@ def verdict_for(name, border):
 def main():
     subprocess.run(
         ["make", "cplot-extension", "block-extension", "frame-extension",
-         "invert-extension", "ayreg-extension", "out-extension"],
+         "invert-extension", "ayreg-extension", "out-extension",
+         "sprite-extension"],
         cwd=REPO_ROOT, check=True, capture_output=True,
     )
 

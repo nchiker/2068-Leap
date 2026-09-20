@@ -2277,8 +2277,8 @@ UDG_COUNT           EQU 21
 ; the label table. Graphics calls remain able to read them while EXROM owns
 ; chunk 6. `$F328-$F3A7` holds STR_FUNC_POOL and `$F3A8-$F3AE` holds
 ; minimal DEF FN state. Extension state occupies `$F3AF-$F3C2`, and the
-; fixed module window occupies `$F400-$F5FF`; genuine stack headroom starts
-; at `$F600`.
+; fixed module window occupies `$F400-$F9FF` (enlarged 2026-09-19 for the
+; sprite extension); genuine stack headroom starts at `$FA00`.
 UDG_TABLE            EQU $F180
     ASSERT LABEL_TABLE_TOP + LABEL_TABLE_MAXLEN == UDG_TABLE
     ASSERT UDG_TABLE + 168 == $F228
@@ -2511,6 +2511,45 @@ EXTENSION_ARG3           EQU $F3C7
 EXT_SERVICE_ABI_VERSION  EQU 1
 EXTENSION_REG_MAGIC   EQU $5845       ; "EX" little-endian
 EXTENSION_MODULE_BASE EQU $F400
+; Function-slot expansion (2026-09-19, Phase 0 P0.3 -- HIT()-to-loadable-
+; extension conversion). REAL DESIGN REVERSAL, caught before any build/
+; test was run: this originally also added THREE statement slots
+; (SHOW/MOVE/HIDE as separate keywords), on the mistaken assumption from
+; this milestone's own planning pass that sprite exposed three top-level
+; BASIC statements. rom/exrom_sprite.asm's own header disproves that --
+; there is exactly ONE statement keyword (SPRITE), with GRAB/SHOW/HIDE/
+; MOVE as sub-verbs the module's own callback parses internally, plus one
+; function (HIT). The existing single-slot statement registry already
+; handles "one keyword" fine; three statement slots were pure unneeded
+; HOME cost (confirmed by a real build: it pushed HOME 255 bytes over
+; budget on its own, against a 5-byte-free starting margin). Reverted
+; back to single-slot statement registration, keeping only the new
+; function slot, which SPRITE's own SHOW/MOVE/HIDE grammar doesn't need
+; anyway (they're LINE-shaped-or-worse statement grammars, not function
+; calls) -- see MILESTONE_01_RESULTS.md for the fuller writeup, including
+; why SPRITE's own statement conversion is deferred (its GRAB/SHOW/HIDE/
+; MOVE sub-verb grammar doesn't fit either canned statement shape (0:
+; expr,expr; 1: LINE-shaped) the ABI currently offers, and a free-form
+; third shape would cost still more fixed HOME dispatch code this
+; project's near-zero HOME margin cannot currently absorb).
+; Fixed at 2 numeric arguments (HIT(slot1,slot2) is this ABI's only
+; function client so far) -- a general arity field was tried and
+; reverted once a real build showed HOME had no margin to spare for it
+; (structured-basic-poc's own NATIVE_ABI.md SBN v2 package format
+; independently confirms "name+arity+entry" as the minimal sufficient
+; SHAPE for a function extension, but this project's own HOME budget,
+; not that shape, is what decided this specific implementation).
+EXTENSION_FUNC_ACTIVE    EQU $F3C8       ; 1 byte; nonzero = function registered
+EXTENSION_FUNC_NAME_PTR  EQU $F3C9       ; (2 bytes)
+EXTENSION_FUNC_EXEC_PTR  EQU $F3CB       ; (2 bytes)
+; Left at the original $F600 (512-byte window) -- briefly enlarged to
+; $FA00 during this milestone's first (reverted) draft, which assumed a
+; much bigger multi-statement sprite module; HIT()'s own module is tiny
+; (well under 512 bytes), and keeping the original page-aligned window
+; lets BASIC_EXTENSION_REGISTER keep its original, cheaper "AND $FE"
+; validation trick instead of paying for a full 16-bit range check --
+; real HOME-budget pressure (see BASIC_EXTENSION_REGISTER's own header)
+; drove this back down once a real build showed the true cost.
 EXTENSION_MODULE_LIMIT EQU $F600
     ASSERT INSTR_POS + 1 == $F3B6
     ASSERT EXT_SERVICE_VERSION_ADDR == INSTR_POS + 1
@@ -2520,6 +2559,7 @@ EXTENSION_MODULE_LIMIT EQU $F600
     ASSERT EXT_SERVICE_READ_OVER == EXT_SERVICE_WRITE_PIXEL + 3
     ASSERT EXT_SERVICE_TABLE_END == EXT_SERVICE_READ_OVER + 3
     ASSERT EXTENSION_ARG3 + 1 <= EXTENSION_MODULE_BASE
+    ASSERT EXTENSION_FUNC_EXEC_PTR + 2 <= EXTENSION_MODULE_BASE
     ASSERT EXTENSION_MODULE_LIMIT <= $FF00
 STR_FUNC_POOL_NEXT:  DEFS 1           ; 1 byte — next free slot (0-4); reset
                                 ; to 0 at MEM_INIT/BASIC_RUN as a safety

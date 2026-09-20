@@ -519,26 +519,20 @@ EXROM_ENTRY_DETECT_KEYWORDS:
     jp   BASIC_DETECT_KEYWORD_PREFIX_EXROM_BODY
 
     ORG $C096
-EXROM_ENTRY_SPRITE_HIT:
-    ; Bare trampoline into BASIC_SPRITE_HIT (rom/exrom_sprite.asm) —
-    ; HIT(slot1,slot2), added 2026-08-23 alongside SPRITE MOVE and the
-    ; SPRITE_SLOT_MAX increase. Reuses BASIC_SPRITE_SLOT_FLAG_ADDR
-    ; directly since it's EXROM-resident already (unlike DIMN's own
-    ; array lookup, no cross-compilation-unit addressing problem
-    ; here). Takes its two slot numbers in HL/DE rather than A —
-    ; deliberately, since this trampoline's own EXROM_VERIFY_KTAB_MAGIC
-    ; call below clobbers A (see EDITOR_WRAP_OFFSET_TO_ROWCOL's own
-    ; header, rom/exrom_editor.asm, for the full bug writeup that
-    ; established why A specifically can never survive this trampoline
-    ; shape) — HL/DE are untouched by both BANK_PAGE_EXROM_IN and this
-    ; magic check, so passing the slot numbers there instead sidesteps
-    ; that whole bug class from the start rather than needing a fix
-    ; later.
-    ; In/Out/Destroys: identical to BASIC_SPRITE_HIT's own contract
-    ; (In: L = slot1, E = slot2; Out: HL = 1 or 0; Destroys: AF, BC,
-    ; DE, HL)
+EXROM_ENTRY_EXTENSION_FUNCTION:
+    ; Repurposed 2026-09-19 (Phase 0 P0.3) from the now-removed sprite-
+    ; HIT stub: BASIC_TRY_EXTENSION_FUNCTION's real body moved here from
+    ; Home once a real build showed the ABI's fixed dispatch cost (the
+    ; magic/active check, BASIC_MATCH_FUNCTION_NAME-equivalent match,
+    ; 2-argument parse, and the runtime call) had no room left in HOME's
+    ; own near-zero margin -- the exact same "move it whole to EXROM"
+    ; pattern every other budget-forced migration in this project uses
+    ; (BASIC_SPRITE_EXROM, BASIC_SAVE_EXROM, etc.), applied to brand-new
+    ; code instead of old resident code for the first time. See
+    ; BASIC_TRY_EXTENSION_FUNCTION_EXROM_BODY (rom/exrom_sprite.asm) for
+    ; the real logic and MILESTONE_01_RESULTS.md for the full writeup.
     call EXROM_VERIFY_KTAB_MAGIC
-    jp   BASIC_SPRITE_HIT
+    jp   BASIC_TRY_EXTENSION_FUNCTION_EXROM_BODY
 
     ORG $C09C
 EXROM_ENTRY_NUM_TO_STRING:

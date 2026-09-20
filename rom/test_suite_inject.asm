@@ -100,8 +100,8 @@ COLD_START:
     IFDEF STACK_AUDIT
     ; Canary the entire currently documented machine-stack headroom.
     ; The scan after BASIC_RUN records the first byte touched.
-    ld   hl, $F600
-    ld   bc, $FF00 - $F600
+    ld   hl, EXTENSION_MODULE_LIMIT
+    ld   bc, $FF00 - EXTENSION_MODULE_LIMIT
     ld   a, $A5
 .stack_fill:
     ld   (hl), a
@@ -156,7 +156,7 @@ INJECT_POINT:
                                      ; leaked across BASIC_RUN boundaries
     ENDIF
     IFDEF STACK_AUDIT
-    ld   hl, $F600
+    ld   hl, EXTENSION_MODULE_LIMIT
 .stack_scan:
     ld   a, (hl)
     cp   $A5

@@ -13,7 +13,14 @@ ZERO_SAMPLES = 11
 ONE_SAMPLES = 22
 SILENCE_SAMPLES = 1200
 PILOT_PULSES = 3200
-MODULE_SIZE = 512
+MODULE_WINDOW_MAX = 512   # EXTENSION_MODULE_LIMIT - EXTENSION_MODULE_BASE
+                          # ($F600-$F400) -- keep in sync with include/
+                          # sysvars.inc. This is an upper BOUND on any one
+                          # module, not a fixed pad-to size (2026-09-19):
+                          # each module's own actual size is what goes on
+                          # tape, so a small extension (CPLOT, ~132 bytes)
+                          # doesn't pay to transfer 512 bytes of padding
+                          # just because the window allows a bigger one.
 
 
 def framed(flag: int, payload: bytes) -> bytes:
@@ -59,13 +66,13 @@ def main() -> int:
         return 2
     output, name, module_path = Path(sys.argv[1]), sys.argv[2], Path(sys.argv[3])
     module = module_path.read_bytes()
-    if len(module) > MODULE_SIZE:
-        raise ValueError(f"module is {len(module)} bytes; limit is {MODULE_SIZE}")
-    module = module.ljust(MODULE_SIZE, b"\0")
+    if len(module) > MODULE_WINDOW_MAX:
+        raise ValueError(f"module is {len(module)} bytes; limit is {MODULE_WINDOW_MAX}")
+    module_size = len(module)
     tape_name = name.upper().encode("ascii")[:10].ljust(10, b" ")
     header_payload = (
-        bytes([4]) + tape_name + MODULE_SIZE.to_bytes(2, "little")
-        + (1).to_bytes(2, "little") + MODULE_SIZE.to_bytes(2, "little")
+        bytes([4]) + tape_name + module_size.to_bytes(2, "little")
+        + (1).to_bytes(2, "little") + module_size.to_bytes(2, "little")
     )
     bits: list[int] = []
     level = append_block(bits, framed(0x00, header_payload), 0)

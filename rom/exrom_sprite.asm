@@ -732,135 +732,96 @@ BASIC_SPRITE_CHECK_FIT:
     scf
     ret
 
+; BASIC_SPRITE_HIT removed 2026-09-19 (Phase 0 P0.3): HIT(slot1,slot2)
+; is now a loadable RAM extension function (rom/extensions/sprite.asm),
+; a self-contained port of this routine's exact same rectangle-overlap
+; logic — it needed no EXROM dependency at all to move, since every
+; SPRITE_SLOT_* array and BASIC_SPRITE_SLOT_FLAG_ADDR's own arithmetic
+; (a trivial `HL = base + slot index`) are plain RAM sysvars/constants,
+; not EXROM-resident. See MILESTONE_01_RESULTS.md.
+
 ; ============================================================================
-; BASIC_SPRITE_HIT
-; HIT(slot1,slot2) — 1 if both slots are currently SPRITE_SLOT_SHOWN
-; and their rectangles overlap, 0 otherwise. An invalid/out-of-range
-; slot number is treated as "not shown" (0), not a runtime error —
-; deliberately more forgiving than GRAB/SHOW/HIDE/MOVE's own strict
-; range errors, since a collision check is exactly the kind of thing a
-; game loop calls every frame and shouldn't need its own bounds check
-; first (same reasoning kernel/graphics's own POINT() Y-clamp uses).
-; In:  L = slot1 (low byte only, matching BASIC_SPRITE_PARSE_SLOT's
-;      own unsigned range check), E = slot2
-; Out: HL = 1 (collision) or 0 (no collision / invalid slot(s) / not
-;      both shown)
+; BASIC_TRY_EXTENSION_FUNCTION_EXROM_BODY
+; The loadable-extension function slot's real dispatch logic (grammar=2
+; registrations -- HIT() is the only current client), reached via
+; EXROM_ENTRY_EXTENSION_FUNCTION (rom/exrom_checker.asm, reusing the
+; address this same file's own removed HIT stub used to occupy). Moved
+; here from Home 2026-09-19 once a real build showed Home had no HOME-
+; budget room left for it (5 bytes free before this milestone) --
+; see MILESTONE_01_RESULTS.md for the full writeup.
+;
+; Reimplements BASIC_MATCH_FUNCTION_NAME's own small "keyword, then
+; require and consume '('" contract inline via KTAB_BASIC_MATCH_KEYWORD/
+; KTAB_BASIC_SKIP_SPACES (both already had KTAB entries; MATCH_FUNCTION_
+; NAME itself didn't, and adding a brand-new KTAB entry costs its own 3
+; ROM bytes too -- avoided here since inlining from existing entries is
+; free). Fixed at 2 numeric arguments -- see Home's own BASIC_EXTENSION_
+; REGISTER header (basic/basic.asm) for why a general arity was tried
+; and reverted.
+;
+; No BASIC_CHECK_ONLY guard, same reasoning Home's own header for this
+; routine gave before the move: calling a REGISTERED module's exec
+; pointer during a check pass is already established as safe project-
+; wide (every existing statement-slot extension callback does this
+; unconditionally too), and HIT()'s own body only ever reads sprite
+; state.
+;
+; In: none (reads EXPR_PARSE_PTR itself, matching the pre-move Home
+;     contract).
+; Out: carry set if no function is registered, or the candidate name at
+;      EXPR_PARSE_PTR doesn't match (EXPR_PARSE_PTR left untouched, same
+;      as a failed built-in-function check); carry clear if matched,
+;      with DE=result and EXPR_PARSE_PTR advanced past the closing ')'.
 ; Destroys: AF, BC, DE, HL
 ; ============================================================================
-BASIC_SPRITE_HIT:
-    ld   a, h
-    or   d
-    jp   nz, .no_hit
-    ld   a, l
-    cp   SPRITE_SLOT_MAX
-    jp   nc, .no_hit                     ; JP not JR — .no_hit is well
-                                         ; outside JR's range from here
-                                         ; (project's own recurring
-                                         ; JR-range lesson)
-    ld   b, a                            ; B = slot1 — survives every
-                                         ; BASIC_SPRITE_SLOT_FLAG_ADDR
-                                         ; call below (that routine
-                                         ; only ever writes HL, per its
-                                         ; own contract)
-    ld   a, e
-    cp   SPRITE_SLOT_MAX
-    jp   nc, .no_hit
-    ld   c, a                            ; C = slot2
-
-    ld   a, b
-    ld   hl, SPRITE_SLOT_SHOWN
-    call BASIC_SPRITE_SLOT_FLAG_ADDR
-    ld   a, (hl)
+BASIC_TRY_EXTENSION_FUNCTION_EXROM_BODY:
+    ld   a, (EXTENSION_FUNC_ACTIVE)
     or   a
-    jp   z, .no_hit
-    ld   a, c
-    ld   hl, SPRITE_SLOT_SHOWN
-    call BASIC_SPRITE_SLOT_FLAG_ADDR
-    ld   a, (hl)
+    jr   z, .no_match
+    ld   hl, (EXTENSION_MAGIC)
+    ld   de, EXTENSION_REG_MAGIC
     or   a
-    jr   z, .no_hit
-
-    ; standard 4-comparison rectangle-overlap test: row1 < row2+h2 AND
-    ; row2 < row1+h1 AND col1 < col2+w2 AND col2 < col1+w1. All values
-    ; are 0-35 (row/col 0-31, w/h 1-4), so plain 8-bit arithmetic is
-    ; safe — no wraparound risk at this range. D is used as a one-shot
-    ; accumulator for each "other slot's far edge" sum in turn; it
-    ; also survives BASIC_SPRITE_SLOT_FLAG_ADDR calls (same reason B/C
-    ; do), so it's safe to compute, then compare against a value
-    ; fetched by a LATER call without it being clobbered in between.
-    ld   a, c
-    ld   hl, SPRITE_SLOT_ROW
-    call BASIC_SPRITE_SLOT_FLAG_ADDR
-    ld   d, (hl)                         ; D = row2
-    ld   a, c
-    ld   hl, SPRITE_SLOT_H
-    call BASIC_SPRITE_SLOT_FLAG_ADDR
+    sbc  hl, de
+    jr   nz, .no_match
+    ld   hl, (EXPR_PARSE_PTR)
+    ld   de, (EXTENSION_FUNC_NAME_PTR)
+    call KTAB_BASIC_MATCH_KEYWORD
+    jr   c, .no_match
+    call KTAB_BASIC_SKIP_SPACES
     ld   a, (hl)
-    add  a, d
-    ld   d, a                            ; D = row2+h2
-    ld   a, b
-    ld   hl, SPRITE_SLOT_ROW
-    call BASIC_SPRITE_SLOT_FLAG_ADDR
-    ld   a, (hl)                         ; A = row1
-    cp   d
-    jr   nc, .no_hit                     ; row1 >= row2+h2
-
-    ld   a, b
-    ld   hl, SPRITE_SLOT_H
-    call BASIC_SPRITE_SLOT_FLAG_ADDR
-    ld   d, (hl)                         ; D = h1
-    ld   a, b
-    ld   hl, SPRITE_SLOT_ROW
-    call BASIC_SPRITE_SLOT_FLAG_ADDR
+    cp   "("
+    jr   nz, .no_match
+    inc  hl
+    ld   (EXPR_PARSE_PTR), hl
+    call KTAB_BASIC_EVAL_EXPR             ; DE = first argument
+    jr   c, .fail
+    push de
+    call KTAB_BASIC_EXPECT_COMMA_EXPR     ; DE = second argument
+    jr   c, .fail_pop
+    ld   hl, (EXPR_PARSE_PTR)
+    call KTAB_BASIC_SKIP_SPACES
     ld   a, (hl)
-    add  a, d
-    ld   d, a                            ; D = row1+h1
-    ld   a, c
-    ld   hl, SPRITE_SLOT_ROW
-    call BASIC_SPRITE_SLOT_FLAG_ADDR
-    ld   a, (hl)                         ; A = row2
-    cp   d
-    jr   nc, .no_hit                     ; row2 >= row1+h1
-
-    ld   a, c
-    ld   hl, SPRITE_SLOT_COL
-    call BASIC_SPRITE_SLOT_FLAG_ADDR
-    ld   d, (hl)                         ; D = col2
-    ld   a, c
-    ld   hl, SPRITE_SLOT_W
-    call BASIC_SPRITE_SLOT_FLAG_ADDR
-    ld   a, (hl)
-    add  a, d
-    ld   d, a                            ; D = col2+w2
-    ld   a, b
-    ld   hl, SPRITE_SLOT_COL
-    call BASIC_SPRITE_SLOT_FLAG_ADDR
-    ld   a, (hl)                         ; A = col1
-    cp   d
-    jr   nc, .no_hit                     ; col1 >= col2+w2
-
-    ld   a, b
-    ld   hl, SPRITE_SLOT_W
-    call BASIC_SPRITE_SLOT_FLAG_ADDR
-    ld   d, (hl)                         ; D = w1
-    ld   a, b
-    ld   hl, SPRITE_SLOT_COL
-    call BASIC_SPRITE_SLOT_FLAG_ADDR
-    ld   a, (hl)
-    add  a, d
-    ld   d, a                            ; D = col1+w1
-    ld   a, c
-    ld   hl, SPRITE_SLOT_COL
-    call BASIC_SPRITE_SLOT_FLAG_ADDR
-    ld   a, (hl)                         ; A = col2
-    cp   d
-    jr   nc, .no_hit                     ; col2 >= col1+w1
-
-    ld   hl, 1
+    cp   ")"
+    jr   nz, .fail_pop
+    inc  hl
+    ld   (EXPR_PARSE_PTR), hl
+    pop  bc                              ; BC = first argument, DE =
+                                         ; second (already there)
+    ld   hl, (EXTENSION_FUNC_EXEC_PTR)
+    jp   (hl)                            ; tail jump -- the module's own
+                                         ; ret pops BASIC_EXROM_EXIT_
+                                         ; PROTECTED (pushed by BASIC_
+                                         ; CALL_EXROM_INLINE before we
+                                         ; were ever reached), carrying
+                                         ; its DE=result/carry=error
+                                         ; straight back out
+.fail_pop:
+    pop  de
+.fail:
+    scf
     ret
-
-.no_hit:
-    ld   hl, 0
+.no_match:
+    scf
     ret
 
 ; ============================================================================

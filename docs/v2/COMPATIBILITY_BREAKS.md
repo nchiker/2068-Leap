@@ -30,38 +30,76 @@ their number.
   `LOAD "PRINTER" EXT` line added before its first use of either statement.
 - **Status**: candidate, not yet implemented — awaiting Phase 0 execution.
 
-## Break 2 (candidate, cost unverified): sprites moved from resident to an ABI-expanded loadable extension
+## Break 2 (landed, P0.3, 2026-09-19): `HIT()` moved from resident to a loadable extension; `SPRITE` itself stays resident
 
-- **Old behavior/interface**: `SHOW`/`MOVE`/`HIDE`/`HIT()` always
-  available, no load step, coexists freely with any other loaded extension
-  slot usage (moot today since nothing else needs the slot
-  simultaneously in practice).
-- **New behavior/interface**: requires a `LOAD "SPRITES" EXT`-style step;
-  cannot coexist with a second loaded extension in the same program (the
-  mechanism remains single-module-at-a-time even after being expanded to
-  support multiple keywords + one function per module).
-- **Reason**: potential saving (~750-900 net EXROM bytes) is large enough
-  to plausibly resolve the entire EXROM shortfall identified in
-  `ROM_BUDGET.md` on its own.
-- **ROM benefit**: **unverified** — 1,077 bytes removed from residency,
-  minus ~60-80 bytes (multi-keyword dispatch, measured-plausible) minus an
-  **unmeasured** `ASSUMED` 80-150 HOME bytes (function-call dispatch inside
-  `BASIC_EVAL_PRIMARY`). Net figure not to be trusted until the SPIKE in
-  `IMPLEMENTATION_PLAN.md` P0.2 actually drafts and sizes that code.
-- **RAM benefit**: none expected (sprite buffers are already in
-  always-resident chunk 7 RAM, unaffected by where the *code* lives).
-- **Performance benefit/cost**: none expected on the sprite hot path itself
-  (calling a RAM-resident loaded module is at least as cheap as calling
-  EXROM, since no bank switch is needed); the function-dispatch addition's
-  cost to *every other* expression evaluation (not just sprite-related
-  ones) is the one performance question that matters here and is unmeasured.
-- **User-visible consequence**: a materially larger break than Break 1 —
-  sprites are a mature, heavily-used, marquee feature, not a rare one.
-- **Migration consequence**: any V1 program using sprites needs a load-step
-  line added; a program also using a second extension concurrently would
-  need to be restructured (e.g. drop `AYREG`, fall back to plain `SOUND`).
-- **Status**: candidate only. Per its own completion criteria, this break
-  is not accepted until its cost is measured, not estimated.
+- **Scope correction from the original candidate above**: the candidate
+  assumed converting `SHOW`/`MOVE`/`HIDE`/`HIT()` together. Implementation
+  found `SHOW`/`MOVE`/`HIDE` are sub-verbs of a single resident `SPRITE`
+  statement (`SPRITE GRAB/SHOW/HIDE/MOVE`), not three separate top-level
+  keywords — and that statement's own free-form sub-verb grammar doesn't
+  fit either canned statement shape the loadable-extension ABI offers
+  (grammar 0: `expr,expr`; grammar 1: LINE-shaped 4-expr). A third,
+  free-form grammar shape would need its own checker-delegated validation
+  callback per module, adding more fixed Home dispatch cost this ROM's
+  near-zero Home margin (2 bytes free even after this break, see below)
+  cannot currently absorb. **Only `HIT()` — a single 2-argument function
+  with no sub-verb grammar — was converted.** `SPRITE GRAB/SHOW/HIDE/MOVE`
+  is unchanged, still resident in EXROM (`rom/exrom_sprite.asm`), and
+  still requires no load step. This also means the original ~750-900
+  byte EXROM estimate (for converting all four) was never going to be
+  the real, measured number for what actually shipped — the real number
+  below is for `HIT()` alone.
+- **Old behavior/interface**: `HIT()` always available, no load step.
+- **New behavior/interface**: requires a `LOAD "SPRITE" EXT`-style step
+  before any expression uses `HIT(...)`; a whole-program check pass
+  rejects `HIT(...)` if the module isn't loaded (confirmed live: `tests/
+  hit_unloaded.txt`, `tests/hit_new_clear.txt`).
+- **Reason**: `HIT()`'s own body (rectangle-overlap arithmetic over plain
+  RAM sysvars) had no EXROM dependency at all, making it a clean,
+  self-contained migration candidate once the full-sprite conversion
+  turned out not to fit.
+- **ROM benefit — real, measured**: EXROM free space rose from 27 to
+  **116 bytes** (net **+89 bytes recovered**, `make budget`,
+  2026-09-19) — removing `BASIC_SPRITE_HIT` (~130 lines) and its fixed
+  entry stub's real logic from EXROM more than paid for the new function-
+  slot dispatch body also placed in EXROM (`BASIC_TRY_EXTENSION_
+  FUNCTION_EXROM_BODY`, `rom/exrom_sprite.asm`). Home free space fell
+  from 5 to **2 bytes** (net **3 bytes used**, not saved) — the function-
+  slot ABI's Home-side pieces (the `EXTENSION_EXEC_PTR`/`FUNC_NAME_PTR`
+  registration branch in `BASIC_EXTENSION_REGISTER`, and the 6-byte
+  `BASIC_CALL_EXROM_INLINE` dispatch inlined into `BASIC_EVAL_PRIMARY`)
+  are fixed, one-time Home costs paid regardless of which extension uses
+  the function slot — everything genuinely large (the match/parse/call
+  logic itself) was moved to EXROM specifically because Home had no
+  room, see `MILESTONE_01_RESULTS.md`.
+- **RAM benefit**: none (sprite buffers/arrays are unaffected either way;
+  the RAM extension module itself is ~247 bytes, well under the existing
+  512-byte window).
+- **Performance benefit/cost**: not separately measured this milestone;
+  the fixed per-expression-evaluation dispatch cost (`BASIC_EVAL_PRIMARY`
+  now also tries the extension-function match before falling to the
+  plain-variable path) applies to every expression, not just `HIT()`
+  calls — small (one `call`+`ret nc`, i.e. one indirection into an
+  EXROM-resident magic/active check) but real, unmeasured in frames.
+- **User-visible consequence**: smaller than the original candidate
+  assumed — only `HIT()` needs a load step; `SPRITE GRAB/SHOW/HIDE/MOVE`
+  are unaffected.
+- **Migration consequence**: any V1 program using `HIT()` needs a
+  `LOAD "SPRITE" EXT` line added before its first use; `SPRITE` itself
+  needs no change.
+- **Status**: **landed** — `make check`/`make test` both clean (98/98),
+  live-verified via `ts2068-debug` (`tests/hit.txt`,
+  `tests/hit_unloaded.txt`, `tests/hit_new_clear.txt`).
+
+## Break 2 follow-up (still a candidate, not landed): `SPRITE`'s own statement conversion
+
+Converting `SPRITE GRAB/SHOW/HIDE/MOVE` itself remains a real, larger
+potential EXROM saving (~850+ bytes, the bulk of `rom/exrom_sprite.asm`),
+but needs a free-form ("callback owns its own parse, including its own
+checker-side validation callback") grammar shape added to the extension
+ABI first — out of scope for this milestone given Home's now-2-byte
+margin. Any future attempt should budget for that shape's own fixed Home
+cost before assuming the EXROM saving is free.
 
 ## What is explicitly not yet broken
 
