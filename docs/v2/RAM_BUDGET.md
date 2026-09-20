@@ -1,5 +1,19 @@
 # 2068-Leap V2 — RAM Budget (Phase 2 revision)
 
+**Superseded for the language-core question specifically**: the rewrite
+feasibility study (`docs/v2/INTERPRETER_REWRITE_STUDY.md`,
+`docs/v2/REWRITE_RAM_BUDGET.md`) and its follow-up statement-compiler spike
+(`docs/v2/STATEMENT_COMPILER_SPIKE.md`) found that Architecture B (replacing
+the V1 language core with a compact compiler/bytecode design) both fits ROM
+with a large measured reserve and uses substantially *less* RAM than the
+evolved-V1 numbers this document computes below, for representative
+programs (55-60% less for TYPICAL/LARGE programs, per
+`REWRITE_RAM_BUDGET.md`). Architecture B has been accepted
+(`docs/v2/V2_ARCHITECTURE.md`) as the authoritative V2 direction. This
+document's evolved-V1 numbers remain useful as the baseline Architecture B
+is compared against, and as the record of what evolved-V1 would have cost,
+but are no longer the plan being executed.
+
 **This document supersedes the Phase 1 version.** Phase 1 claimed a net RAM
 *saving* from replacing a fixed 26-slot scalar table with a pool-based
 symbol table. That fixed table does not exist on current `main` (retired in

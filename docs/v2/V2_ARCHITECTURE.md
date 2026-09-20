@@ -1,4 +1,101 @@
-# 2068-Leap V2 — Architecture (Phase 2 revision)
+# 2068-Leap V2 — Architecture (Phase 2 revision, superseded by the Architecture B decision below)
+
+## DECISION (post rewrite-feasibility-study, post statement-compiler spike): Architecture B ACCEPTED
+
+**This section is authoritative and supersedes the rest of this document's
+"recommend evolved-V1" framing below**, which is retained for its still-
+valid subsystem-classification detail (numeric/string/editor/checker
+findings) but is no longer the chosen path for the language core
+specifically.
+
+A dedicated rewrite feasibility study
+(`docs/v2/INTERPRETER_REWRITE_STUDY.md`) and a follow-up statement-compiler
+sizing spike (`docs/v2/STATEMENT_COMPILER_SPIKE.md`) found that evolved-V1
+(this document's Alternative B, "hybrid redesign — retain the current
+VM/runtime") cannot fund even its narrowed MUST HAVE feature set within
+24KB, while a purpose-built compact compiler/bytecode language core
+(the rewrite study's own "Architecture B" — a different, more literal
+"new core, same platform" split than this document's Alternative B naming;
+context makes which is meant clear, and going forward "Architecture B"
+means the rewrite study's version) fits with a measured, gate-passing
+8,121-byte ROM reserve at a conservative estimate. All seven acceptance
+gates defined in `STATEMENT_COMPILER_SPIKE.md` passed on real, assembled
+spike measurements, not prose estimates.
+
+**The V2 strategy is now: retain the mature 2068-Leap platform (editor,
+display/video, graphics, sprites, AY sound, keyboard/input, joystick,
+cassette/storage, kernel/hardware services, debug infrastructure — 9,925
+bytes, `VERIFIED` at commit `61bb8bb`) and replace the V1 BASIC language
+core (currently 13,988 bytes) with a compact compiler/bytecode
+architecture (`ESTIMATED` 4,880-6,530 bytes). The V1 language core
+(`basic/basic.asm`, `rom/exrom_checker.asm`, `rom/exrom_strfuncs.asm`,
+`rom/exrom_dim.asm`, `rom/exrom_arrays.asm`) is no longer the architecture
+to incrementally extend.**
+
+### Conceptual architecture
+
+```
+FULL-SCREEN EDITOR
+        |
+        v
+  PROGRAM INTERFACE
+        |
+        v
+COMPILER / FRONT END
+        |
+        v
+  COMPACT BYTECODE
+        |
+        v
+     V2 VM
+        |
+        v
+  COMMON RUNTIME
+   /    |    \
+INTEGER FP  STRINGS
+        |
+        v
+ PLATFORM SERVICES
+```
+
+This diagram is conceptual, not a literal module boundary — see
+`docs/v2/ARCHITECTURE_B_IMPLEMENTATION_PLAN.md` §"Editor/compiler
+separation" for the actual, ROM-efficient interfaces (the editor calls a
+compile entry point and a decompile/`LIST` entry point; it does not call
+through six separate layers at runtime). "PLATFORM SERVICES" is the
+existing, reused 9,925-byte platform (`LANGUAGE_CORE_ROM_ANALYSIS.md`'s
+module table); "COMMON RUNTIME" is the VM's tag-gated integer/float/string
+dispatch (`REWRITE_VM_DESIGN.md`); "V2 VM" is the measured 588-byte/
+20-opcode dispatch+handler core scaled to ~40 opcodes
+(`ESTIMATED` 900-1,100 bytes); "COMPACT BYTECODE" is the program's primary
+stored representation (bytecode-primary, per `REWRITE_RAM_BUDGET.md`'s
+Option 2, with `LIST`/`EDIT` reconstructing text via a small decompiler);
+"COMPILER / FRONT END" is the measured statement+expression compiler
+(`STATEMENT_COMPILER_SPIKE.md`, `ESTIMATED` 3,000-4,000 bytes).
+
+### Compatibility policy for this rewrite
+
+V2's language core does not preserve V1 internal compatibility. It may
+replace the tokenized-absent/text-only program format, invent a bytecode
+format, replace the scalar/string/procedure representation, and replace the
+extension ABI's language-facing half, when doing so provides a measured
+ROM/RAM/performance benefit — per this project's own standing
+compatibility-break policy. It preserves user-visible capabilities
+(what a BASIC program can express and do), not V1's internal
+implementation details (how the interpreter represents a variable in RAM).
+
+### Migration strategy
+
+Staged, not flag-day. See `ARCHITECTURE_B_IMPLEMENTATION_PLAN.md` for the
+full milestone sequence (R1 VM foundation → R2 compiler foundation → R3
+program execution → R4 structured language → R5 strings → R6 hybrid
+numerics → R7 platform integration → R8 editor integration → R9 V1 removal
+→ R10 optimization/ROM recovery) and `ARCHITECTURE_B_MILESTONE_01.md` for
+the first concrete step.
+
+---
+
+## Original Phase 2 document (retained for its still-valid subsystem detail)
 
 **Supersedes the Phase 1 version.** The subsystem classifications below are
 carried forward except where Phase 2 corrected the underlying facts; the

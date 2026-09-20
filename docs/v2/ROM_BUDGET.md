@@ -1,5 +1,21 @@
 # 2068-Leap V2 — ROM Budget (Phase 2 revision)
 
+**Superseded as the primary plan** by the rewrite feasibility study and its
+statement-compiler spike: this document's own arithmetic (below) already
+shows evolved-V1 short by ~420 bytes per bank even with procedures cut
+entirely — the rewrite study (`docs/v2/INTERPRETER_REWRITE_STUDY.md`,
+`docs/v2/REWRITE_ROM_BUDGET.md`, `docs/v2/STATEMENT_COMPILER_SPIKE.md`)
+used that exact finding as its starting premise, and confirmed (with real
+assembled spikes, not just prose) that a compact replacement language core
+fits with an 8,121-byte conservative-estimate ROM reserve where evolved-V1
+has none. Architecture B is now accepted (`docs/v2/V2_ARCHITECTURE.md`).
+This document's per-module baseline table below remains `VERIFIED` and
+reusable (re-confirmed fresh at commit `61bb8bb` in
+`docs/v2/STATEMENT_COMPILER_SPIKE.md`: HOME 554 bytes free, EXROM 109 bytes
+free after P0.3/P0.4's real relocations), but its shortfall-driven
+Alternative-B-evolution conclusion is superseded — the language core is
+being replaced, not evolved.
+
 **This document supersedes the Phase 1 version.** Phase 2 found that the
 Phase 1 budget's EXROM-freeing plan relied on a saving that does not exist,
 and that its HOME-freeing plan relied on a general refactor with no

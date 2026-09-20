@@ -1,0 +1,412 @@
+# 2068-Leap V2 — Architecture B Implementation Plan
+
+**Status: planning document. No production code has been written under
+this plan yet.** Triggered by Architecture B's acceptance
+(`docs/v2/V2_ARCHITECTURE.md`, gated on `docs/v2/STATEMENT_COMPILER_SPIKE.md`
+passing all seven acceptance gates). This plan defines the complete
+migration from V1's current language core to the production V2 language
+core, staged so V1 keeps working throughout — no flag-day replacement.
+
+**Mutation boundary**: per this project's standing dossier policy
+(`specs/2068-leap-v2.md`) and `IMPLEMENTATION_PLAN.md`'s own stated rule
+("nothing in this plan authorizes implementation by itself"), beginning
+work on R1 below is a real, first-time mutation of `rom/`, `basic/`,
+`kernel/`, `include/` for this initiative and requires the same explicit
+acceptance step every prior mutation in this project's history has gone
+through (P0.1 through P0.4 were each presented and accepted before their
+diffs landed). This plan is the artifact that makes that acceptance
+concrete — it does not substitute for it.
+
+## Guiding constraints (carried forward, unchanged)
+
+- Platform (editor, display, graphics, sprites, sound, input, storage,
+  kernel, calculator) is reused unchanged throughout. No milestone below
+  touches `kernel/graphics/graphics.asm`, `rom/exrom_editor.asm`,
+  `rom/exrom_sprite.asm`, `rom/exrom_calc.asm`, `rom/exrom_storage.asm`, or
+  any other platform module's internal implementation — only their calling
+  convention from the new language core, where needed.
+- V1's language core (`basic/basic.asm`, `rom/exrom_checker.asm`,
+  `rom/exrom_strfuncs.asm`, `rom/exrom_dim.asm`, `rom/exrom_arrays.asm`)
+  keeps working, unmodified, until R9. `RUN` continues to execute existing
+  programs via the V1 path until the new path is proven.
+- Every milestone ships with a real, measured ROM/RAM delta and a real
+  emulator-validated test, per this project's established engineering
+  discipline (IMPLEMENT → BUILD → TEST → BOOT → DEBUG → MEASURE ROM →
+  MEASURE RAM → BENCHMARK → DOCUMENT → COMMIT).
+- Development-phase ROM may temporarily exceed 24KB while V1 and V2 cores
+  coexist (V2's new code + V1's old code both resident, e.g. in a larger
+  test/dev image, or with V1 temporarily paged elsewhere for test builds).
+  **The shipping configuration must fit 24KB** — this is checked explicitly
+  at every milestone's ROM budget line, distinguishing DEV ROM (temporary,
+  coexistence-inclusive) from SHIP ROM (projected, post-V1-removal).
+
+## Continuous ROM accounting (maintained from R1 onward)
+
+| | Bytes |
+|---|---:|
+| PLATFORM ROM (unchanged throughout) | 9,925 (VERIFIED, `61bb8bb`) |
+| NEW V2 LANGUAGE CORE ROM (grows milestone by milestone) | 0 at R1 start → 4,880-6,530 at R9 |
+| TEMPORARY V1 LANGUAGE CORE ROM (shrinks as V1 statement types are cut over, removed entirely at R9) | 13,988 at R1 start → 0 after R9 |
+| FINAL PROJECTED SHIP ROM AFTER V1 REMOVAL | 9,925 + (4,880 to 6,530) = 14,805-16,455 |
+| ENGINEERING RESERVE (ship) | 8,121-9,771 |
+
+This table is re-measured (`make budget`-equivalent for whatever dev image
+exists) and re-published at the end of every milestone below, not just
+computed once here.
+
+## Continuous RAM accounting (maintained from R3 onward, once programs run)
+
+Tracked per `docs/v2/REWRITE_RAM_BUDGET.md`'s categories: compiled program
+storage (bytecode), symbol table, variables, strings, arrays, VM operand
+stack, procedure call frames, compiler workspace, editor workspace,
+temporary compilation structures. **Lifetime-based reuse identified now,
+applied starting R2**: compiler workspace (the lexer's token buffer, the
+compile-time symbol table, the fixup list) and the VM's runtime operand
+stack cannot be live simultaneously (compilation completes before
+execution begins, per the chosen "compile-on-RUN into the primary bytecode
+store" design) — so compiler workspace and VM operand-stack space can
+occupy the **same RAM region**, freed/reused rather than both reserved
+permanently. This is the single largest RAM-reuse opportunity identified;
+it is designed in from R2, not retrofitted later.
+
+## Milestone sequence
+
+Derived from dependency order (VM before compiler needs it to target
+something real; compiler foundation before program execution; structured
+language and strings after the basics execute correctly; platform
+integration once the VM can call out; editor integration last, once the
+compile/decompile contract is stable; V1 removal only once V2 covers
+V1's full statement set; optimization last).
+
+### R1 — VM foundation
+
+**Status: COMPLETE for R1's own scope ("production-quality VM with integer
+execution and tests" — floats/strings/platform-calls are R5/R6/R7's job,
+not R1's, per this plan's own staging).** `rom/exrom_v2_vm_core.asm` now
+implements the full 17-opcode integer-domain set: `HALT`, `PUSH_I8`,
+`PUSH_I16`, `LOAD_VAR`, `STORE_VAR`, `ADD`, `JMP`, `SUB`, `MUL`, `DIV`,
+`CMP_LT`, `CMP_EQ`, `JMPZ`, `FOR_INIT`, `FOR_NEXT`, `CALL`, `RET` — **731
+real assembled bytes**, real-hardware-validated on ZEsarUX via
+`ts2068-debug`:
+
+- Milestone 01's original 7 opcodes: validated as documented in
+  `ARCHITECTURE_B_MILESTONE_01.md` (O(1) branch, zero-calculator integer
+  path, both confirmed on real hardware).
+- The 10 opcodes added to complete R1 (`SUB`/`MUL`/`DIV`/`CMP_LT`/`CMP_EQ`/
+  `JMPZ`/`FOR_INIT`/`FOR_NEXT`/`CALL`/`RET`): three new representative
+  programs — a comparison (`3<5`), a real *terminating* `FOR`/`NEXT` loop
+  (`FOR I=1 TO 5: SUM=SUM+I: NEXT I`, correctly producing `SUM=15`,
+  `I=6`), and a `CALL`/`RET` procedure (doubling a value via a bytecode
+  subroutine, correctly producing `14`) — all three verified correct on
+  real ZEsarUX, chained with Milestone 01's original tests into a single
+  5-test PASS/FAIL border verdict (green).
+- **A second real bug was found and fixed during this extension**:
+  `OP_CALL` computed the call target into `DE`, then called
+  `VM_CALL_PUSH` — which uses `DE` as internal scratch and clobbers it —
+  before using `DE` to set `VM_IP`. The bytecode's `CALL` correctly pushed
+  a return address, but `VM_IP` silently stayed at the return address
+  instead of jumping into the callee, so the "doubled" value never
+  actually got computed (`ARG` stayed `7`, not `14`). Caught immediately
+  by the real ZEsarUX run (red border despite `VM_ERROR_CODE=0` — no
+  crash, just a silently-skipped procedure body), root-caused by
+  single-stepping through `OP_CALL` with `ts2068-debug step`/`regs`, fixed
+  by setting `VM_IP` from a register never passed through the
+  `VM_CALL_PUSH` call at all, reassembled, reverified green. Documented in
+  the module's own header comment at the fix site, not just here.
+- Reused, not reimplemented: `MATH_MULTIPLY16`/`MATH_DIVIDE16`/
+  `MATH_COMPARE16` (`kernel/math/math.asm`, already-verified platform
+  primitives) back `MUL`/`DIV`/`CMP_LT`/`CMP_EQ`/`FOR_NEXT` — the "reuse
+  mature platform components" architecture-discipline rule applied for
+  real, confirmed by the test driver now `INCLUDE`-ing `kernel/math/
+  math.asm` directly rather than stubbing those calls.
+- Deliberate, documented compatibility break: `DIV` uses the fast native
+  `MATH_DIVIDE16` primitive directly for the integer case, rather than
+  V1's own precedent of always round-tripping every integer division
+  through the float calculator (`NUMERIC_DESIGN.md`, VERIFIED baseline).
+  Divide-by-zero raises a real, caught VM error instead of V1's silent 0.
+- Updated ROM projection: 731 bytes / 17 opcodes ≈ 43 bytes/opcode
+  average (fixed shared infrastructure, now including the VM's own
+  bounds-checked call stack, ≈245 bytes; opcode table 2 bytes/opcode;
+  handlers averaging ≈27 bytes/opcode for this integer-heavy set).
+  Extrapolating to the full ~40-opcode VM (the remaining ~23 being mostly
+  cheap native-call trampolines for strings/platform, R5/R7 scope):
+  **≈1,100-1,150 bytes** — still comfortably inside
+  `REWRITE_ROM_BUDGET.md`'s reserve, now backed by real data for 17 of the
+  ~40 opcodes rather than 7.
+- Shipping ROM confirmed unaffected throughout (fresh `make budget`:
+  identical 554 HOME / 109 EXROM free; `git status` shows no file under
+  `rom/`, `basic/`, `kernel/`, `include/` was modified except the two new,
+  unwired files this milestone/R1 added).
+- Regression: the full existing V1 suite was re-run once, in full, after
+  Milestone 01's original 7-opcode work (`tools/run_all_tests_fast.py`,
+  real result: **PASS: 102  FAIL: 0**, 756.5s, 4 ZEsarUX restarts). Not
+  re-run a second time for this extension, since no production file
+  changed between the two — the same structural argument
+  (`git status`/`make budget` parity) applies, and is stated here
+  explicitly rather than silently assumed.
+
+**R1 is done. Next: R2 (compiler foundation — tokenizer/front end +
+expression + basic statement compiler, targeting this VM).**
+
+- **Objective**: a production-quality bytecode VM (dispatch loop, ~40
+  opcodes, symbol-index access, operand stack, tag-gated integer/float
+  dispatch) that can execute a hand-assembled bytecode program, with no
+  compiler yet.
+- **Dependencies**: none (first milestone).
+- **Files**: new `rom/exrom_v2_vm.asm` (or equivalent — final placement
+  decided against the residency/paging framework `ARCHITECTURE_COMPARISON.md`
+  already recommends adopting). Does not touch any existing file.
+- **Implementation**: promote `spikes/v2_vm_sizing/vm_sizing_spike.asm`'s
+  architecture to production quality: real error handling on stack
+  underflow/overflow, real symbol-table record layout (not the spike's
+  placeholder constants), real calls into `rom/exrom_calc.asm` (not stub
+  `RET`s), a bounded operand stack with overflow detection.
+  the compiler foundation (R2) needs to target.
+- **Tests**: hand-assembled bytecode test programs (arithmetic, variable
+  load/store, a hand-written loop) executed directly against the VM,
+  bypassing the compiler entirely.
+- **Emulator validation**: real ZEsarUX/`ts2068-debug` run of each test
+  program, checked register/memory state, not just "assembles clean."
+- **ROM budget**: target 900-1,100 bytes for the VM itself (per
+  `REWRITE_VM_DESIGN.md`'s measured extrapolation); DEV ROM temporarily
+  adds this on top of the full existing V1 image (coexistence, not
+  shipping).
+- **RAM budget**: operand stack + symbol table region sized and documented;
+  no program-storage RAM impact yet (no compiler exists to produce
+  programs).
+- **Performance gate**: hand-assembled integer-arithmetic bytecode loop
+  benchmarked against V1's existing isolated-benchmark numbers
+  (`PERFORMANCE_BASELINE.md`'s addition/multiplication/division/FOR-NEXT
+  figures) — must be competitive, not necessarily identical (different
+  dispatch mechanism).
+- **Success gate**: all hand-assembled test programs execute correctly on
+  real hardware/emulator; ROM cost within 15% of the 900-1,100 estimate;
+  no regression to any existing V1 test (V1 is untouched, so this should be
+  automatic, but the full existing test suite is re-run to confirm).
+- **Rollback**: delete the new file(s); zero impact on any existing
+  system, since nothing else references them yet.
+
+### R2 — Compiler foundation
+
+- **Objective**: tokenizer/lexer + expression compiler + a minimal
+  statement compiler (assignment only) producing real bytecode for R1's
+  VM, callable standalone (not yet wired into `RUN`).
+- **Dependencies**: R1 (needs a real opcode/operand contract to target).
+- **Files**: new `rom/exrom_v2_compiler.asm`. Does not touch any existing
+  file.
+- **Implementation**: promote `spikes/v2_vm_sizing/compiler_sizing_spike.asm`
+  and `statement_compiler_spike.asm`'s architecture to production quality:
+  real symbol-table record writes (not stubs), real fixup-table patch
+  writes (not stubs), integration with R1's real VM opcode/operand layout.
+- **Tests**: compile representative expressions and one assignment
+  statement; feed the resulting bytecode directly to R1's VM; verify
+  correct execution.
+- **Emulator validation**: same discipline as R1 — real run, checked state.
+- **ROM budget**: target ~700-900 bytes (lexer + expr compiler +
+  assignment-family compiler + shared emitter/symtab, a subset of
+  `STATEMENT_COMPILER_SPIKE.md`'s full projection).
+- **RAM budget**: compiler workspace region sized; confirm the R1/R2
+  lifetime-non-overlap assumption (compiler workspace freed before VM
+  executes) holds for this minimal case.
+- **Performance gate**: compile time for a representative small program
+  measured (should be sub-visible, consistent with the checker's existing
+  whole-program-scan-before-RUN precedent).
+- **Success gate**: compile-then-execute round-trip correct for
+  arithmetic + assignment; V1 fully unaffected (still not wired in).
+- **Rollback**: delete the new file(s).
+
+### R3 — Program execution (branches, loops, variables)
+
+- **Objective**: extend the compiler to `IF`/`GOTO`/`FOR`/`NEXT` and full
+  variable handling (multi-character identifiers, per
+  `STRING_AND_SYMBOL_DESIGN.md`'s already-agreed goal); extend the VM
+  correspondingly if any gap is found. First milestone where a real,
+  nontrivial BASIC-shaped program (using this study's LARGE/TYPICAL worked
+  examples as templates) compiles and runs standalone.
+- **Dependencies**: R1, R2.
+- **Files**: extends `rom/exrom_v2_compiler.asm`, `rom/exrom_v2_vm.asm`.
+- **Implementation**: promote the remaining families measured in
+  `STATEMENT_COMPILER_SPIKE.md` (branch, loop) to production quality,
+  including real forward-reference resolution across a whole program (not
+  the spike's single-statement scope).
+- **Tests**: the SMALL and TYPICAL worked programs from
+  `REWRITE_RAM_BUDGET.md`, written for real, compiled, executed, checked
+  against hand-computed expected results.
+- **Emulator validation**: real run of both worked programs.
+- **ROM budget**: target the branch+loop family additions from
+  `STATEMENT_COMPILER_SPIKE.md` (~140-210 bytes on top of R2's assignment
+  family).
+- **RAM budget**: measure the SMALL/TYPICAL programs' real compiled size
+  against `REWRITE_RAM_BUDGET.md`'s estimates; reconcile any gap.
+- **Performance gate**: **the single most important benchmark in this
+  entire plan** — a GOTO-based loop, structurally identical to the one
+  that failed to complete in 20,000,000 opcodes under V1
+  (`PERFORMANCE_BASELINE.md`), compiled and run under V2. Must complete
+  quickly, with a compiled O(1) branch, not a source rescan. This is the
+  direct, load-bearing validation of this whole rewrite's central
+  performance claim.
+- **Success gate**: worked programs correct; GOTO-loop benchmark passes
+  (completes, and fast); V1 still fully unaffected.
+- **Rollback**: revert this milestone's diff; R1/R2 remain intact and
+  useful on their own.
+
+### R4 — Structured language (procedures/functions)
+
+- **Objective**: `CALL`/`RETURN`/parameter binding/local scope, per the
+  proposed V2 procedure architecture (`STATEMENT_COMPILER_SPIKE.md`'s
+  procedure family + the carried-forward ~500-byte runtime estimate).
+- **Dependencies**: R1-R3.
+- **Files**: extends `rom/exrom_v2_compiler.asm`, `rom/exrom_v2_vm.asm`.
+- **Tests**: a representative procedure with a by-value parameter,
+  compiled and run; recursion explicitly tested if in scope (check
+  `V2_LANGUAGE_SPEC.md`'s current procedure spec for exact scope).
+- **Emulator validation**: real run.
+- **ROM budget**: target ~500-650 bytes total (compiler-side family cost +
+  runtime parameter binding), the single largest remaining unvalidated
+  estimate per `STATEMENT_COMPILER_SPIKE.md`'s own honesty note — treat
+  this milestone's real measurement as the authoritative number,
+  superseding the carried-forward estimate.
+- **RAM budget**: procedure call frame size measured for real.
+- **Performance gate**: procedure call overhead measured (no V1 baseline
+  exists for comparison, per `PERFORMANCE_BASELINE.md` — this establishes
+  the first real number).
+- **Success gate**: representative procedure program correct.
+- **Rollback**: revert; R1-R3 remain intact.
+
+### R5 — Strings
+
+- **Objective**: the string system from `STRING_AND_SYMBOL_DESIGN.md`
+  (31-byte-cap pool records, ordering comparisons) wired into the V2
+  compiler/VM, plus multi-character string-variable names (already
+  designed into the symbol architecture from R3).
+- **Dependencies**: R1-R3 (does not strictly need R4).
+- **Files**: extends `rom/exrom_v2_compiler.asm`, `rom/exrom_v2_vm.asm`;
+  may reuse `rom/exrom_strfuncs.asm`'s existing string-operation code
+  where its signature fits the new calling convention (a real "keep vs.
+  replace" decision made per-routine, not assumed).
+- **Tests**: string assignment, concatenation, ordering comparison.
+- **ROM budget**: target ~160-170 bytes (per this study's estimate) plus
+  whatever of `exrom_strfuncs.asm`'s 383 bytes isn't reusable as-is.
+- **Success gate**: string programs correct; ordering comparisons correct.
+- **Rollback**: revert; R1-R4 remain intact.
+
+### R6 — Hybrid numeric system (floating point)
+
+- **Objective**: decimal literals, mixed int/float promotion at `+`/`-`/
+  `*`, `/`'s inexact-stays-float behavior — the exact policy
+  `NUMERIC_DESIGN.md` already specifies, now implemented as VM opcode
+  dispatch instead of `basic.asm` combine-site edits.
+- **Dependencies**: R1-R3.
+- **Files**: extends `rom/exrom_v2_compiler.asm` (decimal literal lexing),
+  `rom/exrom_v2_vm.asm` (promotion dispatch, already stubbed as call sites
+  in R1's `ADD`/`SUB`/`MUL`/`DIV` handlers).
+- **Tests**: `X = 10.5`, `Y = A + 0.5` where `A` is INT, `5/2` staying
+  FLOAT.
+- **ROM budget**: target ~30-50 bytes (decimal detection) — the promotion
+  dispatch itself is already inside R1's VM handler estimate.
+- **Performance gate**: confirm the int-only fast path is genuinely
+  unaffected (re-run R3's GOTO-loop and arithmetic benchmarks, confirm no
+  regression) — this is the direct test of "integer programs remain
+  integer programs."
+- **Success gate**: composable float arithmetic works; integer perf
+  unregressed.
+- **Rollback**: revert; integer-only programs from R1-R5 remain correct
+  and fast even without this milestone.
+
+### R7 — Platform integration
+
+- **Objective**: native-call VM opcodes reaching `PLOT`/`LINE`/`SOUND`/
+  `BEEP`/sprite calls/storage `SAVE`/`LOAD` — the "graphics/system command"
+  and "storage" families from `STATEMENT_COMPILER_SPIKE.md`.
+- **Dependencies**: R1-R3 (numeric/string not strictly required for most
+  of these, though some take string/float arguments).
+- **Files**: extends `rom/exrom_v2_compiler.asm`, `rom/exrom_v2_vm.asm`;
+  calling convention into existing platform modules, no changes to those
+  modules themselves.
+- **Tests**: representative graphics/sound/storage programs, compared
+  against V1's existing behavior for the same operations (V1-as-oracle,
+  per §21 below).
+- **ROM budget**: target ~430-620 bytes (per the two families'
+  `STATEMENT_COMPILER_SPIKE.md` estimates).
+- **Success gate**: platform calls produce identical visible results to
+  V1 for unchanged semantics.
+- **Rollback**: revert; platform modules themselves are never at risk
+  since this milestone never modifies them.
+
+### R8 — Editor integration
+
+- **Objective**: wire the V2 compiler/decompiler into the existing editor
+  via the minimal interface defined in `V2_ARCHITECTURE.md`'s decision
+  section (editor calls compile-on-RUN and decompile-for-`LIST`/`EDIT`;
+  knows nothing about bytecode/symbols/VM internals). Build the
+  decompiler/pretty-printer (`ESTIMATED` 300-500 bytes, not yet built in
+  any spike).
+- **Dependencies**: R1-R7 (needs the compiler to cover the full statement
+  set the editor's existing programs might contain).
+- **Files**: new decompiler module; small glue changes to
+  `basic/editor_integration.asm`'s call sites (the only place V1's editor
+  glue is touched in this entire plan) — NOT to `rom/exrom_editor.asm`
+  itself, which per `V2_ARCHITECTURE.md`'s confirmed finding has zero
+  interpreter-internals dependency and needs no changes.
+- **Tests**: type a program in the real editor, `RUN` it (compiles via V2,
+  executes via V2), `LIST` it (decompiles), confirm the decompiled text is
+  a valid, if not necessarily byte-identical, re-rendering — this is the
+  explicit, policy-permitted compatibility break from
+  `REWRITE_RAM_BUDGET.md`'s Option 2, tested for real here for the first
+  time.
+- **ROM budget**: target ~300-500 bytes (decompiler) + minimal glue.
+- **Success gate**: real edit/compile/run/list round trip works on real
+  hardware/emulator for representative programs.
+- **Rollback**: revert the editor-integration glue changes; the compiler/
+  VM from R1-R7 remain usable via their standalone test harnesses even if
+  editor wiring is reverted.
+
+### R9 — Replacement (V1 language-core removal)
+
+- **Objective**: remove `basic/basic.asm`'s direct-execute interpreter,
+  `rom/exrom_checker.asm`, `rom/exrom_strfuncs.asm` (whatever wasn't
+  reused in R5), `rom/exrom_dim.asm`, `rom/exrom_arrays.asm` — the full
+  13,988-byte V1 language core — once R1-R8 demonstrate full statement-set
+  coverage.
+- **Dependencies**: R1-R8, plus an explicit statement-set coverage audit
+  (every V1 statement type has a working V2 equivalent, tested).
+- **Files**: deletes/guts the V1 language-core files listed above.
+- **Tests**: the **entire** existing V1 regression suite, re-run against
+  V2, program-by-program, per §21's oracle-comparison discipline —
+  V1 RESULT vs. V2 RESULT for every existing test, with intentional
+  semantic differences documented, not silently passed over.
+- **ROM budget**: **this is where DEV ROM and SHIP ROM converge** — before
+  this milestone, ROM temporarily holds both cores (V1 + V2 coexisting,
+  likely exceeding 24KB in the dev/test image); after this milestone, only
+  V2's language core remains, and the image must fit 24KB for real. This
+  is the hard checkpoint: `make budget`'s real output must show the
+  14,805-16,455-byte total this plan has been budgeting toward from the
+  start, not a surprise.
+- **Success gate**: full regression suite passes (or documented,
+  deliberate semantic differences are each individually approved);
+  `make budget` shows SHIP ROM fits with the projected reserve.
+- **Rollback**: this is the point of no easy return — restoring V1 means
+  reverting this milestone's deletion diff specifically, which is why R9
+  is scoped as its own milestone rather than folded into R8 or R10, and why
+  the full regression suite gate exists before it is accepted.
+
+### R10 — Optimization and ROM recovery
+
+- **Objective**: final consolidation once the real, shipping V2 language
+  core exists — apply the same placement-decision methodology
+  (`ARCHITECTURE_COMPARISON.md`'s adopted process) to the new code,
+  looking for any of R1-R9's code that turned out colder than assumed and
+  could move to EXROM, and any dead V1-transition scaffolding to remove.
+- **Dependencies**: R9.
+- **Files**: whatever R1-R9 produced, refined in place.
+- **Success gate**: final `make budget` reserve is documented and equal to
+  or better than R9's; regression suite still green.
+- **Rollback**: per-change, same discipline as every other milestone.
+
+## Testable-before-dependents ordering
+
+R1 is testable alone (hand-assembled bytecode). R2 is testable with R1 only
+(no statement compiler needed to test expression compilation). R3 depends
+on R1+R2 but is itself fully testable before R4-R8 exist. This ordering was
+chosen specifically so each milestone's success gate is checkable in
+isolation, per the task brief's explicit preference.

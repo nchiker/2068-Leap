@@ -1,5 +1,21 @@
 # 2068-Leap V2 — Implementation Plan (Phase 2 revision)
 
+**Superseded as the primary plan**: the rewrite feasibility study found
+evolved-V1 (the plan below) cannot fund even its narrowed MUST HAVE feature
+set within 24KB (`docs/v2/REWRITE_ROM_BUDGET.md`), and a follow-up
+statement-compiler spike (`docs/v2/STATEMENT_COMPILER_SPIKE.md`) confirmed
+Architecture B (replace the language core, keep the platform) fits with a
+large measured ROM/RAM margin. Architecture B is now the accepted V2
+direction (`docs/v2/V2_ARCHITECTURE.md`); its milestone plan is
+`docs/v2/ARCHITECTURE_B_IMPLEMENTATION_PLAN.md`, first concrete step
+`docs/v2/ARCHITECTURE_B_MILESTONE_01.md`. This document's Phase 0
+relocation work remains valid and already-landed (P0.3 `77fdc1f`, P0.4
+`61bb8bb`) — Phase 0's ROM recovery benefits Architecture B too, since it
+lowers V2 PLATFORM COST regardless of which language core sits on top. The
+milestones below (M1-M6, incrementally extending V1's language core) are
+superseded and should not be started; the language core is being replaced,
+not incrementally extended.
+
 **Supersedes the Phase 1 version.** The milestone order changes
 substantially: Phase 0 (relocation) now precedes everything else and is
 mandatory, per `ROM_BUDGET.md`/`V2_ARCHITECTURE.md`'s revised conclusions.
