@@ -28,6 +28,43 @@
 ; STATEMENT_COMPILER_SPIKE.md, docs/v2/ARCHITECTURE_B_MILESTONE_01.md,
 ; docs/v2/ARCHITECTURE_B_IMPLEMENTATION_PLAN.md (R1).
 ;
+; ============================================================================
+; *** STANDING CONVENTION — READ THIS BEFORE ADDING OR EDITING ANY CODE ***
+;
+;   NEVER KEEP A VALUE LIVE IN A REGISTER ACROSS A `call`.
+;   Save it to a dedicated memory scratch cell FIRST, reload it AFTER.
+;
+; This is not a style preference — it is the single most-repeated real bug
+; class in this entire rewrite, found via actual ZEsarUX execution FIVE
+; separate times across R2/R3/R5/R6 (register-clobber bug count: R2's
+; assignment-target-in-C, R2's load-opcode-clobbering-the-index, R3's
+; RESOLVE_ALL_FIXUPS counter, R3's COMPILE_NEXT offset, R5's FOUR string-op
+; instances, R6's THREE float instances — see docs/v2/
+; ARCHITECTURE_B_IMPLEMENTATION_PLAN.md's R2/R3/R5/R6 sections for the full
+; account of each). Every single instance had the same shape: a routine
+; that "looks safe" to call — no hint from its name or its call site alone
+; — turns out to use HL/DE/BC/AF as its OWN internal scratch, silently
+; destroying whatever the caller was holding there.
+;
+; Concrete repeat offenders already found in THIS file: `VM_FLOAT_ADDR`
+; clobbers DE; `CALC_SP_TO_NEXT_FREE_PTR` (rom/exrom_calc.asm) documents
+; "Destroys: AF, BC, DE, HL" in its own header and still caught a live
+; value in HL/DE across it, twice, in this file's own R6 code and again
+; independently in the R6 test driver.
+;
+; Before writing `call SOMETHING` with a value you need afterward still
+; sitting in a register: (1) check that callee's own header comment for a
+; "Destroys:" line — if it doesn't have one, read its body before trusting
+; it; (2) if in ANY doubt, save the value to memory first regardless. A
+; wasted `ld (SCRATCH),hl` costs a few bytes and a few cycles. A missed one
+; costs a silent, hard-to-find correctness bug that a test program may or
+; may not happen to exercise — several of the five bugs above were caught
+; only because a specific test program happened to hit that exact path;
+; see the R6 retrospective audit (docs/v2/ARCHITECTURE_B_IMPLEMENTATION_
+; PLAN.md, R6 section) for what an UNexercised instance of this looks like
+; before it's found.
+; ============================================================================
+;
 ; Opcode numbering (0-16, 17 opcodes total):
 ;   0  = HALT
 ;   1  = PUSH_I8    (operand: 1 signed byte, sign-extended)
@@ -86,6 +123,20 @@
 ;   20 = STR_CMP_LT   (R5; pops b-index, pops a-index; pushes 1 if a<b
 ;                      else 0 — lexicographic content comparison)
 ;   21 = STR_CMP_EQ   (R5; same, equality)
+;   22 = PUSH_FLOAT_LIT (R6 addition; operand: 2-byte int value + 2-byte
+;                      divisor, computed by the compiler from a decimal
+;                      literal's digits; pushes value/divisor as a real
+;                      float, via the actual calculator, into a fresh
+;                      FLOATTAB temp slot)
+;
+; R6 also changes ADD/SUB/MUL/DIV's own behavior: each now checks BOTH
+; operand tags and, if either is FLOAT, promotes/converts via the real
+; calculator instead of raising "float not yet implemented." DIV
+; specifically also detects an INEXACT plain-integer division (e.g.
+; 5/2) and promotes to FLOAT for that case too, matching NUMERIC_
+; DESIGN.md's design — see OP_DIV's own header note for how this stays
+; cheap for the (presumably common) exact-division case. STORE_VAR now
+; preserves whatever tag VM_POP returns instead of hardcoding TAG_INT.
 ;
 ; VM error codes (VM_ERROR_CODE, set on any abnormal halt):
 ;   0 = no error (normal HALT)
@@ -189,6 +240,85 @@ VM_STR_CONCAT_B_TMP: equ $87A8  ; OP_STR_CONCAT scratch (1 byte): the
 VM_STRCMP_LENA_TMP: equ $87A9   ; VM_STR_COMPARE scratch (1 byte)
 VM_STRCMP_LENB_TMP: equ $87AA   ; VM_STR_COMPARE scratch (1 byte)
 VM_STRCMP_MINLEN_TMP: equ $87AB ; VM_STR_COMPARE scratch (1 byte)
+
+; --- R6 addition: floating point, via the REAL, existing calculator
+; (rom/exrom_calc.asm) — reused, not reimplemented, per this whole
+; rewrite's standing architecture decision (NUMERIC_DESIGN.md,
+; ARCHITECTURE_COMPARISON.md). A real 5-byte calculator float cannot fit
+; in a 2-byte operand-stack slot, so — exactly mirroring the string
+; design above — a FLOAT "value" on the VM's own operand stack is always
+; a 2-byte FLOATTAB index, pushed via the ordinary TAG_FLOAT-tagged
+; VM_PUSH; the actual 5 float bytes live in FLOATTAB, in the calculator's
+; own native format (opaque to the VM — copied to/from CALC_STACK
+; verbatim, never decoded here). ---
+FLOATTAB_BASE:      equ $8500   ; float records: 5 raw calculator-float
+                                 ; bytes each, opaque to the VM
+FLOAT_REC_LEN:      equ 5
+FLOATTAB_MAX_VARS:  equ 16      ; ONE dedicated slot per possible SYMTAB
+                                  ; index (matches the compiler's own
+                                  ; CSYMTAB_MAX_ENTRIES) — NOT a small
+                                  ; fixed pool like STRTAB_MAX_VARS. Real
+                                  ; design reason, found before this ever
+                                  ; shipped: unlike a string variable
+                                  ; (which has its OWN lexically-distinct
+                                  ; index space via STRSYMTAB, decoupled
+                                  ; from the numeric SYMTAB), a float
+                                  ; variable shares the SAME SYMTAB index
+                                  ; space as an int variable (either type
+                                  ; can be assigned to "X" at runtime) —
+                                  ; there is no separate "float variable
+                                  ; index" to allocate ahead of time, so a
+                                  ; variable's float content must live at
+                                  ; a slot keyed by its SYMTAB index
+                                  ; directly, not by a round-robin
+                                  ; allocation order (see OP_STORE_VAR's
+                                  ; own header note for why storing just
+                                  ; a temp's index instead of a real copy
+                                  ; was a real, caught design gap, not a
+                                  ; shipped bug — found and fixed before
+                                  ; this ever ran on real hardware)
+FLOATTAB_TEMP_COUNT: equ 2      ; arithmetic-result temp slots, indices
+                                  ; FLOATTAB_MAX_VARS.. — round-robin, same
+                                  ; "no allocator needed" reasoning as
+                                  ; STRTAB's own temps: a temp is only
+                                  ; ever live long enough to be
+                                  ; immediately stored or compared
+VM_FLOAT_TEMP_NEXT: equ $87AE   ; round-robin index into the temp slots (1B)
+VM_FLOAT_TEMPIDX_TMP: equ $87AF ; VM_FLOAT_STORE_RESULT scratch (1 byte)
+VM_FLOAT_A_TAG:     equ $87B0   ; OP_ADD/SUB/MUL/DIV scratch (1 byte each):
+VM_FLOAT_A_VAL:     equ $87B1   ; operand A's tag/value, saved to memory
+VM_FLOAT_B_TAG:     equ $87B3   ; the moment VM_POP returns them, since
+VM_FLOAT_B_VAL:     equ $87B4   ; every one of these handlers pops TWICE
+                                  ; and needs both operands' tag+value
+                                  ; simultaneously afterward
+VM_FLOAT_OPERAND_TAG: equ $87B6 ; VM_FLOAT_PUSH_OPERAND's own input (1 byte)
+VM_FLOAT_OPERAND_VAL: equ $87B7 ; (2 bytes)
+VM_DIV_QUOTIENT_TMP: equ $87B9  ; OP_DIV scratch (2 bytes): the fast-path
+                                  ; int quotient, saved across the
+                                  ; exactness-check multiply-back before
+                                  ; either using it (exact) or discarding
+                                  ; it in favour of a real float divide
+                                  ; (inexact)
+VM_FLOAT_SRC_ADDR_TMP: equ $87BB ; VM_FLOAT_PUSH_OPERAND's own dedicated
+                                  ; scratch (2 bytes): parks the source
+                                  ; FLOATTAB address across the
+                                  ; CALC_SP_TO_NEXT_FREE_PTR call inside
+                                  ; VM_FLOAT_PUSH_OPERAND's .is_float branch
+                                  ; (that routine documents "Destroys: AF,
+                                  ; BC, DE, HL" — holding the source in HL
+                                  ; across it was a real bug found on real
+                                  ; hardware, see that branch's own
+                                  ; comment). Deliberately a NEW cell, not
+                                  ; VM_FLOAT_B_VAL: this routine is called
+                                  ; TWICE per opcode (once for operand A,
+                                  ; once for operand B), and the first
+                                  ; call's caller (OP_ADD/SUB/MUL/DIV) still
+                                  ; needs VM_FLOAT_B_TAG/VAL intact when
+                                  ; operand A happens to be the FLOAT one —
+                                  ; reusing B's own cell as scratch here
+                                  ; would have reintroduced the exact same
+                                  ; clobber bug one level up.
+
 ; every one of these is real RAM, not a register held across a call or a
 ; loop that itself calls something else — the standing discipline
 ; established after four real register-clobber bugs found via ZEsarUX
@@ -207,6 +337,7 @@ VM_INIT:
         ld (VM_HALTED),a
         ld (VM_TOS_TAG),a
         ld (VM_STR_TEMP_NEXT),a
+        ld (VM_FLOAT_TEMP_NEXT),a
         ret
 
 ; ---------------------------------------------------------------------------
@@ -222,7 +353,7 @@ VM_RUN:
         ld a,(hl)               ; fetch opcode
         inc hl
         ld (VM_IP),hl
-        cp 22                   ; 22 opcodes defined (0-21)
+        cp 23                   ; 23 opcodes defined (0-22)
         jp nc,VM_ERR_ILLEGAL_OPCODE
         ld l,a
         ld h,0
@@ -259,6 +390,7 @@ VM_OP_TABLE:
         dw OP_STR_CONCAT
         dw OP_STR_CMP_LT
         dw OP_STR_CMP_EQ
+        dw OP_PUSH_FLOAT_LIT
 
 ; ---------------------------------------------------------------------------
 ; String-table access: index (A) -> HL = record address
@@ -436,42 +568,120 @@ OP_LOAD_VAR:
         call VM_PUSH
         jp VM_RUN.loop
 
+; OP_STORE_VAR — R6 changes this beyond just preserving the tag (see
+; below): storing a FLOAT-tagged value must copy the actual 5 float
+; bytes into a slot DEDICATED to this variable's own SYMTAB index
+; (FLOATTAB_MAX_VARS's own header comment explains why), not merely
+; copy whatever transient index VM_POP handed back — a value produced by
+; arithmetic lives in a ROUND-ROBIN TEMP slot that a later float
+; operation will legitimately reuse; a variable that only remembered
+; that index, instead of a real copy, would silently see its own value
+; change later when the temp slot gets overwritten by something
+; unrelated. Found and fixed before ever running on real hardware, by
+; reasoning through what a real test program with more than
+; FLOATTAB_TEMP_COUNT live float results would actually do.
 OP_STORE_VAR:
         ld hl,(VM_IP)
         ld a,(hl)               ; symbol index operand
         inc hl
         ld (VM_IP),hl
         ld c,a                  ; save index
-        call VM_POP             ; HL = value, A = tag (this opcode set is
-                                 ; still integer-only end to end, so the tag
-                                 ; is not separately re-validated here — R6
-                                 ; must revisit this when FLOAT-producing
-                                 ; opcodes exist)
+        call VM_POP             ; HL = value, A = tag
+        ld (VM_FLOAT_A_TAG),a
+        ld (VM_FLOAT_A_VAL),hl
+        cp TAG_FLOAT
+        jr z,.float_store
         push hl                 ; save value
         ld a,c
         call VM_SYM_ADDR        ; HL -> record
         pop de                  ; DE = value
-        ld a,TAG_INT
+        ld a,(VM_FLOAT_A_TAG)
         ld (hl),a
         inc hl
         ld (hl),e
         inc hl
         ld (hl),d
         jp VM_RUN.loop
+.float_store:
+        ; BUG FOUND (real hardware, R6): the first version of this branch
+        ; held the source address in DE across a SECOND call to
+        ; VM_FLOAT_ADDR (to compute the dest address) — but VM_FLOAT_ADDR
+        ; itself uses DE as scratch (`ld d,h / ld e,l ... ld de,FLOATTAB_
+        ; BASE`), silently destroying the source address before the ldir
+        ; ever ran. Every variable's dedicated FLOATTAB slot came back
+        ; all-zero as a result (confirmed via real `mem` reads: FLOATTAB
+        ; index 0/2/3 all-zero while the round-robin temp slots 16/17 held
+        ; the real computed bytes) — exactly the "register clobbered
+        ; across a call" bug class this whole project keeps re-finding.
+        ; Fixed by parking the source address in memory (reusing
+        ; VM_FLOAT_B_VAL, unused by this single-operand opcode) instead of
+        ; in a register VM_FLOAT_ADDR might touch.
+        ld a,l                  ; the popped (transient) FLOATTAB index
+        call VM_FLOAT_ADDR       ; HL -> source floattab record
+        ld (VM_FLOAT_B_VAL),hl   ; park source address in memory, not DE
+        ld a,c                   ; this variable's own SYMTAB index —
+                                  ; also its own DEDICATED FLOATTAB index,
+                                  ; by this design's 1:1 mapping
+        call VM_FLOAT_ADDR       ; HL -> dest floattab record
+        ex de,hl                 ; DE = dest
+        ld hl,(VM_FLOAT_B_VAL)   ; HL = source (recovered from memory,
+                                  ; untouched by the call above)
+        push bc                  ; save C (target index) — ldir clobbers
+                                  ; BC as its own byte counter
+        ld bc,FLOAT_REC_LEN
+        ldir
+        pop bc
+        ld a,c
+        call VM_SYM_ADDR         ; HL -> this variable's SYMTAB record
+        ld a,TAG_FLOAT
+        ld (hl),a
+        inc hl
+        ld (hl),c                ; value = this variable's own (now
+                                   ; freshly-populated) dedicated
+                                   ; FLOATTAB index — stable, not a
+                                   ; borrowed temp reference
+        inc hl
+        ld (hl),0
+        jp VM_RUN.loop
 
 OP_ADD:
         call VM_POP             ; HL = b, A = tag_b
-        ld c,a
-        push hl
+        ld (VM_FLOAT_B_TAG),a
+        ld (VM_FLOAT_B_VAL),hl
         call VM_POP             ; HL = a, A = tag_a
+        ld (VM_FLOAT_A_TAG),a
+        ld (VM_FLOAT_A_VAL),hl
+        ld c,a
+        ld a,(VM_FLOAT_B_TAG)
         or c
-        jp nz,VM_ERR_FLOAT_NOT_IMPLEMENTED   ; either operand non-INT
-        pop de                  ; DE = b
+        jr nz,.float_path        ; either operand is FLOAT (R6)
+        ld hl,(VM_FLOAT_A_VAL)
+        ld de,(VM_FLOAT_B_VAL)
         add hl,de               ; HL = a+b — native 16-bit Z80 add, the
                                  ; integer fast path this whole architecture
-                                 ; exists to preserve.
+                                 ; exists to preserve. Untouched by R6:
+                                 ; reached only when BOTH operands are INT.
         ld a,TAG_INT
         call VM_PUSH
+        jp VM_RUN.loop
+.float_path:
+        xor a
+        ld (CALC_SP),a          ; start with a clean calculator stack —
+                                  ; every float op here is self-contained,
+                                  ; not relying on CALC_STACK state
+                                  ; surviving between VM opcodes
+        ld a,(VM_FLOAT_A_TAG)
+        ld (VM_FLOAT_OPERAND_TAG),a
+        ld hl,(VM_FLOAT_A_VAL)
+        ld (VM_FLOAT_OPERAND_VAL),hl
+        call VM_FLOAT_PUSH_OPERAND
+        ld a,(VM_FLOAT_B_TAG)
+        ld (VM_FLOAT_OPERAND_TAG),a
+        ld hl,(VM_FLOAT_B_VAL)
+        ld (VM_FLOAT_OPERAND_VAL),hl
+        call VM_FLOAT_PUSH_OPERAND
+        call VM_CALC_ADD_STUB
+        call VM_FLOAT_STORE_RESULT
         jp VM_RUN.loop
 
 OP_JMP:
@@ -488,57 +698,167 @@ OP_JMP:
 
 OP_SUB:
         call VM_POP             ; HL = b, A = tag_b
-        ld c,a
-        push hl
+        ld (VM_FLOAT_B_TAG),a
+        ld (VM_FLOAT_B_VAL),hl
         call VM_POP             ; HL = a, A = tag_a
+        ld (VM_FLOAT_A_TAG),a
+        ld (VM_FLOAT_A_VAL),hl
+        ld c,a
+        ld a,(VM_FLOAT_B_TAG)
         or c
-        jp nz,VM_ERR_FLOAT_NOT_IMPLEMENTED
-        pop de                  ; DE = b (HL is still a, from the second
-                                 ; VM_POP above — no register shuffle needed)
+        jr nz,.float_path
+        ld hl,(VM_FLOAT_A_VAL)
+        ld de,(VM_FLOAT_B_VAL)
         or a
         sbc hl,de               ; HL = a - b
         ld a,TAG_INT
         call VM_PUSH
         jp VM_RUN.loop
+.float_path:
+        xor a
+        ld (CALC_SP),a
+        ld a,(VM_FLOAT_A_TAG)
+        ld (VM_FLOAT_OPERAND_TAG),a
+        ld hl,(VM_FLOAT_A_VAL)
+        ld (VM_FLOAT_OPERAND_VAL),hl
+        call VM_FLOAT_PUSH_OPERAND
+        ld a,(VM_FLOAT_B_TAG)
+        ld (VM_FLOAT_OPERAND_TAG),a
+        ld hl,(VM_FLOAT_B_VAL)
+        ld (VM_FLOAT_OPERAND_VAL),hl
+        call VM_FLOAT_PUSH_OPERAND
+        call VM_CALC_SUB_STUB
+        call VM_FLOAT_STORE_RESULT
+        jp VM_RUN.loop
 
 OP_MUL:
         call VM_POP             ; HL = b, A = tag_b
-        ld c,a
-        push hl
+        ld (VM_FLOAT_B_TAG),a
+        ld (VM_FLOAT_B_VAL),hl
         call VM_POP             ; HL = a, A = tag_a
+        ld (VM_FLOAT_A_TAG),a
+        ld (VM_FLOAT_A_VAL),hl
+        ld c,a
+        ld a,(VM_FLOAT_B_TAG)
         or c
-        jp nz,VM_ERR_FLOAT_NOT_IMPLEMENTED
-        pop de                  ; DE = b
+        jr nz,.float_path
+        ld hl,(VM_FLOAT_A_VAL)
+        ld de,(VM_FLOAT_B_VAL)
         call MATH_MULTIPLY16    ; existing, already-verified platform
                                  ; primitive (kernel/math/math.asm) — reused,
                                  ; not reimplemented. Overflow silently
                                  ; truncates here, same as the primitive's
                                  ; own documented behavior; auto-promotion
-                                 ; on overflow is R6 scope (NUMERIC_DESIGN.md)
+                                 ; on overflow remains deferred (a separate,
+                                 ; not-yet-built refinement — this
+                                 ; milestone's own scope is composable
+                                 ; float arithmetic when a value is
+                                 ; ALREADY float-tagged, not auto-promoting
+                                 ; on integer overflow)
         ld a,TAG_INT
         call VM_PUSH
         jp VM_RUN.loop
+.float_path:
+        xor a
+        ld (CALC_SP),a
+        ld a,(VM_FLOAT_A_TAG)
+        ld (VM_FLOAT_OPERAND_TAG),a
+        ld hl,(VM_FLOAT_A_VAL)
+        ld (VM_FLOAT_OPERAND_VAL),hl
+        call VM_FLOAT_PUSH_OPERAND
+        ld a,(VM_FLOAT_B_TAG)
+        ld (VM_FLOAT_OPERAND_TAG),a
+        ld hl,(VM_FLOAT_B_VAL)
+        ld (VM_FLOAT_OPERAND_VAL),hl
+        call VM_FLOAT_PUSH_OPERAND
+        call VM_CALC_MUL_STUB
+        call VM_FLOAT_STORE_RESULT
+        jp VM_RUN.loop
 
+; OP_DIV — R6 addition changes this opcode's shape: even with two plain
+; INT operands, the result must STAY FLOAT when the division is inexact
+; (matching NUMERIC_DESIGN.md's design, e.g. "5/2" -> 2.5, not 2). Rather
+; than routing every integer division through the calculator (V1's own
+; precedent, per that document — a real but avoidable cost), this tries
+; the existing fast MATH_DIVIDE16 path first, then CHEAPLY verifies
+; exactness by multiplying the quotient back (MATH_UMUL16-based,
+; native Z80) — only falling back to a real float divide via the
+; calculator on the (presumably less common) inexact case. Exact
+; divisions, which is most of them in ordinary integer-heavy programs,
+; never touch the calculator at all.
 OP_DIV:
         call VM_POP             ; HL = b, A = tag_b
-        ld c,a
-        push hl
+        ld (VM_FLOAT_B_TAG),a
+        ld (VM_FLOAT_B_VAL),hl
         call VM_POP             ; HL = a, A = tag_a
+        ld (VM_FLOAT_A_TAG),a
+        ld (VM_FLOAT_A_VAL),hl
+        ld c,a
+        ld a,(VM_FLOAT_B_TAG)
         or c
-        jp nz,VM_ERR_FLOAT_NOT_IMPLEMENTED
-        pop de                  ; DE = b (the divisor)
-        ld a,d
-        or e
+        jr nz,.float_path        ; either operand already FLOAT-tagged
+        ld hl,(VM_FLOAT_B_VAL)
+        ld a,h
+        or l
         jp z,VM_ERR_DIVIDE_BY_ZERO   ; real, caught error — a deliberate
                                       ; improvement over V1's silent 0
                                       ; (V2_LANGUAGE_SPEC.md's already-
-                                      ; planned fix), reached here via a
-                                      ; genuinely faster path than V1's own
-                                      ; `/` (see this file's header note)
+                                      ; planned fix)
+        ld hl,(VM_FLOAT_A_VAL)
+        ld de,(VM_FLOAT_B_VAL)
         call MATH_DIVIDE16      ; existing, already-verified platform
                                  ; primitive — truncates toward zero
+        ld (VM_DIV_QUOTIENT_TMP),hl
+        ld de,(VM_FLOAT_B_VAL)
+        call MATH_MULTIPLY16    ; HL = quotient*divisor (exactness check)
+        ld de,(VM_FLOAT_A_VAL)
+        or a
+        sbc hl,de
+        jr nz,.inexact           ; quotient*divisor != dividend -> inexact
+        ld hl,(VM_DIV_QUOTIENT_TMP)
         ld a,TAG_INT
         call VM_PUSH
+        jp VM_RUN.loop
+.inexact:
+        xor a
+        ld (CALC_SP),a
+        ld hl,(VM_FLOAT_A_VAL)
+        call CALC_INT_TO_FP
+        ld hl,(VM_FLOAT_B_VAL)
+        call CALC_INT_TO_FP
+        call VM_CALC_DIV_STUB
+        call VM_FLOAT_STORE_RESULT
+        jp VM_RUN.loop
+.float_path:
+        ld a,(VM_FLOAT_B_TAG)
+        cp TAG_INT
+        jr nz,.skip_zero_check   ; B is FLOAT-tagged: skip the cheap
+                                   ; int-zero check — a documented,
+                                   ; deferred edge case (a FLOAT-tagged
+                                   ; zero divisor is not caught by this
+                                   ; milestone; NUMERIC_DESIGN.md already
+                                   ; flags the calculator's own raw divide
+                                   ; as having no error-reporting path of
+                                   ; its own for this case)
+        ld hl,(VM_FLOAT_B_VAL)
+        ld a,h
+        or l
+        jp z,VM_ERR_DIVIDE_BY_ZERO
+.skip_zero_check:
+        xor a
+        ld (CALC_SP),a
+        ld a,(VM_FLOAT_A_TAG)
+        ld (VM_FLOAT_OPERAND_TAG),a
+        ld hl,(VM_FLOAT_A_VAL)
+        ld (VM_FLOAT_OPERAND_VAL),hl
+        call VM_FLOAT_PUSH_OPERAND
+        ld a,(VM_FLOAT_B_TAG)
+        ld (VM_FLOAT_OPERAND_TAG),a
+        ld hl,(VM_FLOAT_B_VAL)
+        ld (VM_FLOAT_OPERAND_VAL),hl
+        call VM_FLOAT_PUSH_OPERAND
+        call VM_CALC_DIV_STUB
+        call VM_FLOAT_STORE_RESULT
         jp VM_RUN.loop
 
 OP_CMP_LT:
@@ -950,6 +1270,168 @@ VM_STR_COMPARE:
 .tie_equal:
         xor a
         ret
+
+; ===========================================================================
+; FLOATING-POINT SUPPORT (R6 addition) — reuses the REAL, existing
+; calculator (rom/exrom_calc.asm) via its documented CALC_INT_TO_FP
+; converter and its RST $28 literal-stream mechanism, the exact same
+; entry points basic/basic.asm's own "/" operator already uses in
+; production (NUMERIC_DESIGN.md, VERIFIED). This module does NOT
+; reimplement float arithmetic — it calls the real engine, copies its
+; results into FLOATTAB, and never inspects a float's actual bytes.
+;
+; A note on how RST $28 reaches the calculator from a standalone test
+; image with no real HOME/EXROM paging: see rom/test_v2_compiler_r6.asm's
+; own header for the one small, explicitly-labeled stand-in this requires
+; (a trivial `KTAB_CALC_EXIT_TRAMPOLINE: ret`, replacing the real
+; production build's page-back-in-then-return jump-table indirection,
+; which has nothing to page in a flat single-bank test image). Nothing
+; about the calculator's own arithmetic is stubbed — only the one HOME-
+; side return hook a real paged build would provide differently.
+; ===========================================================================
+
+; VM_FLOAT_ADDR — index (A) -> HL = record address (FLOATTAB_BASE + index*5).
+VM_FLOAT_ADDR:
+        ld l,a
+        ld h,0
+        ld d,h
+        ld e,l
+        add hl,hl               ; *2
+        add hl,hl               ; *4
+        add hl,de               ; *5
+        ld de,FLOATTAB_BASE
+        add hl,de
+        ret
+
+; VM_FLOAT_PUSH_OPERAND — input: VM_FLOAT_OPERAND_TAG/VAL. Pushes the
+; operand onto the REAL calculator's own CALC_STACK: converts a plain INT
+; via CALC_INT_TO_FP, or copies an existing FLOATTAB entry's raw 5 bytes
+; directly (a FLOAT operand's "value" is always a FLOATTAB index).
+VM_FLOAT_PUSH_OPERAND:
+        ld a,(VM_FLOAT_OPERAND_TAG)
+        cp TAG_FLOAT
+        jr z,.is_float
+        ld hl,(VM_FLOAT_OPERAND_VAL)
+        call CALC_INT_TO_FP
+        ret
+.is_float:
+        ; BUG FOUND (real hardware, R6): holding the source address in HL
+        ; across the CALC_SP_TO_NEXT_FREE_PTR call below silently corrupted
+        ; every mixed int/float ADD (e.g. Y=A+0.5 came out 6.0, not 3.5) —
+        ; CALC_SP_TO_NEXT_FREE_PTR's own header documents "Destroys: AF,
+        ; BC, DE, HL", and its real body ends with `ex de,hl`, which hands
+        ; back whatever HL/DE happened to hold on ENTRY (here: DE was left
+        ; = CALC_STACK by the ldir this same routine ran on the FIRST
+        ; operand a moment earlier), not the source address computed just
+        ; above. The ldir then silently copied the FIRST operand's own
+        ; just-pushed bytes over itself instead of the second operand's
+        ; real float data. Exact same register-clobber-across-a-call bug
+        ; class as OP_STORE_VAR's and the R6 test driver's own fix — this
+        ; is the third real instance of it found this milestone. Fixed the
+        ; same way: park the source address in memory, not a register
+        ; VM_FLOAT_ADDR's own callee touches.
+        ld a,(VM_FLOAT_OPERAND_VAL)   ; low byte only — indices are small
+        call VM_FLOAT_ADDR             ; HL -> source float record
+        ld (VM_FLOAT_SRC_ADDR_TMP),hl   ; park it in this routine's OWN
+                                          ; dedicated scratch (see that
+                                          ; cell's own header for why not
+                                          ; VM_FLOAT_A_VAL/B_VAL)
+        call CALC_SP_TO_NEXT_FREE_PTR  ; DE -> dest (next free CALC_STACK slot)
+        ld hl,(VM_FLOAT_SRC_ADDR_TMP)    ; recover the real source address
+        ld bc,FLOAT_REC_LEN
+        ldir
+        ld a,(CALC_SP)
+        inc a
+        ld (CALC_SP),a
+        ret
+
+; VM_FLOAT_STORE_RESULT — copies the calculator's own result (always at
+; CALC_STACK index 0, since every arithmetic handler below resets
+; CALC_SP to 0 before pushing its two operands) into a fresh FLOATTAB
+; temp slot, then pushes that slot's index onto the VM's own operand
+; stack, TAG_FLOAT.
+VM_FLOAT_STORE_RESULT:
+        ld a,(VM_FLOAT_TEMP_NEXT)
+        ld (VM_FLOAT_TEMPIDX_TMP),a
+        add a,FLOATTAB_MAX_VARS
+        call VM_FLOAT_ADDR       ; HL -> dest temp slot
+        ex de,hl                  ; DE = dest
+        ld hl,CALC_STACK
+        ld bc,FLOAT_REC_LEN
+        ldir
+        ld a,(VM_FLOAT_TEMPIDX_TMP)
+        inc a
+        cp FLOATTAB_TEMP_COUNT
+        jr c,.no_wrap
+        xor a
+.no_wrap:
+        ld (VM_FLOAT_TEMP_NEXT),a
+        ld a,(VM_FLOAT_TEMPIDX_TMP)
+        add a,FLOATTAB_MAX_VARS
+        ld l,a
+        ld h,0
+        ld a,TAG_FLOAT
+        call VM_PUSH
+        ret
+
+; VM_CALC_ADD_STUB/SUB/MUL/DIV — invoke the real calculator's own
+; already-wired ADD/SUB/MUL/DIV literals (NUMERIC_DESIGN.md, VERIFIED:
+; "the calculator's literal opcode set already includes add/sub/mul/
+; div") via RST $28, exactly matching basic.asm's own "/" operator
+; wiring (`rst $28` / `DB <literal>,$38`). The RST $28 vector at $0028
+; and CALC_LITERAL_PTR's own resume mechanism return control to the
+; instruction right after the DB bytes — i.e., this stub's own `ret` —
+; without ever touching the Z80 hardware stack in between, so the
+; caller's own return address (pushed by `call VM_CALC_ADD_STUB` etc.)
+; survives untouched.
+VM_CALC_ADD_STUB:
+        ld b,0
+        rst $28
+        db $0F,$38              ; add, end-calc
+        ret
+VM_CALC_SUB_STUB:
+        ld b,0
+        rst $28
+        db $03,$38              ; subtract, end-calc
+        ret
+VM_CALC_MUL_STUB:
+        ld b,0
+        rst $28
+        db $04,$38              ; multiply, end-calc
+        ret
+VM_CALC_DIV_STUB:
+        ld b,0
+        rst $28
+        db $05,$38              ; divide, end-calc
+        ret
+
+; OP_PUSH_FLOAT_LIT — operand: 2-byte int value (the literal's digits,
+; decimal point removed) + 2-byte divisor (10^number-of-fractional-
+; digits, computed by the compiler). Computes value/divisor as a real
+; float via the calculator, stores it in a fresh FLOATTAB temp slot,
+; pushes that slot's index, TAG_FLOAT.
+OP_PUSH_FLOAT_LIT:
+        ld hl,(VM_IP)
+        ld e,(hl)
+        inc hl
+        ld d,(hl)               ; DE = value
+        inc hl
+        ld (VM_FLOAT_A_VAL),de
+        ld e,(hl)
+        inc hl
+        ld d,(hl)               ; DE = divisor
+        inc hl
+        ld (VM_IP),hl
+        ld (VM_FLOAT_B_VAL),de
+        xor a
+        ld (CALC_SP),a          ; start with a clean calculator stack
+        ld hl,(VM_FLOAT_A_VAL)
+        call CALC_INT_TO_FP
+        ld hl,(VM_FLOAT_B_VAL)
+        call CALC_INT_TO_FP
+        call VM_CALC_DIV_STUB
+        call VM_FLOAT_STORE_RESULT
+        jp VM_RUN.loop
 
 ; ---------------------------------------------------------------------------
 ; Error exits — each sets VM_ERROR_CODE and VM_HALTED, then returns to the

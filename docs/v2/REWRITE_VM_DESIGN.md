@@ -261,6 +261,29 @@ not building a comparable one from scratch inside a new VM).
 
 
 
+## Update: R6 (hybrid numeric system / floating point) is complete
+
+rom/exrom_v2_vm_core.asm grew to 1,698 bytes (a 16-record/5-byte-record
+FLOATTAB keyed 1:1 by SYMTAB index — not a small round-robin pool like
+STRTAB, since floats share ints' own symbol-index space with no lexical
+marker — a new PUSH_FLOAT_LIT opcode, and int/float promotion added to
+ADD/SUB/MUL/DIV) and rom/exrom_v2_compiler.asm grew to 2,494 bytes
+(decimal-point recognition in the lexer plus the PUSH_FLOAT_LIT emitter).
+Critically, no float arithmetic was reimplemented: every computation is a
+real call into rom/exrom_calc.asm's existing, unmodified calculator via
+its RST $28 literal-stream mechanism, per this project's standing reuse
+decision. A real program (X=10.5, A=3, Y=A+0.5, Z=5/2, W=6/2) produced
+exactly correct results on real ZEsarUX hardware, verified through the
+real calculator itself (multiply-by-2-then-truncate against the real
+engine) rather than by hand-decoding its float byte format. Three more
+real bugs were found via hardware execution and fixed, all the same
+register-clobbered-across-a-call lesson proven a fifth time in this
+rewrite. Eighteen real bugs found and fixed via hardware execution total
+across Milestone 01/R1-R6. See the implementation plan's R6 section for
+the full account.
+
+
+
 ## Update: the statement-compiler spike has been built and measured
 
 See `STATEMENT_COMPILER_SPIKE.md` for the full result:

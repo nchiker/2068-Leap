@@ -40,6 +40,37 @@
 ; STATEMENT_COMPILER_SPIKE.md, docs/v2/ARCHITECTURE_B_IMPLEMENTATION_PLAN.md
 ; (R2).
 ;
+; ============================================================================
+; *** STANDING CONVENTION — READ THIS BEFORE ADDING OR EDITING ANY CODE ***
+;
+;   NEVER KEEP A VALUE LIVE IN A REGISTER ACROSS A `call`.
+;   Save it to a dedicated memory scratch cell FIRST, reload it AFTER.
+;
+; This is not a style preference — it is the single most-repeated real bug
+; class in this entire rewrite, found via actual ZEsarUX execution FIVE
+; separate times across R2/R3/R5/R6 (see docs/v2/
+; ARCHITECTURE_B_IMPLEMENTATION_PLAN.md's R2/R3/R5/R6 sections for the full
+; account of each: R2's assignment-target-in-C, R2's load-opcode-clobbering-
+; the-index, R3's RESOLVE_ALL_FIXUPS counter, R3's COMPILE_NEXT offset, R5's
+; FOUR string-op instances, R6's THREE float instances — this file and its
+; VM-core counterpart, rom/exrom_v2_vm_core.asm, share this exact history).
+; Every instance had the same shape: a routine that "looks safe" to call —
+; nothing about its name or call site hints otherwise — turns out to use
+; HL/DE/BC/AF as its OWN internal scratch, silently destroying whatever the
+; caller was holding there (e.g. EMIT_BYTE uses HL as EMIT_PTR internally;
+; VM_STR_ADDR/VM_POP use DE internally; VM_FLOAT_ADDR/CALC_SP_TO_NEXT_
+; FREE_PTR use DE/HL internally).
+;
+; Before writing `call SOMETHING` with a value you still need afterward in
+; a register: (1) check that callee's own header comment for a "Destroys:"
+; line — if it doesn't have one, read its body before trusting it; (2) if
+; in ANY doubt, save the value to memory first regardless. This matters
+; MORE, not less, in R7 onward: platform routines (graphics/sprite/sound/
+; input) are exactly this kind of register-heavy helper this bug class
+; thrives on, and most of them predate this rewrite and were never audited
+; for it.
+; ============================================================================
+;
 ; Grammar this compiler accepts (R2+R3 scope):
 ;   program    := statement (':' statement)* EOF
 ;   statement  := IDENT ':'                          (label definition)
@@ -235,6 +266,12 @@ CSTR_IDENT_INDEX_TMP: equ $8B37 ; COMPILE_STR_FACTOR scratch (1 byte): a
                                   ; across the EMIT_BYTE_OP_PUSH_I16 call
 CSTR_ASSIGN_TARGET_TMP: equ $8B38 ; COMPILE_STR_ASSIGN scratch (1 byte)
 
+; --- R6 addition: decimal literals ---
+CNUM_DIVISOR_TMP:   equ $8B39   ; LEX_SCAN_NUMBER scratch (2 bytes): running
+                                  ; 10^(fractional digits) accumulator
+TOK_FLOAT_DIVISOR:  equ $8B3B   ; token field (2 bytes): companion to
+                                  ; TOK_VAL for a TOK_FLOAT_NUMBER token
+
 ; every one of the scratch cells above is real RAM (not a register
 ; held across a call, not inline ROM data) — the two bug classes this
 ; module has already found and fixed once each (docs/v2/
@@ -273,6 +310,7 @@ TOK_KW_ENDP:        equ 21
 TOK_KW_CALL:        equ 22
 TOK_STRING:         equ 23   ; a "quoted" string literal (R5 addition)
 TOK_STR_IDENT:      equ 24   ; a NAME$ string-variable identifier (R5)
+TOK_FLOAT_NUMBER:   equ 25   ; a decimal literal, e.g. "10.5" (R6 addition)
 
 ; ---------------------------------------------------------------------------
 ; COMPILER_INIT — call once before COMPILE_PROGRAM.
@@ -410,9 +448,53 @@ LEX_NEXT_TOKEN:
         ld (SRC_PTR),hl
         ret
 
+; LEX_SCAN_NUMBER — R6 addition: also recognizes an optional '.' followed
+; by more digits (a decimal literal). The integer and fractional digits
+; accumulate into the SAME running value DE (i.e. "10.5" accumulates as
+; if scanning "105"); a separate CNUM_DIVISOR_TMP tracks 10^(number of
+; fractional digits seen), starting at 1 (meaning "no fractional part").
+; If the divisor is still 1 when digit-scanning ends, this is a plain
+; TOK_NUMBER (unchanged behavior, unchanged token type, for every program
+; that predates R6); otherwise it's TOK_FLOAT_NUMBER, with TOK_VAL holding
+; the digits and TOK_FLOAT_DIVISOR holding the divisor — COMPILE_FACTOR
+; combines them into a real float at runtime via the calculator, not at
+; compile time (this compiler never decodes or encodes the calculator's
+; own float byte format itself).
 LEX_SCAN_NUMBER:
         ld de,0
-.digit_loop:
+        ld hl,1
+        ld (CNUM_DIVISOR_TMP),hl
+.int_digit_loop:
+        ld hl,(SRC_PTR)
+        ld a,(hl)
+        cp '0'
+        jr c,.check_dot
+        cp '9'+1
+        jr nc,.check_dot
+        inc hl
+        ld (SRC_PTR),hl
+        sub '0'
+        push af
+        ld h,d
+        ld l,e
+        add hl,hl
+        add hl,hl
+        add hl,de
+        add hl,hl
+        pop af
+        ld c,a
+        ld b,0
+        add hl,bc
+        ex de,hl
+        jr .int_digit_loop
+.check_dot:
+        ld hl,(SRC_PTR)
+        ld a,(hl)
+        cp '.'
+        jr nz,.done
+        inc hl
+        ld (SRC_PTR),hl
+.frac_digit_loop:
         ld hl,(SRC_PTR)
         ld a,(hl)
         cp '0'
@@ -434,10 +516,30 @@ LEX_SCAN_NUMBER:
         ld b,0
         add hl,bc
         ex de,hl
-        jr .digit_loop
+        ld hl,(CNUM_DIVISOR_TMP)
+        ld b,h
+        ld c,l
+        add hl,hl
+        add hl,hl
+        add hl,bc
+        add hl,hl               ; divisor *= 10
+        ld (CNUM_DIVISOR_TMP),hl
+        jr .frac_digit_loop
 .done:
         ld (TOK_VAL),de
+        ld hl,(CNUM_DIVISOR_TMP)
+        ld a,l
+        cp 1
+        jr nz,.is_float
+        ld a,h
+        or a
+        jr nz,.is_float
         ld a,TOK_NUMBER
+        ld (TOK_TYPE),a
+        ret
+.is_float:
+        ld (TOK_FLOAT_DIVISOR),hl
+        ld a,TOK_FLOAT_NUMBER
         ld (TOK_TYPE),a
         ret
 
@@ -863,6 +965,7 @@ EMIT_OP_STORE_STR_VAR:     ld a,18 : jp EMIT_BYTE
 EMIT_OP_STR_CONCAT:        ld a,19 : jp EMIT_BYTE
 EMIT_OP_STR_CMP_LT:        ld a,20 : jp EMIT_BYTE
 EMIT_OP_STR_CMP_EQ:        ld a,21 : jp EMIT_BYTE
+EMIT_BYTE_OP_PUSH_FLOAT_LIT: ld a,22 : jp EMIT_BYTE
 
 ; EMIT_PLACEHOLDER_16 — writes two dummy zero bytes (a forward-reference
 ; branch target not yet known), returns the ABSOLUTE address of the first
@@ -959,6 +1062,8 @@ COMPILE_FACTOR:
         jr z,.paren
         cp TOK_NUMBER
         jr z,.number
+        cp TOK_FLOAT_NUMBER
+        jr z,.float_number
         cp TOK_IDENT
         jr z,.ident
         ld a,3
@@ -979,6 +1084,10 @@ COMPILE_FACTOR:
         call COMPILE_NUMBER_LITERAL
         call LEX_NEXT_TOKEN
         ret
+.float_number:
+        call COMPILE_FLOAT_LITERAL
+        call LEX_NEXT_TOKEN
+        ret
 .ident:
         call COMPILE_IDENT_LOAD
         call LEX_NEXT_TOKEN
@@ -995,6 +1104,25 @@ COMPILE_NUMBER_LITERAL:
         ret
 .wide:
         call EMIT_BYTE_OP_PUSH_I16
+        ld a,e
+        call EMIT_BYTE
+        ld a,d
+        call EMIT_BYTE
+        ret
+
+; COMPILE_FLOAT_LITERAL — emits PUSH_FLOAT_LIT's 4-byte operand: TOK_VAL
+; (the literal's digits) then TOK_FLOAT_DIVISOR (10^fractional-digits),
+; both as plain 2-byte little-endian values. The VM computes value/
+; divisor as a real float at runtime, via the calculator — this compiler
+; never encodes a float itself.
+COMPILE_FLOAT_LITERAL:
+        call EMIT_BYTE_OP_PUSH_FLOAT_LIT
+        ld de,(TOK_VAL)
+        ld a,e
+        call EMIT_BYTE
+        ld a,d
+        call EMIT_BYTE
+        ld de,(TOK_FLOAT_DIVISOR)
         ld a,e
         call EMIT_BYTE
         ld a,d

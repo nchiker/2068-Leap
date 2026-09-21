@@ -604,6 +604,163 @@ EXROM free).
 
 ### R6 — Hybrid numeric system (floating point)
 
+**Status: COMPLETE, real-hardware-validated.** Grew `rom/
+exrom_v2_vm_core.asm` from R5's 1,160 bytes to **1,698 bytes** (+538 for
+`FLOATTAB` — a 16-record, 5-bytes/record table, one dedicated slot per
+possible `SYMTAB` index plus a 2-slot round-robin ring for arithmetic
+temporaries — a new opcode `PUSH_FLOAT_LIT`, and int/float-promotion
+logic added to `ADD`/`SUB`/`MUL`, plus an inexact-stays-float fast/slow
+split added to `DIV`); `rom/exrom_v2_compiler.asm` from R5's 2,366 bytes
+to **2,494 bytes** (+128 for decimal-point recognition in
+`LEX_SCAN_NUMBER` and the `PUSH_FLOAT_LIT` emitter). Combined +666 bytes,
+well inside `REWRITE_ROM_BUDGET.md`'s reserve — and, critically, this
+milestone does **not** reimplement float arithmetic: every actual
+computation is a real, unmodified call into `rom/exrom_calc.asm`'s
+existing calculator engine via its documented `RST $28` literal-stream
+mechanism (the same entry points `basic.asm`'s own `/` operator already
+uses in production), exactly as `NUMERIC_DESIGN.md`'s reuse decision
+specifies.
+
+**Design decision, not a gap**: a float "value" on the VM's 3-byte
+operand-stack record is always a 2-byte `FLOATTAB` index (`TAG_FLOAT`),
+mirroring R5's string design — but with one real, load-bearing
+difference from strings, caught during design review *before* any
+hardware test: strings have their own lexically-distinct (`$`-suffix)
+symbol-table index space, so a small round-robin temp pool plus a
+separate named-variable pool was sufficient; floats share the *same*
+`SYMTAB` index space as plain ints (no lexical marker distinguishes
+`X = 10.5` from `X = 10`), so a float variable's storage must be keyed
+1:1 by its `SYMTAB` index (`FLOATTAB_MAX_VARS = 16`, matching
+`CSYMTAB_MAX_ENTRIES`) rather than allocated from a small pool — a
+round-robin scheme would have let a later float computation silently
+overwrite an earlier variable's own stored value. `OP_STORE_VAR` now
+branches on the popped tag: an INT value stores as before; a FLOAT value
+gets a real 5-byte content copy (via `VM_FLOAT_ADDR` + `ldir`) from
+whatever transient slot produced it into the variable's own dedicated
+slot — not just a copy of the (possibly soon-reused) index.
+
+`OP_DIV` keeps the existing fast native-`MATH_DIVIDE16` int path as the
+*first* attempt even under R6: it divides, then reconstructs
+`quotient*divisor` via `MATH_MULTIPLY16` and compares against the
+original dividend; an exact match stays on the int fast path (e.g.
+`6/2` stores as `TAG_INT`, zero calculator/`FLOATTAB` involvement); a
+mismatch (e.g. `5/2`) falls back to a real float divide through the
+calculator. This preserves the "integer programs remain integer
+programs" performance guarantee for the common case while still
+satisfying the inexact-stays-float requirement. A documented, deferred
+edge case: when either `/` operand is already `FLOAT`-tagged, a
+`FLOAT`-tagged zero divisor is not caught by this milestone's cheap
+zero-check (only a plain-`INT` zero divisor is) — `NUMERIC_DESIGN.md`
+already flagged the calculator's own raw divide as having no
+error-reporting path of its own for this case; this is not a new gap
+R6 introduced.
+
+`rom/test_v2_compiler_r6.asm` compiled and executed a real program
+exercising every R6 mechanism together — `X=10.5` (plain decimal
+literal), `A=3` (plain int), `Y=A+0.5` (int-operand promoted to float,
+added to a float literal), `Z=5/2` (inexact division, calculator
+fallback), `W=6/2` (exact division, fast int path, no calculator
+involvement at all). Real ZEsarUX result: **every value matched
+exactly** — confirmed not by hand-decoding the calculator's internal
+5-byte float format, but by asking the real calculator itself: the test
+driver copies each variable's own `FLOATTAB` record onto the real
+`CALC_STACK`, multiplies by the real int 2 via `RST $28`, converts back
+to int via `CALC_FP_TO_INT`, and compares the truncated result against
+`expected*2` (exact for every value in this test: `10.5*2=21`,
+`3.5*2=7`, `2.5*2=5`) — genuine end-to-end verification through the same
+engine the interpreter itself uses, not a mock. Final hand-verified
+`FLOATTAB`/`SYMTAB` state, read live off real hardware: `X=10.5`
+(`84 28 00 00 00`), `A=3` (`TAG_INT`), `Y=3.5` (`82 60 00 00 00`),
+`Z=2.5` (`82 20 00 00 00`), `W=3` (`TAG_INT`).
+
+**Three more real bugs found via ZEsarUX execution and fixed** (bringing
+this rewrite's real-hardware-caught bug total to eighteen across
+Milestone 01/R1-R6) — all three the *same* underlying lesson, now proven
+a fifth time in this rewrite alone:
+1. `OP_STORE_VAR`'s new `.float_store` branch held the source `FLOATTAB`
+   address in `DE` across a second call to `VM_FLOAT_ADDR` (to compute
+   the destination address) — but `VM_FLOAT_ADDR` uses `DE` as its own
+   scratch (`ld d,h / ld e,l ... ld de,FLOATTAB_BASE`), silently
+   destroying the source address before the `ldir` ever ran. Every
+   variable's dedicated `FLOATTAB` slot came back all-zero as a result —
+   caught by direct `mem` reads before writing a single test-program
+   line, not by a failed run. Fixed by parking the source address in
+   memory across the second call instead of a register the callee
+   touches.
+2. `VM_FLOAT_PUSH_OPERAND`'s `.is_float` branch had the *identical* bug
+   one level up: it held the source address in `HL` across a call to
+   `CALC_SP_TO_NEXT_FREE_PTR` — whose own header explicitly documents
+   "Destroys: AF, BC, DE, HL" — which returns via `ex de,hl`, handing
+   back whatever `HL`/`DE` happened to hold on entry (here: `DE`, left
+   over from the *first* operand's own already-completed `ldir` a moment
+   earlier) instead of the real source address computed just above. Real
+   effect: `Y = A + 0.5` (`A` = int 3) came back as `6.0`, because the
+   second operand's `ldir` silently copied the *first* operand's own
+   just-pushed bytes over itself instead of the literal `0.5`'s real
+   float data (`3 + 3 = 6`, not `3 + 0.5 = 3.5`) — root-caused by
+   single-stepping the exact instruction sequence live and reading
+   `CALC_STACK` at each step, the same technique that found R3's and
+   R5's clobber bugs. Fixed with a dedicated new scratch cell
+   (`VM_FLOAT_SRC_ADDR_TMP`) rather than reusing `VM_FLOAT_A_VAL`/
+   `VM_FLOAT_B_VAL` — deliberately *not* reusing `VM_FLOAT_B_VAL` (as
+   bug 1's own fix pattern would suggest), since this routine is called
+   twice per opcode and the caller still needs `VM_FLOAT_B_TAG`/`VAL`
+   intact when operand A happens to be the float one.
+3. The R6 test driver's own `CHECK_RESULT.check_float` verification
+   helper had the same bug a third time, independently, in test code
+   rather than production code: it held the source address in `HL`
+   across the same `CALC_SP_TO_NEXT_FREE_PTR` call. Fixed the same way.
+
+All three are the same standing lesson from R2-R5, proven again: **any
+register holding a value needed after a call must be saved to memory
+first — unconditionally, never "this callee probably doesn't touch that
+register."** `VM_FLOAT_ADDR` and `CALC_SP_TO_NEXT_FREE_PTR` both use
+`DE`/`HL` internally purely as scratch (the latter's own header even
+says so explicitly), with no hint of that from a casual read of the call
+site alone.
+
+**Retrospective register-clobber audit, done proactively before R7**: the
+same bug class above has now recurred five times across R2/R3/R5/R6.
+Before writing R7's platform-call trampolines — which will call a lot of
+existing, register-heavy graphics/sprite/sound/input routines, exactly
+the shape of code this bug thrives in — two things were done:
+1. Added an explicit, prominent standing-convention block near the top of
+   both `rom/exrom_v2_vm_core.asm` and `rom/exrom_v2_compiler.asm`: never
+   keep a value live in a register across a `call`; save it to memory
+   first; check the callee's own "Destroys:" header before assuming any
+   register survives a call.
+2. Manually audited every `call` site in both files against each known
+   register-clobbering helper's actual documented/read behavior
+   (`VM_POP`, `VM_SYM_ADDR`, `VM_STR_ADDR`, `VM_FLOAT_ADDR`, `EMIT_BYTE`,
+   `CALC_SP_TO_NEXT_FREE_PTR`, the `MATH_*`/`CALC_*` primitives),
+   specifically prioritizing opcodes/branches no existing test program had
+   ever exercised — `OP_SUB`'s and `OP_MUL`'s own `.float_path` branches,
+   and `OP_DIV`'s *other* `.float_path` (dividend already `FLOAT`-tagged,
+   not just the divisor), none of which R6's original test program
+   touched. All three already route through `VM_FLOAT_PUSH_OPERAND`
+   (fixed above), and manual inspection of every other call site in both
+   files (`OP_FOR_INIT`/`OP_FOR_NEXT`'s `C`-held-across-`VM_POP` — safe,
+   `VM_POP` never touches `BC`; every R5 string opcode — already fixed
+   and re-verified; `OP_CMP_LT`/`OP_CMP_EQ` — safe, uses the Z80 stack via
+   `push`/`pop`, not a bare register) found no sixth instance. Rather than
+   leave that "probably fine" as an assertion, `rom/test_v2_compiler_r6.asm`
+   was extended with three new statements (`V=A-0.5`, `Q=8.0`, `U=Q/2`,
+   `T=X*2`) specifically targeting those three previously-unexercised
+   paths, re-assembled, and re-run on real ZEsarUX hardware: **PASS**,
+   confirming the `VM_FLOAT_PUSH_OPERAND` fix genuinely generalizes to
+   all three call sites, not just the one (`OP_ADD`) that happened to
+   surface it. Byte deltas above already reflect the final, audited
+   state (the convention comments themselves add zero bytes — pure
+   documentation in a standalone test image).
+
+Shipping ROM confirmed unaffected (`make budget`: unchanged 554 HOME /
+109 EXROM free).
+
+**R6 is done. Next: R7 (platform integration).**
+
+<details>
+<summary>Original R6 plan (superseded by the COMPLETE status above; kept for the record)</summary>
+
 - **Objective**: decimal literals, mixed int/float promotion at `+`/`-`/
   `*`, `/`'s inexact-stays-float behavior — the exact policy
   `NUMERIC_DESIGN.md` already specifies, now implemented as VM opcode
@@ -624,6 +781,8 @@ EXROM free).
   unregressed.
 - **Rollback**: revert; integer-only programs from R1-R5 remain correct
   and fast even without this milestone.
+
+</details>
 
 ### R7 — Platform integration
 
