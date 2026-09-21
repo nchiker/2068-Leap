@@ -284,6 +284,65 @@ the full account.
 
 
 
+## Update: R7 Phase 1 (platform integration, graphics/system subset) is complete
+
+rom/exrom_v2_vm_core.asm grew to 1,855 bytes (5 new native-call opcodes —
+CLS/BORDER/INK/PAPER/PLOT — calling straight into the real, unmodified
+kernel/graphics primitives: GFX_CLS/GFX_SET_BORDER/GFX_PAINT_ATTR/
+GFX_WRITE_PIXEL) and rom/exrom_v2_compiler.asm grew to 2,705 bytes (a new
+TOK_COMMA token for PLOT's "x,y" argument list, the first multi-argument
+statement, plus a widened keyword table to fit BORDER). This is an HONEST
+PARTIAL completion of R7, not the full statement set: the remaining
+graphics statements (LINE/CIRCLE/FILL/DRAW/SOUND/BEEP/PAUSE/OUT/POKE/
+RANDOMIZE) are each a mechanical repeat of the same proven pattern, but
+the storage family (SAVE/LOAD) surfaced a real, unresolved design
+question instead -- BASIC_DO_SAVE/LOAD take a raw text pointer, not a
+string value, and today are an interactive editor command, not a
+RUN-time statement V1's interpreter ever executes -- deliberately left
+open rather than worked around. A real program (INK 6:PAPER 1:CLS:
+BORDER 2:PLOT 10,20) produced exactly correct results on real ZEsarUX
+hardware, PASSING ON THE FIRST ATTEMPT -- verified against hand-computed
+V1-oracle values, with the pixel check itself asking the real
+GFX_READ_PIXEL primitive rather than hand-decoding the bitmap layout.
+No new register-clobber bug was found, and the standing convention block
+added at R6's close (never hold a value across a call; check "Destroys:"
+first) was self-applied to every new call site here rather than
+discovered the hard way. See the implementation plan's R7 section for
+the full account, including what's explicitly still open.
+
+
+
+## Update: R7 is complete (SAVE/LOAD explicitly deferred to R8)
+
+Per a coordinator judgment call, R7's real remainder was finished this
+same milestone rather than left as a standing gap: rom/
+exrom_v2_vm_core.asm grew to 2,013 bytes (6 more native-call opcodes --
+LINE/BEEP/SOUND/POKE/PAUSE/RANDOMISE) and rom/exrom_v2_compiler.asm grew
+to 3,095 bytes (a second keyword-table widening, 6->9 text bytes, for
+RANDOMISE). First, real investigation corrected the plan's own stale
+statement list: CIRCLE/FILL were removed from this ROM 2026-09-19 for ROM
+budget, DRAW/OUT never existed here, and the real keyword is RANDOMISE,
+not RANDOMIZE -- checked against include/checker_keywords.inc, this
+ROM's real current dialect, not assumed from planning text. A real
+program exercising all six new statements passed on real ZEsarUX after
+fixing a second real hardware bug -- NOT another register clobber, a
+genuinely new class for this rewrite: the test driver's RST $38 vector
+was a plain `jp KBD_ISR_TICK`, but that routine ends in a bare `ret` and
+never calls `ei` itself (it's a subroutine meant to be CALLED by the
+real vector, not the vector's own entry point). A Z80's own interrupt
+hardware clears IFF1 the instant it accepts a maskable interrupt; OP_
+PAUSE's real frame-wait loop parked forever after exactly one interrupt
+ever fired, until this was fixed by copying rom/test_basic.asm's own
+already-correct `call .../ei/reti` vector pattern verbatim. SAVE/LOAD
+remains explicitly deferred to R8, where the editor-integration
+milestone's own job of redefining the editor/compiler/runtime boundary
+is exactly where BASIC_DO_SAVE/LOAD's raw-text-pointer, editor-
+intercepted calling convention belongs to be resolved -- not invented
+around here. See the implementation plan's R7 section for the full
+account.
+
+
+
 ## Update: the statement-compiler spike has been built and measured
 
 See `STATEMENT_COMPILER_SPIKE.md` for the full result:

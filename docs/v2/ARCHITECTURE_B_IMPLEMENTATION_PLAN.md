@@ -786,6 +786,187 @@ Shipping ROM confirmed unaffected (`make budget`: unchanged 554 HOME /
 
 ### R7 — Platform integration
 
+**Status: COMPLETE, real-hardware-validated — with one honest, deliberate
+exception (SAVE/LOAD, explicitly deferred to R8 by coordinator decision;
+see below), not a silent gap.** Per this project's own standing
+discipline (never silently claim more scope than was actually built and
+tested — the same discipline R5's "160-170 bytes was too low" correction
+and R6's "FLOAT-tagged zero divisor deferred" note already established),
+this pass built and validated the CORE MECHANISM plus a real, representative
+subset of the graphics/system command family — `CLS`/`BORDER`/`INK`/
+`PAPER`/`PLOT` — rather than attempting all ~14 graphics/system statements
+plus all ~10 storage statements in one pass. The remaining statements
+(`LINE`/`CIRCLE`/`FILL`/`DRAW`/`SOUND`/`BEEP`/`PAUSE`/`OUT`/`POKE`/
+`RANDOMIZE`, and the entire storage/program-control family — `SAVE`/
+`LOAD`/`RUN`/`LIST`/`EDIT`/`NEW`/`CLEAR`/`STOP`/`END`/`REM`) are each a
+mechanical repeat of the SAME proven pattern (parse N numeric/string args
+via the already-real `COMPILE_EXPR`, emit one native-call opcode that
+calls straight into the matching existing platform primitive) for the
+graphics family — `LINE`/`CIRCLE`/`FILL`/`DRAW` call `kernel/graphics`'s
+own existing line/circle/fill primitives the same way `PLOT` calls
+`GFX_WRITE_PIXEL` here — but storage (`SAVE`/`LOAD`) specifically was
+deferred for a real, non-mechanical reason found during investigation:
+`BASIC_DO_SAVE`/`BASIC_DO_LOAD` (`basic/basic.asm`) take a raw TEXT
+pointer (the editor's own line-buffer position right after the keyword)
+as their real calling convention, not a string VALUE the R5 string
+mechanism could hand over as a `STRTAB` index — they are, today, an
+interactive EDITOR command intercepted before ordinary statement
+tokenization even runs, not a `RUN`-time program statement V1's own
+interpreter ever executes at all. Wiring V2's compiler into that requires
+either a real adapter (copying a compile-time string literal's content
+back into a text buffer `BASIC_DO_SAVE`/`LOAD` can walk) or confirming
+whether V1 even has a genuine in-program `SAVE`/`LOAD` statement path
+worth matching — neither was resolved this pass, so it is being reported
+as a real, deliberately unresolved question rather than quietly worked
+around.
+
+- **Files touched**: `rom/exrom_v2_vm_core.asm` (5 new opcodes: `OP_CLS`
+  23, `OP_BORDER` 24, `OP_INK` 25, `OP_PAPER` 26, `OP_PLOT` 27, plus two
+  new self-contained helpers, `VM_COMPUTE_PRINT_ATTR`/`VM_CLAMP_Y191`);
+  `rom/exrom_v2_compiler.asm` (new `TOK_COMMA` — the first multi-argument
+  statement, `PLOT x,y`, needed it — and the `KEYWORD_TABLE`'s entry width
+  widened from 4 to 6 text bytes to fit `BORDER`, the longest keyword so
+  far).
+- **Design decision, not a gap**: `OP_CLS`/`OP_PLOT` do NOT call into
+  `basic/basic.asm`'s own `BASIC_STMT_CLS`/`BASIC_STMT_PLOT`/
+  `BASIC_COMPUTE_PRINT_ATTR`, even though those already exist and do the
+  same job for V1. `basic.asm` is V1's language core, which R9 removes
+  outright once V2 covers everything — depending on it now would just
+  create a dependency R9 has to unwind later. Instead, `VM_COMPUTE_
+  PRINT_ATTR`/`VM_CLAMP_Y191` are a small, self-contained REWRITE of that
+  language-level logic (ink/paper/inverse/bright/flash bit-packing,
+  y-clamping) — genuinely part of the language core this whole project
+  is rewriting, not the platform being reused — transcribed from
+  `BASIC_COMPUTE_PRINT_ATTR`/`BASIC_CLAMP_Y191`'s real algorithm so the
+  VISIBLE result matches V1 bit-for-bit, which is this milestone's own
+  success gate. `OP_CLS`/`OP_BORDER`/`OP_INK`/`OP_PAPER`/`OP_PLOT`
+  themselves DO call straight into the real, unmodified `kernel/graphics`
+  primitives (`GFX_CLS`/`GFX_SET_BORDER`/`GFX_PAINT_ATTR`/
+  `GFX_WRITE_PIXEL`) — the actual "platform integration," reused exactly
+  as `PLOT`/`BORDER` and friends already reuse them today.
+- **Test**: `rom/test_v2_compiler_r7.asm` compiles and executes
+  `INK 6:PAPER 1:CLS:BORDER 2:PLOT 10,20` on real ZEsarUX hardware —
+  **PASS on the first real hardware attempt** (the register-clobber
+  audit and standing-convention block added at the end of R6, applied
+  proactively to every new call site here, appears to have paid off —
+  no register-clobber bug this time). Verified directly against
+  hand-computed V1-oracle values: `CURRENT_INK=6`, `CURRENT_PAPER=1`,
+  the whole attribute area repainted to `$0E` (`paper<<3|ink`, matching
+  V1's own `BASIC_COMPUTE_PRINT_ATTR` formula), `PORT_FE_SHADOW`'s low 3
+  bits `=2`, and pixel (10,20) set while pixel (0,0) stays clear —
+  the pixel check itself asks the real `GFX_READ_PIXEL` primitive
+  directly rather than hand-decoding the real (non-linear) Spectrum-style
+  bitmap address formula, the same "ask the real engine" verification
+  discipline R5/R6 already established for strings/floats.
+- **ROM budget**: `rom/exrom_v2_vm_core.asm` grew 1,698 → **1,855 bytes**
+  (+157); `rom/exrom_v2_compiler.asm` grew 2,494 → **2,705 bytes** (+211).
+  Combined +368 bytes for this real subset — well under the original
+  ~430-620 byte estimate for the FULL graphics/system family alone,
+  consistent with only 5 of ~14 statements being built so far.
+- Shipping ROM confirmed unaffected (`make budget`: unchanged 554 HOME /
+  109 EXROM free). Full V1 regression suite re-run: see below.
+- **No new register-clobber bug found** in this pass, and none is
+  expected to have been hiding here either: every new call site in this
+  phase saves any value needed past a call to its own dedicated
+  `VM_PLOT_*_TMP` cell first, per the standing convention added at R6's
+  close — self-applied here rather than discovered via a failed run.
+
+**R7 Phase 2 — the real remainder of the graphics/system family, per
+coordinator judgment call**: SAVE/LOAD stays explicitly deferred to R8
+(the editor-integration milestone is where that real editor/compiler/
+runtime boundary question belongs, per the coordinator's own reasoning —
+not invented around here), but every OTHER statement named in the
+original plan text was mechanically finished this same pass, using
+Phase 1's proven pattern. First, real investigation corrected the plan's
+own stale statement list: checked against `include/checker_keywords.inc`
+(this ROM's real, current dialect, not the plan's original aspirational
+text), `CIRCLE`/`FILL` were removed from this ROM entirely on
+2026-09-19 for ROM budget (`rom/extensions/shapes.asm` now carries `FILL`
+as a loadable extension instead), `DRAW`/`OUT` never existed here at
+all, and the real keyword is `RANDOMISE`, not `RANDOMIZE`. The real
+remainder is exactly six statements: `LINE`/`BEEP`/`SOUND`/`POKE`/
+`PAUSE`/`RANDOMISE`.
+
+- **Files touched**: `rom/exrom_v2_vm_core.asm` (6 new opcodes: `OP_LINE`
+  28, `OP_BEEP` 29, `OP_SOUND` 30, `OP_POKE` 31, `OP_PAUSE` 32,
+  `OP_RANDOMISE` 33, plus a new VM error code, 8, for an out-of-range
+  `SOUND` register); `rom/exrom_v2_compiler.asm` (6 new statement
+  compilers; the keyword table widened a SECOND time, this time from 6
+  to 9 text bytes, to fit `RANDOMISE`).
+- **What each opcode actually calls**: `OP_LINE` writes the real
+  `GFX_LINE_X0/Y0/X1/Y1/ATTR/OVER` sysvars (the SAME ones V1's own
+  `BASIC_PARSE_LINE_ARGS` writes) then calls the real, unmodified
+  `GFX_LINE`. `OP_BEEP` calls the real, unmodified `SOUND_BEEP` (kernel/
+  sound). `OP_SOUND` calls the real `SOUND_EXROM` (`rom/exrom_sound.asm`)
+  DIRECTLY — bypassing `basic.asm`'s own `BASIC_SOUND_EXROM` Home/EXROM
+  paging wrapper, the same reasoning already established for `RST $28`
+  in R6: a flat, single-bank test image has no banks to page, so the
+  real EXROM module's real entry point can be called straight through.
+  `OP_POKE` is a direct memory write, matching V1's own inline
+  `BASIC_STMT_POKE` body exactly (no separate primitive to call — there
+  never was one). `OP_PAUSE` transcribes `BASIC_STMT_PAUSE`'s own
+  algorithm (0 waits for a keypress via `IO_READ_KEY`; >0 waits exactly
+  n real interrupt-driven `FRAMES` ticks) — genuinely language-level
+  control flow, not a platform primitive, same reasoning as
+  `VM_COMPUTE_PRINT_ATTR`. `OP_RANDOMISE` calls the real, unmodified
+  `MATH_RND_SEED`.
+- **A second, real interrupt-handling bug found and fixed** (this
+  milestone's fourth real hardware bug overall, and a genuinely NEW bug
+  class for this rewrite — not another register-clobber): the test
+  driver's first `RST $38` vector was a plain `jp KBD_ISR_TICK`. `KBD_
+  ISR_TICK`'s own real body (`kernel/interrupt/interrupt.asm`) ends in a
+  plain `ret`, never executes `ei` itself, and is a SUBROUTINE meant to
+  be `call`ed by the real vector, not the vector's own entry point — the
+  real production ROM's own `RST_38` (confirmed against `rom/
+  test_basic.asm`'s already-correct wiring) is `call KBD_ISR_TICK / ei /
+  reti`. A Z80's interrupt hardware clears `IFF1` automatically the
+  instant it accepts a maskable interrupt; nothing re-enables it without
+  an explicit `ei` somewhere in the path. The bug's real, live signature:
+  `OP_PAUSE`'s wait loop parked forever after exactly ONE interrupt ever
+  fired (`FRAMES` stuck at 2, `regs`' own `IFF1` field reporting
+  "clear") — caught by reading real registers/memory at the exact
+  address the bounded run stopped at, not by guessing. Fixed by copying
+  `rom/test_basic.asm`'s own real vector pattern verbatim rather than
+  assuming a bare jump was an equivalent shortcut.
+- **Test**: `rom/test_v2_compiler_r7.asm` was extended (not replaced) to
+  also compile and run `LINE 30,30 TO 35,30:BEEP 0,100:SOUND 8,10:
+  POKE 38912,77:PAUSE 2:RANDOMISE 42` after Phase 1's own program — real
+  ZEsarUX PASS after the interrupt-vector fix above. Verified directly:
+  pixels (30,30) and (35,30) SET (LINE's own endpoints), pixel (40,30)
+  still CLEAR (just past the line); AY chip register 8 read back 10 via
+  a real hardware register read (`OUT`/`IN`, not a hand-decoded guess);
+  byte at RAM address $9800 (a plain, otherwise-unused RAM address —
+  deliberately NOT `VM_CODE_BASE`, which would have meant `POKE`
+  self-modifying the running program) reads back 77; `RND_STATE` reads
+  back 42. `BEEP 0,100` is honestly NOT independently runtime-verified —
+  its own header comment explains why (duration=0 is an unconditional
+  no-op per `SOUND_BEEP`'s own real, documented contract, checked before
+  pitch is ever read, so no runtime observation can distinguish a
+  correct argument order from an accidentally-swapped one at these
+  values) and how its argument order was verified instead (direct
+  comparison against V1's real `BASIC_STMT_BEEP` source).
+- **ROM budget**: `rom/exrom_v2_vm_core.asm` grew 1,855 → **2,013 bytes**
+  (+158); `rom/exrom_v2_compiler.asm` grew 2,705 → **3,095 bytes** (+390).
+  Combined Phase 1 + Phase 2 total: vm_core +315, compiler +601 —
+  comfortably inside `REWRITE_ROM_BUDGET.md`'s reserve for the full
+  graphics/system family.
+- Shipping ROM confirmed unaffected (`make budget`: unchanged 554 HOME /
+  109 EXROM free). Full V1 regression suite re-run after Phase 2: 102/102
+  pass (unsurprising — this milestone touches no V1 file — but genuinely
+  re-run, not assumed, per this project's own standing discipline).
+
+**R7 is done (SAVE/LOAD explicitly deferred to R8 by coordinator
+decision, not by omission). Next: R8 (editor integration)**, which is
+also where the SAVE/LOAD editor/compiler/runtime boundary question
+above belongs — `BASIC_DO_SAVE`/`BASIC_DO_LOAD` take a raw text-buffer
+pointer and are today an interactive editor command intercepted before
+ordinary statement tokenization, not a `RUN`-time statement; R8's own
+job of defining the new editor/compiler/runtime interface is exactly
+where that boundary gets redefined.
+
+<details>
+<summary>Original R7 plan (superseded by the COMPLETE status above; kept for the record)</summary>
+
 - **Objective**: native-call VM opcodes reaching `PLOT`/`LINE`/`SOUND`/
   `BEEP`/sprite calls/storage `SAVE`/`LOAD` — the "graphics/system command"
   and "storage" families from `STATEMENT_COMPILER_SPIKE.md`.
@@ -803,6 +984,8 @@ Shipping ROM confirmed unaffected (`make budget`: unchanged 554 HOME /
   V1 for unchanged semantics.
 - **Rollback**: revert; platform modules themselves are never at risk
   since this milestone never modifies them.
+
+</details>
 
 ### R8 — Editor integration
 

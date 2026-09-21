@@ -311,6 +311,25 @@ TOK_KW_CALL:        equ 22
 TOK_STRING:         equ 23   ; a "quoted" string literal (R5 addition)
 TOK_STR_IDENT:      equ 24   ; a NAME$ string-variable identifier (R5)
 TOK_FLOAT_NUMBER:   equ 25   ; a decimal literal, e.g. "10.5" (R6 addition)
+TOK_COMMA:          equ 26   ; ',' — argument separator (R7 addition,
+                               ; needed for PLOT x,y; nothing before R7
+                               ; had a multi-argument statement)
+TOK_KW_CLS:         equ 27   ; R7 additions below: the graphics/system
+TOK_KW_BORDER:      equ 28    ; command family
+TOK_KW_INK:         equ 29
+TOK_KW_PAPER:       equ 30
+TOK_KW_PLOT:        equ 31
+TOK_KW_LINE:        equ 32   ; R7 Phase 2: the REAL remainder of this
+TOK_KW_BEEP:        equ 33    ; ROM's own graphics/system statement set
+TOK_KW_SOUND:       equ 34    ; (checked against include/checker_
+TOK_KW_POKE:        equ 35    ; keywords.inc, V1's own real, current
+TOK_KW_PAUSE:       equ 36    ; dialect -- CIRCLE/FILL were removed from
+TOK_KW_RANDOMISE:   equ 37    ; this ROM 2026-09-19 (ROM budget), DRAW/OUT
+                               ; never existed here, and the real
+                               ; keyword is RANDOMISE, not RANDOMIZE --
+                               ; ARCHITECTURE_B_IMPLEMENTATION_PLAN.md's
+                               ; own R7 planning text, written before
+                               ; this investigation, named the wrong set)
 
 ; ---------------------------------------------------------------------------
 ; COMPILER_INIT — call once before COMPILE_PROGRAM.
@@ -375,6 +394,8 @@ LEX_NEXT_TOKEN:
         jr z,.single8
         cp '<'
         jr z,.single9
+        cp ','
+        jr z,.single10
         cp '"'
         jr z,.string_lit
         cp '0'
@@ -435,6 +456,9 @@ LEX_NEXT_TOKEN:
         jp .advance1
 .single9:
         ld a,TOK_LT
+        jp .advance1
+.single10:
+        ld a,TOK_COMMA
         jp .advance1
 .number:
         jp LEX_SCAN_NUMBER
@@ -665,11 +689,13 @@ LEX_CLASSIFY_KEYWORD:
         inc de
         dec c
         jr nz,.cmp_loop
-        ; match: the token-type byte sits 5 bytes past the entry's start
-        ; (1 length byte + 4 text bytes, fixed width regardless of the
-        ; keyword's real length)
+        ; match: the token-type byte sits 10 bytes past the entry's start
+        ; (1 length byte + 9 text bytes, fixed width regardless of the
+        ; keyword's real length — widened from 6 to 9 in R7 Phase 2 to
+        ; fit "RANDOMISE", the longest keyword this compiler recognizes
+        ; so far)
         pop hl
-        ld de,5
+        ld de,10
         add hl,de
         ld a,(hl)
         ld (TOK_TYPE),a
@@ -683,19 +709,38 @@ LEX_CLASSIFY_KEYWORD:
         jr nz,.loop
         ret                       ; no match — TOK_TYPE stays TOK_IDENT
 
-KEYWORD_ENTRY_LEN:  equ 6         ; [len:1][text:4, unused tail ignored][token:1]
-KEYWORD_TABLE_COUNT: equ 9
+KEYWORD_ENTRY_LEN:  equ 11        ; [len:1][text:9, unused tail ignored][token:1]
+KEYWORD_TABLE_COUNT: equ 20
 
+; Every row is exactly KEYWORD_ENTRY_LEN (11) bytes: [len][9 text bytes,
+; zero-padded][token]. Generated and byte-counted mechanically (a Python
+; one-liner, not by hand) after R7 Phase 2 widened this table for the
+; second time (4->6->9 text bytes) — the R7 Phase 1 version of this table
+; had a real, self-caught padding-count bug in this same spot (PAPER's
+; row was one zero byte short) found by re-deriving every row's zero
+; count programmatically instead of trusting manual arithmetic a second
+; time.
 KEYWORD_TABLE:
-        db 4, "GOTO", TOK_KW_GOTO
-        db 2, "IF"  , 0, 0, TOK_KW_IF
-        db 2, "TO"  , 0, 0, TOK_KW_TO
-        db 4, "THEN", TOK_KW_THEN
-        db 3, "FOR" , 0, TOK_KW_FOR
-        db 4, "NEXT", TOK_KW_NEXT
-        db 4, "PROC", TOK_KW_PROC
-        db 4, "ENDP", TOK_KW_ENDP
-        db 4, "CALL", TOK_KW_CALL
+        db 4, "GOTO", 0, 0, 0, 0, 0, TOK_KW_GOTO
+        db 2, "IF", 0, 0, 0, 0, 0, 0, 0, TOK_KW_IF
+        db 2, "TO", 0, 0, 0, 0, 0, 0, 0, TOK_KW_TO
+        db 4, "THEN", 0, 0, 0, 0, 0, TOK_KW_THEN
+        db 3, "FOR", 0, 0, 0, 0, 0, 0, TOK_KW_FOR
+        db 4, "NEXT", 0, 0, 0, 0, 0, TOK_KW_NEXT
+        db 4, "PROC", 0, 0, 0, 0, 0, TOK_KW_PROC
+        db 4, "ENDP", 0, 0, 0, 0, 0, TOK_KW_ENDP
+        db 4, "CALL", 0, 0, 0, 0, 0, TOK_KW_CALL
+        db 3, "CLS", 0, 0, 0, 0, 0, 0, TOK_KW_CLS      ; R7 Phase 1
+        db 6, "BORDER", 0, 0, 0, TOK_KW_BORDER
+        db 3, "INK", 0, 0, 0, 0, 0, 0, TOK_KW_INK
+        db 5, "PAPER", 0, 0, 0, 0, TOK_KW_PAPER
+        db 4, "PLOT", 0, 0, 0, 0, 0, TOK_KW_PLOT
+        db 4, "LINE", 0, 0, 0, 0, 0, TOK_KW_LINE       ; R7 Phase 2
+        db 4, "BEEP", 0, 0, 0, 0, 0, TOK_KW_BEEP
+        db 5, "SOUND", 0, 0, 0, 0, TOK_KW_SOUND
+        db 4, "POKE", 0, 0, 0, 0, 0, TOK_KW_POKE
+        db 5, "PAUSE", 0, 0, 0, 0, TOK_KW_PAUSE
+        db 9, "RANDOMISE", TOK_KW_RANDOMISE
 
 ; ===========================================================================
 ; COMPILE-TIME SYMBOL TABLE — real name storage, real comparison (the piece
@@ -966,6 +1011,17 @@ EMIT_OP_STR_CONCAT:        ld a,19 : jp EMIT_BYTE
 EMIT_OP_STR_CMP_LT:        ld a,20 : jp EMIT_BYTE
 EMIT_OP_STR_CMP_EQ:        ld a,21 : jp EMIT_BYTE
 EMIT_BYTE_OP_PUSH_FLOAT_LIT: ld a,22 : jp EMIT_BYTE
+EMIT_OP_CLS:                ld a,23 : jp EMIT_BYTE
+EMIT_OP_BORDER:              ld a,24 : jp EMIT_BYTE
+EMIT_OP_INK:                 ld a,25 : jp EMIT_BYTE
+EMIT_OP_PAPER:                ld a,26 : jp EMIT_BYTE
+EMIT_OP_PLOT:                 ld a,27 : jp EMIT_BYTE
+EMIT_OP_LINE:                  ld a,28 : jp EMIT_BYTE
+EMIT_OP_BEEP:                   ld a,29 : jp EMIT_BYTE
+EMIT_OP_SOUND:                   ld a,30 : jp EMIT_BYTE
+EMIT_OP_POKE:                     ld a,31 : jp EMIT_BYTE
+EMIT_OP_PAUSE:                     ld a,32 : jp EMIT_BYTE
+EMIT_OP_RANDOMISE:                  ld a,33 : jp EMIT_BYTE
 
 ; EMIT_PLACEHOLDER_16 — writes two dummy zero bytes (a forward-reference
 ; branch target not yet known), returns the ABSOLUTE address of the first
@@ -1595,6 +1651,177 @@ COMPILE_BRANCH_TARGET:
         call LEX_NEXT_TOKEN     ; consume the label identifier
         ret
 
+; ===========================================================================
+; PLATFORM INTEGRATION (R7 addition) — graphics/system command family.
+; Each compiles "KEYWORD <expr>[,<expr>]" into: <expr bytecode>... then one
+; native-call opcode, exactly the "parse N numeric args, emit one native-
+; call opcode" shape docs/v2/STATEMENT_COMPILER_SPIKE.md's own sizing
+; already assumed for this family. No new expression grammar needed —
+; COMPILE_EXPR (already real since R2) handles every argument.
+; ===========================================================================
+
+; COMPILE_CLS — CLS (no arguments)
+COMPILE_CLS:
+        call LEX_NEXT_TOKEN     ; consume CLS
+        call EMIT_OP_CLS
+        ret
+
+; COMPILE_BORDER / COMPILE_INK / COMPILE_PAPER — KEYWORD <expr>, one
+; numeric argument, identical shape, differing only in which opcode gets
+; emitted — same "shared body, thin per-keyword stub" precedent
+; BASIC_STMT_INK/PAPER's own V1 implementation already established
+; (basic.asm), applied here to the V2 compiler instead.
+COMPILE_BORDER:
+        call LEX_NEXT_TOKEN     ; consume BORDER
+        call COMPILE_EXPR       ; argument -> VM operand stack
+        call EMIT_OP_BORDER
+        ret
+
+COMPILE_INK:
+        call LEX_NEXT_TOKEN     ; consume INK
+        call COMPILE_EXPR
+        call EMIT_OP_INK
+        ret
+
+COMPILE_PAPER:
+        call LEX_NEXT_TOKEN     ; consume PAPER
+        call COMPILE_EXPR
+        call EMIT_OP_PAPER
+        ret
+
+; COMPILE_PLOT — PLOT <expr>,<expr>  (x, then y — matches V1's own
+; BASIC_STMT_PLOT reading order; OP_PLOT's own header note explains why
+; it pops y before x)
+COMPILE_PLOT:
+        call LEX_NEXT_TOKEN     ; consume PLOT
+        call COMPILE_EXPR       ; x -> VM operand stack
+        ld a,(TOK_TYPE)
+        cp TOK_COMMA
+        jr z,.have_comma
+        ld a,22                  ; expected ',' between PLOT's x and y
+        ld (COMPILE_ERROR_CODE),a
+        ret
+.have_comma:
+        call LEX_NEXT_TOKEN     ; consume ','
+        call COMPILE_EXPR       ; y -> VM operand stack
+        call EMIT_OP_PLOT
+        ret
+
+; ===========================================================================
+; R7 PHASE 2 — the real remainder of this ROM's own graphics/system
+; statement set (checked against include/checker_keywords.inc, not
+; against ARCHITECTURE_B_IMPLEMENTATION_PLAN.md's own original R7
+; planning text, which named CIRCLE/FILL/DRAW/OUT/RANDOMIZE — CIRCLE and
+; FILL were removed from this ROM 2026-09-19 for ROM budget, DRAW/OUT
+; never existed here, and the real keyword is RANDOMISE). Same shape as
+; Phase 1's CLS/BORDER/INK/PAPER/PLOT throughout: parse N args via the
+; already-real COMPILE_EXPR, emit one native-call opcode.
+; ===========================================================================
+
+; COMPILE_LINE — LINE <x0>,<y0> TO <x1>,<y1>  (matches V1's own
+; BASIC_STMT_LINE/BASIC_PARSE_LINE_ARGS argument order and "TO" keyword)
+COMPILE_LINE:
+        call LEX_NEXT_TOKEN     ; consume LINE
+        call COMPILE_EXPR       ; x0
+        ld a,(TOK_TYPE)
+        cp TOK_COMMA
+        jr z,.have_comma1
+        ld a,23                  ; expected ',' after LINE's x0
+        ld (COMPILE_ERROR_CODE),a
+        ret
+.have_comma1:
+        call LEX_NEXT_TOKEN     ; consume ','
+        call COMPILE_EXPR       ; y0
+        ld a,(TOK_TYPE)
+        cp TOK_KW_TO
+        jr z,.have_to
+        ld a,24                  ; expected TO in LINE
+        ld (COMPILE_ERROR_CODE),a
+        ret
+.have_to:
+        call LEX_NEXT_TOKEN     ; consume TO
+        call COMPILE_EXPR       ; x1
+        ld a,(TOK_TYPE)
+        cp TOK_COMMA
+        jr z,.have_comma2
+        ld a,25                  ; expected ',' after LINE's x1
+        ld (COMPILE_ERROR_CODE),a
+        ret
+.have_comma2:
+        call LEX_NEXT_TOKEN     ; consume ','
+        call COMPILE_EXPR       ; y1
+        call EMIT_OP_LINE
+        ret
+
+; COMPILE_BEEP — BEEP <duration>,<pitch>  (matches V1's own
+; BASIC_STMT_BEEP argument order)
+COMPILE_BEEP:
+        call LEX_NEXT_TOKEN     ; consume BEEP
+        call COMPILE_EXPR       ; duration
+        ld a,(TOK_TYPE)
+        cp TOK_COMMA
+        jr z,.have_comma
+        ld a,26                  ; expected ',' in BEEP
+        ld (COMPILE_ERROR_CODE),a
+        ret
+.have_comma:
+        call LEX_NEXT_TOKEN
+        call COMPILE_EXPR       ; pitch
+        call EMIT_OP_BEEP
+        ret
+
+; COMPILE_SOUND — SOUND <register>,<data>  (matches V1's own
+; BASIC_STMT_SOUND argument order)
+COMPILE_SOUND:
+        call LEX_NEXT_TOKEN     ; consume SOUND
+        call COMPILE_EXPR       ; register
+        ld a,(TOK_TYPE)
+        cp TOK_COMMA
+        jr z,.have_comma
+        ld a,26                  ; expected ',' in SOUND (same code as
+                                   ; BEEP's -- both are "expected comma
+                                   ; between a statement's two args",
+                                   ; the same real condition either way)
+        ld (COMPILE_ERROR_CODE),a
+        ret
+.have_comma:
+        call LEX_NEXT_TOKEN
+        call COMPILE_EXPR       ; data
+        call EMIT_OP_SOUND
+        ret
+
+; COMPILE_POKE — POKE <address>,<value>  (matches V1's own
+; BASIC_STMT_POKE argument order)
+COMPILE_POKE:
+        call LEX_NEXT_TOKEN     ; consume POKE
+        call COMPILE_EXPR       ; address
+        ld a,(TOK_TYPE)
+        cp TOK_COMMA
+        jr z,.have_comma
+        ld a,26
+        ld (COMPILE_ERROR_CODE),a
+        ret
+.have_comma:
+        call LEX_NEXT_TOKEN
+        call COMPILE_EXPR       ; value
+        call EMIT_OP_POKE
+        ret
+
+; COMPILE_PAUSE — PAUSE <n>  (one argument, same shape as BORDER/INK/
+; PAPER above)
+COMPILE_PAUSE:
+        call LEX_NEXT_TOKEN     ; consume PAUSE
+        call COMPILE_EXPR
+        call EMIT_OP_PAUSE
+        ret
+
+; COMPILE_RANDOMISE — RANDOMISE <n>
+COMPILE_RANDOMISE:
+        call LEX_NEXT_TOKEN     ; consume RANDOMISE
+        call COMPILE_EXPR
+        call EMIT_OP_RANDOMISE
+        ret
+
 ; COMPILE_GOTO — GOTO <label>
 COMPILE_GOTO:
         call LEX_NEXT_TOKEN     ; consume GOTO
@@ -1837,27 +2064,91 @@ COMPILE_STATEMENT_LIST:
         cp TOK_KW_ENDP
         jp z,.done
         cp TOK_KW_GOTO
-        jr z,.goto
+        jp z,.goto                ; jp, not jr -- R7's new dispatch clauses
+                                    ; below pushed these existing handler
+                                    ; bodies out of jr's +-127 range (a real
+                                    ; assembler error caught at build time,
+                                    ; not a runtime bug, but the same
+                                    ; underlying lesson STATEMENT_COMPILER_
+                                    ; SPIKE-era code already learned once:
+                                    ; jp is the safe default for a branch
+                                    ; whose target's distance isn't fixed
+                                    ; for the file's whole lifetime)
         cp TOK_KW_IF
-        jr z,.if
+        jp z,.if
         cp TOK_KW_FOR
-        jr z,.for
+        jp z,.for
         cp TOK_KW_NEXT
-        jr z,.next_stmt
+        jp z,.next_stmt
         cp TOK_KW_PROC
-        jr z,.proc
+        jp z,.proc
         cp TOK_KW_CALL
-        jr z,.call_stmt
+        jp z,.call_stmt
+        cp TOK_KW_CLS
+        jr z,.cls
+        cp TOK_KW_BORDER
+        jr z,.border
+        cp TOK_KW_INK
+        jr z,.ink
+        cp TOK_KW_PAPER
+        jr z,.paper
+        cp TOK_KW_PLOT
+        jr z,.plot
+        cp TOK_KW_LINE
+        jp z,.line
+        cp TOK_KW_BEEP
+        jp z,.beep
+        cp TOK_KW_SOUND
+        jp z,.sound
+        cp TOK_KW_POKE
+        jp z,.poke
+        cp TOK_KW_PAUSE
+        jp z,.pause
+        cp TOK_KW_RANDOMISE
+        jp z,.randomise
         cp TOK_IDENT
-        jr z,.ident_stmt
+        jp z,.ident_stmt
         cp TOK_STR_IDENT
-        jr z,.str_ident_stmt
+        jp z,.str_ident_stmt
         jp .done                  ; anything else ends compilation cleanly
                                    ; in this scope (no error-recovery exists
                                    ; yet — a later milestone's job)
+.cls:
+        call COMPILE_CLS
+        jp .after_stmt
+.border:
+        call COMPILE_BORDER
+        jp .after_stmt
+.ink:
+        call COMPILE_INK
+        jp .after_stmt
+.paper:
+        call COMPILE_PAPER
+        jp .after_stmt
+.plot:
+        call COMPILE_PLOT
+        jp .after_stmt
+.line:
+        call COMPILE_LINE
+        jp .after_stmt
+.beep:
+        call COMPILE_BEEP
+        jp .after_stmt
+.sound:
+        call COMPILE_SOUND
+        jp .after_stmt
+.poke:
+        call COMPILE_POKE
+        jp .after_stmt
+.pause:
+        call COMPILE_PAUSE
+        jp .after_stmt
+.randomise:
+        call COMPILE_RANDOMISE
+        jp .after_stmt
 .str_ident_stmt:
         call COMPILE_STR_ASSIGN
-        jr .after_stmt
+        jp .after_stmt
 .ident_stmt:
         ; genuine one-token lookahead: save this identifier's name, then
         ; fetch the NEXT token. If it's ':', this was a label definition —
@@ -1876,7 +2167,7 @@ COMPILE_STATEMENT_LIST:
         cp TOK_COLON
         jr z,.label
         call COMPILE_ASSIGN_CONTINUED
-        jr .after_stmt
+        jp .after_stmt
 .label:
         ld hl,(STMT_IDENT_NAME_PTR)
         ld a,(STMT_IDENT_NAME_LEN)
@@ -1890,19 +2181,19 @@ COMPILE_STATEMENT_LIST:
         jp .loop
 .goto:
         call COMPILE_GOTO
-        jr .after_stmt
+        jp .after_stmt
 .if:
         call COMPILE_IF
-        jr .after_stmt
+        jp .after_stmt
 .for:
         call COMPILE_FOR
-        jr .after_stmt
+        jp .after_stmt
 .next_stmt:
         call COMPILE_NEXT
-        jr .after_stmt
+        jp .after_stmt
 .proc:
         call COMPILE_PROC
-        jr .after_stmt
+        jp .after_stmt
 .call_stmt:
         call COMPILE_CALL_STMT
 .after_stmt:

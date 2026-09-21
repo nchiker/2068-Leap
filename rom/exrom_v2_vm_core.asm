@@ -138,6 +138,46 @@
 ; cheap for the (presumably common) exact-division case. STORE_VAR now
 ; preserves whatever tag VM_POP returns instead of hardcoding TAG_INT.
 ;
+;   23 = CLS     (R7 addition; no operand; clears the bitmap and repaints
+;                 the attribute area with the current INK/PAPER/etc.
+;                 attribute, via the real kernel/graphics GFX_CLS/
+;                 GFX_PAINT_ATTR primitives)
+;   24 = BORDER  (R7; pops a value; sets the border via the real
+;                 GFX_SET_BORDER primitive, which masks to 0-7 itself)
+;   25 = INK     (R7; pops a value; masks to 0-7, stores CURRENT_INK)
+;   26 = PAPER   (R7; pops a value; masks to 0-7, stores CURRENT_PAPER)
+;   27 = PLOT    (R7; pops y then x — compiler pushes x then y, matching
+;                 "PLOT x,y"'s reading order; y is clamped to 0-191, the
+;                 attribute byte is computed from current INK/PAPER/
+;                 INVERSE/BRIGHT/FLASH state, then the real kernel/
+;                 graphics GFX_WRITE_PIXEL primitive is called — see
+;                 VM_COMPUTE_PRINT_ATTR/VM_CLAMP_Y191's own header for why
+;                 these are a small REWRITE of basic.asm's language-level
+;                 logic rather than a call into basic.asm itself)
+;
+;   28 = LINE    (R7 Phase 2; pops y1,x1,y0,x0 — compiler pushes
+;                 x0,y0,x1,y1, matching "LINE x0,y0 TO x1,y1"'s reading
+;                 order; writes the real GFX_LINE_X0/Y0/X1/Y1/ATTR/OVER
+;                 sysvars, same ones V1 itself writes, then calls the
+;                 real, unmodified GFX_LINE)
+;   29 = BEEP    (R7 Phase 2; pops pitch,duration — compiler pushes
+;                 duration,pitch, matching "BEEP duration,pitch"'s real
+;                 V1 order; calls the real, unmodified SOUND_BEEP)
+;   30 = SOUND   (R7 Phase 2; pops data,register — compiler pushes
+;                 register,data, matching "SOUND register,data"'s real
+;                 V1 order; calls the real SOUND_EXROM directly, not
+;                 basic.asm's own paging wrapper — see OP_SOUND's own
+;                 header for why that's the right call, not a shortcut)
+;   31 = POKE    (R7 Phase 2; pops value,address — writes value's low
+;                 byte to address, matching V1's own BASIC_STMT_POKE)
+;   32 = PAUSE   (R7 Phase 2; pops n; 0 waits for a keypress, >0 waits
+;                 exactly n display-frame ticks — the same algorithm
+;                 BASIC_STMT_PAUSE already uses, transcribed for the
+;                 same "this is language-level control flow, not a
+;                 platform primitive" reason as VM_COMPUTE_PRINT_ATTR)
+;   33 = RANDOMISE (R7 Phase 2; pops n, calls the real, unmodified
+;                 MATH_RND_SEED)
+;
 ; VM error codes (VM_ERROR_CODE, set on any abnormal halt):
 ;   0 = no error (normal HALT)
 ;   1 = illegal opcode
@@ -148,6 +188,9 @@
 ;   5 = divide by zero
 ;   6 = call stack overflow
 ;   7 = call stack underflow (RET with no matching CALL)
+;   8 = invalid SOUND register (R7 Phase 2; SOUND_EXROM's own real 1-16
+;       range check failed — a real, caught error, matching V1's own
+;       MSG_INVALID_SOUND_REGISTER, not silently ignored)
 ;
 ; Operand-stack record layout (3 bytes, at address SP, SP+1, SP+2):
 ;   [value_lo][value_hi][tag]   -- SP points at the lowest (most recent) record
@@ -318,6 +361,14 @@ VM_FLOAT_SRC_ADDR_TMP: equ $87BB ; VM_FLOAT_PUSH_OPERAND's own dedicated
                                   ; reusing B's own cell as scratch here
                                   ; would have reintroduced the exact same
                                   ; clobber bug one level up.
+VM_PLOT_X_TMP:      equ $87BD    ; R7 (OP_PLOT) scratch, 1 byte each: x/y/
+VM_PLOT_Y_TMP:      equ $87BE    ; attribute/OVER-flag, all parked in
+VM_PLOT_ATTR_TMP:   equ $87BF    ; memory across VM_COMPUTE_PRINT_ATTR/
+VM_PLOT_OVER_TMP:   equ $87C0    ; VM_CLAMP_Y191 rather than kept live in
+                                  ; a register across those calls — same
+                                  ; standing discipline as every other
+                                  ; scratch cell above, applied up front
+                                  ; this time instead of found via a bug
 
 ; every one of these is real RAM, not a register held across a call or a
 ; loop that itself calls something else — the standing discipline
@@ -353,7 +404,7 @@ VM_RUN:
         ld a,(hl)               ; fetch opcode
         inc hl
         ld (VM_IP),hl
-        cp 23                   ; 23 opcodes defined (0-22)
+        cp 34                   ; 34 opcodes defined (0-33)
         jp nc,VM_ERR_ILLEGAL_OPCODE
         ld l,a
         ld h,0
@@ -391,6 +442,17 @@ VM_OP_TABLE:
         dw OP_STR_CMP_LT
         dw OP_STR_CMP_EQ
         dw OP_PUSH_FLOAT_LIT
+        dw OP_CLS               ; 23 (R7)
+        dw OP_BORDER             ; 24
+        dw OP_INK                ; 25
+        dw OP_PAPER               ; 26
+        dw OP_PLOT                ; 27
+        dw OP_LINE                 ; 28 (R7 Phase 2)
+        dw OP_BEEP                  ; 29
+        dw OP_SOUND                  ; 30
+        dw OP_POKE                    ; 31
+        dw OP_PAUSE                    ; 32
+        dw OP_RANDOMISE                 ; 33
 
 ; ---------------------------------------------------------------------------
 ; String-table access: index (A) -> HL = record address
@@ -1433,6 +1495,266 @@ OP_PUSH_FLOAT_LIT:
         call VM_FLOAT_STORE_RESULT
         jp VM_RUN.loop
 
+; ===========================================================================
+; PLATFORM INTEGRATION (R7 addition) — native-call opcodes reaching real,
+; UNMODIFIED kernel/graphics primitives (GFX_CLS/GFX_PAINT_ATTR/
+; GFX_SET_BORDER/GFX_WRITE_PIXEL), per docs/v2/
+; ARCHITECTURE_B_IMPLEMENTATION_PLAN.md's R7 scope ("calling convention
+; into existing platform modules, no changes to those modules
+; themselves"). Deliberately NOT calling into basic/basic.asm's own
+; BASIC_STMT_CLS/BASIC_STMT_PLOT/BASIC_COMPUTE_PRINT_ATTR, even though
+; those already exist and do the same job for V1: basic.asm is V1's
+; language core, which R9 removes outright once V2 covers everything —
+; depending on it here would just create a dependency R9 has to unwind
+; later. VM_COMPUTE_PRINT_ATTR/VM_CLAMP_Y191 below are instead a small,
+; self-contained REWRITE of that language-level logic (ink/paper/inverse/
+; bright/flash bit-packing, y-clamping) — genuinely part of the language
+; core this whole project is rewriting, not the platform being reused —
+; verified to produce bit-identical attribute bytes to V1's own
+; BASIC_COMPUTE_PRINT_ATTR (same algorithm, transcribed) so PLOT/CLS's
+; VISIBLE result matches V1 exactly, which is this milestone's own
+; success gate.
+; ===========================================================================
+
+; VM_COMPUTE_PRINT_ATTR — real BASIC_COMPUTE_PRINT_ATTR algorithm
+; (basic.asm), transcribed rather than called (see block header above).
+; No `call` inside, so no register-clobber risk to audit here.
+; Out: A = Spectrum attribute byte (FLASH/BRIGHT/PAPER/INK bit-packed)
+; Destroys: AF, BC
+VM_COMPUTE_PRINT_ATTR:
+        ld a,(CURRENT_INK)
+        ld b,a
+        ld a,(CURRENT_PAPER)
+        ld c,a
+        ld a,(CURRENT_INVERSE)
+        or a
+        jr z,.no_swap
+        ld a,b
+        ld b,c
+        ld c,a
+.no_swap:
+        ld a,c
+        add a,a
+        add a,a
+        add a,a
+        or b
+        ld c,a
+        ld a,(CURRENT_BRIGHT)
+        or a
+        jr z,.no_bright
+        ld a,c
+        or $40
+        ld c,a
+.no_bright:
+        ld a,(CURRENT_FLASH)
+        or a
+        jr z,.no_flash
+        ld a,c
+        or $80
+        ret
+.no_flash:
+        ld a,c
+        ret
+
+; VM_CLAMP_Y191 — real BASIC_CLAMP_Y191 algorithm (basic.asm),
+; transcribed for the same reason as VM_COMPUTE_PRINT_ATTR above.
+; In: A = candidate y. Out: A clamped to 0-191. Destroys: AF only.
+VM_CLAMP_Y191:
+        cp 192
+        ret c
+        ld a,191
+        ret
+
+OP_CLS:
+        call GFX_CLS
+        call VM_COMPUTE_PRINT_ATTR   ; A = attr — used immediately below,
+                                      ; no intervening call, so no memory
+                                      ; scratch needed for it here
+        call GFX_PAINT_ATTR
+        jp VM_RUN.loop
+
+OP_BORDER:
+        call VM_POP             ; HL = value, A = tag (any numeric value
+                                  ; is accepted, same as V1's BORDER)
+        ld a,l
+        call GFX_SET_BORDER      ; masks to the low 3 bits itself
+        jp VM_RUN.loop
+
+OP_INK:
+        call VM_POP
+        ld a,l
+        and $07
+        ld (CURRENT_INK),a
+        jp VM_RUN.loop
+
+OP_PAPER:
+        call VM_POP
+        ld a,l
+        and $07
+        ld (CURRENT_PAPER),a
+        jp VM_RUN.loop
+
+; OP_PLOT — pops y then x (compiler pushes x, then y, matching "PLOT
+; x,y"'s reading order; VM_POP is LIFO, so y comes off first). Every
+; value that must survive past the NEXT call is parked in its own
+; VM_PLOT_*_TMP cell first — VM_CLAMP_Y191/VM_COMPUTE_PRINT_ATTR/
+; GFX_WRITE_PIXEL are all real calls, and this project's own standing
+; convention (see this file's header) is never to trust a register
+; across one.
+OP_PLOT:
+        call VM_POP             ; HL = y, A = tag_y (ignored)
+        ld a,l
+        call VM_CLAMP_Y191       ; A = clamped y
+        ld (VM_PLOT_Y_TMP),a
+        call VM_POP             ; HL = x, A = tag_x (ignored)
+        ld a,l
+        ld (VM_PLOT_X_TMP),a
+        call VM_COMPUTE_PRINT_ATTR
+        ld (VM_PLOT_ATTR_TMP),a
+        ld a,(CURRENT_OVER)
+        ld (VM_PLOT_OVER_TMP),a
+        ld a,(VM_PLOT_OVER_TMP)
+        ld d,a                   ; D = over flag (GFX_WRITE_PIXEL's own
+                                   ; parameter register)
+        ld a,(VM_PLOT_X_TMP)
+        ld b,a                    ; B = x
+        ld a,(VM_PLOT_Y_TMP)
+        ld c,a                    ; C = y
+        ld a,(VM_PLOT_ATTR_TMP)   ; A = attr — loaded LAST, matching
+                                    ; GFX_WRITE_PIXEL's real calling
+                                    ; convention (A/B/C/D all set, no
+                                    ; call in between here to clobber any
+                                    ; of them)
+        call GFX_WRITE_PIXEL
+        jp VM_RUN.loop
+
+; ===========================================================================
+; R7 PHASE 2 — the real remainder of this ROM's own graphics/system
+; statement set (LINE/BEEP/SOUND/POKE/PAUSE/RANDOMISE), each a native-call
+; opcode into the existing, UNMODIFIED kernel primitive that already does
+; this job for V1 — see rom/exrom_v2_compiler.asm's own R7 Phase 2 header
+; for why CIRCLE/FILL/DRAW/OUT are NOT here (not real keywords in this
+; ROM's own current dialect, confirmed against include/checker_
+; keywords.inc, not assumed from the plan's own original text).
+; ===========================================================================
+
+; OP_LINE — pops y1,x1,y0,x0 (compiler pushes x0,y0,x1,y1, matching
+; "LINE x0,y0 TO x1,y1"'s reading order; VM_POP is LIFO). Writes straight
+; into the real GFX_LINE_X0/Y0/X1/Y1/ATTR/OVER sysvars — the SAME
+; sysvars V1's own BASIC_PARSE_LINE_ARGS writes, not a private copy —
+; then calls the real, unmodified GFX_LINE. Each popped value is stored
+; immediately, before the NEXT VM_POP/call, so nothing is ever held in a
+; register across a call here.
+OP_LINE:
+        call VM_POP             ; HL = y1
+        ld a,l
+        call VM_CLAMP_Y191
+        ld (GFX_LINE_Y1),a
+        call VM_POP             ; HL = x1
+        ld a,l
+        ld (GFX_LINE_X1),a
+        call VM_POP             ; HL = y0
+        ld a,l
+        call VM_CLAMP_Y191
+        ld (GFX_LINE_Y0),a
+        call VM_POP             ; HL = x0
+        ld a,l
+        ld (GFX_LINE_X0),a
+        ld a,(CURRENT_OVER)
+        ld (GFX_LINE_OVER),a
+        call VM_COMPUTE_PRINT_ATTR
+        ld (GFX_LINE_ATTR),a
+        call GFX_LINE
+        jp VM_RUN.loop
+
+; OP_BEEP — pops pitch then duration (compiler pushes duration,pitch,
+; matching "BEEP duration,pitch"'s real V1 argument order). Uses the Z80
+; hardware stack (push/pop) to hold pitch across the second VM_POP —
+; the same safe, already-established technique OP_FOR_INIT's own `push
+; hl / call ... / pop de` uses, not a bare register held across a call.
+OP_BEEP:
+        call VM_POP             ; HL = pitch
+        push hl
+        call VM_POP             ; HL = duration
+        pop bc                   ; BC = pitch (SOUND_BEEP's own register)
+        ex de,hl                  ; DE = duration (SOUND_BEEP's own
+                                    ; register); HL now holds whatever
+                                    ; DE held before (unused garbage)
+        call SOUND_BEEP
+        jp VM_RUN.loop
+
+; OP_SOUND — pops data then register (compiler pushes register,data,
+; matching "SOUND register,data"'s real V1 argument order). Calls the
+; real SOUND_EXROM primitive directly (rom/exrom_sound.asm) — bypassing
+; basic.asm's own BASIC_SOUND_EXROM Home/EXROM paging wrapper, exactly
+; the same reasoning rom/test_v2_compiler_r6.asm's own header documents
+; for CALC_EXROM_ENTRY: a flat, single-bank test image has no banks to
+; page, so the real EXROM module's real entry point can be called
+; directly. An out-of-range register (SOUND_EXROM's own real 1-16 check)
+; is a real, caught VM error, not silently ignored.
+OP_SOUND:
+        call VM_POP             ; HL = data
+        push hl
+        call VM_POP             ; HL = register
+        ld a,l
+        ld b,a                    ; B = register
+        pop hl                    ; HL = data (restored)
+        ld a,l
+        ld c,a                    ; C = data
+        call SOUND_EXROM
+        jp c,VM_ERR_INVALID_SOUND_REGISTER
+        jp VM_RUN.loop
+
+; OP_POKE — pops value then address (compiler pushes address,value,
+; matching "POKE address,value"'s real V1 argument order).
+OP_POKE:
+        call VM_POP             ; HL = value
+        push hl
+        call VM_POP             ; HL = address
+        pop de                    ; DE = value (restored)
+        ld a,e                    ; low byte of value — matches V1's own
+                                    ; BASIC_STMT_POKE (`ld a,e / ld (hl),a`)
+        ld (hl),a
+        jp VM_RUN.loop
+
+; OP_PAUSE — pops n. n=0 waits for a keypress (IO_READ_KEY); n>0 waits
+; exactly n display-frame ticks (INT_GET_FRAMES) — the identical
+; algorithm BASIC_STMT_PAUSE already uses, transcribed rather than
+; called (basic.asm is V1's language core, same reasoning as VM_COMPUTE_
+; PRINT_ATTR's own header above — this IS language-level control flow,
+; not a platform primitive being reused). INT_GET_FRAMES's own header
+; documents "Destroys: HL" only, so DE (the target) safely survives
+; across the repeated call in .wait_loop without any extra scratch cell.
+OP_PAUSE:
+        call VM_POP             ; HL = n
+        ld a,h
+        or l
+        jr z,.wait_key
+        push hl                  ; save n across the next call
+        call INT_GET_FRAMES       ; HL = current frame count
+        pop de                    ; DE = n (restored)
+        add hl,de                 ; HL = target = current + n
+        ex de,hl                  ; DE = target
+.wait_loop:
+        call INT_GET_FRAMES       ; HL = current (DE survives, per
+                                    ; INT_GET_FRAMES's own "Destroys: HL"
+                                    ; only contract)
+        or a
+        sbc hl,de                 ; carry set while current < target
+        jr c,.wait_loop
+        jp VM_RUN.loop
+.wait_key:
+        call IO_READ_KEY
+        jp VM_RUN.loop
+
+; OP_RANDOMISE — pops n, reseeds the RNG via the real, unmodified
+; MATH_RND_SEED (kernel/math). No register survives past this one call
+; (HL is MATH_RND_SEED's own input register, consumed immediately).
+OP_RANDOMISE:
+        call VM_POP             ; HL = n
+        call MATH_RND_SEED
+        jp VM_RUN.loop
+
 ; ---------------------------------------------------------------------------
 ; Error exits — each sets VM_ERROR_CODE and VM_HALTED, then returns to the
 ; caller (the driver), which inspects both.
@@ -1463,6 +1785,10 @@ VM_ERR_CALL_STACK_OVERFLOW:
 
 VM_ERR_CALL_STACK_UNDERFLOW:
         ld a,7
+        jp VM_ERR_COMMON
+
+VM_ERR_INVALID_SOUND_REGISTER:
+        ld a,8
         jp VM_ERR_COMMON
 
 VM_ERR_COMMON:
