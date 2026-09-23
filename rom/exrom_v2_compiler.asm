@@ -134,7 +134,10 @@
 ;   23 = expected ',' after LINE's x0
 ;   24 = expected TO in LINE
 ;   25 = expected ',' after LINE's x1
-;   26 = expected ',' in BEEP
+;   26 = retired (was "expected ',' in BEEP/SOUND/POKE" -- unified into
+;        code 22, COMPILE_EXPECT_COMMA_EXPR's own code, once BEEP/
+;        SOUND/POKE/PLOT/PALETTE all switched to that shared helper as
+;        part of this milestone's own R10-class consolidation)
 ;   28 = expected ',' between an extension call's own arguments
 ;   29 = expected '(' after a built-in function name (R8.5 Group 1)
 ;   30 = expected ',' between a built-in function's own arguments
@@ -2641,23 +2644,35 @@ COMPILE_CLS:
 ; emitted — same "shared body, thin per-keyword stub" precedent
 ; BASIC_STMT_INK/PAPER's own V1 implementation already established
 ; (basic.asm), applied here to the V2 compiler instead.
+; ===========================================================================
+; R10-class consolidation, pulled forward once the real ROM budget went
+; negative (see this milestone's own reconciliation-phase commits):
+; COMPILE_1ARG_STMT is the shared body every "consume keyword, compile
+; one expression, emit one opcode" statement compiler already had
+; independently (found via this milestone's own deep consolidation
+; audit). HL = the target EMIT_OP_<X> routine's address; tail-jumps
+; into it via `jp (hl)` once the argument is compiled, so that
+; routine's own `ret` returns straight to COMPILE_1ARG_STMT's caller.
+; ===========================================================================
+COMPILE_1ARG_STMT:
+        push hl                  ; save the emit target -- LEX_NEXT_TOKEN/
+                                   ; COMPILE_EXPR both freely destroy HL
+        call LEX_NEXT_TOKEN
+        call COMPILE_EXPR
+        pop hl
+        jp (hl)
+
 COMPILE_BORDER:
-        call LEX_NEXT_TOKEN     ; consume BORDER
-        call COMPILE_EXPR       ; argument -> VM operand stack
-        call EMIT_OP_BORDER
-        ret
+        ld hl,EMIT_OP_BORDER
+        jp COMPILE_1ARG_STMT
 
 COMPILE_INK:
-        call LEX_NEXT_TOKEN     ; consume INK
-        call COMPILE_EXPR
-        call EMIT_OP_INK
-        ret
+        ld hl,EMIT_OP_INK
+        jp COMPILE_1ARG_STMT
 
 COMPILE_PAPER:
-        call LEX_NEXT_TOKEN     ; consume PAPER
-        call COMPILE_EXPR
-        call EMIT_OP_PAPER
-        ret
+        ld hl,EMIT_OP_PAPER
+        jp COMPILE_1ARG_STMT
 
 ; COMPILE_PLOT — PLOT <expr>,<expr>  (x, then y — matches V1's own
 ; BASIC_STMT_PLOT reading order; OP_PLOT's own header note explains why
@@ -2665,15 +2680,10 @@ COMPILE_PAPER:
 COMPILE_PLOT:
         call LEX_NEXT_TOKEN     ; consume PLOT
         call COMPILE_EXPR       ; x -> VM operand stack
-        ld a,(TOK_TYPE)
-        cp TOK_COMMA
-        jr z,.have_comma
-        ld a,22                  ; expected ',' between PLOT's x and y
-        ld (COMPILE_ERROR_CODE),a
-        ret
-.have_comma:
-        call LEX_NEXT_TOKEN     ; consume ','
-        call COMPILE_EXPR       ; y -> VM operand stack
+        call COMPILE_EXPECT_COMMA_EXPR  ; y -> VM operand stack
+        ld a,(COMPILE_ERROR_CODE)
+        or a
+        ret nz
         call EMIT_OP_PLOT
         ret
 
@@ -2684,29 +2694,20 @@ COMPILE_PLOT:
 ; payload is two port writes -- neither needs rom/exrom_ulaplus.asm's
 ; own KTAB_-coupled parse code).
 COMPILE_MODE:
-        call LEX_NEXT_TOKEN     ; consume MODE
-        call COMPILE_EXPR
-        call EMIT_OP_MODE
-        ret
+        ld hl,EMIT_OP_MODE
+        jp COMPILE_1ARG_STMT
 
 COMPILE_ULAPLUS:
-        call LEX_NEXT_TOKEN     ; consume ULAPLUS
-        call COMPILE_EXPR
-        call EMIT_OP_ULAPLUS
-        ret
+        ld hl,EMIT_OP_ULAPLUS
+        jp COMPILE_1ARG_STMT
 
 COMPILE_PALETTE:
         call LEX_NEXT_TOKEN     ; consume PALETTE
         call COMPILE_EXPR       ; index -> VM operand stack
-        ld a,(TOK_TYPE)
-        cp TOK_COMMA
-        jr z,.have_comma
-        ld a,22                  ; expected ',' -- same code PLOT's own
-        ld (COMPILE_ERROR_CODE),a ; identical grammar shape already uses
-        ret
-.have_comma:
-        call LEX_NEXT_TOKEN     ; consume ','
-        call COMPILE_EXPR       ; value -> VM operand stack
+        call COMPILE_EXPECT_COMMA_EXPR  ; value -> VM operand stack
+        ld a,(COMPILE_ERROR_CODE)
+        or a
+        ret nz
         call EMIT_OP_PALETTE
         ret
 
@@ -2861,19 +2862,18 @@ COMPILE_LINE:
         ret
 
 ; COMPILE_BEEP — BEEP <duration>,<pitch>  (matches V1's own
-; BASIC_STMT_BEEP argument order)
+; BASIC_STMT_BEEP argument order). "Expected comma" now reports code
+; 22 (COMPILE_EXPECT_COMMA_EXPR's own code) rather than its own former
+; 26 -- both were always "expected comma between a statement's two
+; args", the same real condition either way; unifying it is what lets
+; this reuse the shared helper.
 COMPILE_BEEP:
         call LEX_NEXT_TOKEN     ; consume BEEP
         call COMPILE_EXPR       ; duration
-        ld a,(TOK_TYPE)
-        cp TOK_COMMA
-        jr z,.have_comma
-        ld a,26                  ; expected ',' in BEEP
-        ld (COMPILE_ERROR_CODE),a
-        ret
-.have_comma:
-        call LEX_NEXT_TOKEN
-        call COMPILE_EXPR       ; pitch
+        call COMPILE_EXPECT_COMMA_EXPR  ; pitch
+        ld a,(COMPILE_ERROR_CODE)
+        or a
+        ret nz
         call EMIT_OP_BEEP
         ret
 
@@ -2882,18 +2882,10 @@ COMPILE_BEEP:
 COMPILE_SOUND:
         call LEX_NEXT_TOKEN     ; consume SOUND
         call COMPILE_EXPR       ; register
-        ld a,(TOK_TYPE)
-        cp TOK_COMMA
-        jr z,.have_comma
-        ld a,26                  ; expected ',' in SOUND (same code as
-                                   ; BEEP's -- both are "expected comma
-                                   ; between a statement's two args",
-                                   ; the same real condition either way)
-        ld (COMPILE_ERROR_CODE),a
-        ret
-.have_comma:
-        call LEX_NEXT_TOKEN
-        call COMPILE_EXPR       ; data
+        call COMPILE_EXPECT_COMMA_EXPR  ; data
+        ld a,(COMPILE_ERROR_CODE)
+        or a
+        ret nz
         call EMIT_OP_SOUND
         ret
 
@@ -2902,32 +2894,23 @@ COMPILE_SOUND:
 COMPILE_POKE:
         call LEX_NEXT_TOKEN     ; consume POKE
         call COMPILE_EXPR       ; address
-        ld a,(TOK_TYPE)
-        cp TOK_COMMA
-        jr z,.have_comma
-        ld a,26
-        ld (COMPILE_ERROR_CODE),a
-        ret
-.have_comma:
-        call LEX_NEXT_TOKEN
-        call COMPILE_EXPR       ; value
+        call COMPILE_EXPECT_COMMA_EXPR  ; value
+        ld a,(COMPILE_ERROR_CODE)
+        or a
+        ret nz
         call EMIT_OP_POKE
         ret
 
 ; COMPILE_PAUSE — PAUSE <n>  (one argument, same shape as BORDER/INK/
 ; PAPER above)
 COMPILE_PAUSE:
-        call LEX_NEXT_TOKEN     ; consume PAUSE
-        call COMPILE_EXPR
-        call EMIT_OP_PAUSE
-        ret
+        ld hl,EMIT_OP_PAUSE
+        jp COMPILE_1ARG_STMT
 
 ; COMPILE_RANDOMISE — RANDOMISE <n>
 COMPILE_RANDOMISE:
-        call LEX_NEXT_TOKEN     ; consume RANDOMISE
-        call COMPILE_EXPR
-        call EMIT_OP_RANDOMISE
-        ret
+        ld hl,EMIT_OP_RANDOMISE
+        jp COMPILE_1ARG_STMT
 
 ; ===========================================================================
 ; R8.5 -- PRINT/LPRINT <string-expr | numeric-expr>. ONE argument,
