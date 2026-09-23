@@ -108,6 +108,26 @@ DECOMP_FRAG_BASE:     equ $8C00   ; 8*32 = 256 bytes, ends $8D00
 DECOMP_OUT_BUF:       equ $8D00   ; reconstructed text output (400
                                     ; bytes, ends $8E90 — generous for
                                     ; this milestone's own test program)
+; R8 Phase 2 (strings/floats/native-calls/procedures) scratch, added
+; below — placed in the 112-byte gap between DECOMP_OUT_BUF's own real
+; end ($8E90) and DECOMP_LABEL_TABLE ($8F00), space this file already
+; owns outright (kernel/extensions/ext_registry.asm's own EXT2_TABLE
+; sits at $8F70+, past this file's own highest address, not here).
+DECOMP_ARG_PTR0:      equ $8E90   ; up to 4 popped-argument fragment
+DECOMP_ARG_PTR1:      equ $8E92   ; pointers (2 bytes each) -- LINE's
+DECOMP_ARG_PTR2:      equ $8E94   ; own 4-argument shape is the widest
+DECOMP_ARG_PTR3:      equ $8E96   ; native-call statement this covers
+DECOMP_ARG_LEN0:      equ $8E98   ; the matching 4 lengths (1 byte each)
+DECOMP_ARG_LEN1:      equ $8E99
+DECOMP_ARG_LEN2:      equ $8E9A
+DECOMP_ARG_LEN3:      equ $8E9B
+DECOMP_EXT_SLOT:      equ $8E9C   ; OP_CALL_EXT's own slot-id operand
+                                    ; byte, parked across the registry
+                                    ; readback (1 byte)
+DECOMP_EXT_ARGCOUNT:  equ $8E9D   ; OP_CALL_EXT's own argcount operand
+                                    ; byte (1 byte)
+DECOMP_FLOAT_TOTAL:   equ $8E9E   ; PUSH_FLOAT_LIT's own total-digit-
+                                    ; position count (1 byte)
 DECOMP_LABEL_TABLE:   equ $8F00   ; up to 16 distinct jump-target
                                     ; addresses, 2 bytes each (32 bytes,
                                     ; ends $8F20) — collected by the
@@ -301,14 +321,24 @@ DECOMP_COMBINE_TEXT:
 DECOMP_EMIT_INT16:
         bit 7,h
         jr z,.positive
-        ld a,'-'
-        call DECOMP_EMIT_CHAR
         xor a
         sub l
         ld l,a
         ld a,0
         sbc a,h
         ld h,a                   ; HL = -HL (two's complement negate)
+        ld (DECOMP_TMP_A),hl      ; park before emitting '-' --
+                                    ; DECOMP_EMIT_CHAR destroys HL (both
+                                    ; every OTHER instance of this exact
+                                    ; bug class already found in this
+                                    ; file); currently unreachable in
+                                    ; practice (every real caller only
+                                    ; ever passes a small non-negative
+                                    ; index), fixed anyway for the next
+                                    ; caller that doesn't
+        ld a,'-'
+        call DECOMP_EMIT_CHAR
+        ld hl,(DECOMP_TMP_A)
 .positive:
         ld a,h
         or l
@@ -496,14 +526,29 @@ DECOMP_INT_FRAG:
         call DECOMP_COMBINE_RESET
         bit 7,h
         jr z,.positive
-        ld a,'-'
-        call DECOMP_COMBINE_CHAR
         xor a
         sub l
         ld l,a
         ld a,0
         sbc a,h
-        ld h,a
+        ld h,a                        ; HL = abs(value)
+        ld (DECOMP_TMP_A),hl           ; park it -- DECOMP_COMBINE_CHAR
+                                         ; destroys HL (its own "Destroys"
+                                         ; line), so emitting '-' AFTER
+                                         ; negating but BEFORE reloading
+                                         ; would silently lose the negated
+                                         ; value; found by re-checking this
+                                         ; exact call sequence, the same
+                                         ; class of bug already found (and
+                                         ; fixed) twice elsewhere in this
+                                         ; file, this time in Phase 1's own
+                                         ; code -- never triggered by
+                                         ; Phase 1's own test program,
+                                         ; which never decompiled a
+                                         ; negative literal
+        ld a,'-'
+        call DECOMP_COMBINE_CHAR
+        ld hl,(DECOMP_TMP_A)
 .positive:
         ld a,h
         or l
@@ -707,19 +752,49 @@ DECOMP_RECORD_LABEL:
 ; ===========================================================================
 DECOMP_SKIP_OPERAND:
         cp 0                     ; HALT
-        jr z,.w0
+        jp z,.w0
         cp 5                      ; ADD
-        jr z,.w0
+        jp z,.w0
         cp 7                      ; SUB
-        jr z,.w0
+        jp z,.w0
         cp 8                      ; MUL
-        jr z,.w0
+        jp z,.w0
         cp 9                      ; DIV
-        jr z,.w0
+        jp z,.w0
         cp 10                     ; CMP_LT
-        jr z,.w0
+        jp z,.w0
         cp 11                     ; CMP_EQ
-        jr z,.w0
+        jp z,.w0
+        cp 16                     ; RET (R4)
+        jp z,.w0
+        cp 19                     ; STR_CONCAT (R5)
+        jp z,.w0
+        cp 20                     ; STR_CMP_LT (R5)
+        jp z,.w0
+        cp 21                     ; STR_CMP_EQ (R5)
+        jp z,.w0
+        cp 23                     ; CLS (R7)
+        jp z,.w0
+        cp 24                     ; BORDER (R7)
+        jp z,.w0
+        cp 25                     ; INK (R7)
+        jp z,.w0
+        cp 26                     ; PAPER (R7)
+        jp z,.w0
+        cp 27                     ; PLOT (R7)
+        jp z,.w0
+        cp 28                     ; LINE (R7 Phase 2)
+        jp z,.w0
+        cp 29                     ; BEEP (R7 Phase 2)
+        jp z,.w0
+        cp 30                     ; SOUND (R7 Phase 2)
+        jp z,.w0
+        cp 31                     ; POKE (R7 Phase 2)
+        jp z,.w0
+        cp 32                     ; PAUSE (R7 Phase 2)
+        jp z,.w0
+        cp 33                     ; RANDOMISE (R7 Phase 2)
+        jp z,.w0
         cp 1                      ; PUSH_I8
         jr z,.w1
         cp 3                      ; LOAD_VAR
@@ -728,10 +803,20 @@ DECOMP_SKIP_OPERAND:
         jr z,.w1
         cp 13                     ; FOR_INIT
         jr z,.w1
+        cp 18                     ; STORE_STR_VAR (R5)
+        jr z,.w1
         cp 2                      ; PUSH_I16
+        jr z,.w2
+        cp 15                     ; CALL (R4)
         jr z,.w2
         cp 14                     ; FOR_NEXT
         jr z,.w3
+        cp 34                     ; CALL_EXT (R7.5)
+        jr z,.w3
+        cp 22                     ; PUSH_FLOAT_LIT (R6)
+        jr z,.w4
+        cp 17                     ; PUSH_STR_LIT (R5) -- variable width
+        jr z,.wstr
         jp DECOMP_ERR_UNSUPPORTED_OPCODE
 .w0:
         ret
@@ -751,6 +836,25 @@ DECOMP_SKIP_OPERAND:
         inc hl
         inc hl
         inc hl
+        ld (DECOMP_IP),hl
+        ret
+.w4:
+        ld hl,(DECOMP_IP)
+        inc hl
+        inc hl
+        inc hl
+        inc hl
+        ld (DECOMP_IP),hl
+        ret
+; .wstr — 1 length byte + that many content bytes (matches OP_PUSH_
+; STR_LIT's own real bytecode shape).
+.wstr:
+        ld hl,(DECOMP_IP)
+        ld a,(hl)
+        inc hl
+        ld e,a
+        ld d,0
+        add hl,de
         ld (DECOMP_IP),hl
         ret
 
@@ -1052,6 +1156,46 @@ DECOMPILE_PROGRAM:
         jp z,.op_for_init
         cp 14
         jp z,.op_for_next
+        cp 15
+        jp z,.op_call
+        cp 16
+        jp z,.op_ret
+        cp 17
+        jp z,.op_push_str_lit
+        cp 18
+        jp z,.op_store_str_var
+        cp 19
+        jp z,.op_str_concat
+        cp 20
+        jp z,.op_str_cmplt
+        cp 21
+        jp z,.op_str_cmpeq
+        cp 22
+        jp z,.op_push_float_lit
+        cp 23
+        jp z,.op_cls
+        cp 24
+        jp z,.op_border
+        cp 25
+        jp z,.op_ink
+        cp 26
+        jp z,.op_paper
+        cp 27
+        jp z,.op_plot
+        cp 28
+        jp z,.op_line
+        cp 29
+        jp z,.op_beep
+        cp 30
+        jp z,.op_sound
+        cp 31
+        jp z,.op_poke
+        cp 32
+        jp z,.op_pause
+        cp 33
+        jp z,.op_randomise
+        cp 34
+        jp z,.op_call_ext
         jp DECOMP_ERR_UNSUPPORTED_OPCODE
 
 .op_push_i8:
@@ -1131,20 +1275,135 @@ DECOMPILE_PROGRAM:
         call DECOMP_OP_CMPEQ
         jp DECOMPILE_PROGRAM.loop
 
-; Bare JMP -- always COMPILE_GOTO's own output (a JMPZ-paired JMP is
+; Bare JMP -- either COMPILE_GOTO's own output (a JMPZ-paired JMP is
 ; already consumed whole by .op_jmpz below, and never falls through to
-; here). Emits "GOTO L<target>".
+; here), OR COMPILE_PROC's own skip-jump (R4 addition): PROC compiles to
+; "JMP skip / STORE_VAR paramidx / <body> / RET / skip:" -- the skip-JMP
+; immediately followed by a STORE_VAR is that shape's own unambiguous
+; signature (STORE_VAR never otherwise directly follows a JMP's operand
+; in this compiler's real output), the same "peek the next opcode"
+; technique .op_jmpz already uses for IF...THEN GOTO. Emits "PROC
+; P<entry>(V<paramidx>)" and consumes the STORE_VAR as part of the
+; header (COMPILE_PROC's own compiler auto-emits it the same way,
+; outside the user's own PROC(...) text) -- body statements then
+; decompile normally until RET (.op_ret below) closes it with "ENDP".
 .op_jmp:
         ld hl,(DECOMP_IP)
         ld e,(hl)
         inc hl
         ld d,(hl)
         inc hl
-        ld (DECOMP_IP),hl          ; DE = target (relative bytecode offset)
+        ld (DECOMP_IP),hl          ; DE = target (relative bytecode offset,
+                                     ; unused in the PROC case); HL -> the
+                                     ; candidate STORE_VAR opcode byte
+        ld a,(hl)
+        cp 4                        ; STORE_VAR
+        jr z,.jmp_proc_header
         ld hl,STR_GOTO
         ld c,STR_GOTO_LEN
         call DECOMP_EMIT_TEXT
         call DECOMP_EMIT_LABELNAME  ; consumes DE itself (see its own header)
+        call DECOMP_EMIT_NEWLINE
+        jp DECOMPILE_PROGRAM.loop
+.jmp_proc_header:
+        ld hl,(DECOMP_IP)           ; HL = absolute entry address (the
+                                      ; STORE_VAR opcode's own position --
+                                      ; COMPILE_PROC's own LABEL_DEFINE
+                                      ; call places the CALL-entry label
+                                      ; exactly here, not at the JMP)
+        ld de,VM_CODE_BASE
+        or a
+        sbc hl,de                    ; HL = relative entry address
+        ld (DECOMP_TMP_A),hl         ; park it -- DECOMP_EMIT_TEXT/CHAR
+                                       ; below clobber HL
+        ld hl,(DECOMP_IP)
+        inc hl                        ; skip the STORE_VAR opcode byte itself
+        ld a,(hl)                     ; the parameter's own symtab index
+        ld (DECOMP_ARG_LEN0),a        ; NOT DECOMP_TMP_LEN -- EMIT_CHAR
+                                        ; uses THAT cell as its own internal
+                                        ; scratch, and EMIT_UINT16 calls
+                                        ; EMIT_CHAR internally too, so both
+                                        ; calls below would silently
+                                        ; clobber the param index before
+                                        ; DECOMP_EMIT_VARNAME ever reads
+                                        ; it -- same hazard already found
+                                        ; and fixed in .op_call/.op_store_
+                                        ; str_var above; DECOMP_ARG_LEN0 is
+                                        ; a cell neither EMIT_CHAR nor
+                                        ; EMIT_UINT16 ever touches
+        inc hl                         ; consume its 1-byte operand too
+        ld (DECOMP_IP),hl
+        ld hl,STR_PROC
+        ld c,STR_PROC_LEN
+        call DECOMP_EMIT_TEXT
+        ld a,'P'
+        call DECOMP_EMIT_CHAR
+        ld hl,(DECOMP_TMP_A)
+        call DECOMP_EMIT_UINT16
+        ld a,'('
+        call DECOMP_EMIT_CHAR
+        ld a,(DECOMP_ARG_LEN0)
+        call DECOMP_EMIT_VARNAME
+        ld a,')'
+        call DECOMP_EMIT_CHAR
+        call DECOMP_EMIT_NEWLINE
+        jp DECOMPILE_PROGRAM.loop
+
+; CALL -- a call SITE (COMPILE_CALL_STMT's own output): "<arg>" was
+; already pushed by a preceding COMPILE_EXPR, so this pops exactly one
+; fragment. The 2-byte operand is the SAME relative address .jmp_proc_
+; header above names "P<entry>" from, so the two always agree by
+; construction (both come from the one real bytecode address the
+; compiler itself resolved the call to).
+; NOTE: DECOMP_TMP_LEN is not safe to hold a caller's own value across a
+; `call DECOMP_EMIT_CHAR` -- that routine uses DECOMP_TMP_LEN AS ITS OWN
+; internal 1-byte source buffer (see its own body), even though its
+; "Destroys" line only lists registers; a caller-held value parked there
+; is silently overwritten. Found here (the arg text's own length,
+; parked in DECOMP_TMP_LEN, was being clobbered by the 'P'/'(' DECOMP_
+; EMIT_CHAR calls in between) by re-auditing every new handler in this
+; file for the pattern after finding the same hazard in DECOMP_STR_
+; OPERAND's own caller (.op_store_str_var, fixed above) -- DECOMP_ARG_
+; LEN0 used instead, a cell nothing here calls into.
+.op_call:
+        ld hl,(DECOMP_IP)
+        ld e,(hl)
+        inc hl
+        ld d,(hl)
+        inc hl
+        ld (DECOMP_IP),hl           ; DE = relative target address
+        ld (DECOMP_TMP_B),de
+        call DECOMP_FRAG_POP        ; HL = arg text, C = length
+        ld (DECOMP_TMP_A),hl
+        ld a,c
+        ld (DECOMP_ARG_LEN0),a
+        ld hl,STR_CALL
+        ld c,STR_CALL_LEN
+        call DECOMP_EMIT_TEXT
+        ld a,'P'
+        call DECOMP_EMIT_CHAR
+        ld hl,(DECOMP_TMP_B)
+        call DECOMP_EMIT_UINT16
+        ld a,'('
+        call DECOMP_EMIT_CHAR
+        ld hl,(DECOMP_TMP_A)
+        ld a,(DECOMP_ARG_LEN0)
+        ld c,a
+        call DECOMP_EMIT_TEXT
+        ld a,')'
+        call DECOMP_EMIT_CHAR
+        call DECOMP_EMIT_NEWLINE
+        jp DECOMPILE_PROGRAM.loop
+
+; RET -- always COMPILE_PROC's own ENDP output (the only RET producer in
+; this compiler). Emits "ENDP"; the next opcode processed is naturally
+; the position right after RET, which equals the enclosing PROC's own
+; skip-JMP target -- consistent by construction, no extra bookkeeping
+; needed here.
+.op_ret:
+        ld hl,STR_ENDP
+        ld c,STR_ENDP_LEN
+        call DECOMP_EMIT_TEXT
         call DECOMP_EMIT_NEWLINE
         jp DECOMPILE_PROGRAM.loop
 
@@ -1284,6 +1543,712 @@ DECOMPILE_PROGRAM:
         call DECOMP_EMIT_VARNAME
         call DECOMP_EMIT_NEWLINE
         jp DECOMPILE_PROGRAM.loop
+
+; ===========================================================================
+; R8 PHASE 2 -- strings (R5), floats (R6), and the native-call/platform
+; family (R7/R7.5), the real remainder this file's own header flagged as
+; deliberately out of Phase 1's scope.
+; ===========================================================================
+
+; PUSH_STR_LIT -- operand: [len:1][content:len]. Pushes a quoted string
+; literal fragment ("..."). A literal whose own quoted text (2 quote
+; chars + up to 31 content bytes) would exceed DECOMP_FRAG_TEXT_MAX is a
+; real, caught DECOMP_ERR_EXPR_TOO_LONG, same bound every other fragment
+; already respects.
+.op_push_str_lit:
+        ld hl,(DECOMP_IP)
+        ld a,(hl)
+        inc hl
+        ld (DECOMP_TMP_LEN),a        ; content length
+        ld (DECOMP_IP),hl            ; DECOMP_IP -> content start (parked;
+                                       ; final advance happens below)
+        call DECOMP_COMBINE_RESET
+        ld a,'"'
+        call DECOMP_COMBINE_CHAR
+        ld a,(DECOMP_TMP_LEN)
+        or a
+        jr z,.psl_no_content
+        ld hl,(DECOMP_IP)
+        call DECOMP_COMBINE_TEXT     ; A = length (already in A), HL =
+                                       ; content start
+.psl_no_content:
+        ld a,'"'
+        call DECOMP_COMBINE_CHAR
+        ld a,(DECOMP_COMBINE_LEN)
+        cp DECOMP_FRAG_TEXT_MAX+1
+        jp nc,DECOMP_ERR_EXPR_TOO_LONG
+        ld hl,(DECOMP_IP)             ; advance DECOMP_IP past the content
+        ld a,(DECOMP_TMP_LEN)
+        ld e,a
+        ld d,0
+        add hl,de
+        ld (DECOMP_IP),hl
+        ld a,(DECOMP_COMBINE_LEN)
+        ld c,a
+        ld hl,DECOMP_COMBINE_BUF
+        call DECOMP_FRAG_PUSH
+        jp DECOMPILE_PROGRAM.loop
+
+; STORE_STR_VAR -- operand: [target_idx:1]. Pops one fragment
+; (reinterpreted via DECOMP_STR_OPERAND above), emits "S<idx>$ =
+; <text>".
+.op_store_str_var:
+        ld hl,(DECOMP_IP)
+        ld a,(hl)
+        inc hl
+        ld (DECOMP_IP),hl
+        ld (DECOMP_ARG_LEN0),a        ; target strsym index -- NOT
+                                        ; DECOMP_TMP_LEN: DECOMP_STR_
+                                        ; OPERAND below uses THAT cell as
+                                        ; its own internal scratch when it
+                                        ; takes the reinterpret path, which
+                                        ; would silently overwrite the
+                                        ; target index before it's used --
+                                        ; a real bug of the exact class
+                                        ; already found and fixed twice
+                                        ; earlier in this file, caught by
+                                        ; re-reading this call chain rather
+                                        ; than by a run this time
+        call DECOMP_FRAG_POP          ; HL = value text, C = length
+        call DECOMP_STR_OPERAND       ; HL = text, C = length (reinterpreted
+                                        ; if needed)
+        ld (DECOMP_TMP_A),hl
+        ld a,c
+        ld (DECOMP_TMP_B),a
+        ld a,'S'
+        call DECOMP_EMIT_CHAR
+        ld a,(DECOMP_ARG_LEN0)
+        ld l,a                        ; DECOMP_EMIT_INT16 wants a 16-bit
+        ld h,0                         ; value in HL, not A -- a real bug,
+                                         ; found by re-reading this call
+                                         ; (DECOMP_EMIT_VARNAME's own
+                                         ; correct L=A/H=0 pattern, just
+                                         ; above, was the tell)
+        call DECOMP_EMIT_INT16
+        ld a,'$'
+        call DECOMP_EMIT_CHAR
+        ld a,' '
+        call DECOMP_EMIT_CHAR
+        ld a,'='
+        call DECOMP_EMIT_CHAR
+        ld a,' '
+        call DECOMP_EMIT_CHAR
+        ld hl,(DECOMP_TMP_A)
+        ld a,(DECOMP_TMP_B)
+        ld c,a
+        call DECOMP_EMIT_TEXT
+        call DECOMP_EMIT_NEWLINE
+        jp DECOMPILE_PROGRAM.loop
+
+.op_str_concat:
+        ld hl,STR_PLUS
+        ld b,1
+        call DECOMP_STR_BINARY_OP
+        jp DECOMPILE_PROGRAM.loop
+.op_str_cmplt:
+        ld hl,STR_LT
+        ld b,1
+        call DECOMP_STR_BINARY_OP
+        jp DECOMPILE_PROGRAM.loop
+.op_str_cmpeq:
+        ld hl,STR_EQ
+        ld b,1
+        call DECOMP_STR_BINARY_OP
+        jp DECOMPILE_PROGRAM.loop
+
+; PUSH_FLOAT_LIT -- operand: [value:2][divisor:2] (rom/exrom_v2_
+; compiler.asm's own COMPILE_FLOAT_LITERAL: divisor is always
+; 10^fractional-digit-count). Reconstructs decimal text directly from
+; value/divisor -- no need for the real calculator's own float-to-string
+; formatter, since this encoding is exactly "digits + where the point
+; goes", not a general binary float. divisor is looked up against the
+; 5 real values COMPILE_FLOAT_LITERAL can ever produce (1/10/100/1000/
+; 10000 -- a 16-bit unsigned divisor can't reach 100000); anything else
+; is real, caught, malformed bytecode (DECOMP_ERR_UNSUPPORTED_OPCODE,
+; reused here as "this isn't a shape this compiler ever emits", same as
+; its use for a genuinely unknown opcode byte).
+.op_push_float_lit:
+        ld hl,(DECOMP_IP)
+        ld e,(hl)
+        inc hl
+        ld d,(hl)
+        inc hl
+        ld (DECOMP_TMP_A),de          ; value (signed)
+        ld e,(hl)
+        inc hl
+        ld d,(hl)
+        inc hl
+        ld (DECOMP_IP),hl
+        ld a,e
+        cp 1
+        jr nz,.fdiv_not1
+        ld a,d
+        or a
+        jr nz,.fdiv_not1
+        xor a
+        jr .fdiv_known
+.fdiv_not1:
+        ld hl,10                     ; `sbc hl,de` needs carry cleared
+        or a                          ; before EVERY comparison, not just
+        sbc hl,de                     ; the first -- a real bug: the 2nd
+        jr z,.fdiv_is10                ; through 4th comparisons below
+        ld hl,100                       ; were silently using whatever
+        or a                              ; carry the PREVIOUS `sbc` left
+        sbc hl,de                         ; set, corrupting the divisor
+        jr z,.fdiv_is100                   ; match for 100/1000/10000 --
+        ld hl,1000                          ; found via a real run (100
+        or a                                  ; failed to match "3.14"'s
+        sbc hl,de                             ; own real divisor)
+        jr z,.fdiv_is1000
+        ld hl,10000
+        or a
+        sbc hl,de
+        jr z,.fdiv_is10000
+        jp DECOMP_ERR_UNSUPPORTED_OPCODE
+.fdiv_is10:    ld a,1 : jr .fdiv_known
+.fdiv_is100:   ld a,2 : jr .fdiv_known
+.fdiv_is1000:  ld a,3 : jr .fdiv_known
+.fdiv_is10000: ld a,4
+.fdiv_known:
+        ld (DECOMP_TMP_LEN),a         ; fracdigits (0-4)
+        call DECOMP_COMBINE_RESET
+        ld hl,(DECOMP_TMP_A)
+        bit 7,h
+        jr z,.fpos
+        xor a
+        sub l
+        ld l,a
+        ld a,0
+        sbc a,h
+        ld h,a                        ; HL = abs(value)
+        ld (DECOMP_NUM_VAL),hl         ; park it BEFORE emitting '-' --
+                                         ; DECOMP_COMBINE_CHAR destroys HL;
+                                         ; same fix as DECOMP_INT_FRAG's
+                                         ; own (see that routine's header)
+        ld a,'-'
+        call DECOMP_COMBINE_CHAR
+        ld hl,(DECOMP_NUM_VAL)
+.fpos:
+        ld (DECOMP_NUM_VAL),hl
+        xor a
+        ld (DECOMP_NUM_DIGCOUNT),a
+.fdivloop:
+        ld hl,(DECOMP_NUM_VAL)
+        ld a,h
+        or l
+        jr z,.femit
+        ld de,10
+        call MATH_DIVIDE16
+        ld (DECOMP_NUM_QUOT),hl
+        ld de,10
+        call MATH_MULTIPLY16
+        ld de,(DECOMP_NUM_VAL)
+        ld a,e
+        sub l
+        ld l,a
+        ld a,d
+        sbc a,h
+        ld h,a
+        ld a,l
+        add a,'0'
+        push af
+        ld hl,DECOMP_NUM_DIGCOUNT
+        ld a,(hl)
+        ld e,a
+        ld d,0
+        ld hl,DECOMP_NUM_DIGITS
+        add hl,de
+        pop af
+        ld (hl),a
+        ld a,(DECOMP_NUM_DIGCOUNT)
+        inc a
+        ld (DECOMP_NUM_DIGCOUNT),a
+        ld hl,(DECOMP_NUM_QUOT)
+        ld (DECOMP_NUM_VAL),hl
+        jr .fdivloop
+.femit:
+        ; total digit positions = max(digcount, fracdigits+1); emit
+        ; most-significant first, inserting '.' right after the last
+        ; INTEGER-part digit (fracdigits>0 only).
+        ld a,(DECOMP_TMP_LEN)
+        inc a                          ; fracdigits+1
+        ld b,a
+        ld a,(DECOMP_NUM_DIGCOUNT)
+        cp b
+        jr nc,.have_total
+        ld a,b
+.have_total:
+        ld (DECOMP_FLOAT_TOTAL),a      ; own dedicated scratch cell --
+                                         ; not an assumed-free adjacent
+                                         ; byte (DECOMP_NUM_DIGCOUNT+1 is
+                                         ; actually DECOMP_OP_PTR's own
+                                         ; low byte, a real collision this
+                                         ; file already paid for once with
+                                         ; a much worse instance of the
+                                         ; same mistake -- see this file's
+                                         ; own header)
+        ld b,a                          ; B = position, counting down
+                                         ; from totaldigits
+.femit_loop:
+        dec b
+        ld a,b
+        ld hl,DECOMP_NUM_DIGCOUNT
+        cp (hl)                         ; A(=B) - digcount; carry set iff
+                                          ; B < digcount (a real digit
+                                          ; exists at this position -- valid
+                                          ; indices are 0..digcount-1, so
+                                          ; B == digcount is ALREADY out of
+                                          ; range and must zero-pad too;
+                                          ; the original `cp b` (digcount-B)
+                                          ; missed exactly that boundary --
+                                          ; a real off-by-one caught by
+                                          ; re-checking this arithmetic by
+                                          ; hand, not by a run)
+        jr nc,.femit_zero                ; B >= digcount -> a zero
+        ld hl,DECOMP_NUM_DIGITS
+        ld e,b
+        ld d,0
+        add hl,de
+        ld a,(hl)
+        jr .femit_have_digit
+.femit_zero:
+        ld a,'0'
+.femit_have_digit:
+        push bc
+        call DECOMP_COMBINE_CHAR
+        pop bc
+        ld a,(DECOMP_TMP_LEN)          ; fracdigits
+        cp b
+        jr nz,.femit_no_point
+        ld a,(DECOMP_TMP_LEN)
+        or a
+        jr z,.femit_no_point            ; fracdigits=0 -> no point at all
+        ld a,'.'
+        call DECOMP_COMBINE_CHAR
+.femit_no_point:
+        ld a,b
+        or a
+        jr nz,.femit_loop
+        ld a,(DECOMP_COMBINE_LEN)
+        cp DECOMP_FRAG_TEXT_MAX+1
+        jp nc,DECOMP_ERR_EXPR_TOO_LONG
+        ld c,a
+        ld hl,DECOMP_COMBINE_BUF
+        call DECOMP_FRAG_PUSH
+        jp DECOMPILE_PROGRAM.loop
+
+; ===========================================================================
+; NATIVE-CALL/PLATFORM FAMILY (R7/R7.5) -- every argument was already
+; pushed onto the operand stack by an ordinary COMPILE_EXPR before the
+; opcode itself, so the opcode's OWN bytecode operand is always empty;
+; decompiling is purely "pop N fragments, emit KEYWORD arg1,arg2,...".
+; ===========================================================================
+
+.op_cls:
+        ld hl,STR_CLS
+        ld c,STR_CLS_LEN
+        call DECOMP_EMIT_TEXT
+        call DECOMP_EMIT_NEWLINE
+        jp DECOMPILE_PROGRAM.loop
+
+.op_border:
+        ld hl,STR_BORDER
+        ld (DECOMP_TMP_A),hl
+        ld a,STR_BORDER_LEN
+        ld (DECOMP_TMP_LEN),a
+        call DECOMP_EMIT_1ARG_STMT
+        jp DECOMPILE_PROGRAM.loop
+.op_ink:
+        ld hl,STR_INK
+        ld (DECOMP_TMP_A),hl
+        ld a,STR_INK_LEN
+        ld (DECOMP_TMP_LEN),a
+        call DECOMP_EMIT_1ARG_STMT
+        jp DECOMPILE_PROGRAM.loop
+.op_paper:
+        ld hl,STR_PAPER
+        ld (DECOMP_TMP_A),hl
+        ld a,STR_PAPER_LEN
+        ld (DECOMP_TMP_LEN),a
+        call DECOMP_EMIT_1ARG_STMT
+        jp DECOMPILE_PROGRAM.loop
+.op_pause:
+        ld hl,STR_PAUSE
+        ld (DECOMP_TMP_A),hl
+        ld a,STR_PAUSE_LEN
+        ld (DECOMP_TMP_LEN),a
+        call DECOMP_EMIT_1ARG_STMT
+        jp DECOMPILE_PROGRAM.loop
+.op_randomise:
+        ld hl,STR_RANDOMISE
+        ld (DECOMP_TMP_A),hl
+        ld a,STR_RANDOMISE_LEN
+        ld (DECOMP_TMP_LEN),a
+        call DECOMP_EMIT_1ARG_STMT
+        jp DECOMPILE_PROGRAM.loop
+
+; OP_PLOT pops y then x (compiler pushed x,y) -- "leftmost" in
+; DECOMP_EMIT_2ARG_STMT's own sense is x, matching "PLOT x,y".
+.op_plot:
+        ld hl,STR_PLOT
+        ld (DECOMP_TMP_A),hl
+        ld a,STR_PLOT_LEN
+        ld (DECOMP_TMP_LEN),a
+        call DECOMP_EMIT_2ARG_STMT
+        jp DECOMPILE_PROGRAM.loop
+; OP_BEEP pops pitch then duration (compiler pushed duration,pitch) --
+; "leftmost" is duration, matching "BEEP duration,pitch".
+.op_beep:
+        ld hl,STR_BEEP
+        ld (DECOMP_TMP_A),hl
+        ld a,STR_BEEP_LEN
+        ld (DECOMP_TMP_LEN),a
+        call DECOMP_EMIT_2ARG_STMT
+        jp DECOMPILE_PROGRAM.loop
+; OP_SOUND pops data then register (compiler pushed register,data) --
+; "leftmost" is register, matching "SOUND register,data".
+.op_sound:
+        ld hl,STR_SOUND
+        ld (DECOMP_TMP_A),hl
+        ld a,STR_SOUND_LEN
+        ld (DECOMP_TMP_LEN),a
+        call DECOMP_EMIT_2ARG_STMT
+        jp DECOMPILE_PROGRAM.loop
+; OP_POKE pops value then address (compiler pushed address,value) --
+; "leftmost" is address, matching "POKE address,value".
+.op_poke:
+        ld hl,STR_POKE
+        ld (DECOMP_TMP_A),hl
+        ld a,STR_POKE_LEN
+        ld (DECOMP_TMP_LEN),a
+        call DECOMP_EMIT_2ARG_STMT
+        jp DECOMPILE_PROGRAM.loop
+
+; LINE pops y1,x1,y0,x0 (compiler pushed x0,y0,x1,y1, matching "LINE
+; x0,y0 TO x1,y1"'s own reading order).
+.op_line:
+        call DECOMP_FRAG_POP          ; y1
+        ld (DECOMP_ARG_PTR0),hl
+        ld a,c
+        ld (DECOMP_ARG_LEN0),a
+        call DECOMP_FRAG_POP          ; x1
+        ld (DECOMP_ARG_PTR1),hl
+        ld a,c
+        ld (DECOMP_ARG_LEN1),a
+        call DECOMP_FRAG_POP          ; y0
+        ld (DECOMP_ARG_PTR2),hl
+        ld a,c
+        ld (DECOMP_ARG_LEN2),a
+        call DECOMP_FRAG_POP          ; x0
+        ld (DECOMP_ARG_PTR3),hl
+        ld a,c
+        ld (DECOMP_ARG_LEN3),a
+        ld hl,STR_LINE
+        ld c,STR_LINE_LEN
+        call DECOMP_EMIT_TEXT
+        ld hl,(DECOMP_ARG_PTR3)        ; x0
+        ld a,(DECOMP_ARG_LEN3)
+        ld c,a
+        call DECOMP_EMIT_TEXT
+        ld a,','
+        call DECOMP_EMIT_CHAR
+        ld hl,(DECOMP_ARG_PTR2)        ; y0
+        ld a,(DECOMP_ARG_LEN2)
+        ld c,a
+        call DECOMP_EMIT_TEXT
+        ld hl,STR_LINE_TO
+        ld c,STR_LINE_TO_LEN
+        call DECOMP_EMIT_TEXT
+        ld hl,(DECOMP_ARG_PTR1)        ; x1
+        ld a,(DECOMP_ARG_LEN1)
+        ld c,a
+        call DECOMP_EMIT_TEXT
+        ld a,','
+        call DECOMP_EMIT_CHAR
+        ld hl,(DECOMP_ARG_PTR0)        ; y1
+        ld a,(DECOMP_ARG_LEN0)
+        ld c,a
+        call DECOMP_EMIT_TEXT
+        call DECOMP_EMIT_NEWLINE
+        jp DECOMPILE_PROGRAM.loop
+
+; ===========================================================================
+; CALL_EXT (R7.5) -- operand: [slot_id:1][generation:1][argcount:1].
+; Unlike every OTHER identifier this decompiler synthesizes, an
+; extension's real NAME survives: it's stored in kernel/extensions/
+; ext_registry.asm's own EXT2_TABLE, live at decompile time exactly like
+; it is at call time (the registry isn't compile-time-only scratch --
+; see that file's own header), so this reads it straight from there
+; instead of manufacturing "P<addr>"-style syntax. generation is not
+; re-emitted (recompiling re-resolves it fresh from the CURRENT
+; registry state, the same as the original source did).
+; ===========================================================================
+.op_call_ext:
+        ld hl,(DECOMP_IP)
+        ld a,(hl)
+        ld (DECOMP_EXT_SLOT),a
+        inc hl
+        inc hl                          ; skip slot_id + generation
+        ld a,(hl)
+        ld (DECOMP_EXT_ARGCOUNT),a
+        inc hl
+        ld (DECOMP_IP),hl
+        ; slot*EXT2_REC_LEN + EXT2_TABLE -> record; [gen:1][name_len:1]
+        ; [name:8][exec:2][argcount:1]
+        ld a,(DECOMP_EXT_SLOT)
+        ld l,a
+        ld h,0
+        ld d,h
+        ld e,l
+        add hl,hl                        ; *2
+        add hl,hl                        ; *4
+        add hl,hl                        ; *8
+        add hl,de                        ; *9  (EXT2_REC_LEN = 13,
+        add hl,de                        ; *10  8 + 5 more DE(=slot)
+        add hl,de                        ; *11  additions gets there)
+        add hl,de                        ; *12
+        add hl,de                        ; *13
+        ld de,EXT2_TABLE
+        add hl,de                        ; HL -> record
+        inc hl                            ; -> name_len
+        ld a,(hl)
+        ld (DECOMP_TMP_LEN),a
+        inc hl                              ; -> name
+        ld (DECOMP_TMP_A),hl
+        ld a,(DECOMP_TMP_LEN)
+        ld c,a
+        ld hl,(DECOMP_TMP_A)
+        call DECOMP_EMIT_TEXT
+        ld a,' '
+        call DECOMP_EMIT_CHAR
+        ld a,(DECOMP_EXT_ARGCOUNT)
+        or a
+        jr z,.cext_no_args
+; NOTE: the remaining count lives in DECOMP_EXT_ARGCOUNT itself (memory),
+; not B -- a `push bc` held across DECOMP_FRAG_POP/DECOMP_EMIT_TEXT would
+; be unsafe: either can reach a DECOMP_ERR_* handler, whose own `ret`
+; unwinds via the hardware stack (see this file's own header convention
+; and DECOMP_ERR_BAD_JMPZ_SHAPE's own fix for the same class of bug), and
+; an outstanding push at that moment would be popped as a bogus return
+; address instead. Same reasoning as .op_jmpz's own memory-only parking.
+.cext_arg_loop:
+        call DECOMP_FRAG_POP           ; args pop in reverse call order,
+                                          ; but CALL_EXT's own real
+                                          ; argument order doesn't matter
+                                          ; for re-lexability here the way
+                                          ; PLOT/LINE's own fixed
+                                          ; positional meaning does --
+                                          ; still emitted rightmost-
+                                          ; popped-first, a real,
+                                          ; documented limitation for
+                                          ; more than 1 argument (this
+                                          ; milestone's own R8 scope
+                                          ; boundary, not attempted
+                                          ; further here)
+        ld (DECOMP_TMP_A),hl
+        ld a,c
+        ld (DECOMP_TMP_LEN),a
+        ld hl,(DECOMP_TMP_A)
+        ld a,(DECOMP_TMP_LEN)
+        ld c,a
+        call DECOMP_EMIT_TEXT
+        ld a,(DECOMP_EXT_ARGCOUNT)
+        dec a
+        ld (DECOMP_EXT_ARGCOUNT),a
+        jr z,.cext_args_done
+        ld a,','
+        call DECOMP_EMIT_CHAR
+        jr .cext_arg_loop
+.cext_args_done:
+.cext_no_args:
+        call DECOMP_EMIT_NEWLINE
+        jp DECOMPILE_PROGRAM.loop
+
+; DECOMP_STR_OPERAND -- input: HL = a fragment's own text pointer, C =
+; its length (as popped from the fragment stack by a string-typed
+; consumer below). A string-typed sub-expression's only two possible
+; fragment producers are PUSH_STR_LIT (already rendered as a real quoted
+; "..." literal above) and PUSH_I16-as-strsym-index (rom/exrom_v2_
+; compiler.asm's own COMPILE_STR_FACTOR: a string VARIABLE reference
+; compiles to the exact same generic PUSH_I16 opcode a plain numeric
+; literal does -- the bytecode itself carries no tag distinguishing
+; "this 16-bit value is a strsym index" from "this is just a number";
+; OP_STORE_STR_VAR's own header explains why: string values are STRTAB
+; indices, pushed as ordinary TAG_INT values, on purpose, not a design
+; gap). .op_push_i16 above has therefore already rendered that fragment
+; as plain decimal digits (e.g. "2"), which is wrong in THIS context --
+; it needs to read as "S2$". Since BASIC expressions are always either
+; all-numeric or all-string, never mixed (the same invariant rom/
+; exrom_v2_compiler.asm's own COMPILE_IF header relies on), a fragment
+; reaching a string-typed consumer that does NOT already start with '"'
+; can ONLY be that mis-rendered PUSH_I16 case -- reinterpreted here by
+; wrapping the SAME already-rendered digit text as "S<digits>$" rather
+; than re-parsing it back into a number, cheaper and just as correct.
+; Output: HL = text pointer, C = length (a NEW fragment already pushed
+; if reinterpretation was needed; the ORIGINAL fragment, untouched, if
+; it was already a real string literal). Destroys: AF, BC, DE, HL.
+DECOMP_STR_OPERAND:
+        ld a,(hl)
+        cp '"'
+        ret z                         ; already a real string literal
+        cp '('
+        ret z                         ; already a combined "(A+B)"-shaped
+                                        ; string expression (STR_CONCAT's
+                                        ; own real output) -- a real bug
+                                        ; found via an actual run: without
+                                        ; this check, a concatenation
+                                        ; result later popped by STORE_
+                                        ; STR_VAR/another STR_CONCAT got
+                                        ; wrongly re-wrapped as "S(...)$)"
+                                        ; instead of passed through as-is
+        ld (DECOMP_TMP_A),hl
+        ld a,c
+        ld (DECOMP_TMP_LEN),a
+        call DECOMP_COMBINE_RESET
+        ld a,'S'
+        call DECOMP_COMBINE_CHAR
+        ld hl,(DECOMP_TMP_A)
+        ld a,(DECOMP_TMP_LEN)
+        call DECOMP_COMBINE_TEXT
+        ld a,'$'
+        call DECOMP_COMBINE_CHAR
+        ld a,(DECOMP_COMBINE_LEN)
+        cp DECOMP_FRAG_TEXT_MAX+1
+        jp nc,DECOMP_ERR_EXPR_TOO_LONG
+        ld c,a
+        ld hl,DECOMP_COMBINE_BUF
+        call DECOMP_FRAG_PUSH
+        call DECOMP_FRAG_POP          ; HL = the new fragment's own text,
+                                        ; C = its length -- returned to
+                                        ; the caller the same shape a
+                                        ; plain FRAG_POP would have
+        ret
+
+; STR_CONCAT/STR_CMP_LT/STR_CMP_EQ -- binary string ops, same pop-two-
+; combine-one shape as DECOMP_BINARY_OP, but with DECOMP_STR_OPERAND
+; applied to EACH popped operand first (both operands of a string-typed
+; binary op are themselves string-typed, same "never mixed" invariant).
+; "+", "<", "=" match rom/exrom_v2_compiler.asm's own real source
+; syntax (COMPILE_STR_EXPR's "+" for concatenation; COMPILE_IF's own
+; str_lt/str_eq branches reuse the SAME relational tokens the numeric
+; path does).
+DECOMP_STR_BINARY_OP:                ; input: HL = operator text, B = length
+        ld (DECOMP_OP_PTR),hl
+        ld a,b
+        ld (DECOMP_OP_LEN),a
+        call DECOMP_FRAG_POP         ; HL = B's text, C = B's length
+        call DECOMP_STR_OPERAND
+        ld (DECOMP_TMP_B),hl
+        ld a,c
+        ld (DECOMP_BLEN),a
+        call DECOMP_FRAG_POP         ; HL = A's text, C = A's length
+        call DECOMP_STR_OPERAND
+        ld (DECOMP_TMP_A),hl
+        ld a,c
+        ld (DECOMP_TMP_LEN),a
+        call DECOMP_COMBINE_RESET
+        ld a,'('
+        call DECOMP_COMBINE_CHAR
+        ld hl,(DECOMP_TMP_A)
+        ld a,(DECOMP_TMP_LEN)
+        call DECOMP_COMBINE_TEXT
+        ld hl,(DECOMP_OP_PTR)
+        ld a,(DECOMP_OP_LEN)
+        call DECOMP_COMBINE_TEXT
+        ld hl,(DECOMP_TMP_B)
+        ld a,(DECOMP_BLEN)
+        call DECOMP_COMBINE_TEXT
+        ld a,')'
+        call DECOMP_COMBINE_CHAR
+        ld a,(DECOMP_COMBINE_LEN)
+        cp DECOMP_FRAG_TEXT_MAX+1
+        jp nc,DECOMP_ERR_EXPR_TOO_LONG
+        ld c,a
+        ld hl,DECOMP_COMBINE_BUF
+        call DECOMP_FRAG_PUSH
+        ret
+
+; shared 1-argument emit: input HL=keyword text, C=keyword length (via
+; DECOMP_TMP_A/DECOMP_TMP_LEN, parked by each caller below -- HL/C
+; themselves don't survive the DECOMP_FRAG_POP that happens first).
+DECOMP_EMIT_1ARG_STMT:
+        call DECOMP_FRAG_POP          ; HL = arg text, C = length
+        ld (DECOMP_TMP_B),hl
+        ld a,c
+        ld (DECOMP_BLEN),a
+        ld hl,(DECOMP_TMP_A)
+        ld a,(DECOMP_TMP_LEN)
+        ld c,a
+        call DECOMP_EMIT_TEXT
+        ld hl,(DECOMP_TMP_B)
+        ld a,(DECOMP_BLEN)
+        ld c,a
+        call DECOMP_EMIT_TEXT
+        call DECOMP_EMIT_NEWLINE
+        ret
+
+; shared 2-argument emit: pops 2 fragments (rightmost-pushed popped
+; FIRST, matching VM_POP's own LIFO order), parks each, then emits
+; "KEYWORD <second-popped=leftmost>,<first-popped=rightmost>". Input:
+; HL=keyword text (parked at DECOMP_TMP_A), C=keyword length (parked at
+; DECOMP_TMP_LEN) by each caller below, same convention as the 1-arg
+; helper above.
+DECOMP_EMIT_2ARG_STMT:
+        call DECOMP_FRAG_POP          ; rightmost arg
+        ld (DECOMP_ARG_PTR0),hl
+        ld a,c
+        ld (DECOMP_ARG_LEN0),a
+        call DECOMP_FRAG_POP          ; leftmost arg
+        ld (DECOMP_ARG_PTR1),hl
+        ld a,c
+        ld (DECOMP_ARG_LEN1),a
+        ld hl,(DECOMP_TMP_A)
+        ld a,(DECOMP_TMP_LEN)
+        ld c,a
+        call DECOMP_EMIT_TEXT
+        ld hl,(DECOMP_ARG_PTR1)
+        ld a,(DECOMP_ARG_LEN1)
+        ld c,a
+        call DECOMP_EMIT_TEXT
+        ld a,','
+        call DECOMP_EMIT_CHAR
+        ld hl,(DECOMP_ARG_PTR0)
+        ld a,(DECOMP_ARG_LEN0)
+        ld c,a
+        call DECOMP_EMIT_TEXT
+        call DECOMP_EMIT_NEWLINE
+        ret
+
+STR_PROC:      db "PROC "
+STR_PROC_LEN:  equ $-STR_PROC
+STR_CALL:      db "CALL "
+STR_CALL_LEN:  equ $-STR_CALL
+STR_ENDP:      db "ENDP"
+STR_ENDP_LEN:  equ $-STR_ENDP
+STR_CLS:       db "CLS"
+STR_CLS_LEN:   equ $-STR_CLS
+STR_BORDER:    db "BORDER "
+STR_BORDER_LEN: equ $-STR_BORDER
+STR_INK:       db "INK "
+STR_INK_LEN:   equ $-STR_INK
+STR_PAPER:     db "PAPER "
+STR_PAPER_LEN: equ $-STR_PAPER
+STR_PLOT:      db "PLOT "
+STR_PLOT_LEN:  equ $-STR_PLOT
+STR_LINE:      db "LINE "
+STR_LINE_LEN:  equ $-STR_LINE
+STR_LINE_TO:   db " TO "
+STR_LINE_TO_LEN: equ $-STR_LINE_TO
+STR_BEEP:      db "BEEP "
+STR_BEEP_LEN:  equ $-STR_BEEP
+STR_SOUND:     db "SOUND "
+STR_SOUND_LEN: equ $-STR_SOUND
+STR_POKE:      db "POKE "
+STR_POKE_LEN:  equ $-STR_POKE
+STR_PAUSE:     db "PAUSE "
+STR_PAUSE_LEN: equ $-STR_PAUSE
+STR_RANDOMISE: db "RANDOMISE "
+STR_RANDOMISE_LEN: equ $-STR_RANDOMISE
 
 STR_GOTO:      db "GOTO "
 STR_GOTO_LEN:  equ $-STR_GOTO
