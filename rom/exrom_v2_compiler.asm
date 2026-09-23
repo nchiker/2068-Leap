@@ -573,6 +573,16 @@ LEX_SCAN_NUMBER:
         ld (TOK_TYPE),a
         ret
 
+; R8 identifier cleanup: a leading letter, then any mix of letters and
+; DIGITS (classic BASIC's own convention -- "A1", "TOTAL2", "P3" are
+; all valid identifiers; a digit still can't START one, since the
+; lexer's own caller only reaches LEX_SCAN_IDENT after already deciding
+; the current character looks like an identifier start). Previously
+; letters-only -- first surfaced as a real, load-bearing gap during
+; R7.5 (this compiler's own decompiler synthesizes names like "V0"/"L25"
+; that were NOT re-lexable by this SAME compiler without this fix,
+; breaking R8's own decompile-then-recompile round-trip claim) and
+; again this session (a PROC named "ADD1" failed to compile at all).
 LEX_SCAN_IDENT:
         ld hl,(SRC_PTR)
         ld (TOK_NAME),hl
@@ -580,8 +590,20 @@ LEX_SCAN_IDENT:
 .loop:
         ld a,(hl)
         cp 'A'
-        jr c,.done
+        jr c,.maybe_digit
         cp 'Z'+1
+        jr nc,.maybe_digit
+        inc hl
+        inc b
+        jr .loop
+.maybe_digit:
+        ld a,b
+        or a
+        jr z,.done            ; a digit can't START an identifier
+        ld a,(hl)
+        cp '0'
+        jr c,.done
+        cp '9'+1
         jr nc,.done
         inc hl
         inc b
