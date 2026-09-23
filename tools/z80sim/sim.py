@@ -302,7 +302,14 @@ class Program:
                 line = raw.strip()
                 if not line:
                     continue
-                m = re.match(r'^([A-Za-z_][A-Za-z0-9_]*):$', line)
+                # A trailing inline comment on the label's own line (e.g.
+                # "DECOMP_BINARY_OP:    ; input: HL = ...") previously fell
+                # through this exact-match regex entirely -- the label
+                # was silently never registered (no error; just an
+                # unresolvable global-label lookup at the FIRST caller,
+                # far from this actual gap). The local-label regex just
+                # below already tolerated this; the global one didn't.
+                m = re.match(r'^([A-Za-z_][A-Za-z0-9_]*):(\s*;.*)?$', line)
                 if m:
                     name = m.group(1)
                     current_scope = name
@@ -340,6 +347,16 @@ class Program:
             if (scope, name) in self.label_index:
                 return self.label_index[(scope, name)]
             raise KeyError(f"local label {name} not found in scope {scope}")
+        if '.' in name:
+            # sjasmplus qualified cross-scope local label ("PARENT.local"),
+            # e.g. `jp DECOMPILE_PROGRAM.loop` from inside a DIFFERENT
+            # local scope of the same file -- distinct from the plain
+            # `.local` (current-scope-only) form above. First real user:
+            # rom/exrom_v2_decompiler.asm's DECOMPILE_PROGRAM.
+            parent, _, local = name.partition('.')
+            qualified = '.' + local
+            if (parent, qualified) in self.label_index:
+                return self.label_index[(parent, qualified)]
         if name in self.entry_points:
             return self.entry_points[name]
         raise KeyError(f"global label {name} not found")
