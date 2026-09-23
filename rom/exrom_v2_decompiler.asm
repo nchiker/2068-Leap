@@ -370,34 +370,30 @@ DECOMP_COMBINE_TEXT:
 ; ASCII to the OUTPUT buffer directly (via DECOMP_EMIT_TEXT), a leading
 ; '-' for negative values. Destroys: AF, BC, DE, HL.
 ; ===========================================================================
-DECOMP_EMIT_INT16:
-        bit 7,h
-        jr z,.positive
-        xor a
-        sub l
-        ld l,a
-        ld a,0
-        sbc a,h
-        ld h,a                   ; HL = -HL (two's complement negate)
-        ld (DECOMP_TMP_A),hl      ; park before emitting '-' --
-                                    ; DECOMP_EMIT_CHAR destroys HL (both
-                                    ; every OTHER instance of this exact
-                                    ; bug class already found in this
-                                    ; file); currently unreachable in
-                                    ; practice (every real caller only
-                                    ; ever passes a small non-negative
-                                    ; index), fixed anyway for the next
-                                    ; caller that doesn't
-        ld a,'-'
-        call DECOMP_EMIT_CHAR
-        ld hl,(DECOMP_TMP_A)
-.positive:
-        ld a,h
-        or l
-        jr nz,.nonzero
-        ld a,'0'
-        jp DECOMP_EMIT_CHAR
-.nonzero:
+; ===========================================================================
+; R10-class consolidation, pulled forward into R8.5 once the real ROM
+; budget went negative (see this milestone's own reconciliation-phase
+; commit): DECOMP_EMIT_INT16, DECOMP_EMIT_UINT16, DECOMP_VARNAME_FRAG,
+; and DECOMP_INT_FRAG each independently reimplemented the SAME div-
+; by-10 digit-accumulation loop (found via this milestone's own deep
+; consolidation audit). DECOMP_COMPUTE_DIGITS below is that loop,
+; factored out ONCE; DECOMP_EMIT_DIGITS/DECOMP_COMBINE_DIGITS are the
+; two thin emission tails (straight to the output buffer, or into the
+; combine buffer for a FRAG producer) every caller already needed.
+; Every caller's own sign-handling/zero-prefix/wrapping logic is
+; UNCHANGED -- only the digit computation itself moved.
+; ===========================================================================
+
+; DECOMP_COMPUTE_DIGITS — input: HL = UNSIGNED 16-bit value. Output:
+; DECOMP_NUM_DIGITS/DECOMP_NUM_DIGCOUNT filled with this value's
+; decimal digit characters, most-significant-first storage order
+; (matches every original caller's own layout, so DECOMP_EMIT_DIGITS/
+; DECOMP_COMBINE_DIGITS below can walk it unchanged). value=0 is NOT
+; special-cased here (unlike the original callers' own top-level "is
+; it zero" branch) -- callers still check that themselves before
+; calling, same division of responsibility as before, just the
+; nonzero digit loop itself shared. Destroys: AF, BC, DE, HL.
+DECOMP_COMPUTE_DIGITS:
         ld (DECOMP_NUM_VAL),hl
         xor a
         ld (DECOMP_NUM_DIGCOUNT),a
@@ -405,7 +401,7 @@ DECOMP_EMIT_INT16:
         ld hl,(DECOMP_NUM_VAL)
         ld a,h
         or l
-        jr z,.emit_digits
+        ret z
         ld de,10
         call MATH_DIVIDE16        ; HL = quotient (real, already-
                                     ; verified platform primitive —
@@ -441,10 +437,14 @@ DECOMP_EMIT_INT16:
         ld hl,(DECOMP_NUM_QUOT)
         ld (DECOMP_NUM_VAL),hl
         jr .divloop
-.emit_digits:
+
+; DECOMP_EMIT_DIGITS — emits DECOMP_NUM_DIGITS[0..DIGCOUNT-1] straight
+; to the output buffer, most-significant digit first. Destroys: AF,
+; BC, DE, HL.
+DECOMP_EMIT_DIGITS:
         ld a,(DECOMP_NUM_DIGCOUNT)
         ld b,a
-.emit_loop:
+.loop:
         dec b
         ld hl,DECOMP_NUM_DIGITS
         ld e,b
@@ -456,8 +456,59 @@ DECOMP_EMIT_INT16:
         pop bc
         ld a,b
         or a
-        jr nz,.emit_loop
+        jr nz,.loop
         ret
+
+; DECOMP_COMBINE_DIGITS — same as DECOMP_EMIT_DIGITS but into the
+; combine buffer (for a FRAG producer). Destroys: AF, BC, DE, HL.
+DECOMP_COMBINE_DIGITS:
+        ld a,(DECOMP_NUM_DIGCOUNT)
+        ld b,a
+.loop:
+        dec b
+        ld hl,DECOMP_NUM_DIGITS
+        ld e,b
+        ld d,0
+        add hl,de
+        ld a,(hl)
+        push bc
+        call DECOMP_COMBINE_CHAR
+        pop bc
+        ld a,b
+        or a
+        jr nz,.loop
+        ret
+
+DECOMP_EMIT_INT16:
+        bit 7,h
+        jr z,.positive
+        xor a
+        sub l
+        ld l,a
+        ld a,0
+        sbc a,h
+        ld h,a                   ; HL = -HL (two's complement negate)
+        ld (DECOMP_TMP_A),hl      ; park before emitting '-' --
+                                    ; DECOMP_EMIT_CHAR destroys HL (both
+                                    ; every OTHER instance of this exact
+                                    ; bug class already found in this
+                                    ; file); currently unreachable in
+                                    ; practice (every real caller only
+                                    ; ever passes a small non-negative
+                                    ; index), fixed anyway for the next
+                                    ; caller that doesn't
+        ld a,'-'
+        call DECOMP_EMIT_CHAR
+        ld hl,(DECOMP_TMP_A)
+.positive:
+        ld a,h
+        or l
+        jr nz,.nonzero
+        ld a,'0'
+        jp DECOMP_EMIT_CHAR
+.nonzero:
+        call DECOMP_COMPUTE_DIGITS
+        jp DECOMP_EMIT_DIGITS
 
 ; ===========================================================================
 ; DECOMP_EMIT_VARNAME — input: A = SYMTAB index. Emits "V<index>" to the
@@ -497,9 +548,6 @@ DECOMP_VARNAME_FRAG:
         ld a,(DECOMP_TMP_LEN)
         ld l,a
         ld h,0
-        ; reuse DECOMP_EMIT_INT16's own digit algorithm but into the
-        ; combine buffer instead of the output buffer: build digits the
-        ; same way, then combine-emit each one.
         ld a,h
         or l
         jr nz,.nonzero
@@ -507,59 +555,8 @@ DECOMP_VARNAME_FRAG:
         call DECOMP_COMBINE_CHAR
         jr .done
 .nonzero:
-        ld (DECOMP_NUM_VAL),hl
-        xor a
-        ld (DECOMP_NUM_DIGCOUNT),a
-.divloop:
-        ld hl,(DECOMP_NUM_VAL)
-        ld a,h
-        or l
-        jr z,.emit_digits
-        ld de,10
-        call MATH_DIVIDE16
-        ld (DECOMP_NUM_QUOT),hl
-        ld de,10
-        call MATH_MULTIPLY16
-        ld de,(DECOMP_NUM_VAL)
-        ld a,e
-        sub l
-        ld l,a
-        ld a,d
-        sbc a,h
-        ld h,a
-        ld a,l
-        add a,'0'
-        push af
-        ld hl,DECOMP_NUM_DIGCOUNT
-        ld a,(hl)
-        ld e,a
-        ld d,0
-        ld hl,DECOMP_NUM_DIGITS
-        add hl,de
-        pop af
-        ld (hl),a
-        ld a,(DECOMP_NUM_DIGCOUNT)
-        inc a
-        ld (DECOMP_NUM_DIGCOUNT),a
-        ld hl,(DECOMP_NUM_QUOT)
-        ld (DECOMP_NUM_VAL),hl
-        jr .divloop
-.emit_digits:
-        ld a,(DECOMP_NUM_DIGCOUNT)
-        ld b,a
-.eloop:
-        dec b
-        ld hl,DECOMP_NUM_DIGITS
-        ld e,b
-        ld d,0
-        add hl,de
-        ld a,(hl)
-        push bc
-        call DECOMP_COMBINE_CHAR
-        pop bc
-        ld a,b
-        or a
-        jr nz,.eloop
+        call DECOMP_COMPUTE_DIGITS
+        call DECOMP_COMBINE_DIGITS
 .done:
         ld a,(DECOMP_COMBINE_LEN)
         ld c,a
@@ -609,59 +606,8 @@ DECOMP_INT_FRAG:
         call DECOMP_COMBINE_CHAR
         jr .done
 .nonzero:
-        ld (DECOMP_NUM_VAL),hl
-        xor a
-        ld (DECOMP_NUM_DIGCOUNT),a
-.divloop:
-        ld hl,(DECOMP_NUM_VAL)
-        ld a,h
-        or l
-        jr z,.emit_digits
-        ld de,10
-        call MATH_DIVIDE16
-        ld (DECOMP_NUM_QUOT),hl
-        ld de,10
-        call MATH_MULTIPLY16
-        ld de,(DECOMP_NUM_VAL)
-        ld a,e
-        sub l
-        ld l,a
-        ld a,d
-        sbc a,h
-        ld h,a
-        ld a,l
-        add a,'0'
-        push af
-        ld hl,DECOMP_NUM_DIGCOUNT
-        ld a,(hl)
-        ld e,a
-        ld d,0
-        ld hl,DECOMP_NUM_DIGITS
-        add hl,de
-        pop af
-        ld (hl),a
-        ld a,(DECOMP_NUM_DIGCOUNT)
-        inc a
-        ld (DECOMP_NUM_DIGCOUNT),a
-        ld hl,(DECOMP_NUM_QUOT)
-        ld (DECOMP_NUM_VAL),hl
-        jr .divloop
-.emit_digits:
-        ld a,(DECOMP_NUM_DIGCOUNT)
-        ld b,a
-.eloop:
-        dec b
-        ld hl,DECOMP_NUM_DIGITS
-        ld e,b
-        ld d,0
-        add hl,de
-        ld a,(hl)
-        push bc
-        call DECOMP_COMBINE_CHAR
-        pop bc
-        ld a,b
-        or a
-        jr nz,.eloop
+        call DECOMP_COMPUTE_DIGITS
+        call DECOMP_COMBINE_DIGITS
 .done:
         ld a,(DECOMP_COMBINE_LEN)
         ld c,a
@@ -1120,60 +1066,8 @@ DECOMP_EMIT_UINT16:
         ld a,'0'
         jp DECOMP_EMIT_CHAR
 .nonzero:
-        ld (DECOMP_NUM_VAL),hl
-        xor a
-        ld (DECOMP_NUM_DIGCOUNT),a
-.divloop:
-        ld hl,(DECOMP_NUM_VAL)
-        ld a,h
-        or l
-        jr z,.emit_digits
-        ld de,10
-        call MATH_DIVIDE16
-        ld (DECOMP_NUM_QUOT),hl
-        ld de,10
-        call MATH_MULTIPLY16
-        ld de,(DECOMP_NUM_VAL)
-        ld a,e
-        sub l
-        ld l,a
-        ld a,d
-        sbc a,h
-        ld h,a
-        ld a,l
-        add a,'0'
-        push af
-        ld hl,DECOMP_NUM_DIGCOUNT
-        ld a,(hl)
-        ld e,a
-        ld d,0
-        ld hl,DECOMP_NUM_DIGITS
-        add hl,de
-        pop af
-        ld (hl),a
-        ld a,(DECOMP_NUM_DIGCOUNT)
-        inc a
-        ld (DECOMP_NUM_DIGCOUNT),a
-        ld hl,(DECOMP_NUM_QUOT)
-        ld (DECOMP_NUM_VAL),hl
-        jr .divloop
-.emit_digits:
-        ld a,(DECOMP_NUM_DIGCOUNT)
-        ld b,a
-.eloop:
-        dec b
-        ld hl,DECOMP_NUM_DIGITS
-        ld e,b
-        ld d,0
-        add hl,de
-        ld a,(hl)
-        push bc
-        call DECOMP_EMIT_CHAR
-        pop bc
-        ld a,b
-        or a
-        jr nz,.eloop
-        ret
+        call DECOMP_COMPUTE_DIGITS
+        jp DECOMP_EMIT_DIGITS
 
 ; DECOMP_EMIT_LABELNAME — input: DE = bytecode address. Emits "L<addr>"
 ; straight to the output buffer. Destroys: AF, BC, DE, HL.
