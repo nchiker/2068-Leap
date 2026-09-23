@@ -155,6 +155,7 @@
 ;   40 = expected '(' after an array name used as a value
 ;   41 = expected ')' to close an array index
 ;   42 = array assignment target was never DIM'd
+;   43 = expected an identifier or string identifier after INPUT
 ; ============================================================================
 
 ; ---------------------------------------------------------------------------
@@ -353,6 +354,17 @@ CARR_SIZE:           equ $8B4D    ; own array-read scratch (1 byte each):
                                     ; would otherwise clobber ARR_SIZE_TMP/
                                     ; ARRSYM_FIND_NAME_PTR — same bug class
                                     ; as ASSIGN_TARGET_INDEX's own header)
+CINPUT_INDEX_TMP:     equ $8B4E   ; COMPILE_INPUT scratch (1 byte): the
+                                    ; resolved target's index, saved to
+                                    ; memory before EMIT_BYTE -- a fresh
+                                    ; dedicated cell rather than reusing
+                                    ; IDENT_LOAD_INDEX/CSTR_IDENT_INDEX_TMP,
+                                    ; after two real memory-cell-aliasing
+                                    ; bugs already found this session (see
+                                    ; the decompiler's own DECOMP_TMP_LEN/
+                                    ; DECOMP_EMIT_CHAR bug this same
+                                    ; milestone) — not worth the risk to
+                                    ; save one equ.
 ARRSYMTAB_BASE:       equ $8990   ; compile-time array name table (free
                                     ; gap between CSYMTAB_BASE+16*9=$8990
                                     ; and LABELTAB_BASE=$8A00 — checked
@@ -449,6 +461,8 @@ TOK_KW_ELSE:        equ 50   ; block IF's own ELSE (ELSEIF compiles as
                                ; special-cased grammar shapes" preference)
 TOK_KW_ENDIF:       equ 51
 TOK_KW_DIM:         equ 52   ; R8.5 Group 4 -- array declaration
+TOK_KW_INPUT:       equ 53   ; R8.5 Group 2 -- closed out late (see the
+                               ; implementation plan's own status note)
 
 ; ---------------------------------------------------------------------------
 ; COMPILER_INIT — call once before COMPILE_PROGRAM.
@@ -891,7 +905,7 @@ LEX_CLASSIFY_KEYWORD:
         ret                       ; no match — TOK_TYPE stays TOK_IDENT
 
 KEYWORD_ENTRY_LEN:  equ 11        ; [len:1][text:9, unused tail ignored][token:1]
-KEYWORD_TABLE_COUNT: equ 31
+KEYWORD_TABLE_COUNT: equ 32
 
 ; Every row is exactly KEYWORD_ENTRY_LEN (11) bytes: [len][9 text bytes,
 ; zero-padded][token]. Generated and byte-counted mechanically (a Python
@@ -933,6 +947,7 @@ KEYWORD_TABLE:
         db 4, "ELSE", 0, 0, 0, 0, 0, TOK_KW_ELSE
         db 5, "ENDIF", 0, 0, 0, 0, TOK_KW_ENDIF
         db 3, "DIM", 0, 0, 0, 0, 0, 0, TOK_KW_DIM       ; R8.5 Group 4
+        db 5, "INPUT", 0, 0, 0, 0, TOK_KW_INPUT          ; R8.5 Group 2
 
 ; ===========================================================================
 ; COMPILE-TIME SYMBOL TABLE — real name storage, real comparison (the piece
@@ -1222,6 +1237,8 @@ EMIT_OP_LPRINT_STR:                        ld a,38 : jp EMIT_BYTE
 EMIT_OP_CALL_FN:                            ld a,39 : jp EMIT_BYTE  ; R8.5 Group 1
 EMIT_OP_ARR_LOAD:                           ld a,48 : jp EMIT_BYTE  ; R8.5 Group 4
 EMIT_OP_ARR_STORE:                          ld a,49 : jp EMIT_BYTE  ; R8.5 Group 4
+EMIT_OP_INPUT_NUM:                          ld a,50 : jp EMIT_BYTE  ; R8.5 Group 2
+EMIT_OP_INPUT_STR:                          ld a,51 : jp EMIT_BYTE  ; R8.5 Group 2
 EMIT_OP_CMP_LE:                              ld a,40 : jp EMIT_BYTE  ; R8.5 Group 3
 EMIT_OP_CMP_GT:                               ld a,41 : jp EMIT_BYTE
 EMIT_OP_CMP_GE:                                ld a,42 : jp EMIT_BYTE
@@ -2072,6 +2089,55 @@ ARRSYM_LOOKUP:
         ret
 .not_found:
         scf
+        ret
+
+; ===========================================================================
+; R8.5 Group 2 (closed out late) -- INPUT.
+;   input_stmt := 'INPUT' (IDENT | STR_IDENT)
+; A numeric target auto-vivifies via CSYM_FIND_OR_CREATE (same as a bare
+; assignment); a string target via STRSYM_FIND_OR_CREATE (same as a
+; string assignment) -- INPUT is not required to target an ALREADY-
+; assigned variable, matching V1's own real behavior.
+; ===========================================================================
+COMPILE_INPUT:
+        call LEX_NEXT_TOKEN       ; consume INPUT, fetch the target token
+        ld a,(TOK_TYPE)
+        cp TOK_IDENT
+        jr z,.numeric
+        cp TOK_STR_IDENT
+        jr z,.string
+        ld a,43
+        ld (COMPILE_ERROR_CODE),a
+        ret
+.numeric:
+        ld hl,(TOK_NAME)
+        ld a,(TOK_LEN)
+        cp 9
+        jr c,.num_len_ok
+        ld a,8
+.num_len_ok:
+        ld b,a
+        call CSYM_FIND_OR_CREATE
+        ld (CINPUT_INDEX_TMP),a
+        call LEX_NEXT_TOKEN        ; consume the target identifier
+        call EMIT_OP_INPUT_NUM
+        ld a,(CINPUT_INDEX_TMP)
+        call EMIT_BYTE
+        ret
+.string:
+        ld hl,(TOK_NAME)
+        ld a,(TOK_LEN)
+        cp 9
+        jr c,.str_len_ok
+        ld a,8
+.str_len_ok:
+        ld b,a
+        call STRSYM_FIND_OR_CREATE
+        ld (CINPUT_INDEX_TMP),a
+        call LEX_NEXT_TOKEN        ; consume the target identifier
+        call EMIT_OP_INPUT_STR
+        ld a,(CINPUT_INDEX_TMP)
+        call EMIT_BYTE
         ret
 
 ; ===========================================================================
@@ -3128,6 +3194,8 @@ COMPILE_STATEMENT_LIST:
         jp z,.rem
         cp TOK_KW_DIM
         jp z,.dim
+        cp TOK_KW_INPUT
+        jp z,.input
         cp TOK_IDENT
         jp z,.ident_stmt
         cp TOK_STR_IDENT
@@ -3207,6 +3275,9 @@ COMPILE_STATEMENT_LIST:
         jp .after_stmt
 .dim:
         call COMPILE_DIM
+        jp .after_stmt
+.input:
+        call COMPILE_INPUT
         jp .after_stmt
 .ident_stmt:
         ; R7.5 addition: BEFORE assuming this identifier starts an

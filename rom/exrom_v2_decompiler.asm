@@ -950,6 +950,10 @@ DECOMP_SKIP_OPERAND:
         jr z,.w1
         cp 39                     ; CALL_FN (R8.5 Group 1)
         jr z,.w1
+        cp 50                     ; INPUT_NUM (R8.5 Group 2)
+        jr z,.w1
+        cp 51                     ; INPUT_STR (R8.5 Group 2)
+        jr z,.w1
         cp 2                      ; PUSH_I16
         jr z,.w2
         cp 15                     ; CALL (R4)
@@ -1602,6 +1606,10 @@ DECOMPILE_PROGRAM:
         jp z,.op_arr_load
         cp 49
         jp z,.op_arr_store
+        cp 50
+        jp z,.op_input_num
+        cp 51
+        jp z,.op_input_str
         jp DECOMP_ERR_UNSUPPORTED_OPCODE
 
 .op_halt:
@@ -2755,6 +2763,50 @@ DECOMPILE_PROGRAM:
         call DECOMP_EMIT_NEWLINE
         jp DECOMPILE_PROGRAM.loop
 
+; R8.5 Group 2 (closed out late) -- INPUT. Statement handlers (not
+; expression fragment producers): emit "INPUT V<idx>"/"INPUT S<idx>$"
+; straight to the output buffer -- INPUT never pops a fragment (unlike
+; STORE_VAR/STORE_STR_VAR, it has no source expression, only a target).
+.op_input_num:
+        ld hl,(DECOMP_IP)
+        ld a,(hl)
+        inc hl
+        ld (DECOMP_IP),hl
+        ld (DECOMP_ARR_INDEX_TMP),a   ; reuse -- a plain 1-byte scratch,
+                                        ; not touched by DECOMP_EMIT_TEXT/
+                                        ; DECOMP_EMIT_INT16 (confirmed by
+                                        ; reading their own bodies, not
+                                        ; assumed -- see this file's own
+                                        ; DECOMP_TMP_LEN bug just above for
+                                        ; why that check matters)
+        ld hl,STR_INPUT
+        ld c,STR_INPUT_LEN
+        call DECOMP_EMIT_TEXT
+        ld a,(DECOMP_ARR_INDEX_TMP)
+        call DECOMP_EMIT_VARNAME
+        call DECOMP_EMIT_NEWLINE
+        jp DECOMPILE_PROGRAM.loop
+
+.op_input_str:
+        ld hl,(DECOMP_IP)
+        ld a,(hl)
+        inc hl
+        ld (DECOMP_IP),hl
+        ld (DECOMP_ARR_INDEX_TMP),a
+        ld hl,STR_INPUT
+        ld c,STR_INPUT_LEN
+        call DECOMP_EMIT_TEXT
+        ld a,'S'
+        call DECOMP_EMIT_CHAR
+        ld a,(DECOMP_ARR_INDEX_TMP)
+        ld l,a
+        ld h,0
+        call DECOMP_EMIT_INT16
+        ld a,'$'
+        call DECOMP_EMIT_CHAR
+        call DECOMP_EMIT_NEWLINE
+        jp DECOMPILE_PROGRAM.loop
+
 ; R8.5 Group 3 -- the remaining relops, plus AND/OR/NOT. Same shape as
 ; .op_cmplt/.op_cmpeq above.
 .op_cmple:
@@ -2979,6 +3031,8 @@ STR_PRINT:     db "PRINT "
 STR_PRINT_LEN: equ $-STR_PRINT
 STR_LPRINT:    db "LPRINT "
 STR_LPRINT_LEN: equ $-STR_LPRINT
+STR_INPUT:     db "INPUT "
+STR_INPUT_LEN: equ $-STR_INPUT
 STR_END:       db "END"
 STR_END_LEN:   equ $-STR_END
 STR_ABS:       db "ABS"

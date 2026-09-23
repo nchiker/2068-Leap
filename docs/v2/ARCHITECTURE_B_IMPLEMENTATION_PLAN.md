@@ -1366,7 +1366,20 @@ exist in this dialect — confirmed by grep, not assumed).
    as one coherent native-call opcode family reaching the real,
    unmodified platform print/input routines (same "native-call opcode
    into an existing platform primitive" pattern R7 already established
-   for `CLS`/`PLOT`/etc.).
+   for `CLS`/`PLOT`/etc.). **Status: PRINT/LPRINT/END/STOP/REM shipped
+   (real-hardware-validated). INPUT and the display attributes were
+   silently dropped from the actual implementation despite being in
+   this group's own documented scope — found during the post-Group-4
+   ROM-budget investigation, not by the original audit. `rom/
+   exrom_input.asm`'s real V1 implementation was independently checked
+   and confirmed NOT reusable post-R9 (its `BASIC_STMT_INPUT_EXROM`
+   calls `KTAB_BASIC_SKIP_SPACES`/`KTAB_BASIC_INPUT_SERVICE`, both
+   `basic.asm`-resident). INPUT is being implemented as a genuine V2-
+   native rewrite on top of `kernel/io/io.asm`'s real, reusable
+   `IO_READ_KEY` primitive (confirmed kernel-resident, not basic.asm-
+   resident) and the existing `GFX_PRINT_STRING_ATTR` echo path PRINT
+   already validated, not a port of V1's own character-echo mechanism.
+   Display attributes remain deferred to a later pass — check before R9.**
 3. **Relational/boolean expression grammar**: the full relop set +
    `AND`/`OR`/`NOT`, plus block `IF`/`ELSEIF`/`ELSE` built on top of it.
 4. **`DIM`/arrays**: compile-time array declaration + a runtime element-

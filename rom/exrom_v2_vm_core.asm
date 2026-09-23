@@ -215,6 +215,11 @@
 ;   [value_lo][value_hi][tag]   -- SP points at the lowest (most recent) record
 ; ============================================================================
 
+; R8.5 Group 2 (closed out late) -- OP_INPUT_NUM/STR's own KEY_ENTER
+; check needs this. Include-guarded (IFNDEF KEYS_INC), so safe even for
+; a test file that also includes it separately.
+    INCLUDE "include/keys.inc"
+
 ; ---------------------------------------------------------------------------
 ; VM state. Placed by the including driver (rom/test_v2_vm_milestone01.asm
 ; for now); a later milestone integrating this into the real EXROM build
@@ -436,6 +441,34 @@ VM_ARR_ELEM_TMP:    equ $87D2   ; the popped, bounds-checked element index
 VM_ARR_VALUE_TMP:   equ $87D4   ; OP_ARR_STORE only: the popped value,
                                   ; saved across the second VM_POP (the
                                   ; index) that follows it (2 bytes)
+
+; R8.5 Group 2 (closed out late, see this milestone's own status note) --
+; INPUT. A genuine V2-native rewrite on top of kernel/io/io.asm's real
+; IO_READ_KEY (kernel-resident, confirmed reusable post-R9) and the same
+; GFX_PRINT_STRING_ATTR echo path PRINT already validated -- NOT a port
+; of rom/exrom_input.asm's own V1 mechanism (confirmed basic.asm-
+; dependent, not reusable).
+VM_INPUT_COUNT:      equ $87D6  ; digits/chars accepted so far (1 byte)
+VM_INPUT_TARGET_TMP: equ $87D7  ; the operand-baked SYMTAB/STRTAB index,
+                                   ; saved to memory before IO_READ_KEY
+                                   ; (1 byte)
+VM_INPUT_NEG_TMP:    equ $87D8  ; numeric INPUT only: 1 = a leading '-'
+                                   ; was seen (1 byte)
+VM_INPUT_CHARBUF:    equ $87D9  ; a 2-byte [char][0] scratch buffer,
+                                   ; reprinted via GFX_PRINT_STRING_ATTR
+                                   ; once per accepted character -- the
+                                   ; SAME null-terminated-text contract
+                                   ; VM_PRINT_COMMON already uses, not a
+                                   ; new echo primitive
+VM_INPUT_STR_PTR:    equ $87DB  ; string INPUT only: running write
+                                   ; pointer into the target STRTAB
+                                   ; record's own content area (2 bytes)
+VM_INPUT_DIGITS:     equ $87DD  ; numeric INPUT only: up to 6 accepted
+                                   ; digit characters (max int magnitude
+                                   ; is 5 digits + sign), parsed to a
+                                   ; 16-bit value once ENTER closes input
+VM_INPUT_DIGITS_MAX: equ 5      ; -32768..32767 -- 5 digits, sign tracked
+                                   ; separately in VM_INPUT_NEG_TMP
 VM_OUTPUT_ROW:       equ $87C9    ; current PRINT row, 0-23 (1 byte)
 VM_OUTPUT_COL:        equ $87CA    ; unused after a PRINT (V1's own real
                                      ; PRINT always ends its own line --
@@ -493,12 +526,13 @@ VM_RUN:
         ld a,(hl)               ; fetch opcode
         inc hl
         ld (VM_IP),hl
-        cp 50                   ; 50 opcodes defined (0-49, R8.5 adds
+        cp 52                   ; 52 opcodes defined (0-51, R8.5 adds
                                  ; 35-38: PRINT_NUM/STR, LPRINT_NUM/STR;
                                  ; 39: CALL_FN (Group 1); 40-43: CMP_LE/
                                  ; GT/GE/NE; 44-46: AND/OR/NOT; 47:
                                  ; JMP_ELSE (Group 3); 48-49: ARR_LOAD/
-                                 ; ARR_STORE (Group 4))
+                                 ; ARR_STORE (Group 4); 50-51: INPUT_NUM/
+                                 ; INPUT_STR (Group 2's own late close-out))
         jp nc,VM_ERR_ILLEGAL_OPCODE
         ld l,a
         ld h,0
@@ -574,6 +608,8 @@ VM_OP_TABLE:
                                                         ; benefit)
         dw OP_ARR_LOAD                                  ; 48 (R8.5 Group 4)
         dw OP_ARR_STORE                                  ; 49
+        dw OP_INPUT_NUM                                   ; 50 (R8.5 Group 2)
+        dw OP_INPUT_STR                                    ; 51
 
 ; ---------------------------------------------------------------------------
 ; String-table access: index (A) -> HL = record address
@@ -916,6 +952,209 @@ OP_ARR_STORE:
         ld (hl),e
         inc hl
         ld (hl),d
+        jp VM_RUN.loop
+
+; ---------------------------------------------------------------------------
+; R8.5 Group 2 (closed out late) -- INPUT. Both opcodes carry a 1-byte
+; operand (the target SYMTAB/STRTAB index, resolved at compile time the
+; same way as a bare assignment's own target). Echo reuses
+; GFX_PRINT_STRING_ATTR (the exact same primitive VM_PRINT_COMMON
+; already validated) one character at a time -- not a new echo
+; primitive, not V1's own KTAB_BASIC_INPUT_SERVICE.
+; ---------------------------------------------------------------------------
+
+OP_INPUT_NUM:
+        ld hl,(VM_IP)
+        ld a,(hl)
+        ld (VM_INPUT_TARGET_TMP),a
+        inc hl
+        ld (VM_IP),hl
+        xor a
+        ld (VM_INPUT_COUNT),a
+        ld (VM_INPUT_NEG_TMP),a
+.loop:
+        call IO_READ_KEY        ; A = translated key code
+        cp KEY_ENTER
+        jr z,.done
+        cp '-'
+        jr z,.maybe_neg
+        cp '0'
+        jr c,.loop
+        cp '9'+1
+        jr nc,.loop
+        jr .accept_digit
+.maybe_neg:
+        ld a,(VM_INPUT_COUNT)
+        or a
+        jr nz,.loop              ; '-' only accepted as the very first char
+        ld a,1
+        ld (VM_INPUT_NEG_TMP),a
+        ld a,'-'
+        jr .echo
+.accept_digit:
+        push af
+        ld a,(VM_INPUT_COUNT)
+        cp VM_INPUT_DIGITS_MAX
+        jr nc,.discard
+        ld hl,VM_INPUT_DIGITS
+        ld e,a
+        ld d,0
+        add hl,de
+        pop af
+        ld (hl),a
+        push af
+        ld a,(VM_INPUT_COUNT)
+        inc a
+        ld (VM_INPUT_COUNT),a
+        pop af
+        jr .echo
+.discard:
+        pop af
+        jr .loop
+.echo:
+        ld (VM_INPUT_CHARBUF),a
+        xor a
+        ld (VM_INPUT_CHARBUF+1),a
+        call VM_COMPUTE_PRINT_ATTR   ; A = attr byte
+        ld e,a
+        ld a,(VM_OUTPUT_ROW)
+        ld b,a
+        ld a,(VM_OUTPUT_COL)
+        ld c,a
+        ld a,(CURRENT_OVER)
+        ld d,a
+        ld a,e
+        ld hl,VM_INPUT_CHARBUF
+        call GFX_PRINT_STRING_ATTR
+        ld a,b
+        ld (VM_OUTPUT_ROW),a
+        ld a,c
+        ld (VM_OUTPUT_COL),a
+        jr .loop
+.done:
+        call VM_PARSE_INPUT_INT      ; HL = parsed value
+        push hl
+        ld a,(VM_INPUT_TARGET_TMP)
+        call VM_SYM_ADDR
+        pop de
+        ld a,TAG_INT
+        ld (hl),a
+        inc hl
+        ld (hl),e
+        inc hl
+        ld (hl),d
+        call VM_ADVANCE_OUTPUT_ROW
+        jp VM_RUN.loop
+
+; VM_PARSE_INPUT_INT -- parses VM_INPUT_DIGITS (the first VM_INPUT_COUNT
+; bytes, ASCII '0'-'9', most-significant first) into HL as a signed
+; 16-bit value, negating if VM_INPUT_NEG_TMP is set. No overflow
+; checking -- matches this VM's existing PUSH_I16 (an out-of-range
+; literal already wraps silently elsewhere; not a new gap). Reuses
+; VM_ARR_VALUE_TMP as its own accumulator scratch -- safe: never live
+; at the same time as an ARR_STORE (a different opcode entirely).
+; Destroys: AF, BC, DE, HL.
+VM_PARSE_INPUT_INT:
+        ld hl,0
+        ld (VM_ARR_VALUE_TMP),hl
+        ld a,(VM_INPUT_COUNT)
+        or a
+        jr z,.done
+        ld b,a
+.digit_loop:
+        push bc
+        ld hl,(VM_ARR_VALUE_TMP)
+        ld de,10
+        call MATH_MULTIPLY16
+        ld (VM_ARR_VALUE_TMP),hl
+        pop bc
+        ld a,(VM_INPUT_COUNT)
+        sub b
+        ld hl,VM_INPUT_DIGITS
+        ld e,a
+        ld d,0
+        add hl,de
+        ld a,(hl)
+        sub '0'
+        ld l,a
+        ld h,0
+        ld de,(VM_ARR_VALUE_TMP)
+        add hl,de
+        ld (VM_ARR_VALUE_TMP),hl
+        dec b
+        jr nz,.digit_loop
+.done:
+        ld hl,(VM_ARR_VALUE_TMP)
+        ld a,(VM_INPUT_NEG_TMP)
+        or a
+        ret z
+        xor a
+        sub l
+        ld l,a
+        ld a,0
+        sbc a,h
+        ld h,a
+        ret
+
+OP_INPUT_STR:
+        ld hl,(VM_IP)
+        ld a,(hl)
+        ld (VM_INPUT_TARGET_TMP),a
+        inc hl
+        ld (VM_IP),hl
+        call VM_STR_ADDR           ; HL -> record [len][content..]
+        inc hl                      ; HL -> content start
+        ld (VM_INPUT_STR_PTR),hl
+        xor a
+        ld (VM_INPUT_COUNT),a
+.loop:
+        call IO_READ_KEY
+        cp KEY_ENTER
+        jr z,.done
+        cp $20                       ; accept printable ASCII only --
+        jr c,.loop                    ; same real range check rom/
+        cp $7F                         ; exrom_input.asm's own string
+        jr nc,.loop                     ; path already used
+        ld c,a                          ; save char -- across the bounds
+                                          ; check below, not across a call
+        ld a,(VM_INPUT_COUNT)
+        cp 31
+        jr nc,.loop                      ; full -- silently drop (matches
+                                           ; rom/exrom_input.asm's own
+                                           ; real ".string_full" behavior)
+        ld hl,(VM_INPUT_STR_PTR)
+        ld (hl),c
+        inc hl
+        ld (VM_INPUT_STR_PTR),hl
+        ld a,(VM_INPUT_COUNT)
+        inc a
+        ld (VM_INPUT_COUNT),a
+        ld a,c
+        ld (VM_INPUT_CHARBUF),a
+        xor a
+        ld (VM_INPUT_CHARBUF+1),a
+        call VM_COMPUTE_PRINT_ATTR
+        ld e,a
+        ld a,(VM_OUTPUT_ROW)
+        ld b,a
+        ld a,(VM_OUTPUT_COL)
+        ld c,a
+        ld a,(CURRENT_OVER)
+        ld d,a
+        ld a,e
+        ld hl,VM_INPUT_CHARBUF
+        call GFX_PRINT_STRING_ATTR
+        ld a,b
+        ld (VM_OUTPUT_ROW),a
+        ld a,c
+        ld (VM_OUTPUT_COL),a
+        jr .loop
+.done:
+        ld a,(VM_INPUT_TARGET_TMP)
+        call VM_STR_ADDR
+        ld a,(VM_INPUT_COUNT)
+        ld (hl),a
+        call VM_ADVANCE_OUTPUT_ROW
         jp VM_RUN.loop
 
 OP_ADD:
