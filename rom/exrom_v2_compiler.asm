@@ -139,6 +139,22 @@
 ;   29 = expected '(' after a built-in function name (R8.5 Group 1)
 ;   30 = expected ',' between a built-in function's own arguments
 ;   31 = expected ')' to close a built-in function call
+;   32 = expected an identifier after DIM (R8.5 Group 4)
+;   33 = expected '(' after a DIM array name
+;   34 = DIM size must be a literal integer (a compile-time constant —
+;        this dialect's arrays are statically sized, unlike V1's runtime-
+;        evaluated DIM expression; a real, deliberate V2 simplification)
+;   35 = DIM size must be >= 1
+;   36 = DIM size exceeds ARRAY_MAX_ELEMS (the fixed runtime pool's own
+;        per-array cap)
+;   37 = expected ')' to close a DIM declaration
+;   38 = array already DIM'd (redeclaring an existing array name is an
+;        error, unlike a scalar, which is silently auto-vivified)
+;   39 = array symbol table full (more than ARRSYMTAB_MAX_ENTRIES distinct
+;        arrays declared)
+;   40 = expected '(' after an array name used as a value
+;   41 = expected ')' to close an array index
+;   42 = array assignment target was never DIM'd
 ; ============================================================================
 
 ; ---------------------------------------------------------------------------
@@ -310,6 +326,51 @@ IF_ELSE_SKIP_PATCH_TMP: equ $8B45  ; COMPILE_IF_BLOCK scratch (2 bytes):
                                      ; PROC_SKIP_PATCH_TMP above but for
                                      ; the THEN-body's own trailing jump
 
+; R8.5 Group 4 -- DIM/array grammar. Arrays are a SEPARATE compile-time
+; name table from CSYMTAB/STRSYMTAB (own lexical namespace, like strings
+; are) because "already DIM'd" is checked, unlike a scalar's silent
+; auto-vivification. Sizes are compile-time-constant literals only (a
+; real, deliberate V2 simplification vs. V1's runtime-evaluated DIM
+; expression) — this is what makes a fixed-stride runtime pool
+; (rom/exrom_v2_vm_core.asm's ARRTAB) possible with no allocator at all,
+; the same "resolve to a small index at compile time" philosophy this
+; whole rewrite already uses for scalars/strings/labels.
+ARRSYM_COUNT:        equ $8B47   ; number of distinct arrays DIM'd so far
+ARRSYM_FIND_NAME_PTR: equ $8B48  ; ARRSYM_FIND_OR_CREATE/ARRSYM_LOOKUP
+ARRSYM_FIND_NAME_LEN: equ $8B4A   ; scratch (2+1 bytes) — same "must be
+                                    ; real RAM" discipline as CSYM_FIND_
+                                    ; NAME_PTR/LEN above
+ARR_SIZE_TMP:        equ $8B4B   ; COMPILE_DIM's own validated size /
+                                    ; ARRSYM_LOOKUP's found-array size
+                                    ; output (1 byte)
+CARR_INDEX:          equ $8B4C   ; COMPILE_ARRAY_ASSIGN/COMPILE_FACTOR's
+CARR_SIZE:           equ $8B4D    ; own array-read scratch (1 byte each):
+                                    ; the matched array's runtime index and
+                                    ; declared size, saved to memory BEFORE
+                                    ; compiling the index/value sub-
+                                    ; expressions (which themselves call
+                                    ; ARRSYM_LOOKUP/CSYM_FIND_OR_CREATE and
+                                    ; would otherwise clobber ARR_SIZE_TMP/
+                                    ; ARRSYM_FIND_NAME_PTR — same bug class
+                                    ; as ASSIGN_TARGET_INDEX's own header)
+ARRSYMTAB_BASE:       equ $8990   ; compile-time array name table (free
+                                    ; gap between CSYMTAB_BASE+16*9=$8990
+                                    ; and LABELTAB_BASE=$8A00 — checked
+                                    ; directly against every other v2 file's
+                                    ; own equ's before placing this)
+ARRSYM_REC_LEN:       equ 10      ; [name_len:1][name:8][size:1]
+ARRSYMTAB_MAX_ENTRIES: equ 4      ; MUST match rom/exrom_v2_vm_core.asm's
+                                    ; own ARRAY_MAX_COUNT — an array's
+                                    ; ARRSYMTAB creation order (0-based) IS
+                                    ; its runtime ARRTAB slot index, baked
+                                    ; directly into OP_ARR_LOAD/STORE's own
+                                    ; operand byte at compile time
+; ARRAY_MAX_ELEMS itself is NOT redefined here -- rom/exrom_v2_vm_core.asm
+; already defines it, and every v2 test file includes that module before
+; this one (the same established cross-file equ-sharing convention this
+; compiler already relies on for VM_CODE_BASE); a second `equ` with the
+; same name is a real duplicate-label build error, not a style choice.
+
 ; every one of the scratch cells above is real RAM (not a register
 ; held across a call, not inline ROM data) — the two bug classes this
 ; module has already found and fixed once each (docs/v2/
@@ -387,6 +448,7 @@ TOK_KW_ELSE:        equ 50   ; block IF's own ELSE (ELSEIF compiles as
                                ; matches this dialect's existing "no
                                ; special-cased grammar shapes" preference)
 TOK_KW_ENDIF:       equ 51
+TOK_KW_DIM:         equ 52   ; R8.5 Group 4 -- array declaration
 
 ; ---------------------------------------------------------------------------
 ; COMPILER_INIT — call once before COMPILE_PROGRAM.
@@ -398,6 +460,7 @@ COMPILER_INIT:
         ld (LABEL_COUNT),a       ; R3 addition — an earlier version of this
         ld (FIXUP_COUNT),a       ; routine never zeroed these two, so a
         ld (STRSYM_COUNT),a      ; R5 addition — same bug, same fix,
+        ld (ARRSYM_COUNT),a      ; R8.5 Group 4 addition — same bug class,
                                   ; found again: a second compile within
                                   ; the same ZEsarUX session (RAM is NOT
                                   ; cleared by `reset`, only CPU registers
@@ -828,7 +891,7 @@ LEX_CLASSIFY_KEYWORD:
         ret                       ; no match — TOK_TYPE stays TOK_IDENT
 
 KEYWORD_ENTRY_LEN:  equ 11        ; [len:1][text:9, unused tail ignored][token:1]
-KEYWORD_TABLE_COUNT: equ 30
+KEYWORD_TABLE_COUNT: equ 31
 
 ; Every row is exactly KEYWORD_ENTRY_LEN (11) bytes: [len][9 text bytes,
 ; zero-padded][token]. Generated and byte-counted mechanically (a Python
@@ -869,6 +932,7 @@ KEYWORD_TABLE:
         db 3, "NOT", 0, 0, 0, 0, 0, 0, TOK_KW_NOT
         db 4, "ELSE", 0, 0, 0, 0, 0, TOK_KW_ELSE
         db 5, "ENDIF", 0, 0, 0, 0, TOK_KW_ENDIF
+        db 3, "DIM", 0, 0, 0, 0, 0, 0, TOK_KW_DIM       ; R8.5 Group 4
 
 ; ===========================================================================
 ; COMPILE-TIME SYMBOL TABLE — real name storage, real comparison (the piece
@@ -1156,6 +1220,8 @@ EMIT_OP_PRINT_STR:                       ld a,36 : jp EMIT_BYTE
 EMIT_OP_LPRINT_NUM:                       ld a,37 : jp EMIT_BYTE
 EMIT_OP_LPRINT_STR:                        ld a,38 : jp EMIT_BYTE
 EMIT_OP_CALL_FN:                            ld a,39 : jp EMIT_BYTE  ; R8.5 Group 1
+EMIT_OP_ARR_LOAD:                           ld a,48 : jp EMIT_BYTE  ; R8.5 Group 4
+EMIT_OP_ARR_STORE:                          ld a,49 : jp EMIT_BYTE  ; R8.5 Group 4
 EMIT_OP_CMP_LE:                              ld a,40 : jp EMIT_BYTE  ; R8.5 Group 3
 EMIT_OP_CMP_GT:                               ld a,41 : jp EMIT_BYTE
 EMIT_OP_CMP_GE:                                ld a,42 : jp EMIT_BYTE
@@ -1398,8 +1464,67 @@ COMPILE_FACTOR:
 .ident:
         call BUILTIN_FN_FIND
         jr c,.fn_call
+        ; R8.5 Group 4 -- an identifier that names a DIM'd array, used as
+        ; a VALUE, is an array read: "IDENT(expr)". Checked after builtin
+        ; functions (a distinct, reserved namespace) but before the
+        ; ordinary scalar-load path -- an array name is never also a
+        ; valid scalar name (ARRSYM/CSYM are separate tables, but this
+        ; grammar-level check is what actually keeps them from being
+        ; used interchangeably).
+        ld hl,(TOK_NAME)
+        ld a,(TOK_LEN)
+        ld b,a
+        call ARRSYM_LOOKUP
+        jr nc,.arr_read
         call COMPILE_IDENT_LOAD
         call LEX_NEXT_TOKEN
+        ret
+.arr_read:
+        ld (CARR_INDEX),a         ; memory, not a register initially -- but
+        ld a,(ARR_SIZE_TMP)        ; see the real bug this became anyway,
+        ld (CARR_SIZE),a           ; below
+        call LEX_NEXT_TOKEN         ; consume the array name, fetch next
+        ld a,(TOK_TYPE)
+        cp TOK_LPAREN
+        jr z,.arr_have_lparen
+        ld a,40
+        ld (COMPILE_ERROR_CODE),a
+        ret
+.arr_have_lparen:
+        call LEX_NEXT_TOKEN          ; consume '('
+        ; BUG FOUND (real hardware, R8.5 Group 4): the index sub-expression
+        ; compiled next can itself contain a NESTED array read (e.g.
+        ; "A(B(0))") -- COMPILE_FACTOR's own .arr_read branch for that
+        ; inner read overwrites this SAME CARR_INDEX/CARR_SIZE pair before
+        ; this outer read's own EMIT below gets to use them. Same "shared
+        ; scratch clobbered by a nested compile call" bug class
+        ; COMPILE_IF_BLOCK already hit and fixed with hardware-stack push/
+        ; pop (see its own header) -- applying the identical fix here:
+        ; park this read's own index/size in BC, not memory, across the
+        ; recursive COMPILE_EXPR call.
+        ld a,(CARR_INDEX)
+        ld b,a
+        ld a,(CARR_SIZE)
+        ld c,a
+        push bc
+        call COMPILE_EXPR
+        pop bc
+        ld a,(COMPILE_ERROR_CODE)
+        or a
+        ret nz
+        ld a,(TOK_TYPE)
+        cp TOK_RPAREN
+        jr z,.arr_have_rparen
+        ld a,41
+        ld (COMPILE_ERROR_CODE),a
+        ret
+.arr_have_rparen:
+        call LEX_NEXT_TOKEN           ; consume ')'
+        call EMIT_OP_ARR_LOAD
+        ld a,b
+        call EMIT_BYTE
+        ld a,c
+        call EMIT_BYTE
         ret
 .fn_call:
         ld (CFN_INDEX),a
@@ -1584,6 +1709,14 @@ COMPILE_IDENT_LOAD:
 ; label-vs-assignment lookahead unambiguous — see COMPILE_PROGRAM and
 ; LEX_SCAN_IDENT's own header comment for the real bug this replaced.
 COMPILE_ASSIGN_CONTINUED:
+        ; R8.5 Group 4 -- "IDENT(" at statement start is always an array
+        ; assignment (a bare array READ can never be a whole statement,
+        ; so there is no ambiguity), checked BEFORE the scalar CSYM_FIND_
+        ; OR_CREATE call below — an array name must never be registered
+        ; as a scalar symbol too.
+        ld a,(TOK_TYPE)
+        cp TOK_LPAREN
+        jp z,COMPILE_ARRAY_ASSIGN
         ld hl,(STMT_IDENT_NAME_PTR)
         ld a,(STMT_IDENT_NAME_LEN)
         cp 9
@@ -1606,6 +1739,339 @@ COMPILE_ASSIGN_CONTINUED:
         call EMIT_BYTE_OP_STORE_VAR
         ld a,(ASSIGN_TARGET_INDEX)
         call EMIT_BYTE
+        ret
+
+; ===========================================================================
+; R8.5 Group 4 -- DIM/array grammar.
+;   dim_stmt   := 'DIM' IDENT '(' NUMBER ')'
+;   array_read := IDENT '(' expr ')'                 (a COMPILE_FACTOR case)
+;   array_asgn := IDENT '(' expr ')' '=' expr         (a statement)
+; Arrays are integer-only (TAG_INT) in this milestone — the dominant real
+; use case, and the one the runtime element-address opcode (VM core's
+; OP_ARR_LOAD/OP_ARR_STORE) is scoped to; string arrays are not part of
+; this group's scope (V1's own real DIM supported both, but archived its
+; multi-dimensional support the same way — see rom/exrom_arrays.asm's own
+; header — after measuring the real win wasn't worth its own budget cost;
+; a future group can extend this table-driven shape to STRTAB-indexed
+; arrays if the re-audit finds it's still missing).
+; ===========================================================================
+
+; COMPILE_DIM — entry: TOK_TYPE is TOK_KW_DIM (not yet consumed).
+COMPILE_DIM:
+        call LEX_NEXT_TOKEN       ; consume DIM, fetch the array name
+        ld a,(TOK_TYPE)
+        cp TOK_IDENT
+        jr z,.have_ident
+        ld a,32
+        ld (COMPILE_ERROR_CODE),a
+        ret
+.have_ident:
+        ld hl,(TOK_NAME)
+        ld (ARRSYM_FIND_NAME_PTR),hl
+        ld a,(TOK_LEN)
+        cp 9
+        jr c,.len_ok
+        ld a,8
+.len_ok:
+        ld (ARRSYM_FIND_NAME_LEN),a
+        call LEX_NEXT_TOKEN       ; consume the name, fetch next
+        ld a,(TOK_TYPE)
+        cp TOK_LPAREN
+        jr z,.have_lparen
+        ld a,33
+        ld (COMPILE_ERROR_CODE),a
+        ret
+.have_lparen:
+        call LEX_NEXT_TOKEN       ; consume '(', fetch the size literal
+        ld a,(TOK_TYPE)
+        cp TOK_NUMBER
+        jr z,.have_size
+        ld a,34
+        ld (COMPILE_ERROR_CODE),a
+        ret
+.have_size:
+        ld a,(TOK_VAL)            ; low byte -- DIM sizes never legitimately
+                                    ; exceed ARRAY_MAX_ELEMS (16), so TOK_VAL's
+                                    ; high byte is never inspected
+        or a
+        jr nz,.size_nonzero
+        ld a,35
+        ld (COMPILE_ERROR_CODE),a
+        ret
+.size_nonzero:
+        cp ARRAY_MAX_ELEMS+1
+        jr c,.size_ok
+        ld a,36
+        ld (COMPILE_ERROR_CODE),a
+        ret
+.size_ok:
+        ld (ARR_SIZE_TMP),a
+        call LEX_NEXT_TOKEN       ; consume the size literal, fetch next
+        ld a,(TOK_TYPE)
+        cp TOK_RPAREN
+        jr z,.have_rparen
+        ld a,37
+        ld (COMPILE_ERROR_CODE),a
+        ret
+.have_rparen:
+        call LEX_NEXT_TOKEN       ; consume ')'
+        ld hl,(ARRSYM_FIND_NAME_PTR)
+        ld a,(ARRSYM_FIND_NAME_LEN)
+        ld b,a
+        call ARRSYM_FIND_OR_CREATE
+        ret
+
+; COMPILE_ARRAY_ASSIGN — entry: STMT_IDENT_NAME_PTR/LEN describe the
+; array name (already consumed); TOK_TYPE is already TOK_LPAREN (already
+; fetched by COMPILE_ASSIGN_CONTINUED's own one-token lookahead) -- same
+; "identifier already consumed, don't re-fetch" contract that routine
+; itself follows.
+COMPILE_ARRAY_ASSIGN:
+        ld hl,(STMT_IDENT_NAME_PTR)
+        ld a,(STMT_IDENT_NAME_LEN)
+        ld b,a
+        call ARRSYM_LOOKUP
+        jr nc,.found
+        ld a,42
+        ld (COMPILE_ERROR_CODE),a
+        ret
+.found:
+        ; BUG FOUND (real hardware, R8.5 Group 4), TWO layers deep:
+        ; (1) both sub-expressions compiled below can contain their OWN
+        ; array reads (e.g. "B(0)=A(1)+A(0)") -- COMPILE_FACTOR's own
+        ; .arr_read branch reuses this SAME CARR_INDEX/CARR_SIZE pair,
+        ; silently overwriting this outer assignment's own target before
+        ; EMIT_OP_ARR_STORE below got to use it. (2) A first attempt fixed
+        ; that by parking the target in BC across EACH COMPILE_EXPR call
+        ; separately (push immediately before, pop immediately after) --
+        ; but LEX_NEXT_TOKEN (called to consume ')' and '=' BETWEEN the two
+        ; calls) turned out to ALSO destroy BC (it scans the next token via
+        ; LEX_CLASSIFY_KEYWORD, which uses B/C as its own table-scan
+        ; counters) -- so the SECOND push captured already-clobbered
+        ; garbage, not the real target (caught via a real ZEsarUX run:
+        ; B(0)=A(1)+A(0) wrote 30 into A(0) instead of B(0); single-
+        ; stepping showed BC=0000, not 0005, already corrupted at the
+        ; second `push bc`, before COMPILE_EXPR for the value even ran).
+        ; Real fix: ONE push spanning the ENTIRE rest of this routine
+        ; (every LEX_NEXT_TOKEN and both COMPILE_EXPR calls), with exactly
+        ; ONE pop, on EVERY exit path, right before the single point BC is
+        ; actually used -- the same "balance every exit path" discipline
+        ; COMPILE_IF_BLOCK's own header already documents, now proven to
+        ; matter even when no further nested recursion is directly visible
+        ; at the call site.
+        ld b,a
+        ld a,(ARR_SIZE_TMP)
+        ld c,a
+        push bc
+        call LEX_NEXT_TOKEN        ; consume '(', fetch the index expr's
+                                     ; first token
+        call COMPILE_EXPR
+        ld a,(COMPILE_ERROR_CODE)
+        or a
+        jr nz,.err_pop
+        ld a,(TOK_TYPE)
+        cp TOK_RPAREN
+        jr z,.have_rparen
+        ld a,41
+        ld (COMPILE_ERROR_CODE),a
+        jr .err_pop
+.have_rparen:
+        call LEX_NEXT_TOKEN         ; consume ')'
+        ld a,(TOK_TYPE)
+        cp TOK_ASSIGN
+        jr z,.have_assign
+        ld a,2
+        ld (COMPILE_ERROR_CODE),a
+        jr .err_pop
+.have_assign:
+        call LEX_NEXT_TOKEN          ; consume '='
+        call COMPILE_EXPR             ; value expr -- pushed ON TOP of the
+                                        ; already-compiled index expr, the
+                                        ; order OP_ARR_STORE's own runtime
+                                        ; handler expects (pops value first)
+        ld a,(COMPILE_ERROR_CODE)
+        or a
+        jr nz,.err_pop
+        pop bc
+        call EMIT_OP_ARR_STORE
+        ld a,b
+        call EMIT_BYTE
+        ld a,c
+        call EMIT_BYTE
+        ret
+.err_pop:
+        pop bc
+        ret
+
+; ARRSYM_ENTRY_ADDR — input: C = index. Output: HL = ARRSYMTAB_BASE +
+; index*ARRSYM_REC_LEN(10).
+ARRSYM_ENTRY_ADDR:
+        ld l,c
+        ld h,0
+        add hl,hl                ; *2
+        ld d,h
+        ld e,l                    ; DE = *2
+        add hl,hl                 ; *4
+        add hl,hl                 ; *8
+        add hl,de                  ; *8 + *2 = *10
+        ld de,ARRSYMTAB_BASE
+        add hl,de
+        ret
+
+; ARRSYM_FIND_OR_CREATE — input: HL = name ptr, B = name len; ARR_SIZE_TMP
+; = the just-validated DIM size. Output: COMPILE_ERROR_CODE set (38 =
+; already DIM'd, 39 = table full) on failure; on success, a new entry
+; exists with this name and size. Destroys: AF, BC, DE, HL.
+ARRSYM_FIND_OR_CREATE:
+        ld (ARRSYM_FIND_NAME_PTR),hl
+        ld a,b
+        ld (ARRSYM_FIND_NAME_LEN),a
+        ld c,0
+.scan_loop:
+        ld a,c
+        push hl
+        ld hl,ARRSYM_COUNT
+        cp (hl)
+        pop hl
+        jr z,.not_found
+        push bc
+        call ARRSYM_ENTRY_ADDR
+        ld a,(hl)
+        pop bc
+        cp b
+        jr nz,.next
+        push hl
+        inc hl
+        ld de,(ARRSYM_FIND_NAME_PTR)
+        ld a,b
+        or a                     ; zero-length name -- shouldn't happen (the
+        jr nz,.have_len            ; lexer never produces one), but balance
+        pop hl                      ; the stack properly rather than relying
+        jr .already                  ; on "shouldn't happen" (same discipline
+                                       ; CSYM_FIND_OR_CREATE's own comment
+                                       ; explains)
+.have_len:
+        push bc
+.cmp_loop:
+        ld a,(de)
+        cp (hl)
+        jr nz,.cmp_fail
+        inc hl
+        inc de
+        djnz .cmp_loop
+        pop bc
+        pop hl
+        jr .already
+.cmp_fail:
+        pop bc
+        pop hl
+.next:
+        inc c
+        jr .scan_loop
+.already:
+        ld a,38
+        ld (COMPILE_ERROR_CODE),a
+        ret
+.not_found:
+        ld a,(ARRSYM_COUNT)
+        cp ARRSYMTAB_MAX_ENTRIES
+        jr nz,.create
+        ld a,39
+        ld (COMPILE_ERROR_CODE),a
+        ret
+.create:
+        ld a,(ARRSYM_COUNT)
+        ld c,a
+        call ARRSYM_ENTRY_ADDR
+        ld a,(ARRSYM_FIND_NAME_LEN)
+        ld (hl),a
+        inc hl
+        ld de,(ARRSYM_FIND_NAME_PTR)
+        ld b,a
+        or a
+        jr z,.write_size
+.copy_loop:
+        ld a,(de)
+        ld (hl),a
+        inc hl
+        inc de
+        dec b
+        jr nz,.copy_loop
+.write_size:
+        ld a,(ARRSYM_COUNT)
+        ld c,a
+        call ARRSYM_ENTRY_ADDR
+        ld de,9
+        add hl,de
+        ld a,(ARR_SIZE_TMP)
+        ld (hl),a
+        ld a,(ARRSYM_COUNT)
+        inc a
+        ld (ARRSYM_COUNT),a
+        ret
+
+; ARRSYM_LOOKUP — input: HL = name ptr, B = name len. Output: carry clear
+; + A = array index + ARR_SIZE_TMP = that array's declared size, if a
+; DIM'd array with this exact name exists; carry set (A/ARR_SIZE_TMP
+; unchanged) otherwise. Read-only -- never creates an entry (DIM is the
+; only writer). Destroys: AF, BC, DE, HL.
+ARRSYM_LOOKUP:
+        ld (ARRSYM_FIND_NAME_PTR),hl
+        ld a,b
+        ld (ARRSYM_FIND_NAME_LEN),a
+        ld c,0
+.scan_loop:
+        ld a,c
+        push hl
+        ld hl,ARRSYM_COUNT
+        cp (hl)
+        pop hl
+        jr z,.not_found
+        push bc
+        call ARRSYM_ENTRY_ADDR
+        ld a,(hl)
+        pop bc
+        cp b
+        jr nz,.next
+        push hl
+        inc hl
+        ld de,(ARRSYM_FIND_NAME_PTR)
+        ld a,b
+        or a
+        jr nz,.have_len
+        pop hl
+        jr .found
+.have_len:
+        push bc
+.cmp_loop:
+        ld a,(de)
+        cp (hl)
+        jr nz,.cmp_fail
+        inc hl
+        inc de
+        djnz .cmp_loop
+        pop bc
+        pop hl
+        jr .found
+.cmp_fail:
+        pop bc
+        pop hl
+.next:
+        inc c
+        jr .scan_loop
+.found:
+        push bc
+        call ARRSYM_ENTRY_ADDR
+        ld de,9
+        add hl,de
+        ld a,(hl)
+        ld (ARR_SIZE_TMP),a
+        pop bc
+        ld a,c
+        or a
+        ret
+.not_found:
+        scf
         ret
 
 ; ===========================================================================
@@ -2660,6 +3126,8 @@ COMPILE_STATEMENT_LIST:
         jp z,.end_stmt
         cp TOK_KW_REM
         jp z,.rem
+        cp TOK_KW_DIM
+        jp z,.dim
         cp TOK_IDENT
         jp z,.ident_stmt
         cp TOK_STR_IDENT
@@ -2736,6 +3204,9 @@ COMPILE_STATEMENT_LIST:
         jp .after_stmt
 .str_ident_stmt:
         call COMPILE_STR_ASSIGN
+        jp .after_stmt
+.dim:
+        call COMPILE_DIM
         jp .after_stmt
 .ident_stmt:
         ; R7.5 addition: BEFORE assuming this identifier starts an

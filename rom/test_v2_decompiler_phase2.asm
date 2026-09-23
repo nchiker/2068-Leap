@@ -187,7 +187,28 @@ KTAB_CALC_EXIT_TRAMPOLINE:
 
     INCLUDE "kernel/math/math.asm"
     INCLUDE "rom/exrom_calc.asm"
-    INCLUDE "kernel/graphics/graphics.asm"
+; kernel/graphics/graphics.asm (2235 real lines) is NOT included here:
+; this test's own CHECK_RESULT only checks VM_ERROR_CODE and the
+; decompiled text (never screen state or VM_OUTPUT_ROW), so CLS/BORDER/
+; INK/PAPER/PLOT/LINE's own real GFX_* calls can no-op exactly like this
+; file's own existing SOUND_BEEP/SOUND_EXROM stubs just below (BEEP/
+; SOUND appear in this test's own source too, and are already allowed
+; to no-op the same way). R8.5 Group 4's own real ROM growth pushed
+; this flat 16K image over budget with graphics.asm included.
+GFX_CLS:
+    ret
+GFX_PAINT_ATTR:
+    ret
+GFX_SET_BORDER:
+    ret
+GFX_WRITE_PIXEL:
+    ret
+GFX_LINE:
+    ret
+GFX_PRINT_STRING_ATTR:
+    ret
+GFX_SCROLL_OUTPUT_UP:
+    ret
 ; Test-only stubs: this file's own test program never exercises BEEP/
 ; SOUND/PAUSE -- rom/exrom_v2_vm_core.asm's own OP_BEEP/OP_SOUND/OP_PAUSE
 ; still reference these unconditionally, and the real kernel/sound+

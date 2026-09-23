@@ -175,7 +175,32 @@ KTAB_CALC_EXIT_TRAMPOLINE:
 
     INCLUDE "kernel/math/math.asm"
     INCLUDE "rom/exrom_calc.asm"
-    INCLUDE "kernel/graphics/graphics.asm"
+; kernel/graphics/graphics.asm (2235 real lines) is NOT included here:
+; this test never checks real screen bitmap content (only VM_OUTPUT_ROW
+; and the decompiled text, per this file's own header), and every real
+; PRINT text here is short enough to never wrap/scroll -- so a bare `ret`
+; for GFX_PRINT_STRING_ATTR is exactly correct: B/C (row/col) already
+; hold the pre-print values VM_PRINT_COMMON passed in, which is exactly
+; what a non-wrapping print's own real row/col would still be after
+; printing. R8.5 Group 4's own real ROM growth pushed this flat 16K
+; image over budget with graphics.asm included; this is the same
+; "module fully resolves symbols, contributes zero real coverage this
+; test needs" stubbing discipline already used for BEEP/SOUND/IO_READ_
+; KEY below, one level up.
+GFX_CLS:
+    ret
+GFX_PAINT_ATTR:
+    ret
+GFX_SET_BORDER:
+    ret
+GFX_WRITE_PIXEL:
+    ret
+GFX_LINE:
+    ret
+GFX_PRINT_STRING_ATTR:
+    ret
+GFX_SCROLL_OUTPUT_UP:
+    ret
 ; Test-only stubs: this file's own test program never exercises BEEP/
 ; SOUND/PAUSE -- rom/exrom_v2_vm_core.asm's own OP_BEEP/OP_SOUND/OP_PAUSE
 ; still reference these unconditionally, and the real kernel/sound+

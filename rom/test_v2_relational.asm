@@ -186,7 +186,19 @@ KTAB_CALC_EXIT_TRAMPOLINE:
     ret
 
     INCLUDE "kernel/math/math.asm"
-    INCLUDE "rom/exrom_calc.asm"
+; rom/exrom_calc.asm (1772 real lines) is NOT included here: this test's
+; own program is pure integer relational/boolean arithmetic -- no
+; PUSH_FLOAT_LIT, no float PRINT -- so none of the float paths that
+; reach the calculator are ever exercised. R8.5 Group 4's own real ROM
+; growth pushed this flat 16K image over budget with the real
+; calculator included; same stubbing discipline rom/test_v2_save_load.
+; asm's own header already established for this exact tradeoff.
+CALC_INT_TO_FP:
+    ret
+CALC_FP_TO_INT:
+    ret
+CALC_SP_TO_NEXT_FREE_PTR:
+    ret
     INCLUDE "kernel/graphics/graphics.asm"
 ; kernel/memory/memory.asm is NOT included here -- this test never
 ; touches the editor (unlike rom/test_v2_editor_integration.asm, memory.

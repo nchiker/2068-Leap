@@ -139,6 +139,12 @@ DECOMP_ENDIF_SAVE_PTR: equ $8EA2  ; DECOMP_CHECK_ENDIF_HERE's own loop
                                     ; to DECOMP_EMIT_TEXT -- same real
                                     ; bug class this file's own .op_jmpz
                                     ; header already documents finding
+DECOMP_ARR_INDEX_TMP: equ $8EA5  ; R8.5 Group 4 -- .op_arr_load/.op_arr_store
+                                    ; scratch (1 byte): the operand's own
+                                    ; array index, saved to memory before
+                                    ; DECOMP_FRAG_POP (which destroys
+                                    ; AF/DE/HL, same discipline as every
+                                    ; other handler in this file)
 DECOMP_ENDIF_SAVE_CNT: equ $8EA4  ; the matching remaining-slot-count
                                     ; (1 byte)
 DECOMP_END_ADDR:      equ $8E9F   ; (2 bytes) R8.5 addition: the real
@@ -950,6 +956,10 @@ DECOMP_SKIP_OPERAND:
         jr z,.w2
         cp 47                     ; JMP_ELSE (R8.5 Group 3)
         jr z,.w2
+        cp 48                     ; ARR_LOAD (R8.5 Group 4)
+        jr z,.w2
+        cp 49                     ; ARR_STORE (R8.5 Group 4)
+        jr z,.w2
         cp 14                     ; FOR_NEXT
         jr z,.w3
         cp 34                     ; CALL_EXT (R7.5)
@@ -1588,6 +1598,10 @@ DECOMPILE_PROGRAM:
         jp z,.op_not
         cp 47
         jp z,.op_jmp_else
+        cp 48
+        jp z,.op_arr_load
+        cp 49
+        jp z,.op_arr_store
         jp DECOMP_ERR_UNSUPPORTED_OPCODE
 
 .op_halt:
@@ -2635,6 +2649,110 @@ DECOMPILE_PROGRAM:
         ld c,a
         ld hl,DECOMP_COMBINE_BUF
         call DECOMP_FRAG_PUSH
+        jp DECOMPILE_PROGRAM.loop
+
+; R8.5 Group 4 -- array element access. Synthesized names again (no
+; array-name preservation through compile, same "V<idx>"/"S<idx>$"
+; convention this whole file already uses for scalars/strings): "A<idx>".
+; ARRAY_MAX_COUNT is 4, so the index is always a single digit -- no need
+; for DECOMP_EMIT_INT16/DECOMP_VARNAME_FRAG's full multi-digit algorithm.
+.op_arr_load:
+        ; expression fragment producer (like CALL_FN above): pops the
+        ; already-decompiled index expression, wraps it as "A<idx>(<expr>)",
+        ; pushes the result back as a new fragment. The operand's own
+        ; second byte (declared size) is skipped -- needed only for the
+        ; runtime bounds check, not for reconstructing source text.
+        ld hl,(DECOMP_IP)
+        ld a,(hl)
+        ld (DECOMP_ARR_INDEX_TMP),a
+        inc hl
+        inc hl
+        ld (DECOMP_IP),hl
+        call DECOMP_FRAG_POP        ; HL = index-expr text, C = length
+        ld (DECOMP_TMP_A),hl
+        ld a,c
+        ld (DECOMP_TMP_LEN),a
+        call DECOMP_COMBINE_RESET
+        ld a,'A'
+        call DECOMP_COMBINE_CHAR
+        ld a,(DECOMP_ARR_INDEX_TMP)
+        add a,'0'
+        call DECOMP_COMBINE_CHAR
+        ld a,'('
+        call DECOMP_COMBINE_CHAR
+        ld hl,(DECOMP_TMP_A)
+        ld a,(DECOMP_TMP_LEN)
+        call DECOMP_COMBINE_TEXT
+        ld a,')'
+        call DECOMP_COMBINE_CHAR
+        ld a,(DECOMP_COMBINE_LEN)
+        cp DECOMP_FRAG_TEXT_MAX+1
+        jp nc,DECOMP_ERR_EXPR_TOO_LONG
+        ld c,a
+        ld hl,DECOMP_COMBINE_BUF
+        call DECOMP_FRAG_PUSH
+        jp DECOMPILE_PROGRAM.loop
+
+.op_arr_store:
+        ; statement handler (like STORE_VAR above): pops the value
+        ; fragment (top of stack) then the index-expression fragment,
+        ; emits "A<idx>(<index-expr>) = <value>" straight to the output
+        ; buffer.
+        ;
+        ; BUG FOUND (real hardware): DECOMP_EMIT_CHAR reuses DECOMP_TMP_LEN
+        ; as ITS OWN internal 1-byte scratch buffer (see its own header:
+        ; "reuse as a 1-byte source buffer") -- this handler originally
+        ; parked the VALUE fragment's own length there too, then emitted
+        ; SEVERAL individual characters ('(' ')' ' ' '=' ' ') via
+        ; DECOMP_EMIT_CHAR before reading it back, each one silently
+        ; overwriting DECOMP_TMP_LEN with that character's own code.
+        ; Caught via a real ZEsarUX run + single-stepping: DECOMP_TMP_LEN
+        ; read back as $20 (the last emitted space) instead of 2 (the real
+        ; length of "10"), pulling in 32 garbage bytes as the "value" text
+        ; and desyncing every line after it. Fixed by holding the value's
+        ; length in DECOMP_BLEN instead -- a cell DECOMP_EMIT_CHAR never
+        ; touches (confirmed by reading its own body, not assumed). Same
+        ; underlying lesson as this file's other real bugs this session,
+        ; one layer deeper: a MEMORY cell can alias a callee's own
+        ; internal scratch just as easily as a register can.
+        ld hl,(DECOMP_IP)
+        ld a,(hl)
+        ld (DECOMP_ARR_INDEX_TMP),a
+        inc hl
+        inc hl
+        ld (DECOMP_IP),hl
+        call DECOMP_FRAG_POP        ; HL = value text, C = length (top)
+        ld (DECOMP_TMP_A),hl
+        ld a,c
+        ld (DECOMP_BLEN),a
+        call DECOMP_FRAG_POP        ; HL = index-expr text, C = length
+        ld (DECOMP_OP_PTR),hl
+        ld a,c
+        ld (DECOMP_OP_LEN),a
+        ld a,'A'
+        call DECOMP_EMIT_CHAR
+        ld a,(DECOMP_ARR_INDEX_TMP)
+        add a,'0'
+        call DECOMP_EMIT_CHAR
+        ld a,'('
+        call DECOMP_EMIT_CHAR
+        ld hl,(DECOMP_OP_PTR)
+        ld a,(DECOMP_OP_LEN)
+        ld c,a
+        call DECOMP_EMIT_TEXT
+        ld a,')'
+        call DECOMP_EMIT_CHAR
+        ld a,' '
+        call DECOMP_EMIT_CHAR
+        ld a,'='
+        call DECOMP_EMIT_CHAR
+        ld a,' '
+        call DECOMP_EMIT_CHAR
+        ld hl,(DECOMP_TMP_A)
+        ld a,(DECOMP_BLEN)
+        ld c,a
+        call DECOMP_EMIT_TEXT
+        call DECOMP_EMIT_NEWLINE
         jp DECOMPILE_PROGRAM.loop
 
 ; R8.5 Group 3 -- the remaining relops, plus AND/OR/NOT. Same shape as

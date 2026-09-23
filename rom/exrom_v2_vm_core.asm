@@ -206,6 +206,10 @@
 ;       check failed — the module was never loaded, was unloaded, or a
 ;       different module now occupies that slot; see kernel/extensions/
 ;       ext_registry.asm's own header for the full design)
+;  10 = array index out of bounds (R8.5 Group 4; OP_ARR_LOAD/STORE's own
+;       runtime bounds check against the operand-baked declared size)
+;  11 = array index must be an integer (a FLOAT-tagged value popped where
+;       OP_ARR_LOAD/STORE expected a TAG_INT array index)
 ;
 ; Operand-stack record layout (3 bytes, at address SP, SP+1, SP+2):
 ;   [value_lo][value_hi][tag]   -- SP points at the lowest (most recent) record
@@ -252,6 +256,27 @@ TAG_FLOAT:          equ 1
 ; via the ordinary PUSH_I16 opcode reused for this purpose — see
 ; docs/v2/ARCHITECTURE_B_IMPLEMENTATION_PLAN.md's R5 section for why no
 ; new "push a string index" opcode was needed) ---
+; R8.5 Group 4 -- fixed-stride runtime array pool. Integer-only (TAG_INT),
+; statically sized (compile-time-constant DIM), flat 2-bytes/element
+; storage -- no allocator, no per-element tag byte (a real, deliberate
+; RAM saving over the scalar SYMTAB's own [tag][lo][hi] shape: an array
+; element's type never varies at runtime the way a bare variable's can,
+; since DIM commits to integer once). Placed in the real free gap between
+; FLOATTAB's own real end ($8500 + (16+2)*5 = $8556) and STRTAB_BASE
+; ($8600) — checked directly against every other v2 file's own equ's
+; before placing this, same discipline as every other new table this
+; session. 4 arrays * 16 elements * 2 bytes = 128 bytes, $8560-$85E0.
+ARRTAB_BASE:        equ $8560
+ARRAY_MAX_COUNT:    equ 4        ; MUST match rom/exrom_v2_compiler.asm's
+                                   ; own ARRSYMTAB_MAX_ENTRIES -- an array's
+                                   ; compile-time creation order IS its
+                                   ; runtime ARRTAB slot index
+ARRAY_MAX_ELEMS:    equ 16       ; MUST match rom/exrom_v2_compiler.asm's
+                                   ; own ARRAY_MAX_ELEMS (DIM's own upper
+                                   ; bound check); a power of 2 so the
+                                   ; slot*ARRAY_MAX_ELEMS multiply below is
+                                   ; four shifts, not a real multiply
+
 STRTAB_BASE:        equ $8600   ; string records: [len:1][content:31] = 32B
 STR_REC_LEN:        equ 32
 STRTAB_MAX_VARS:    equ 4       ; named string-variable slots (indices 0-3)
@@ -398,6 +423,19 @@ VM_EXT_RECPTR:      equ $87C7    ; (2 bytes): the matched registry record
 ; CLS/PLOT/COMPUTE_PRINT_ATTR directly: depending on it here would just
 ; create a dependency R9 has to unwind later). A small, self-contained
 ; VM-owned equivalent instead. ---
+VM_ARR_INDEX_TMP:   equ $87D0  ; R8.5 Group 4 -- OP_ARR_LOAD/STORE scratch
+VM_ARR_SIZE_TMP:    equ $87D1   ; (1 byte each): the operand-baked array
+                                  ; slot and declared size, saved to memory
+                                  ; before VM_POP (which uses HL/DE
+                                  ; internally, same "never keep a value in
+                                  ; a register across a call" discipline
+                                  ; this whole file already follows)
+VM_ARR_ELEM_TMP:    equ $87D2   ; the popped, bounds-checked element index
+                                  ; (2 bytes, though only the low byte is
+                                  ; ever nonzero for a valid access)
+VM_ARR_VALUE_TMP:   equ $87D4   ; OP_ARR_STORE only: the popped value,
+                                  ; saved across the second VM_POP (the
+                                  ; index) that follows it (2 bytes)
 VM_OUTPUT_ROW:       equ $87C9    ; current PRINT row, 0-23 (1 byte)
 VM_OUTPUT_COL:        equ $87CA    ; unused after a PRINT (V1's own real
                                      ; PRINT always ends its own line --
@@ -455,11 +493,12 @@ VM_RUN:
         ld a,(hl)               ; fetch opcode
         inc hl
         ld (VM_IP),hl
-        cp 48                   ; 48 opcodes defined (0-47, R8.5 adds
+        cp 50                   ; 50 opcodes defined (0-49, R8.5 adds
                                  ; 35-38: PRINT_NUM/STR, LPRINT_NUM/STR;
                                  ; 39: CALL_FN (Group 1); 40-43: CMP_LE/
                                  ; GT/GE/NE; 44-46: AND/OR/NOT; 47:
-                                 ; JMP_ELSE (Group 3))
+                                 ; JMP_ELSE (Group 3); 48-49: ARR_LOAD/
+                                 ; ARR_STORE (Group 4))
         jp nc,VM_ERR_ILLEGAL_OPCODE
         ld l,a
         ld h,0
@@ -533,6 +572,8 @@ VM_OP_TABLE:
                                                         ; for the
                                                         ; decompiler's own
                                                         ; benefit)
+        dw OP_ARR_LOAD                                  ; 48 (R8.5 Group 4)
+        dw OP_ARR_STORE                                  ; 49
 
 ; ---------------------------------------------------------------------------
 ; String-table access: index (A) -> HL = record address
@@ -784,6 +825,97 @@ OP_STORE_VAR:
                                    ; borrowed temp reference
         inc hl
         ld (hl),0
+        jp VM_RUN.loop
+
+; ---------------------------------------------------------------------------
+; R8.5 Group 4 -- array element access. Both opcodes carry a 2-byte
+; operand baked in at compile time: [array_index:1][declared_size:1] --
+; the declared size travels WITH every access (not looked up from a
+; separate runtime table) so bounds-checking needs no extra memory beyond
+; ARRTAB itself, matching this whole rewrite's "resolve everything
+; possible at compile time" philosophy.
+; ---------------------------------------------------------------------------
+
+; VM_ARR_ADDR — input: VM_ARR_INDEX_TMP (array slot 0..ARRAY_MAX_COUNT-1),
+; VM_ARR_ELEM_TMP (element index, already bounds-checked by the caller).
+; Output: HL = ARRTAB_BASE + (array_index*ARRAY_MAX_ELEMS + elem_index)*2.
+; Destroys: AF, DE, HL.
+VM_ARR_ADDR:
+        ld a,(VM_ARR_INDEX_TMP)
+        ld h,0
+        ld l,a
+        add hl,hl               ; *2
+        add hl,hl               ; *4
+        add hl,hl               ; *8
+        add hl,hl               ; *16 (ARRAY_MAX_ELEMS) -- HL = array's own
+                                  ; base element offset within the pool
+        ld de,(VM_ARR_ELEM_TMP)
+        add hl,de                ; + element index
+        add hl,hl                ; *2 -- element offset -> byte offset
+        ld de,ARRTAB_BASE
+        add hl,de
+        ret
+
+OP_ARR_LOAD:
+        ld hl,(VM_IP)
+        ld a,(hl)
+        ld (VM_ARR_INDEX_TMP),a
+        inc hl
+        ld a,(hl)
+        ld (VM_ARR_SIZE_TMP),a
+        inc hl
+        ld (VM_IP),hl
+        call VM_POP              ; HL = index value, A = tag
+        cp TAG_INT
+        jp nz,VM_ERR_ARRAY_TYPE
+        ld a,h
+        or a
+        jp nz,VM_ERR_ARRAY_BOUNDS  ; negative (or absurdly large) index
+        ld a,(VM_ARR_SIZE_TMP)
+        ld c,a
+        ld a,l
+        cp c
+        jp nc,VM_ERR_ARRAY_BOUNDS  ; index >= declared size
+        ld (VM_ARR_ELEM_TMP),hl
+        call VM_ARR_ADDR
+        ld e,(hl)
+        inc hl
+        ld d,(hl)
+        ex de,hl
+        ld a,TAG_INT
+        call VM_PUSH
+        jp VM_RUN.loop
+
+OP_ARR_STORE:
+        ld hl,(VM_IP)
+        ld a,(hl)
+        ld (VM_ARR_INDEX_TMP),a
+        inc hl
+        ld a,(hl)
+        ld (VM_ARR_SIZE_TMP),a
+        inc hl
+        ld (VM_IP),hl
+        call VM_POP              ; HL = value (top of stack), A = tag
+        cp TAG_INT
+        jp nz,VM_ERR_ARRAY_TYPE
+        ld (VM_ARR_VALUE_TMP),hl
+        call VM_POP              ; HL = index, A = tag
+        cp TAG_INT
+        jp nz,VM_ERR_ARRAY_TYPE
+        ld a,h
+        or a
+        jp nz,VM_ERR_ARRAY_BOUNDS
+        ld a,(VM_ARR_SIZE_TMP)
+        ld c,a
+        ld a,l
+        cp c
+        jp nc,VM_ERR_ARRAY_BOUNDS
+        ld (VM_ARR_ELEM_TMP),hl
+        call VM_ARR_ADDR
+        ld de,(VM_ARR_VALUE_TMP)
+        ld (hl),e
+        inc hl
+        ld (hl),d
         jp VM_RUN.loop
 
 OP_ADD:
@@ -2386,6 +2518,14 @@ VM_ERR_INVALID_SOUND_REGISTER:
 
 VM_ERR_EXTENSION_NOT_FOUND:
         ld a,9
+        jp VM_ERR_COMMON
+
+VM_ERR_ARRAY_BOUNDS:
+        ld a,10
+        jp VM_ERR_COMMON
+
+VM_ERR_ARRAY_TYPE:
+        ld a,11
         jp VM_ERR_COMMON
 
 VM_ERR_COMMON:
