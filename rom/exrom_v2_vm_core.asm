@@ -391,6 +391,25 @@ VM_EXT_REMAINING:   equ $87C4    ; a countdown used while popping args
 VM_EXT_POPVAL:      equ $87C5    ; (2 bytes): this iteration's popped value
 VM_EXT_RECPTR:      equ $87C7    ; (2 bytes): the matched registry record
 
+; --- R8.5 addition: text I/O (PRINT/LPRINT/INPUT). BASIC_OUTPUT_ROW/COL
+; (basic.asm) are NOT reused here -- basic.asm is V1's own language
+; core, deleted whole at R9 (same reasoning R7's own VM_COMPUTE_PRINT_
+; ATTR/VM_CLAMP_Y191 header already gives for not calling BASIC_STMT_
+; CLS/PLOT/COMPUTE_PRINT_ATTR directly: depending on it here would just
+; create a dependency R9 has to unwind later). A small, self-contained
+; VM-owned equivalent instead. ---
+VM_OUTPUT_ROW:       equ $87C9    ; current PRINT row, 0-23 (1 byte)
+VM_OUTPUT_COL:        equ $87CA    ; unused after a PRINT (V1's own real
+                                     ; PRINT always ends its own line --
+                                     ; no ";"-suppressed-newline form
+                                     ; exists in this dialect -- kept for
+                                     ; symmetry/future AT support, always
+                                     ; 0 today) (1 byte)
+VM_PRINT_TEXT_TMP:    equ $87CB    ; (2 bytes): text pointer parked
+                                     ; across VM_COMPUTE_PRINT_ATTR
+VM_PRINT_SIGN_TMP:    equ $87CD    ; (1 byte): nonzero if a float being
+                                     ; printed was negative
+
 ; every one of these is real RAM, not a register held across a call or a
 ; loop that itself calls something else — the standing discipline
 ; established after four real register-clobber bugs found via ZEsarUX
@@ -410,6 +429,12 @@ VM_INIT:
         ld (VM_TOS_TAG),a
         ld (VM_STR_TEMP_NEXT),a
         ld (VM_FLOAT_TEMP_NEXT),a
+        ld (VM_OUTPUT_ROW),a    ; R8.5 -- PRINT/LPRINT's own output cursor;
+        ld (VM_OUTPUT_COL),a     ; uninitialized RAM here previously
+                                   ; produced a garbage starting row (caught
+                                   ; via a real ZEsarUX run: the very first
+                                   ; PRINT called GFX_PRINT_STRING_ATTR with
+                                   ; B=23, not 0)
         ret
 
 ; ---------------------------------------------------------------------------
@@ -425,7 +450,8 @@ VM_RUN:
         ld a,(hl)               ; fetch opcode
         inc hl
         ld (VM_IP),hl
-        cp 35                   ; 35 opcodes defined (0-34)
+        cp 39                   ; 39 opcodes defined (0-38, R8.5 adds
+                                 ; 35-38: PRINT_NUM/STR, LPRINT_NUM/STR)
         jp nc,VM_ERR_ILLEGAL_OPCODE
         ld l,a
         ld h,0
@@ -475,6 +501,10 @@ VM_OP_TABLE:
         dw OP_PAUSE                    ; 32
         dw OP_RANDOMISE                 ; 33
         dw OP_CALL_EXT                   ; 34 (R7.5)
+        dw OP_PRINT_NUM                   ; 35 (R8.5)
+        dw OP_PRINT_STR                    ; 36
+        dw OP_LPRINT_NUM                    ; 37
+        dw OP_LPRINT_STR                     ; 38
 
 ; ---------------------------------------------------------------------------
 ; String-table access: index (A) -> HL = record address
@@ -1139,6 +1169,17 @@ OP_PUSH_STR_LIT:
         inc de
         djnz .copy_loop
 .no_copy:
+        xor a
+        ld (hl),a               ; null-terminate the content -- HL is
+                                  ; still the destination record's write
+                                  ; cursor here (real bug found via a real
+                                  ; ZEsarUX run: this terminator was never
+                                  ; actually written despite this routine's
+                                  ; own header comment and OP_PRINT_STR's
+                                  ; claiming it was, so GFX_PRINT_STRING_ATTR
+                                  ; ran off the end of "WORLD" into
+                                  ; whatever stale bytes followed it in the
+                                  ; 32-byte record)
         ld hl,(VM_IP)
         ld a,(VM_STR_LIT_LEN_TMP)
         ld e,a
@@ -1232,6 +1273,11 @@ OP_STR_CONCAT:
         inc c
         djnz .b_copy_loop
 .b_copy_done:
+        xor a
+        ld (de),a               ; null-terminate the combined content --
+                                  ; same real bug class as OP_PUSH_STR_LIT's
+                                  ; own fix: DE is still the write cursor
+                                  ; right after the last copied byte here
         ld hl,(VM_STR_DST_ADDR_TMP)
         ld (hl),c               ; write the final combined length byte
         ld a,(VM_STR_LIT_TEMPIDX_TMP)
@@ -1863,6 +1909,185 @@ OP_CALL_EXT:
         ld d,(hl)                    ; DE = exec_ptr
         call VM_CALL_INDIRECT
         jp VM_RUN.loop
+
+; ===========================================================================
+; R8.5 — text I/O (PRINT/LPRINT). V1's own real scope, matched (not
+; exceeded): ONE argument, numeric or string, auto-detected at compile
+; time (rom/exrom_v2_compiler.asm's COMPILE_PRINT peeks the same way
+; COMPILE_IF already does); no comma/semicolon-separated item list, no
+; ";"-suppressed trailing newline -- basic/basic.asm's own real
+; BASIC_STMT_PRINT doesn't have either. Reaches real, unmodified,
+; EXROM-resident platform primitives throughout (rom/exrom_format.asm's
+; BASIC_NUM_TO_STRING_EXROM/BASIC_FLOAT_TO_STRING_EXROM, kernel/
+; graphics's GFX_PRINT_STRING_ATTR/GFX_SCROLL_OUTPUT_UP, rom/
+; exrom_printer.asm's BASIC_STMT_LPRINT_EXROM) -- never basic.asm
+; itself, which R9 deletes whole (same reasoning R7's own VM_COMPUTE_
+; PRINT_ATTR/VM_CLAMP_Y191 header already gives).
+; ===========================================================================
+
+; VM_NUM_TO_TEXT — input: HL = value, A = tag (TAG_INT/TAG_FLOAT).
+; Out: HL = null-terminated decimal text (PRINT_BUF). Destroys: AF, BC,
+; DE, HL.
+;
+; Float sign: BASIC_FLOAT_TO_STRING_EXROM's own real contract is
+; magnitude-only (non-negative) -- confirmed from its one real V1
+; caller, which tracks sign separately (basic/basic.asm's own
+; BASIC_EVAL_PRINT_ARG, for its own narrower SQR/SIN-only float
+; display). V2's own float values can be negative from ordinary
+; arithmetic, not just two magnitude-guaranteed functions, so this
+; needs a real sign step V1 never did. The 5-byte packed float's own
+; sign bit location is confirmed directly from rom/exrom_calc.asm's
+; own CALC_FP_TO_INT body (not guessed): byte0==0 is the compact
+; "small integer" form (sign is byte1, $00/$FF); otherwise byte1's own
+; bit7 is the sign, in the general form. Negation itself reuses the
+; ALREADY-VERIFIED "subtract" calculator literal (VM_CALC_SUB_STUB's
+; own `$03,$38` -- see that routine's own header) as `0 - value`,
+; rather than guessing at a separate "negate" literal's own byte value.
+VM_NUM_TO_TEXT:
+        cp TAG_FLOAT
+        jr z,.float
+        ex de,hl
+        jp BASIC_NUM_TO_STRING_EXROM
+.float:
+        ld a,l
+        call VM_FLOAT_ADDR          ; HL -> the real 5 packed bytes
+        ld a,(hl)                    ; byte0 (exponent, or 0 = small-int
+                                       ; form)
+        or a
+        jr z,.small_int_form
+        inc hl
+        ld a,(hl)                     ; byte1 (general form's own sign
+                                        ; bit is its bit7)
+        and $80
+        jr .have_sign
+.small_int_form:
+        inc hl
+        ld a,(hl)                      ; byte1 ($00/$FF in this form)
+.have_sign:
+        or a
+        ld a,0
+        jr z,.positive
+        ld a,1
+.positive:
+        ld (VM_PRINT_SIGN_TMP),a
+        or a
+        jr z,.push_positive
+        xor a
+        ld (CALC_SP),a
+        ld hl,0
+        call CALC_INT_TO_FP           ; push 0.0 (the 'a' operand)
+        ld a,TAG_FLOAT
+        ld (VM_FLOAT_OPERAND_TAG),a
+        ld hl,(VM_PRINT_TEXT_TMP)      ; the original FLOATTAB index,
+                                         ; parked by OP_PRINT_NUM below
+                                         ; before calling here
+        ld (VM_FLOAT_OPERAND_VAL),hl
+        call VM_FLOAT_PUSH_OPERAND     ; push the real value (the 'b'
+                                         ; operand)
+        call VM_CALC_SUB_STUB          ; CALC_STACK top = 0-value = the
+                                         ; positive magnitude
+        jr .to_string
+.push_positive:
+        xor a
+        ld (CALC_SP),a
+        ld a,TAG_FLOAT
+        ld (VM_FLOAT_OPERAND_TAG),a
+        ld hl,(VM_PRINT_TEXT_TMP)
+        ld (VM_FLOAT_OPERAND_VAL),hl
+        call VM_FLOAT_PUSH_OPERAND
+.to_string:
+        call BASIC_FLOAT_TO_STRING_EXROM  ; HL = text (PRINT_BUF, no sign)
+        ld a,(VM_PRINT_SIGN_TMP)
+        or a
+        ret z
+        dec hl                              ; PRINT_BUF reserves the
+        ld (hl),'-'                          ; byte before the returned
+        ret                                   ; pointer for exactly this
+
+OP_PRINT_NUM:
+        call VM_POP                 ; HL = value, A = tag
+        ld (VM_PRINT_TEXT_TMP),hl    ; parked: VM_NUM_TO_TEXT's own float
+                                       ; path re-reads this as the
+                                       ; FLOATTAB index (A survives in
+                                       ; the call below, matching every
+                                       ; other tag-then-value handler's
+                                       ; own convention in this file)
+        call VM_NUM_TO_TEXT
+        jp VM_PRINT_COMMON
+
+OP_PRINT_STR:
+        call VM_POP                 ; HL = STRTAB index, A = tag
+                                       ; (ignored -- string-only opcode)
+        ld a,l
+        call VM_STR_ADDR             ; HL -> record
+        inc hl                        ; -> content (skip length byte;
+                                        ; GFX_PRINT_STRING_ATTR wants
+                                        ; null-terminated text, and
+                                        ; VM_STR_COPY/OP_PUSH_STR_LIT's
+                                        ; own convention already null-
+                                        ; terminates every record's
+                                        ; content past its real length
+                                        ; -- see STRTAB's own record
+                                        ; layout comment)
+        jr VM_PRINT_COMMON
+
+; VM_PRINT_COMMON — input: HL = null-terminated text to print. Shared
+; tail for OP_PRINT_NUM/OP_PRINT_STR: compute the current attribute,
+; print at (VM_OUTPUT_ROW, VM_OUTPUT_COL), advance to a fresh line.
+VM_PRINT_COMMON:
+        ld (VM_PRINT_TEXT_TMP),hl
+        call VM_COMPUTE_PRINT_ATTR   ; A = attr byte
+        ld e,a
+        ld a,(VM_OUTPUT_ROW)
+        ld b,a
+        ld a,(VM_OUTPUT_COL)
+        ld c,a
+        ld a,(CURRENT_OVER)
+        ld d,a
+        ld a,e
+        ld hl,(VM_PRINT_TEXT_TMP)
+        call GFX_PRINT_STRING_ATTR    ; B/C = row/col right after the
+                                        ; text (may have wrapped/
+                                        ; scrolled for a long string)
+        ld a,b
+        ld (VM_OUTPUT_ROW),a
+        call VM_ADVANCE_OUTPUT_ROW     ; the implicit newline every real
+                                         ; V1 PRINT/LPRINT statement ends
+                                         ; with -- no ";"-suppressed form
+                                         ; exists in this dialect
+        jp VM_RUN.loop
+
+; VM_ADVANCE_OUTPUT_ROW — a small, self-contained VM-owned equivalent of
+; basic/basic.asm's own BASIC_ADVANCE_OUTPUT_ROW (same algorithm: reset
+; column, advance row, scroll all 24 rows at the bottom) -- NOT a call
+; into basic.asm itself, which R9 deletes whole.
+VM_ADVANCE_OUTPUT_ROW:
+        xor a
+        ld (VM_OUTPUT_COL),a
+        ld a,(VM_OUTPUT_ROW)
+        inc a
+        cp 24
+        jr c,.no_wrap
+        call GFX_SCROLL_OUTPUT_UP
+        ld a,23
+        ld (VM_OUTPUT_ROW),a
+        ret
+.no_wrap:
+        ld (VM_OUTPUT_ROW),a
+        ret
+
+OP_LPRINT_NUM:
+        call VM_POP
+        ld (VM_PRINT_TEXT_TMP),hl
+        call VM_NUM_TO_TEXT
+        jp BASIC_STMT_LPRINT_EXROM
+
+OP_LPRINT_STR:
+        call VM_POP
+        ld a,l
+        call VM_STR_ADDR
+        inc hl
+        jp BASIC_STMT_LPRINT_EXROM
 
 ; ---------------------------------------------------------------------------
 ; Error exits — each sets VM_ERROR_CODE and VM_HALTED, then returns to the

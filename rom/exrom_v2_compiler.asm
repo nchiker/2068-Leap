@@ -336,6 +336,11 @@ TOK_KW_RANDOMISE:   equ 37    ; this ROM 2026-09-19 (ROM budget), DRAW/OUT
                                ; ARCHITECTURE_B_IMPLEMENTATION_PLAN.md's
                                ; own R7 planning text, written before
                                ; this investigation, named the wrong set)
+TOK_KW_PRINT:       equ 38   ; R8.5 additions below: the text I/O
+TOK_KW_LPRINT:      equ 39    ; system, plus END/STOP/REM (see docs/v2/
+TOK_KW_END:         equ 40     ; ARCHITECTURE_B_IMPLEMENTATION_PLAN.md's
+TOK_KW_STOP:        equ 41      ; own R8.5 section for the real capability
+TOK_KW_REM:         equ 42       ; audit this covers)
 
 ; ---------------------------------------------------------------------------
 ; COMPILER_INIT — call once before COMPILE_PROGRAM.
@@ -738,7 +743,7 @@ LEX_CLASSIFY_KEYWORD:
         ret                       ; no match — TOK_TYPE stays TOK_IDENT
 
 KEYWORD_ENTRY_LEN:  equ 11        ; [len:1][text:9, unused tail ignored][token:1]
-KEYWORD_TABLE_COUNT: equ 20
+KEYWORD_TABLE_COUNT: equ 25
 
 ; Every row is exactly KEYWORD_ENTRY_LEN (11) bytes: [len][9 text bytes,
 ; zero-padded][token]. Generated and byte-counted mechanically (a Python
@@ -769,6 +774,11 @@ KEYWORD_TABLE:
         db 4, "POKE", 0, 0, 0, 0, 0, TOK_KW_POKE
         db 5, "PAUSE", 0, 0, 0, 0, TOK_KW_PAUSE
         db 9, "RANDOMISE", TOK_KW_RANDOMISE
+        db 5, "PRINT", 0, 0, 0, 0, TOK_KW_PRINT        ; R8.5
+        db 6, "LPRINT", 0, 0, 0, TOK_KW_LPRINT
+        db 3, "END", 0, 0, 0, 0, 0, 0, TOK_KW_END
+        db 4, "STOP", 0, 0, 0, 0, 0, TOK_KW_STOP
+        db 3, "REM", 0, 0, 0, 0, 0, 0, TOK_KW_REM
 
 ; ===========================================================================
 ; COMPILE-TIME SYMBOL TABLE — real name storage, real comparison (the piece
@@ -1051,6 +1061,10 @@ EMIT_OP_POKE:                     ld a,31 : jp EMIT_BYTE
 EMIT_OP_PAUSE:                     ld a,32 : jp EMIT_BYTE
 EMIT_OP_RANDOMISE:                  ld a,33 : jp EMIT_BYTE
 EMIT_OP_CALL_EXT:                     ld a,34 : jp EMIT_BYTE
+EMIT_OP_PRINT_NUM:                      ld a,35 : jp EMIT_BYTE  ; R8.5
+EMIT_OP_PRINT_STR:                       ld a,36 : jp EMIT_BYTE
+EMIT_OP_LPRINT_NUM:                       ld a,37 : jp EMIT_BYTE
+EMIT_OP_LPRINT_STR:                        ld a,38 : jp EMIT_BYTE
 
 ; EMIT_PLACEHOLDER_16 — writes two dummy zero bytes (a forward-reference
 ; branch target not yet known), returns the ABSOLUTE address of the first
@@ -1141,8 +1155,18 @@ COMPILE_TERM:
         call EMIT_OP_DIV
         jr .loop
 
+; R8.5 addition: unary minus. Binds to the immediate FACTOR (recurses
+; into itself, not COMPILE_EXPR/COMPILE_TERM), matching standard
+; precedence -- "-2*3" compiles as "(-2)*3", not "-(2*3)". No new
+; opcode: "-X" compiles as "PUSH_I8 0" then X's own bytecode then SUB
+; (0-X = -X), reusing the existing, already-correct int/float-promoting
+; OP_SUB wholesale -- the same "no opcode is more correct than one
+; that's just a spelling of an existing one" reasoning this session's
+; own PRINT float-negation already used (VM_NUM_TO_TEXT's own header).
 COMPILE_FACTOR:
         ld a,(TOK_TYPE)
+        cp TOK_MINUS
+        jr z,.unary_minus
         cp TOK_LPAREN
         jr z,.paren
         cp TOK_NUMBER
@@ -1153,6 +1177,17 @@ COMPILE_FACTOR:
         jr z,.ident
         ld a,3
         ld (COMPILE_ERROR_CODE),a
+        ret
+.unary_minus:
+        call LEX_NEXT_TOKEN     ; consume '-'
+        call EMIT_BYTE_OP_PUSH_I8
+        xor a
+        call EMIT_BYTE           ; push literal 0
+        call COMPILE_FACTOR      ; the operand -X applies to
+        ld a,(COMPILE_ERROR_CODE)
+        or a
+        ret nz
+        call EMIT_OP_SUB
         ret
 .paren:
         call LEX_NEXT_TOKEN
@@ -1851,6 +1886,49 @@ COMPILE_RANDOMISE:
         call EMIT_OP_RANDOMISE
         ret
 
+; ===========================================================================
+; R8.5 -- PRINT/LPRINT <string-expr | numeric-expr>. ONE argument,
+; auto-detected by peeking the first token exactly the way COMPILE_IF
+; already does for its own condition -- matching basic/basic.asm's own
+; real BASIC_EVAL_PRINT_ARG grammar (no comma/semicolon item list, no
+; ";"-suppressed newline: this dialect's PRINT never had either).
+; ===========================================================================
+COMPILE_PRINT:
+        call LEX_NEXT_TOKEN     ; consume PRINT
+        ld a,(TOK_TYPE)
+        cp TOK_STRING
+        jr z,.str_arg
+        cp TOK_STR_IDENT
+        jr z,.str_arg
+        call COMPILE_EXPR
+        ld a,(COMPILE_ERROR_CODE)
+        or a
+        ret nz
+        call EMIT_OP_PRINT_NUM
+        ret
+.str_arg:
+        call COMPILE_STR_EXPR
+        call EMIT_OP_PRINT_STR
+        ret
+
+COMPILE_LPRINT:
+        call LEX_NEXT_TOKEN     ; consume LPRINT
+        ld a,(TOK_TYPE)
+        cp TOK_STRING
+        jr z,.str_arg
+        cp TOK_STR_IDENT
+        jr z,.str_arg
+        call COMPILE_EXPR
+        ld a,(COMPILE_ERROR_CODE)
+        or a
+        ret nz
+        call EMIT_OP_LPRINT_NUM
+        ret
+.str_arg:
+        call COMPILE_STR_EXPR
+        call EMIT_OP_LPRINT_STR
+        ret
+
 ; COMPILE_GOTO — GOTO <label>
 COMPILE_GOTO:
         call LEX_NEXT_TOKEN     ; consume GOTO
@@ -2135,6 +2213,16 @@ COMPILE_STATEMENT_LIST:
         jp z,.pause
         cp TOK_KW_RANDOMISE
         jp z,.randomise
+        cp TOK_KW_PRINT
+        jp z,.print
+        cp TOK_KW_LPRINT
+        jp z,.lprint
+        cp TOK_KW_END
+        jp z,.end_stmt
+        cp TOK_KW_STOP
+        jp z,.end_stmt
+        cp TOK_KW_REM
+        jp z,.rem
         cp TOK_IDENT
         jp z,.ident_stmt
         cp TOK_STR_IDENT
@@ -2174,6 +2262,40 @@ COMPILE_STATEMENT_LIST:
         jp .after_stmt
 .randomise:
         call COMPILE_RANDOMISE
+        jp .after_stmt
+.print:
+        call COMPILE_PRINT
+        jp .after_stmt
+.lprint:
+        call COMPILE_LPRINT
+        jp .after_stmt
+.end_stmt:
+        call LEX_NEXT_TOKEN     ; consume END/STOP
+        call EMIT_OP_HALT
+        jp .after_stmt
+.rem:
+        ; REM is a pure comment -- everything to the end of this
+        ; statement is discarded, matching basic/basic.asm's own
+        ; BASIC_STMT_REM exactly ("the dispatcher already advanced HL
+        ; past REM... nothing further needs to happen"). No opcode is
+        ; emitted at all -- a REM line simply contributes nothing to
+        ; the compiled bytecode, so it cannot appear in decompiled
+        ; output either (matching this project's own established
+        ; "decompiled text is a valid, not byte-identical, re-
+        ; rendering" bar -- a REM's own comment text was never
+        ; semantically meaningful to begin with).
+        ld hl,(SRC_PTR)
+.rem_scan:
+        ld a,(hl)
+        or a
+        jr z,.rem_done
+        cp ':'
+        jr z,.rem_done
+        inc hl
+        jr .rem_scan
+.rem_done:
+        ld (SRC_PTR),hl
+        call LEX_NEXT_TOKEN
         jp .after_stmt
 .str_ident_stmt:
         call COMPILE_STR_ASSIGN

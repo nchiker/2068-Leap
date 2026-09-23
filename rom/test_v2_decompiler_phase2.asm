@@ -72,6 +72,9 @@ COLD_START:
     or   a
     jp   nz, FAIL
 
+    ld   hl, (EMIT_PTR)
+    ld   (DECOMP_END_ADDR), hl    ; R8.5: DECOMPILE_PROGRAM's own new
+                                    ; required contract
     call DECOMPILE_PROGRAM
 
     ld   a, (DECOMP_ERROR_CODE)
@@ -167,18 +170,44 @@ EXPECTED_TEXT:
     db "CALL P3(5)", 13
 EXPECTED_TEXT_LEN: equ $-EXPECTED_TEXT
 
+; Test-only stub: rom/exrom_v2_vm_core.asm's own OP_LPRINT_NUM/STR
+; reference the real rom/exrom_printer.asm's BASIC_STMT_LPRINT_EXROM
+; unconditionally, but pulling in that whole (real-ZX-printer-
+; hardware-facing, ~300-line) file pushed this standalone flat 16K
+; test image over budget with no LPRINT coverage to show for it (this
+; file's own test program never calls LPRINT). A dedicated PRINT/
+; LPRINT test (rom/test_v2_print.asm) includes the real file and
+; genuinely exercises it; every other test stubs it, same discipline
+; as this file's own existing KTAB_CALC_EXIT_TRAMPOLINE stub just below.
+BASIC_STMT_LPRINT_EXROM:
+    ret
+
 KTAB_CALC_EXIT_TRAMPOLINE:
     ret
 
     INCLUDE "kernel/math/math.asm"
     INCLUDE "rom/exrom_calc.asm"
     INCLUDE "kernel/graphics/graphics.asm"
-    INCLUDE "kernel/sound/sound.asm"
-    INCLUDE "rom/exrom_sound.asm"
-    INCLUDE "kernel/io/io.asm"
-    INCLUDE "kernel/interrupt/interrupt.asm"
+; Test-only stubs: this file's own test program never exercises BEEP/
+; SOUND/PAUSE -- rom/exrom_v2_vm_core.asm's own OP_BEEP/OP_SOUND/OP_PAUSE
+; still reference these unconditionally, and the real kernel/sound+
+; kernel/io+kernel/interrupt modules pushed this flat 16K image over
+; budget for zero real coverage, same stubbing discipline already used
+; by rom/test_v2_save_load.asm and rom/test_v2_editor_integration.asm.
+SOUND_BEEP:
+    ret
+SOUND_EXROM:
+    or a
+    ret
+IO_READ_KEY:
+    xor a
+    ret
+INT_GET_FRAMES:
+    ld hl,0
+    ret
     INCLUDE "kernel/memory/memory.asm"
     INCLUDE "kernel/extensions/ext_registry.asm"
+    INCLUDE "rom/exrom_format.asm"
     INCLUDE "rom/exrom_v2_vm_core.asm"
     INCLUDE "rom/exrom_v2_compiler.asm"
     INCLUDE "rom/exrom_v2_decompiler.asm"

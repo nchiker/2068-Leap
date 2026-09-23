@@ -128,6 +128,23 @@ DECOMP_EXT_ARGCOUNT:  equ $8E9D   ; OP_CALL_EXT's own argcount operand
                                     ; byte (1 byte)
 DECOMP_FLOAT_TOTAL:   equ $8E9E   ; PUSH_FLOAT_LIT's own total-digit-
                                     ; position count (1 byte)
+DECOMP_END_ADDR:      equ $8E9F   ; (2 bytes) R8.5 addition: the real
+                                    ; end of the compiled program (the
+                                    ; caller's own EMIT_PTR at the time
+                                    ; it called COMPILE_PROGRAM -- see
+                                    ; DECOMPILE_PROGRAM's own updated
+                                    ; contract below). HALT (opcode 0)
+                                    ; is no longer "the whole program's
+                                    ; own end" by construction once
+                                    ; END/STOP (R8.5) compile to it too
+                                    ; -- a real, mid-program END/STOP is
+                                    ; valid V1 behavior (stops execution
+                                    ; early; the program TEXT, and any
+                                    ; bytecode reachable only via GOTO,
+                                    ; continues past it) that the
+                                    ; original "HALT always ends the
+                                    ; walk" logic would have silently
+                                    ; truncated from decompiled output.
 DECOMP_LABEL_TABLE:   equ $8F00   ; up to 16 distinct jump-target
                                     ; addresses, 2 bytes each (32 bytes,
                                     ; ends $8F20) — collected by the
@@ -795,6 +812,14 @@ DECOMP_SKIP_OPERAND:
         jp z,.w0
         cp 33                     ; RANDOMISE (R7 Phase 2)
         jp z,.w0
+        cp 35                     ; PRINT_NUM (R8.5)
+        jp z,.w0
+        cp 36                     ; PRINT_STR (R8.5)
+        jp z,.w0
+        cp 37                     ; LPRINT_NUM (R8.5)
+        jp z,.w0
+        cp 38                     ; LPRINT_STR (R8.5)
+        jp z,.w0
         cp 1                      ; PUSH_I8
         jr z,.w1
         cp 3                      ; LOAD_VAR
@@ -875,8 +900,19 @@ DECOMP_COLLECT_LABELS:
         ld a,(hl)
         inc hl
         ld (DECOMP_IP),hl
-        cp 0                      ; HALT ends the walk
+        cp 0                      ; HALT -- R8.5: no longer synonymous
+        jr nz,.not_halt            ; with "walk over" (END/STOP compile
+                                     ; to it too, and a mid-program one
+                                     ; is real, valid bytecode); same
+                                     ; DECOMP_END_ADDR cutoff DECOMPILE_
+                                     ; PROGRAM's own .op_halt uses
+        ld hl,(DECOMP_IP)
+        ld de,(DECOMP_END_ADDR)
+        or a
+        sbc hl,de
         ret z
+        jr .loop
+.not_halt:
         cp 6                       ; JMP
         jr z,.target
         cp 12                       ; JMPZ
@@ -1072,6 +1108,17 @@ DECOMP_ERR_BAD_JMPZ_SHAPE:
 ; source line per statement-terminating opcode into DECOMP_OUT_BUF,
 ; CR-terminated (DECOMP_EMIT_NEWLINE).
 ;
+; CALLER CONTRACT (R8.5 addition): DECOMP_END_ADDR must be set to the
+; real compiled program's own end address (the caller's own EMIT_PTR
+; right after COMPILE_PROGRAM finished) BEFORE calling this. HALT
+; (opcode 0) is no longer synonymous with "the whole program's own
+; end" now that R8.5's END/STOP compile to it too -- a mid-program
+; END/STOP is real, valid, and must not silently truncate whatever
+; bytecode follows it (reachable via GOTO, or simply the rest of the
+; source the user wrote). The walk now only truly stops once DECOMP_IP
+; reaches DECOMP_END_ADDR (see .op_halt below); every HALT encountered
+; before that renders as "END" and the walk continues.
+;
 ; Output: DECOMP_OUT_BUF holds the reconstructed text; DECOMP_OUT_PTR
 ; holds one-past-the-end (so length = DECOMP_OUT_PTR - DECOMP_OUT_BUF);
 ; DECOMP_ERROR_CODE is 0 on success, nonzero on a real decode error (the
@@ -1126,8 +1173,8 @@ DECOMPILE_PROGRAM:
         ld a,(hl)
         inc hl
         ld (DECOMP_IP),hl
-        cp 0                     ; HALT ends the walk
-        ret z
+        cp 0                     ; HALT -- .op_halt decides whether the
+        jp z,.op_halt              ; walk truly ends (see its own header)
         cp 1
         jp z,.op_push_i8
         cp 2
@@ -1196,7 +1243,32 @@ DECOMPILE_PROGRAM:
         jp z,.op_randomise
         cp 34
         jp z,.op_call_ext
+        cp 35
+        jp z,.op_print_num
+        cp 36
+        jp z,.op_print_str
+        cp 37
+        jp z,.op_lprint_num
+        cp 38
+        jp z,.op_lprint_str
         jp DECOMP_ERR_UNSUPPORTED_OPCODE
+
+.op_halt:
+        ; See DECOMPILE_PROGRAM's own updated header: HALT alone no
+        ; longer means "the whole program's own end". If this is the
+        ; program's REAL final HALT (DECOMP_IP now equals the caller's
+        ; own DECOMP_END_ADDR), stop for real; otherwise this is a
+        ; mid-program END/STOP -- emit it as text and keep walking.
+        ld hl,(DECOMP_IP)
+        ld de,(DECOMP_END_ADDR)
+        or a
+        sbc hl,de
+        ret z
+        ld hl,STR_END
+        ld c,STR_END_LEN
+        call DECOMP_EMIT_TEXT
+        call DECOMP_EMIT_NEWLINE
+        jp DECOMPILE_PROGRAM.loop
 
 .op_push_i8:
         ld hl,(DECOMP_IP)
@@ -2064,6 +2136,64 @@ DECOMPILE_PROGRAM:
         call DECOMP_EMIT_NEWLINE
         jp DECOMPILE_PROGRAM.loop
 
+; PRINT/LPRINT -- each pops exactly one fragment (R8.5's own real
+; scope, matching basic/basic.asm's real BASIC_EVAL_PRINT_ARG grammar:
+; no comma/semicolon item list). DECOMP_EMIT_1ARG_STMT's own
+; convention (keyword text at DECOMP_TMP_A/DECOMP_TMP_LEN) matches
+; BORDER/INK/PAPER/PAUSE/RANDOMISE's own reuse of it exactly.
+.op_print_num:
+        ld hl,STR_PRINT
+        ld (DECOMP_TMP_A),hl
+        ld a,STR_PRINT_LEN
+        ld (DECOMP_TMP_LEN),a
+        call DECOMP_EMIT_1ARG_STMT
+        jp DECOMPILE_PROGRAM.loop
+.op_print_str:
+        ; NOT DECOMP_EMIT_1ARG_STMT -- the popped fragment here is a
+        ; string-typed value, which (per DECOMP_STR_OPERAND's own header)
+        ; needs the "PUSH_I16-as-strsym-index" reinterpretation before
+        ; being emitted, or "PRINT A$" wrongly decompiles as "PRINT 0"
+        ; (a real bug found via an actual run comparing decompiled text
+        ; against the real program).
+        call DECOMP_FRAG_POP          ; HL = arg text, C = length
+        call DECOMP_STR_OPERAND
+        ld (DECOMP_TMP_B),hl
+        ld a,c
+        ld (DECOMP_BLEN),a
+        ld hl,STR_PRINT
+        ld a,STR_PRINT_LEN
+        ld c,a
+        call DECOMP_EMIT_TEXT
+        ld hl,(DECOMP_TMP_B)
+        ld a,(DECOMP_BLEN)
+        ld c,a
+        call DECOMP_EMIT_TEXT
+        call DECOMP_EMIT_NEWLINE
+        jp DECOMPILE_PROGRAM.loop
+.op_lprint_num:
+        ld hl,STR_LPRINT
+        ld (DECOMP_TMP_A),hl
+        ld a,STR_LPRINT_LEN
+        ld (DECOMP_TMP_LEN),a
+        call DECOMP_EMIT_1ARG_STMT
+        jp DECOMPILE_PROGRAM.loop
+.op_lprint_str:
+        call DECOMP_FRAG_POP
+        call DECOMP_STR_OPERAND
+        ld (DECOMP_TMP_B),hl
+        ld a,c
+        ld (DECOMP_BLEN),a
+        ld hl,STR_LPRINT
+        ld a,STR_LPRINT_LEN
+        ld c,a
+        call DECOMP_EMIT_TEXT
+        ld hl,(DECOMP_TMP_B)
+        ld a,(DECOMP_BLEN)
+        ld c,a
+        call DECOMP_EMIT_TEXT
+        call DECOMP_EMIT_NEWLINE
+        jp DECOMPILE_PROGRAM.loop
+
 ; DECOMP_STR_OPERAND -- input: HL = a fragment's own text pointer, C =
 ; its length (as popped from the fragment stack by a string-typed
 ; consumer below). A string-typed sub-expression's only two possible
@@ -2249,6 +2379,12 @@ STR_PAUSE:     db "PAUSE "
 STR_PAUSE_LEN: equ $-STR_PAUSE
 STR_RANDOMISE: db "RANDOMISE "
 STR_RANDOMISE_LEN: equ $-STR_RANDOMISE
+STR_PRINT:     db "PRINT "
+STR_PRINT_LEN: equ $-STR_PRINT
+STR_LPRINT:    db "LPRINT "
+STR_LPRINT_LEN: equ $-STR_LPRINT
+STR_END:       db "END"
+STR_END_LEN:   equ $-STR_END
 
 STR_GOTO:      db "GOTO "
 STR_GOTO_LEN:  equ $-STR_GOTO

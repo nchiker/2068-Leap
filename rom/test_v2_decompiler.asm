@@ -63,6 +63,9 @@ COLD_START:
     or   a
     jp   nz, FAIL
 
+    ld   hl, (EMIT_PTR)
+    ld   (DECOMP_END_ADDR), hl    ; R8.5: DECOMPILE_PROGRAM's own new
+                                    ; required contract
     call DECOMPILE_PROGRAM
 
     ld   a, (DECOMP_ERROR_CODE)
@@ -145,6 +148,18 @@ EXPECTED_TEXT:
     db "NEXT V3", 13
 EXPECTED_TEXT_LEN: equ $-EXPECTED_TEXT
 
+; Test-only stub: rom/exrom_v2_vm_core.asm's own OP_LPRINT_NUM/STR
+; reference the real rom/exrom_printer.asm's BASIC_STMT_LPRINT_EXROM
+; unconditionally, but pulling in that whole (real-ZX-printer-
+; hardware-facing, ~300-line) file pushed this standalone flat 16K
+; test image over budget with no LPRINT coverage to show for it (this
+; file's own test program never calls LPRINT). A dedicated PRINT/
+; LPRINT test (rom/test_v2_print.asm) includes the real file and
+; genuinely exercises it; every other test stubs it, same discipline
+; as this file's own existing KTAB_CALC_EXIT_TRAMPOLINE stub just below.
+BASIC_STMT_LPRINT_EXROM:
+    ret
+
 KTAB_CALC_EXIT_TRAMPOLINE:
     ret
 
@@ -157,6 +172,7 @@ KTAB_CALC_EXIT_TRAMPOLINE:
     INCLUDE "kernel/interrupt/interrupt.asm"
     INCLUDE "kernel/memory/memory.asm"
     INCLUDE "kernel/extensions/ext_registry.asm"
+    INCLUDE "rom/exrom_format.asm"
     INCLUDE "rom/exrom_v2_vm_core.asm"
     INCLUDE "rom/exrom_v2_compiler.asm"
     INCLUDE "rom/exrom_v2_decompiler.asm"
