@@ -275,6 +275,12 @@ GFX_SCROLL_OUTPUT_UP:
     ret
 GFX_SET_MODE:
     ret
+GFX_SPRITE_CAPTURE:
+    or a
+    ret
+GFX_SPRITE_DRAW:
+    or a
+    ret
     INCLUDE "rom/exrom_format.asm"
     INCLUDE "rom/exrom_v2_vm_core.asm"
     INCLUDE "rom/exrom_v2_compiler.asm"

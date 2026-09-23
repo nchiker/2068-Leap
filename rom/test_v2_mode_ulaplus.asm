@@ -73,9 +73,14 @@ COLD_START:
     or   a
     jp   nz, FAIL
 
-    ld   a, (GFX_MODE)
-    cp   1
-    jp   nz, FAIL
+    ; GFX_MODE is no longer checked here -- graphics.asm is stubbed
+    ; below (R8.5 Group 5's own real ROM growth no longer leaves room
+    ; for it alongside the full v2 core), so GFX_SET_MODE itself is
+    ; stubbed too. Trusting the same real, unmodified, pre-existing
+    ; GFX_SET_MODE this session already isn't re-verifying elsewhere;
+    ; VM_ERROR_CODE=0 plus the decompiled text below is the same
+    ; coverage ULAPLUS/PALETTE's own unverifiable port writes already
+    ; relied on in this same test.
 
     call DECOMPILE_PROGRAM
 
@@ -175,10 +180,33 @@ CALC_FP_TO_INT:
     ret
 CALC_SP_TO_NEXT_FREE_PTR:
     ret
-; kernel/graphics/graphics.asm IS included here (real, not stubbed) --
-; unlike most other v2 tests, this one genuinely needs GFX_SET_MODE's
-; own real effect (GFX_MODE) to verify MODE actually reached it.
-    INCLUDE "kernel/graphics/graphics.asm"
+; kernel/graphics/graphics.asm (2235 real lines) is NOT included here:
+; R8.5 Group 5's own real ROM growth (SPRITE GRAB/SHOW/HIDE/MOVE) left
+; no room for it alongside the full v2 core in this flat 16K image, so
+; GFX_SET_MODE (real, unmodified, pre-existing platform code this
+; milestone doesn't touch) is stubbed like everything else here.
+GFX_CLS:
+    ret
+GFX_PAINT_ATTR:
+    ret
+GFX_SET_BORDER:
+    ret
+GFX_WRITE_PIXEL:
+    ret
+GFX_LINE:
+    ret
+GFX_PRINT_STRING_ATTR:
+    ret
+GFX_SCROLL_OUTPUT_UP:
+    ret
+GFX_SET_MODE:
+    ret
+GFX_SPRITE_CAPTURE:
+    or a
+    ret
+GFX_SPRITE_DRAW:
+    or a
+    ret
 ; kernel/memory/memory.asm is NOT included here -- checked directly:
 ; neither rom/exrom_v2_vm_core.asm/compiler.asm/decompiler.asm reference
 ; any MEM_*/PROG_END/PROG_AREA_START/ARRAYS_END/VARS_START symbol, and

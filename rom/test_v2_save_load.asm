@@ -332,6 +332,12 @@ GFX_SCROLL_OUTPUT_UP:
     ret
 GFX_SET_MODE:
     ret
+GFX_SPRITE_CAPTURE:
+    or a
+    ret
+GFX_SPRITE_DRAW:
+    or a
+    ret
 ; Test-only stubs: neither this file's own test program nor its
 ; purpose exercises BEEP/SOUND -- rom/exrom_v2_vm_core.asm's own
 ; OP_BEEP/OP_SOUND still reference these unconditionally (same class

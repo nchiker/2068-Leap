@@ -970,6 +970,14 @@ DECOMP_SKIP_OPERAND:
         jp z,.w0
         cp 54                     ; PALETTE (R8.5 Group 5)
         jp z,.w0
+        cp 55                     ; SPRITE GRAB (R8.5 Group 5)
+        jp z,.w0
+        cp 56                     ; SPRITE SHOW
+        jp z,.w0
+        cp 57                     ; SPRITE HIDE
+        jp z,.w0
+        cp 58                     ; SPRITE MOVE
+        jp z,.w0
         cp 14                     ; FOR_NEXT
         jr z,.w3
         cp 34                     ; CALL_EXT (R7.5)
@@ -1622,6 +1630,14 @@ DECOMPILE_PROGRAM:
         jp z,.op_ulaplus
         cp 54
         jp z,.op_palette
+        cp 55
+        jp z,.op_sprite_grab
+        cp 56
+        jp z,.op_sprite_show
+        cp 57
+        jp z,.op_sprite_hide
+        cp 58
+        jp z,.op_sprite_move
         jp DECOMP_ERR_UNSUPPORTED_OPCODE
 
 .op_halt:
@@ -2866,6 +2882,143 @@ DECOMPILE_PROGRAM:
         call DECOMP_EMIT_2ARG_STMT
         jp DECOMPILE_PROGRAM.loop
 
+; R8.5 Group 5 -- SPRITE GRAB/SHOW/HIDE/MOVE. Renders as ONE statement
+; with a sub-keyword, matching V1's own real grammar -- "SPRITE GRAB
+; s,r,c,w,h" etc, not a separate top-level statement per sub-keyword.
+.op_sprite_grab:
+        call DECOMP_FRAG_POP          ; h
+        ld (DECOMP_ARG_PTR0),hl
+        ld a,c
+        ld (DECOMP_ARG_LEN0),a
+        call DECOMP_FRAG_POP          ; w
+        ld (DECOMP_ARG_PTR1),hl
+        ld a,c
+        ld (DECOMP_ARG_LEN1),a
+        call DECOMP_FRAG_POP          ; col
+        ld (DECOMP_ARG_PTR2),hl
+        ld a,c
+        ld (DECOMP_ARG_LEN2),a
+        call DECOMP_FRAG_POP          ; row
+        ld (DECOMP_ARG_PTR3),hl
+        ld a,c
+        ld (DECOMP_ARG_LEN3),a
+        call DECOMP_FRAG_POP          ; slot -- a 5th arg needs a slot
+        ld (DECOMP_TMP_A),hl           ; beyond DECOMP_ARG_PTR0-3's own
+        ld a,c                          ; 4; DECOMP_TMP_A/B are safe here
+        ld (DECOMP_TMP_B),a              ; (not touched by DECOMP_EMIT_
+                                           ; CHAR, unlike DECOMP_TMP_LEN)
+        ld hl,STR_SPRITE_GRAB
+        ld c,STR_SPRITE_GRAB_LEN
+        call DECOMP_EMIT_TEXT
+        ld hl,(DECOMP_TMP_A)           ; slot
+        ld a,(DECOMP_TMP_B)
+        ld c,a
+        call DECOMP_EMIT_TEXT
+        ld a,','
+        call DECOMP_EMIT_CHAR
+        ld hl,(DECOMP_ARG_PTR3)         ; row
+        ld a,(DECOMP_ARG_LEN3)
+        ld c,a
+        call DECOMP_EMIT_TEXT
+        ld a,','
+        call DECOMP_EMIT_CHAR
+        ld hl,(DECOMP_ARG_PTR2)         ; col
+        ld a,(DECOMP_ARG_LEN2)
+        ld c,a
+        call DECOMP_EMIT_TEXT
+        ld a,','
+        call DECOMP_EMIT_CHAR
+        ld hl,(DECOMP_ARG_PTR1)         ; w
+        ld a,(DECOMP_ARG_LEN1)
+        ld c,a
+        call DECOMP_EMIT_TEXT
+        ld a,','
+        call DECOMP_EMIT_CHAR
+        ld hl,(DECOMP_ARG_PTR0)         ; h
+        ld a,(DECOMP_ARG_LEN0)
+        ld c,a
+        call DECOMP_EMIT_TEXT
+        call DECOMP_EMIT_NEWLINE
+        jp DECOMPILE_PROGRAM.loop
+
+.op_sprite_show:
+        call DECOMP_FRAG_POP          ; col
+        ld (DECOMP_ARG_PTR0),hl
+        ld a,c
+        ld (DECOMP_ARG_LEN0),a
+        call DECOMP_FRAG_POP          ; row
+        ld (DECOMP_ARG_PTR1),hl
+        ld a,c
+        ld (DECOMP_ARG_LEN1),a
+        call DECOMP_FRAG_POP          ; slot
+        ld (DECOMP_TMP_A),hl
+        ld a,c
+        ld (DECOMP_TMP_B),a
+        ld hl,STR_SPRITE_SHOW
+        ld c,STR_SPRITE_SHOW_LEN
+        call DECOMP_EMIT_TEXT
+        ld hl,(DECOMP_TMP_A)
+        ld a,(DECOMP_TMP_B)
+        ld c,a
+        call DECOMP_EMIT_TEXT
+        ld a,','
+        call DECOMP_EMIT_CHAR
+        ld hl,(DECOMP_ARG_PTR1)         ; row
+        ld a,(DECOMP_ARG_LEN1)
+        ld c,a
+        call DECOMP_EMIT_TEXT
+        ld a,','
+        call DECOMP_EMIT_CHAR
+        ld hl,(DECOMP_ARG_PTR0)         ; col
+        ld a,(DECOMP_ARG_LEN0)
+        ld c,a
+        call DECOMP_EMIT_TEXT
+        call DECOMP_EMIT_NEWLINE
+        jp DECOMPILE_PROGRAM.loop
+
+.op_sprite_hide:
+        ld hl,STR_SPRITE_HIDE
+        ld (DECOMP_TMP_A),hl
+        ld a,STR_SPRITE_HIDE_LEN
+        ld (DECOMP_TMP_LEN),a
+        call DECOMP_EMIT_1ARG_STMT
+        jp DECOMPILE_PROGRAM.loop
+
+.op_sprite_move:
+        call DECOMP_FRAG_POP          ; col
+        ld (DECOMP_ARG_PTR0),hl
+        ld a,c
+        ld (DECOMP_ARG_LEN0),a
+        call DECOMP_FRAG_POP          ; row
+        ld (DECOMP_ARG_PTR1),hl
+        ld a,c
+        ld (DECOMP_ARG_LEN1),a
+        call DECOMP_FRAG_POP          ; slot
+        ld (DECOMP_TMP_A),hl
+        ld a,c
+        ld (DECOMP_TMP_B),a
+        ld hl,STR_SPRITE_MOVE
+        ld c,STR_SPRITE_MOVE_LEN
+        call DECOMP_EMIT_TEXT
+        ld hl,(DECOMP_TMP_A)
+        ld a,(DECOMP_TMP_B)
+        ld c,a
+        call DECOMP_EMIT_TEXT
+        ld a,','
+        call DECOMP_EMIT_CHAR
+        ld hl,(DECOMP_ARG_PTR1)         ; row
+        ld a,(DECOMP_ARG_LEN1)
+        ld c,a
+        call DECOMP_EMIT_TEXT
+        ld a,','
+        call DECOMP_EMIT_CHAR
+        ld hl,(DECOMP_ARG_PTR0)         ; col
+        ld a,(DECOMP_ARG_LEN0)
+        ld c,a
+        call DECOMP_EMIT_TEXT
+        call DECOMP_EMIT_NEWLINE
+        jp DECOMPILE_PROGRAM.loop
+
 ; R8.5 Group 3 -- the remaining relops, plus AND/OR/NOT. Same shape as
 ; .op_cmplt/.op_cmpeq above.
 .op_cmple:
@@ -3098,6 +3251,14 @@ STR_ULAPLUS:   db "ULAPLUS "
 STR_ULAPLUS_LEN: equ $-STR_ULAPLUS
 STR_PALETTE:   db "PALETTE "
 STR_PALETTE_LEN: equ $-STR_PALETTE
+STR_SPRITE_GRAB: db "SPRITE GRAB "
+STR_SPRITE_GRAB_LEN: equ $-STR_SPRITE_GRAB
+STR_SPRITE_SHOW: db "SPRITE SHOW "
+STR_SPRITE_SHOW_LEN: equ $-STR_SPRITE_SHOW
+STR_SPRITE_HIDE: db "SPRITE HIDE "
+STR_SPRITE_HIDE_LEN: equ $-STR_SPRITE_HIDE
+STR_SPRITE_MOVE: db "SPRITE MOVE "
+STR_SPRITE_MOVE_LEN: equ $-STR_SPRITE_MOVE
 STR_END:       db "END"
 STR_END_LEN:   equ $-STR_END
 STR_ABS:       db "ABS"

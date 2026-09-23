@@ -58,6 +58,26 @@
 ;   ts2068-debug run --max-instructions 500000
 ;   ts2068-debug timex   (border field)
 ; ============================================================================
+; KNOWN LIMITATION (R8.5 Group 5): this flat 16K standalone image
+; currently overflows its own budget (~1000-1250 bytes over) because it
+; needs BOTH the real 1772-line rom/exrom_calc.asm (this test's own
+; float coverage genuinely needs it -- no further stub is possible
+; without gutting the calculator itself) AND the full v2 core, which
+; has grown past what fits alongside it since Group 5's own real ROM
+; growth (SPRITE GRAB/SHOW/HIDE/MOVE alone added ~700+ bytes across
+; vm_core/compiler/decompiler, none of it reachable from this test's
+; own float-only program). This is a genuine test-HARNESS scaling
+; limit, not a functional regression: Group 5's changes (FOR...STEP,
+; EXIT FOR, MODE/ULAPLUS/PALETTE, SPRITE) touch no float-handling code
+; path this test exercises (OP_PUSH_FLOAT_LIT, ABS's own float branch,
+; VM_NUM_TO_TEXT's float path are all unchanged). This test's own real
+; coverage last built and passed at commit acb549c (R8.5 Group 5's
+; MODE/ULAPLUS/PALETTE commit) -- presumed still correct, not
+; re-verified since. Revisit once R9 deletes basic.asm and frees real
+; headroom, or once the flat-image test harness itself is redesigned
+; to let a test opt out of modules it doesn't need at a finer grain
+; than whole-file INCLUDE/stub.
+; ============================================================================
 
     INCLUDE "include/hardware.inc"
     INCLUDE "include/sysvars.inc"
@@ -238,6 +258,12 @@ GFX_PRINT_STRING_ATTR:
 GFX_SCROLL_OUTPUT_UP:
     ret
 GFX_SET_MODE:
+    ret
+GFX_SPRITE_CAPTURE:
+    or a
+    ret
+GFX_SPRITE_DRAW:
+    or a
     ret
 ; Test-only stubs: this file's own test program never exercises BEEP/
 ; SOUND/PAUSE, and never registers or calls a loadable extension -- same

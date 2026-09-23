@@ -183,7 +183,33 @@ CALC_FP_TO_INT:
     ret
 CALC_SP_TO_NEXT_FREE_PTR:
     ret
-    INCLUDE "kernel/graphics/graphics.asm"
+; kernel/graphics/graphics.asm (2235 real lines) is NOT included here:
+; this test never checks real screen bitmap content. R8.5 Group 5's own
+; real ROM growth (SPRITE GRAB/SHOW/HIDE/MOVE) pushed this flat 16K
+; image over budget with graphics.asm included; same stubbing
+; discipline as rom/test_v2_call_fn.asm's own identical fix.
+GFX_CLS:
+    ret
+GFX_PAINT_ATTR:
+    ret
+GFX_SET_BORDER:
+    ret
+GFX_WRITE_PIXEL:
+    ret
+GFX_LINE:
+    ret
+GFX_PRINT_STRING_ATTR:
+    ret
+GFX_SCROLL_OUTPUT_UP:
+    ret
+GFX_SET_MODE:
+    ret
+GFX_SPRITE_CAPTURE:
+    or a
+    ret
+GFX_SPRITE_DRAW:
+    or a
+    ret
 ; Test-only stubs: this file's own test program never exercises BEEP/
 ; SOUND/PAUSE, and never registers or calls a loadable extension -- same
 ; stubbing discipline (and same real contracts: EXT2_LOOKUP's carry SET

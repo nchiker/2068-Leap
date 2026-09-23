@@ -214,6 +214,13 @@
 ;       silently masked, matching V1's own real MSG_INVALID_MODE)
 ;  13 = invalid ULAPLUS mode value (must be 0 or 1)
 ;  14 = invalid PALETTE index (must be 0-63)
+;  15 = sprite slot out of range (must be 0-7)
+;  16 = sprite row/col/width/height out of range
+;  17 = sprite slot has not been GRABbed yet
+;  18 = sprite already shown (HIDE it first)
+;  19 = sprite not currently shown
+;  20 = sprite rectangle does not fit the screen (GFX_SPRITE_BOUNDS_
+;       CHECK's own real rejection)
 ;
 ; Operand-stack record layout (3 bytes, at address SP, SP+1, SP+2):
 ;   [value_lo][value_hi][tag]   -- SP points at the lowest (most recent) record
@@ -474,6 +481,29 @@ VM_INPUT_DIGITS:     equ $87DD  ; numeric INPUT only: up to 6 accepted
 VM_INPUT_DIGITS_MAX: equ 5      ; -32768..32767 -- 5 digits, sign tracked
                                    ; separately in VM_INPUT_NEG_TMP
 
+; R8.5 Group 5 -- SPRITE GRAB/SHOW/HIDE/MOVE. Confirmed via this
+; milestone's own reuse audit: reaches kernel/graphics's real
+; GFX_SPRITE_CAPTURE/GFX_SPRITE_DRAW and the existing SPRITE_SLOT_*
+; sysvar state directly (all real, kernel-resident/sysvars.inc-
+; resident, not basic.asm-coupled) -- rom/exrom_sprite.asm's own
+; surrounding parse code is KTAB_-coupled and NOT reused, but its own
+; header documents the real grammar/semantics this mirrors ("SPRITE
+; GRAB/SHOW/HIDE/MOVE" as ONE statement with 4 sub-keywords, not 4
+; separate top-level statements -- V1's own real shape, not assumed).
+VM_SPRITE_SLOT:      equ $87E4  ; working slot index (1 byte)
+VM_SPRITE_ROW:       equ $87E5  ; working row/col/w/h (1 byte each) --
+VM_SPRITE_COL:       equ $87E6   ; reused per-step within one opcode
+VM_SPRITE_W:         equ $87E7   ; handler (GRAB/SHOW/HIDE each only
+VM_SPRITE_H:         equ $87E8   ; need ONE position/size at a time)
+VM_SPRITE_NEW_ROW:   equ $87E9  ; MOVE only: the popped target position,
+VM_SPRITE_NEW_COL:   equ $87EA   ; held separately from VM_SPRITE_ROW/COL
+                                   ; (which MOVE reuses for the OLD
+                                   ; position during its own restore step)
+VM_SPRITE_IMG_ADDR:  equ $87EB  ; this slot's own real image/background
+VM_SPRITE_BG_ADDR:   equ $87ED   ; buffer addresses (2 bytes each),
+                                   ; computed once per opcode by
+                                   ; VM_SPRITE_COMPUTE_ADDRS below
+
 VM_FOR_STEP:         equ $87E2  ; R8.5 Group 5 -- FOR...STEP. Remembered
                                    ; loop step (2 bytes), same single-
                                    ; active-loop scope as VM_FOR_LIMIT
@@ -541,14 +571,15 @@ VM_RUN:
         ld a,(hl)               ; fetch opcode
         inc hl
         ld (VM_IP),hl
-        cp 55                   ; 55 opcodes defined (0-54, R8.5 adds
+        cp 59                   ; 59 opcodes defined (0-58, R8.5 adds
                                  ; 35-38: PRINT_NUM/STR, LPRINT_NUM/STR;
                                  ; 39: CALL_FN (Group 1); 40-43: CMP_LE/
                                  ; GT/GE/NE; 44-46: AND/OR/NOT; 47:
                                  ; JMP_ELSE (Group 3); 48-49: ARR_LOAD/
                                  ; ARR_STORE (Group 4); 50-51: INPUT_NUM/
                                  ; INPUT_STR (Group 2's own late close-out);
-                                 ; 52-54: MODE/ULAPLUS/PALETTE (Group 5))
+                                 ; 52-54: MODE/ULAPLUS/PALETTE (Group 5);
+                                 ; 55-58: SPRITE GRAB/SHOW/HIDE/MOVE (Group 5))
         jp nc,VM_ERR_ILLEGAL_OPCODE
         ld l,a
         ld h,0
@@ -629,6 +660,10 @@ VM_OP_TABLE:
         dw OP_MODE                                          ; 52 (R8.5 Group 5)
         dw OP_ULAPLUS                                        ; 53
         dw OP_PALETTE                                         ; 54
+        dw OP_SPRITE_GRAB                                      ; 55
+        dw OP_SPRITE_SHOW                                       ; 56
+        dw OP_SPRITE_HIDE                                        ; 57
+        dw OP_SPRITE_MOVE                                        ; 58
 
 ; ---------------------------------------------------------------------------
 ; String-table access: index (A) -> HL = record address
@@ -2280,6 +2315,354 @@ OP_PALETTE:
         out (c),a
         jp VM_RUN.loop
 
+; ---------------------------------------------------------------------------
+; R8.5 Group 5 -- SPRITE GRAB/SHOW/HIDE/MOVE. Confirmed via this
+; milestone's own reuse audit: reaches kernel/graphics's real
+; GFX_SPRITE_CAPTURE/GFX_SPRITE_DRAW and the existing SPRITE_SLOT_*
+; sysvar state directly -- all genuinely reusable platform state/code
+; (kernel/graphics/graphics.asm, include/sysvars.inc), none of it
+; basic.asm-resident or KTAB_-coupled.
+; ---------------------------------------------------------------------------
+
+; VM_SPRITE_COMPUTE_ADDRS -- input: VM_SPRITE_SLOT. Output:
+; VM_SPRITE_IMG_ADDR/VM_SPRITE_BG_ADDR (2 bytes each) = this slot's own
+; real image/background buffer addresses. Destroys: AF, DE, HL.
+VM_SPRITE_COMPUTE_ADDRS:
+        ld a,(VM_SPRITE_SLOT)
+        ld l,a
+        ld h,0
+        ld de,SPRITE_SLOT_BYTES
+        call MATH_MULTIPLY16    ; HL = slot*SPRITE_SLOT_BYTES -- the same
+                                  ; real, already-reusable platform
+                                  ; primitive SUB/DIV/etc already use
+        push hl
+        ld de,SPRITE_SLOT_IMG_BUF
+        add hl,de
+        ld (VM_SPRITE_IMG_ADDR),hl
+        pop hl
+        ld de,SPRITE_SLOT_BG_BUF
+        add hl,de
+        ld (VM_SPRITE_BG_ADDR),hl
+        ret
+
+OP_SPRITE_GRAB:
+        call VM_POP              ; h
+        ld a,l
+        ld (VM_SPRITE_H),a
+        call VM_POP              ; w
+        ld a,l
+        ld (VM_SPRITE_W),a
+        call VM_POP              ; col
+        ld a,l
+        ld (VM_SPRITE_COL),a
+        call VM_POP              ; row
+        ld a,l
+        ld (VM_SPRITE_ROW),a
+        call VM_POP              ; slot
+        ld a,l
+        ld (VM_SPRITE_SLOT),a
+        cp SPRITE_SLOT_MAX
+        jp nc,VM_ERR_SPRITE_SLOT
+        ld a,(VM_SPRITE_ROW)
+        cp 24
+        jp nc,VM_ERR_SPRITE_RANGE
+        ld a,(VM_SPRITE_COL)
+        cp 32
+        jp nc,VM_ERR_SPRITE_RANGE
+        ld a,(VM_SPRITE_W)
+        or a
+        jp z,VM_ERR_SPRITE_RANGE
+        cp SPRITE_CELL_MAX+1
+        jp nc,VM_ERR_SPRITE_RANGE
+        ld a,(VM_SPRITE_H)
+        or a
+        jp z,VM_ERR_SPRITE_RANGE
+        cp SPRITE_CELL_MAX+1
+        jp nc,VM_ERR_SPRITE_RANGE
+        ld a,(VM_SPRITE_SLOT)       ; refuse GRAB while shown (matches
+        ld hl,SPRITE_SLOT_SHOWN      ; V1's own real "must be hidden
+        ld e,a                        ; first" rule)
+        ld d,0
+        add hl,de
+        ld a,(hl)
+        or a
+        jp nz,VM_ERR_SPRITE_SHOWN
+        call VM_SPRITE_COMPUTE_ADDRS
+        ld a,(VM_SPRITE_ROW)
+        ld b,a
+        ld a,(VM_SPRITE_COL)
+        ld c,a
+        ld a,(VM_SPRITE_W)
+        ld d,a
+        ld a,(VM_SPRITE_H)
+        ld e,a
+        ld hl,(VM_SPRITE_IMG_ADDR)
+        call GFX_SPRITE_CAPTURE
+        jp c,VM_ERR_SPRITE_BOUNDS
+        ld a,(VM_SPRITE_SLOT)
+        ld hl,SPRITE_SLOT_W
+        ld e,a
+        ld d,0
+        add hl,de
+        ld a,(VM_SPRITE_W)
+        ld (hl),a
+        ld a,(VM_SPRITE_SLOT)
+        ld hl,SPRITE_SLOT_H
+        ld e,a
+        add hl,de
+        ld a,(VM_SPRITE_H)
+        ld (hl),a
+        ld a,(VM_SPRITE_SLOT)
+        ld hl,SPRITE_SLOT_DEFINED
+        ld e,a
+        add hl,de
+        ld a,1
+        ld (hl),a
+        jp VM_RUN.loop
+
+OP_SPRITE_SHOW:
+        call VM_POP              ; col
+        ld a,l
+        ld (VM_SPRITE_COL),a
+        call VM_POP              ; row
+        ld a,l
+        ld (VM_SPRITE_ROW),a
+        call VM_POP              ; slot
+        ld a,l
+        ld (VM_SPRITE_SLOT),a
+        cp SPRITE_SLOT_MAX
+        jp nc,VM_ERR_SPRITE_SLOT
+        ld a,(VM_SPRITE_ROW)
+        cp 24
+        jp nc,VM_ERR_SPRITE_RANGE
+        ld a,(VM_SPRITE_COL)
+        cp 32
+        jp nc,VM_ERR_SPRITE_RANGE
+        ld a,(VM_SPRITE_SLOT)
+        ld hl,SPRITE_SLOT_DEFINED
+        ld e,a
+        ld d,0
+        add hl,de
+        ld a,(hl)
+        or a
+        jp z,VM_ERR_SPRITE_NOT_DEFINED
+        ld a,(VM_SPRITE_SLOT)
+        ld hl,SPRITE_SLOT_SHOWN
+        ld e,a
+        add hl,de
+        ld a,(hl)
+        or a
+        jp nz,VM_ERR_SPRITE_SHOWN
+        ld a,(VM_SPRITE_SLOT)       ; this slot's own real w/h, recorded
+        ld hl,SPRITE_SLOT_W          ; by its own earlier GRAB
+        ld e,a
+        add hl,de
+        ld a,(hl)
+        ld (VM_SPRITE_W),a
+        ld a,(VM_SPRITE_SLOT)
+        ld hl,SPRITE_SLOT_H
+        ld e,a
+        add hl,de
+        ld a,(hl)
+        ld (VM_SPRITE_H),a
+        call VM_SPRITE_COMPUTE_ADDRS
+        ld a,(VM_SPRITE_ROW)         ; capture the real background at
+        ld b,a                        ; the new position first (the
+        ld a,(VM_SPRITE_COL)          ; "save-under" technique --
+        ld c,a                         ; kernel/graphics/graphics.asm's
+        ld a,(VM_SPRITE_W)               ; own header)
+        ld d,a
+        ld a,(VM_SPRITE_H)
+        ld e,a
+        ld hl,(VM_SPRITE_BG_ADDR)
+        call GFX_SPRITE_CAPTURE
+        jp c,VM_ERR_SPRITE_BOUNDS
+        ld a,(VM_SPRITE_ROW)          ; then draw the sprite itself
+        ld b,a
+        ld a,(VM_SPRITE_COL)
+        ld c,a
+        ld a,(VM_SPRITE_W)
+        ld d,a
+        ld a,(VM_SPRITE_H)
+        ld e,a
+        ld hl,(VM_SPRITE_IMG_ADDR)
+        call GFX_SPRITE_DRAW
+        jp c,VM_ERR_SPRITE_BOUNDS
+        ld a,(VM_SPRITE_SLOT)
+        ld hl,SPRITE_SLOT_SHOWN
+        ld e,a
+        ld d,0
+        add hl,de
+        ld a,1
+        ld (hl),a
+        ld a,(VM_SPRITE_SLOT)
+        ld hl,SPRITE_SLOT_ROW
+        ld e,a
+        add hl,de
+        ld a,(VM_SPRITE_ROW)
+        ld (hl),a
+        ld a,(VM_SPRITE_SLOT)
+        ld hl,SPRITE_SLOT_COL
+        ld e,a
+        add hl,de
+        ld a,(VM_SPRITE_COL)
+        ld (hl),a
+        jp VM_RUN.loop
+
+OP_SPRITE_HIDE:
+        call VM_POP              ; slot
+        ld a,l
+        ld (VM_SPRITE_SLOT),a
+        cp SPRITE_SLOT_MAX
+        jp nc,VM_ERR_SPRITE_SLOT
+        ld a,(VM_SPRITE_SLOT)
+        ld hl,SPRITE_SLOT_SHOWN
+        ld e,a
+        ld d,0
+        add hl,de
+        ld a,(hl)
+        or a
+        jp z,VM_ERR_SPRITE_NOT_SHOWN
+        ld a,(VM_SPRITE_SLOT)       ; its own recorded row/col/w/h
+        ld hl,SPRITE_SLOT_ROW
+        ld e,a
+        add hl,de
+        ld a,(hl)
+        ld (VM_SPRITE_ROW),a
+        ld a,(VM_SPRITE_SLOT)
+        ld hl,SPRITE_SLOT_COL
+        ld e,a
+        add hl,de
+        ld a,(hl)
+        ld (VM_SPRITE_COL),a
+        ld a,(VM_SPRITE_SLOT)
+        ld hl,SPRITE_SLOT_W
+        ld e,a
+        add hl,de
+        ld a,(hl)
+        ld (VM_SPRITE_W),a
+        ld a,(VM_SPRITE_SLOT)
+        ld hl,SPRITE_SLOT_H
+        ld e,a
+        add hl,de
+        ld a,(hl)
+        ld (VM_SPRITE_H),a
+        call VM_SPRITE_COMPUTE_ADDRS
+        ld a,(VM_SPRITE_ROW)
+        ld b,a
+        ld a,(VM_SPRITE_COL)
+        ld c,a
+        ld a,(VM_SPRITE_W)
+        ld d,a
+        ld a,(VM_SPRITE_H)
+        ld e,a
+        ld hl,(VM_SPRITE_BG_ADDR)   ; restore the saved background
+        call GFX_SPRITE_DRAW
+        jp c,VM_ERR_SPRITE_BOUNDS
+        ld a,(VM_SPRITE_SLOT)
+        ld hl,SPRITE_SLOT_SHOWN
+        ld e,a
+        ld d,0
+        add hl,de
+        xor a
+        ld (hl),a
+        jp VM_RUN.loop
+
+OP_SPRITE_MOVE:
+        call VM_POP              ; col (new)
+        ld a,l
+        ld (VM_SPRITE_NEW_COL),a
+        call VM_POP              ; row (new)
+        ld a,l
+        ld (VM_SPRITE_NEW_ROW),a
+        call VM_POP              ; slot
+        ld a,l
+        ld (VM_SPRITE_SLOT),a
+        cp SPRITE_SLOT_MAX
+        jp nc,VM_ERR_SPRITE_SLOT
+        ld a,(VM_SPRITE_NEW_ROW)
+        cp 24
+        jp nc,VM_ERR_SPRITE_RANGE
+        ld a,(VM_SPRITE_NEW_COL)
+        cp 32
+        jp nc,VM_ERR_SPRITE_RANGE
+        ld a,(VM_SPRITE_SLOT)
+        ld hl,SPRITE_SLOT_SHOWN
+        ld e,a
+        ld d,0
+        add hl,de
+        ld a,(hl)
+        or a
+        jp z,VM_ERR_SPRITE_NOT_SHOWN
+        ld a,(VM_SPRITE_SLOT)       ; w/h stay constant across the move
+        ld hl,SPRITE_SLOT_W
+        ld e,a
+        add hl,de
+        ld a,(hl)
+        ld (VM_SPRITE_W),a
+        ld a,(VM_SPRITE_SLOT)
+        ld hl,SPRITE_SLOT_H
+        ld e,a
+        add hl,de
+        ld a,(hl)
+        ld (VM_SPRITE_H),a
+        call VM_SPRITE_COMPUTE_ADDRS
+        ld a,(VM_SPRITE_SLOT)       ; step 1: restore the background at
+        ld hl,SPRITE_SLOT_ROW        ; the OLD position
+        ld e,a
+        add hl,de
+        ld a,(hl)
+        ld b,a
+        ld a,(VM_SPRITE_SLOT)
+        ld hl,SPRITE_SLOT_COL
+        ld e,a
+        add hl,de
+        ld a,(hl)
+        ld c,a
+        ld a,(VM_SPRITE_W)
+        ld d,a
+        ld a,(VM_SPRITE_H)
+        ld e,a
+        ld hl,(VM_SPRITE_BG_ADDR)
+        call GFX_SPRITE_DRAW
+        jp c,VM_ERR_SPRITE_BOUNDS
+        ld a,(VM_SPRITE_NEW_ROW)     ; step 2: capture the background at
+        ld b,a                        ; the NEW position
+        ld a,(VM_SPRITE_NEW_COL)
+        ld c,a
+        ld a,(VM_SPRITE_W)
+        ld d,a
+        ld a,(VM_SPRITE_H)
+        ld e,a
+        ld hl,(VM_SPRITE_BG_ADDR)
+        call GFX_SPRITE_CAPTURE
+        jp c,VM_ERR_SPRITE_BOUNDS
+        ld a,(VM_SPRITE_NEW_ROW)     ; step 3: draw the sprite at the
+        ld b,a                        ; NEW position
+        ld a,(VM_SPRITE_NEW_COL)
+        ld c,a
+        ld a,(VM_SPRITE_W)
+        ld d,a
+        ld a,(VM_SPRITE_H)
+        ld e,a
+        ld hl,(VM_SPRITE_IMG_ADDR)
+        call GFX_SPRITE_DRAW
+        jp c,VM_ERR_SPRITE_BOUNDS
+        ld a,(VM_SPRITE_SLOT)         ; step 4: record the new position
+        ld hl,SPRITE_SLOT_ROW
+        ld e,a
+        ld d,0
+        add hl,de
+        ld a,(VM_SPRITE_NEW_ROW)
+        ld (hl),a
+        ld a,(VM_SPRITE_SLOT)
+        ld hl,SPRITE_SLOT_COL
+        ld e,a
+        add hl,de
+        ld a,(VM_SPRITE_NEW_COL)
+        ld (hl),a
+        jp VM_RUN.loop
+
 OP_INK:
         call VM_POP
         ld a,l
@@ -2868,6 +3251,30 @@ VM_ERR_INVALID_ULAPLUS:
 
 VM_ERR_INVALID_PALETTE:
         ld a,14
+        jp VM_ERR_COMMON
+
+VM_ERR_SPRITE_SLOT:
+        ld a,15
+        jp VM_ERR_COMMON
+
+VM_ERR_SPRITE_RANGE:
+        ld a,16
+        jp VM_ERR_COMMON
+
+VM_ERR_SPRITE_NOT_DEFINED:
+        ld a,17
+        jp VM_ERR_COMMON
+
+VM_ERR_SPRITE_SHOWN:
+        ld a,18
+        jp VM_ERR_COMMON
+
+VM_ERR_SPRITE_NOT_SHOWN:
+        ld a,19
+        jp VM_ERR_COMMON
+
+VM_ERR_SPRITE_BOUNDS:
+        ld a,20
         jp VM_ERR_COMMON
 
 VM_ERR_COMMON:
