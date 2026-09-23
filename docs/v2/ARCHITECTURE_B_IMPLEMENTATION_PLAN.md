@@ -1147,9 +1147,9 @@ extension module needs going forward"** as a named, checked item.
 
 ### R8 — Editor integration
 
-**Status: decompiler (Phases 1+2) and the identifier cleanup are
-complete and real-hardware-validated; editor-integration glue and the
-SAVE/LOAD hard gate below remain.** `rom/exrom_v2_decompiler.asm`'s
+**Status: R8 COMPLETE — decompiler (Phases 1+2), the identifier
+cleanup, editor-integration, and the SAVE/LOAD hard gate are all
+complete and real-hardware-validated.** `rom/exrom_v2_decompiler.asm`'s
 `DECOMPILE_PROGRAM` covers the compiler's ENTIRE current statement set:
 R1-R3's numeric/control-flow core, R4's PROC/CALL/RET (pattern-matched
 from `COMPILE_PROC`'s own fixed bytecode shape), R5's strings, R6's
@@ -1172,6 +1172,42 @@ fixed along the way, plus a pre-existing regression-suite gap (every
 standalone V2 test harness predating R6/R7/R7.5's own new unconditional
 dependencies had silently stopped assembling) found and fixed in the
 same pass.
+
+**Editor integration** (`rom/test_v2_editor_integration.asm`): proves
+`rom/exrom_editor.asm`'s own `EDITOR_INSERT_CHAR` (the real, unmodified
+character-insertion primitive `EDITOR_LOOP` calls for every keystroke)
+builds `EDIT_LINE_BUF`, which feeds `COMPILE_PROGRAM` directly (V2's
+own source format is plain null-terminated text already -- no V1
+tokenizer/`MEM_LINE_STORE` conversion step exists at this boundary).
+Real hardware result: PASS. Two dead ends investigated and documented
+first: live `ts2068-debug` keyboard injection can't reach `IO_READ_KEY`
+(ISR-latched, and this test's own interrupts are off, matching every
+other standalone test's determinism convention); `rom/
+test_editor_auto.asm`'s own established RST_38-replacement injector
+technique was built and then a direct diagnostic counter proved RST_38
+is never entered at all under `ts2068-debug`'s own bounded `run` for
+this ROM -- a real tooling/environment gap, reported separately. Known,
+documented remainder: `EDITOR_ENTER`'s own top-level interactive
+dispatch loop, and full multi-line program editing (a V2-native
+equivalent of `basic/editor_integration.asm`'s own `BASIC_HANDLE_NAV`/
+position-addressed program storage) -- a real, separate, larger design
+task, not attempted this pass.
+
+**SAVE/LOAD** (`rom/test_v2_save_load.asm`): resolves the R7-deferred
+design question. `kernel/storage/storage.asm`'s `STORAGE_SAVE`/
+`STORAGE_LOAD` are already a generic raw-byte-block transport (In:
+data pointer + length; that file's own header already says the payload
+carries no language-specific assumption) -- V1's own `BASIC_DO_SAVE`/
+`BASIC_DO_LOAD` just happen to point them at `PROG_AREA_START`. V2's
+own answer: SAVE the compiled bytecode directly (`IX=VM_CODE_BASE`),
+LOAD it straight back, ready to `VM_RUN` immediately with no recompile
+step; LIST/EDIT after a LOAD decompiles on demand, extending
+`REWRITE_RAM_BUDGET.md`'s own Option 2 (bytecode-primary storage) from
+RAM to persistent storage. Real hardware result: PASS on the full
+EDIT->SAVE->CLEAR->LOAD->LIST/EDIT->RUN round trip, using `kernel/
+storage`'s own established deterministic fake-transport test
+substitution (same technique `rom/test_storage_named_load.asm` already
+validates the primitive with).
 
 - **Objective**: wire the V2 compiler/decompiler into the existing editor
   via the minimal interface defined in `V2_ARCHITECTURE.md`'s decision
