@@ -1147,24 +1147,31 @@ extension module needs going forward"** as a named, checked item.
 
 ### R8 — Editor integration
 
-**Status: Phase 1 (bytecode decompiler) complete and real-hardware-
-validated; Phase 2 (strings/floats/native-calls/procedures decompile),
-editor-integration glue, and the SAVE/LOAD hard gate below remain.**
-`rom/exrom_v2_decompiler.asm`'s `DECOMPILE_PROGRAM` now covers R1-R3's
-full numeric/control-flow opcode set (PUSH_I8/PUSH_I16/LOAD_VAR/
-STORE_VAR/ADD/SUB/MUL/DIV/CMP_LT/CMP_EQ/JMP/JMPZ/FOR_INIT/FOR_NEXT,
-including GOTO and IF...THEN GOTO pattern-matched back from its own
-compiled JMPZ+JMP pair), tested end to end by `rom/
-test_v2_decompiler.asm` (compile a real program, decompile it, byte-
-compare the reconstructed text against a real captured-then-verified
-rendering). Real hardware result: PASS. See that commit for two real
-register-clobber bugs and a real workspace/sysvar address collision
-found and fixed along the way (the collision also turned out to affect
-R7.5's own already-committed `EXT2_TABLE`, fixed separately in the same
-session). Not yet covered, same honest-partial-completion split R7
-already established: strings (R5), floats (R6), the native-call/
-platform opcode family (R7), and procedures (R4's CALL/RET) -- R8
-Phase 2, tracked as a real, scoped remainder, not a silent gap.
+**Status: decompiler (Phases 1+2) and the identifier cleanup are
+complete and real-hardware-validated; editor-integration glue and the
+SAVE/LOAD hard gate below remain.** `rom/exrom_v2_decompiler.asm`'s
+`DECOMPILE_PROGRAM` covers the compiler's ENTIRE current statement set:
+R1-R3's numeric/control-flow core, R4's PROC/CALL/RET (pattern-matched
+from `COMPILE_PROC`'s own fixed bytecode shape), R5's strings, R6's
+floats (reconstructing decimal text directly from the compiler's own
+value/divisor encoding), and R7/R7.5's native-call/platform family
+including `CALL_EXT` (reading the real registered name straight out of
+the live extension registry). Tested end to end by `rom/
+test_v2_decompiler.asm` and `rom/test_v2_decompiler_phase2.asm`
+(compile a real program, decompile it, byte-compare the reconstructed
+text against a real captured-then-verified rendering). Real hardware
+result: PASS on both. `rom/exrom_v2_compiler.asm`'s `LEX_SCAN_IDENT`
+now accepts digits after a leading letter (the R7.5-flagged letters-
+only gap), needed for the decompiler's own synthesized names ("V0",
+"P3") to be re-lexable by this same compiler -- R8's own decompile-
+then-recompile round-trip claim. See these milestones' own commits for
+eight real bugs (register clobbers, a carry-flag chain bug, a workspace/
+sysvar collision that also turned out to affect R7.5's already-
+committed `EXT2_TABLE`, and a local-label-scoping break) found and
+fixed along the way, plus a pre-existing regression-suite gap (every
+standalone V2 test harness predating R6/R7/R7.5's own new unconditional
+dependencies had silently stopped assembling) found and fixed in the
+same pass.
 
 - **Objective**: wire the V2 compiler/decompiler into the existing editor
   via the minimal interface defined in `V2_ARCHITECTURE.md`'s decision
