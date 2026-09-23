@@ -275,6 +275,8 @@ KTAB_CALC_EXIT_TRAMPOLINE:
     INCLUDE "rom/exrom_sound.asm"
     INCLUDE "kernel/io/io.asm"
     INCLUDE "kernel/interrupt/interrupt.asm"
+    INCLUDE "kernel/memory/memory.asm"
+    INCLUDE "kernel/extensions/ext_registry.asm"
     INCLUDE "rom/exrom_v2_vm_core.asm"
     INCLUDE "rom/exrom_v2_compiler.asm"
 

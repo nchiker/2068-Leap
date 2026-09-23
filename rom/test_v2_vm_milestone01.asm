@@ -311,7 +311,24 @@ BYTECODE_IMAGE_END:
     ; OP_FOR_NEXT (MATH_MULTIPLY16/MATH_DIVIDE16/MATH_COMPARE16) — the
     ; "reuse mature platform components" principle applied for real,
     ; not merely stated.
+; KTAB_CALC_EXIT_TRAMPOLINE -- required once rom/exrom_v2_vm_core.asm
+; started calling into rom/exrom_calc.asm (R6's own float support), same
+; as every other pre-R6 standalone V2 test harness; see rom/
+; test_v2_compiler_r6.asm's own header for the full explanation. Added
+; retroactively here (R8), the same regression-suite gap fixed across
+; rom/test_v2_compiler_r2-r7.asm in the same pass.
+KTAB_CALC_EXIT_TRAMPOLINE:
+    ret
+
     INCLUDE "kernel/math/math.asm"
+    INCLUDE "rom/exrom_calc.asm"
+    INCLUDE "kernel/graphics/graphics.asm"
+    INCLUDE "kernel/sound/sound.asm"
+    INCLUDE "rom/exrom_sound.asm"
+    INCLUDE "kernel/io/io.asm"
+    INCLUDE "kernel/interrupt/interrupt.asm"
+    INCLUDE "kernel/memory/memory.asm"
+    INCLUDE "kernel/extensions/ext_registry.asm"
     INCLUDE "rom/exrom_v2_vm_core.asm"
 
     DS   $4000 - $, $FF

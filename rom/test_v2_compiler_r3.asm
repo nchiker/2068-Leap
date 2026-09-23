@@ -150,7 +150,27 @@ SOURCE_TEXT:
     db "SQUARE=SQUARE+I*I:NEXT I:GOTO SKIP:BOGUS=999:SKIP:"
     db "RESULT=TOTAL+SQUARE", 0
 
+; KTAB_CALC_EXIT_TRAMPOLINE -- required once rom/exrom_v2_vm_core.asm
+; started calling into rom/exrom_calc.asm (R6's own float support);
+; see rom/test_v2_compiler_r6.asm's own header for the full
+; explanation. Added retroactively here (R8): this file predates R6/R7/
+; R7.5, which each added more unconditional dependencies (calc, then
+; graphics/sound/io/interrupt, then the R7.5 extension registry) that
+; broke every earlier standalone test harness's own build without
+; anyone updating them -- a real, confirmed regression-suite gap found
+; while re-running the full V2 suite after an R8 lexer change.
+KTAB_CALC_EXIT_TRAMPOLINE:
+    ret
+
     INCLUDE "kernel/math/math.asm"
+    INCLUDE "rom/exrom_calc.asm"
+    INCLUDE "kernel/graphics/graphics.asm"
+    INCLUDE "kernel/sound/sound.asm"
+    INCLUDE "rom/exrom_sound.asm"
+    INCLUDE "kernel/io/io.asm"
+    INCLUDE "kernel/interrupt/interrupt.asm"
+    INCLUDE "kernel/memory/memory.asm"
+    INCLUDE "kernel/extensions/ext_registry.asm"
     INCLUDE "rom/exrom_v2_vm_core.asm"
     INCLUDE "rom/exrom_v2_compiler.asm"
 
