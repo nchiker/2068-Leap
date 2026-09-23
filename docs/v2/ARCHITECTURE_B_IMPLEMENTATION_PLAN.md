@@ -1235,6 +1235,182 @@ validates the primitive with).
   VM from R1-R7 remain usable via their standalone test harnesses even if
   editor wiring is reverted.
 
+### R8.5 — V2 language capability completion
+
+**Status: in progress.** A new milestone, not in the original R1-R10
+sequence — added when R9's own required pre-removal capability audit
+(§"Explicit R9 preconditions" below) was run for real against `basic/
+basic.asm`'s actual dispatch tables (`KEYWORD_HILITE_TABLE`,
+`FUNCTION_TABLE`, `STRING_FUNCTION_TABLE`, `BASIC_EVAL_CONDITION`'s own
+relational/boolean grammar) rather than assumed complete from the R1-R8
+plan text. Finding: **`rom/exrom_v2_compiler.asm` has no `PRINT`
+statement at all, and `PRINT` is never mentioned anywhere in this
+document's own R1-R10 sections** — not deferred, never scoped. R7 was
+explicitly scoped to the graphics/system command family only
+(`CLS`/`BORDER`/`INK`/`PAPER`/`PLOT`/`LINE`/`BEEP`/`SOUND`/`POKE`/
+`PAUSE`/`RANDOMISE`); text output, input, arrays, the full relational/
+boolean grammar, and several other real V1 facilities were simply never
+put in any milestone's own scope. This is a genuine, historical planning
+gap, not a deliberate compatibility break — a BASIC that cannot `PRINT`
+cannot usefully run any program, so R9 (V1 removal) cannot proceed
+responsibly until this is resolved. Per explicit user direction: add
+this as a real milestone between R8 and R9, implement it under the same
+autonomous authorization as every other milestone, and do NOT weaken R9
+or retain a hybrid V1 core merely to preserve the old schedule.
+
+#### Capability audit (against the real V1 implementation)
+
+Every keyword in `basic/basic.asm`'s own `KEYWORD_HILITE_TABLE`
+(statements), `FUNCTION_TABLE`/`STRING_FUNCTION_TABLE` (expression
+functions), and `BASIC_EVAL_CONDITION`'s own grammar comment
+(relational/boolean operators), classified per the user's own five
+categories:
+
+**1. Already implemented in V2** (no R8.5 work needed): numeric/string
+assignment, `GOTO`, `IF...THEN GOTO` (single-line form only — see
+"genuinely missing" below for block `IF`), `FOR`/`NEXT` (`STEP` missing
+— see below), `CLS`, `BORDER`, `INK`, `PAPER`, `PLOT`, `LINE`, `BEEP`,
+`SOUND`, `POKE`, `PAUSE`, `RANDOMISE`, string concatenation (`+`) and
+comparison (`=`/`<` only — see below), numeric `+`/`-`/`*`/`/`,
+numeric `=`/`<` (not the full relop set — see below).
+
+**2. Implemented differently in V2 with equivalent/replacement
+capability** (no R8.5 work needed; V1's own mechanism is NOT ported):
+`GOSUB`/`RETURN`/`CALL`(V1's GOSUB alias) → V2's real `PROC`/`ENDP`/
+`CALL` (structured procedures with parameters, a strict superset of
+"jump to a label and come back"); V1's `EXT` (extension call keyword)
+→ V2's `OP_CALL_EXT`/the R7.5 registry (compile-time-resolved slot +
+generation check, not V1's runtime name-rescan — already a settled,
+documented R7.5 decision, not reopened here); `RUN`/`LIST`/`EDIT`/
+`NEW`/`DELETE` (editor/environment commands, not language statements)
+→ owned by R8's own editor-integration work, not this milestone.
+
+**3. Genuinely missing and required before V1 removal** (R8.5's own
+scope, grouped as coherent systems per the user's own direction, not
+accumulated as unrelated keyword patches):
+
+  - **Text I/O system**: `PRINT`, `LPRINT`, `INPUT`, `END`/`STOP`
+    (V1's own `KEYWORD_HILITE_TABLE`/dispatch treat these as one
+    handler — genuinely the same statement under two spellings),
+    `REM`, and the print/display-attribute keywords that modify
+    `PRINT`'s own output (`FLASH`, `BRIGHT`, `INVERSE`, `OVER`, `AT`,
+    `TAB`) — V1's own `BASIC_STMT_MASKED_EXPR_COMMON` already treats
+    these as one shared grammar family, confirming they belong
+    together, not as five separate patches.
+  - **Relational/boolean expression grammar**: the full relop set
+    (`<=`, `>=`, `<>`, `>` — V2 currently only compiles `<` and `=`)
+    and `AND`/`OR`/`NOT` (V1's own grammar: non-short-circuit,
+    boolean values represented as plain 0/1) — needed by `IF`, and by
+    block `IF` below.
+  - **Block `IF`/`ELSEIF`/`ELSE`**: V2 currently only compiles the
+    single-line `IF...THEN GOTO` form (R3's own documented scope).
+    V1's real block form is a genuine, separate control-flow shape.
+  - **`FOR...STEP`**: V2's `FOR` is fixed `STEP 1` only (R1's own
+    documented VM-core limitation, carried forward since).
+  - **`EXIT FOR`**: loop early-exit, V1's own `BASIC_STMT_EXIT`.
+  - **`DIM`/arrays**: single-letter-named, single-dimension numeric
+    arrays (`DIM A(10)`, element access/assignment, the `DIMN()`
+    bounds function) — V1's real, current array model (not a
+    multi-dimension or string-array system; V1 doesn't have one
+    either).
+  - **`MODE`, `ULAPLUS`, `PALETTE`**: display-mode/palette statements,
+    each currently EXROM-resident real platform functionality
+    (`rom/exrom_ulaplus.asm`) V2 has no opcode reaching yet.
+  - **`SPRITE`/`GRAB`/`SHOW`/`HIDE`/`MOVE`**: the sprite subsystem's
+    own BASIC-facing statement family (`rom/exrom_sprite.asm` — real,
+    mature platform code; V2 needs opcodes reaching it, not a
+    reimplementation).
+  - **`DEF FN`**: user-defined single-expression functions.
+  - **Built-in expression functions**: `ABS`, `SGN`, `MOD`, `SQR`,
+    `DIV`, `INT`, `RND`, `POINT`, `ATTR`, `SIN`, `PEEK`, `FREE`, `USR`,
+    `PI`, `RAD`, `DEG`, `STICK`, `LEN`, `CODE`, `VAL`, `INSTR`, `DIMN`
+    (numeric), `CHR$`, `STR$`, `UPPER$`, `LOWER$`, `LEFT$`, `RIGHT$`,
+    `INKEY$` (string) — V2's compiler currently has NO function-call
+    expression grammar at all (no parenthesized-call syntax exists for
+    any identifier); this is the single largest structural gap, since
+    every one of the ~25 functions above needs it.
+
+**4. Intentionally obsolete/redundant under V2, safe to omit**: V1's
+own register-passed extension-argument ABI and runtime keyword
+rescanning (superseded by R7.5's registry, already settled); V1's
+tokenized/position-addressed program storage format (superseded by
+V2's bytecode-primary model, R8's own decompiler + this plan's own
+compatibility policy).
+
+**5. Optional enhancement, can reasonably wait for the post-V2
+audit**: multi-dimension or string arrays (V1 doesn't have these
+either — not a regression to defer them); short-circuit `AND`/`OR`
+(V1 doesn't short-circuit either — matching V1's own real semantics is
+correct here, not a gap); any richer `PRINT` formatting V1 itself
+never had.
+
+No statement, function, operator, or editor-visible command was found
+in `basic/basic.asm`, `rom/exrom_strfuncs.asm`, `rom/exrom_sprite.asm`,
+`rom/exrom_ulaplus.asm`, or `rom/exrom_checker.asm` outside the
+categories above (`ON`/`READ`/`DATA`/`RESTORE`/`OUT`/`IN`/`PLAY` do NOT
+exist in this dialect — confirmed by grep, not assumed).
+
+#### Implementation groups (coherent systems, not keyword patches)
+
+1. **Function-call expression grammar** (foundational — every function
+   below needs it): extend the compiler's factor grammar to recognize
+   `IDENT(args...)` as a function call, compile-time-resolved against a
+   small built-in function table (same "resolve a name to a small index
+   at compile time" pattern R7.5's own extension registry and
+   `SYMTAB`/`STRTAB`/`FLOATTAB` already established), emitting a new
+   opcode family (`OP_CALL_FN`-shaped, one slot id + args, mirroring
+   `OP_CALL_EXT`'s own shape but for RESIDENT functions instead of
+   loadable ones).
+2. **Text I/O system**: `PRINT`/`LPRINT`/`INPUT`/`END`/`STOP`/`REM` +
+   display attributes (`FLASH`/`BRIGHT`/`INVERSE`/`OVER`/`AT`/`TAB`),
+   as one coherent native-call opcode family reaching the real,
+   unmodified platform print/input routines (same "native-call opcode
+   into an existing platform primitive" pattern R7 already established
+   for `CLS`/`PLOT`/etc.).
+3. **Relational/boolean expression grammar**: the full relop set +
+   `AND`/`OR`/`NOT`, plus block `IF`/`ELSEIF`/`ELSE` built on top of it.
+4. **`DIM`/arrays**: compile-time array declaration + a runtime element-
+   address opcode, reaching `rom/exrom_arrays.asm`'s own real primitives
+   where reusable.
+5. **Remaining platform statements**: `MODE`/`ULAPLUS`/`PALETTE`,
+   `SPRITE`/`GRAB`/`SHOW`/`HIDE`/`MOVE`, `FOR...STEP`, `EXIT FOR` — each
+   a native-call opcode into existing, unmodified platform code, same
+   shape as group 2/R7.
+6. **Built-in functions**: the ~25 functions above, using group 1's own
+   call grammar, each reaching its real existing platform/calculator
+   primitive.
+7. **`DEF FN`**: user-defined functions, once group 1's call grammar and
+   group 6's function-resolution table both exist to extend.
+
+Each group gets the SAME discipline every prior milestone used:
+IMPLEMENT → BUILD → TEST → real ZEsarUX/`2068-debug` validation → DEBUG
+→ ROM/RAM measurement → V1 behavior comparison where meaningful →
+DOCUMENT → COMMIT → CONTINUE. The decompiler (`rom/
+exrom_v2_decompiler.asm`) gets a matching Phase 3 extension for every
+new opcode family, keeping R8's own decompile-then-recompile round-trip
+claim true for the FULL language, not just what existed before this
+milestone. RAM/ROM allocations for every new table/workspace get
+checked against the complete live coexistence memory map (`include/
+sysvars.inc`'s real DEFS chain + every existing V2 module's own
+addresses) BEFORE being chosen, per this session's own established
+audit discipline (see R8's own commits for the collision class this is
+guarding against).
+
+- **ROM budget**: not yet measured — the original R1-R10 projections
+  did not account for this milestone's own scope at all (PRINT etc.
+  were never budgeted), so they are not authoritative for the final
+  shipping figure. Measured, not projected, numbers land in this
+  section as each group completes.
+- **Success gate**: a full V1→V2 capability re-audit (redone from
+  scratch, not just re-checking the list above) finds no remaining
+  unexplained required V1 capability; the complete V2 language
+  validates on real ZEsarUX; the full regression suite passes.
+- **Genuine stop condition** (per the standing autonomous-authorization
+  rules): if the complete required capability set cannot reasonably fit
+  the 24KB shipping ROM without sacrificing significant user-visible
+  capability, stop and report the real ROM math rather than silently
+  cutting scope.
+
 ### R9 — Replacement (V1 language-core removal)
 
 - **Objective**: remove `basic/basic.asm`'s direct-execute interpreter,
