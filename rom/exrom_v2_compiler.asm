@@ -162,7 +162,6 @@
 ;   44 = expected FOR after EXIT
 ;   45 = too many EXIT FOR statements in one loop (more than
 ;        EXITFOR_MAX outstanding at once)
-;   46 = expected GRAB/SHOW/HIDE/MOVE after SPRITE
 ; ============================================================================
 
 ; ---------------------------------------------------------------------------
@@ -492,15 +491,6 @@ TOK_KW_EXIT:        equ 55   ; R8.5 Group 5 -- EXIT FOR (V1's own real
 TOK_KW_MODE:        equ 56   ; R8.5 Group 5
 TOK_KW_ULAPLUS:      equ 57
 TOK_KW_PALETTE:      equ 58
-TOK_KW_SPRITE:       equ 59  ; SPRITE is ONE statement with 4 sub-
-                               ; keywords (GRAB/SHOW/HIDE/MOVE), matching
-                               ; V1's own real grammar (rom/exrom_sprite.
-                               ; asm's own header) -- not 5 separate
-                               ; top-level statements
-TOK_KW_GRAB:         equ 60
-TOK_KW_SHOW:         equ 61
-TOK_KW_HIDE:         equ 62
-TOK_KW_MOVE:         equ 63
 
 ; ---------------------------------------------------------------------------
 ; COMPILER_INIT — call once before COMPILE_PROGRAM.
@@ -943,7 +933,7 @@ LEX_CLASSIFY_KEYWORD:
         ret                       ; no match — TOK_TYPE stays TOK_IDENT
 
 KEYWORD_ENTRY_LEN:  equ 11        ; [len:1][text:9, unused tail ignored][token:1]
-KEYWORD_TABLE_COUNT: equ 42
+KEYWORD_TABLE_COUNT: equ 37
 
 ; Every row is exactly KEYWORD_ENTRY_LEN (11) bytes: [len][9 text bytes,
 ; zero-padded][token]. Generated and byte-counted mechanically (a Python
@@ -991,11 +981,6 @@ KEYWORD_TABLE:
         db 4, "MODE", 0, 0, 0, 0, 0, TOK_KW_MODE
         db 7, "ULAPLUS", 0, 0, TOK_KW_ULAPLUS
         db 7, "PALETTE", 0, 0, TOK_KW_PALETTE
-        db 6, "SPRITE", 0, 0, 0, TOK_KW_SPRITE
-        db 4, "GRAB", 0, 0, 0, 0, 0, TOK_KW_GRAB
-        db 4, "SHOW", 0, 0, 0, 0, 0, TOK_KW_SHOW
-        db 4, "HIDE", 0, 0, 0, 0, 0, TOK_KW_HIDE
-        db 4, "MOVE", 0, 0, 0, 0, 0, TOK_KW_MOVE
 
 ; ===========================================================================
 ; COMPILE-TIME SYMBOL TABLE — real name storage, real comparison (the piece
@@ -1290,10 +1275,6 @@ EMIT_OP_INPUT_STR:                          ld a,51 : jp EMIT_BYTE  ; R8.5 Group
 EMIT_OP_MODE:                               ld a,52 : jp EMIT_BYTE  ; R8.5 Group 5
 EMIT_OP_ULAPLUS:                            ld a,53 : jp EMIT_BYTE  ; R8.5 Group 5
 EMIT_OP_PALETTE:                            ld a,54 : jp EMIT_BYTE  ; R8.5 Group 5
-EMIT_OP_SPRITE_GRAB:                        ld a,55 : jp EMIT_BYTE  ; R8.5 Group 5
-EMIT_OP_SPRITE_SHOW:                        ld a,56 : jp EMIT_BYTE  ; R8.5 Group 5
-EMIT_OP_SPRITE_HIDE:                        ld a,57 : jp EMIT_BYTE  ; R8.5 Group 5
-EMIT_OP_SPRITE_MOVE:                        ld a,58 : jp EMIT_BYTE  ; R8.5 Group 5
 EMIT_OP_CMP_LE:                              ld a,40 : jp EMIT_BYTE  ; R8.5 Group 3
 EMIT_OP_CMP_GT:                               ld a,41 : jp EMIT_BYTE
 EMIT_OP_CMP_GE:                                ld a,42 : jp EMIT_BYTE
@@ -2674,6 +2655,21 @@ COMPILE_PAPER:
         ld hl,EMIT_OP_PAPER
         jp COMPILE_1ARG_STMT
 
+; COMPILE_EXPECT_COMMA_EXPR — expects the current token to be ',',
+; consumes it, then compiles the following expression (tail-calls
+; COMPILE_EXPR, so its own `ret` returns straight to THIS routine's
+; caller). Shared by every 2-arg comma-separated statement compiler.
+COMPILE_EXPECT_COMMA_EXPR:
+        ld a,(TOK_TYPE)
+        cp TOK_COMMA
+        jr z,.have_comma
+        ld a,22
+        ld (COMPILE_ERROR_CODE),a
+        ret
+.have_comma:
+        call LEX_NEXT_TOKEN
+        jp COMPILE_EXPR
+
 ; COMPILE_PLOT — PLOT <expr>,<expr>  (x, then y — matches V1's own
 ; BASIC_STMT_PLOT reading order; OP_PLOT's own header note explains why
 ; it pops y before x)
@@ -2709,110 +2705,6 @@ COMPILE_PALETTE:
         or a
         ret nz
         call EMIT_OP_PALETTE
-        ret
-
-; COMPILE_EXPECT_COMMA_EXPR — expects the current token to be ',',
-; consumes it, then compiles the following expression (tail-calls
-; COMPILE_EXPR, so its own `ret` returns straight to THIS routine's
-; caller). Same error code (22) PLOT's own identical "expected comma"
-; check already uses. Introduced for SPRITE GRAB's own 4 comma-
-; separated arguments below, rather than repeating the inline check-
-; then-compile pair a 5th/6th/7th time.
-COMPILE_EXPECT_COMMA_EXPR:
-        ld a,(TOK_TYPE)
-        cp TOK_COMMA
-        jr z,.have_comma
-        ld a,22
-        ld (COMPILE_ERROR_CODE),a
-        ret
-.have_comma:
-        call LEX_NEXT_TOKEN
-        jp COMPILE_EXPR
-
-; R8.5 Group 5 -- SPRITE GRAB/SHOW/HIDE/MOVE. ONE statement with 4 sub-
-; keywords, matching V1's own real grammar (rom/exrom_sprite.asm's own
-; header), not 5 separate top-level statements. Reaches kernel/
-; graphics's real GFX_SPRITE_CAPTURE/GFX_SPRITE_DRAW and the existing
-; SPRITE_SLOT_* sysvar state directly (confirmed via this milestone's
-; own reuse audit) -- rom/exrom_sprite.asm's own surrounding parse code
-; is KTAB_-coupled and not reused.
-COMPILE_SPRITE:
-        call LEX_NEXT_TOKEN     ; consume SPRITE
-        ld a,(TOK_TYPE)
-        cp TOK_KW_GRAB
-        jr z,.grab
-        cp TOK_KW_SHOW
-        jr z,.show
-        cp TOK_KW_HIDE
-        jr z,.hide
-        cp TOK_KW_MOVE
-        jr z,.move
-        ld a,46
-        ld (COMPILE_ERROR_CODE),a
-        ret
-.grab:
-        call LEX_NEXT_TOKEN     ; consume GRAB
-        call COMPILE_EXPR       ; slot
-        ld a,(COMPILE_ERROR_CODE)
-        or a
-        ret nz
-        call COMPILE_EXPECT_COMMA_EXPR  ; row
-        ld a,(COMPILE_ERROR_CODE)
-        or a
-        ret nz
-        call COMPILE_EXPECT_COMMA_EXPR  ; col
-        ld a,(COMPILE_ERROR_CODE)
-        or a
-        ret nz
-        call COMPILE_EXPECT_COMMA_EXPR  ; w
-        ld a,(COMPILE_ERROR_CODE)
-        or a
-        ret nz
-        call COMPILE_EXPECT_COMMA_EXPR  ; h
-        ld a,(COMPILE_ERROR_CODE)
-        or a
-        ret nz
-        call EMIT_OP_SPRITE_GRAB
-        ret
-.show:
-        call LEX_NEXT_TOKEN     ; consume SHOW
-        call COMPILE_EXPR       ; slot
-        ld a,(COMPILE_ERROR_CODE)
-        or a
-        ret nz
-        call COMPILE_EXPECT_COMMA_EXPR  ; row
-        ld a,(COMPILE_ERROR_CODE)
-        or a
-        ret nz
-        call COMPILE_EXPECT_COMMA_EXPR  ; col
-        ld a,(COMPILE_ERROR_CODE)
-        or a
-        ret nz
-        call EMIT_OP_SPRITE_SHOW
-        ret
-.hide:
-        call LEX_NEXT_TOKEN     ; consume HIDE
-        call COMPILE_EXPR       ; slot
-        ld a,(COMPILE_ERROR_CODE)
-        or a
-        ret nz
-        call EMIT_OP_SPRITE_HIDE
-        ret
-.move:
-        call LEX_NEXT_TOKEN     ; consume MOVE
-        call COMPILE_EXPR       ; slot
-        ld a,(COMPILE_ERROR_CODE)
-        or a
-        ret nz
-        call COMPILE_EXPECT_COMMA_EXPR  ; row
-        ld a,(COMPILE_ERROR_CODE)
-        or a
-        ret nz
-        call COMPILE_EXPECT_COMMA_EXPR  ; col
-        ld a,(COMPILE_ERROR_CODE)
-        or a
-        ret nz
-        call EMIT_OP_SPRITE_MOVE
         ret
 
 ; ===========================================================================
@@ -3480,8 +3372,6 @@ COMPILE_STATEMENT_LIST:
         jp z,.ulaplus
         cp TOK_KW_PALETTE
         jp z,.palette
-        cp TOK_KW_SPRITE
-        jp z,.sprite
         cp TOK_IDENT
         jp z,.ident_stmt
         cp TOK_STR_IDENT
@@ -3576,9 +3466,6 @@ COMPILE_STATEMENT_LIST:
         jp .after_stmt
 .palette:
         call COMPILE_PALETTE
-        jp .after_stmt
-.sprite:
-        call COMPILE_SPRITE
         jp .after_stmt
 .ident_stmt:
         ; R7.5 addition: BEFORE assuming this identifier starts an

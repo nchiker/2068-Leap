@@ -916,14 +916,6 @@ DECOMP_SKIP_OPERAND:
         jp z,.w0
         cp 54                     ; PALETTE (R8.5 Group 5)
         jp z,.w0
-        cp 55                     ; SPRITE GRAB (R8.5 Group 5)
-        jp z,.w0
-        cp 56                     ; SPRITE SHOW
-        jp z,.w0
-        cp 57                     ; SPRITE HIDE
-        jp z,.w0
-        cp 58                     ; SPRITE MOVE
-        jp z,.w0
         cp 14                     ; FOR_NEXT
         jr z,.w3
         cp 34                     ; CALL_EXT (R7.5)
@@ -1524,14 +1516,6 @@ DECOMPILE_PROGRAM:
         jp z,.op_ulaplus
         cp 54
         jp z,.op_palette
-        cp 55
-        jp z,.op_sprite_grab
-        cp 56
-        jp z,.op_sprite_show
-        cp 57
-        jp z,.op_sprite_hide
-        cp 58
-        jp z,.op_sprite_move
         jp DECOMP_ERR_UNSUPPORTED_OPCODE
 
 .op_halt:
@@ -2466,33 +2450,119 @@ DECOMPILE_PROGRAM:
         call DECOMP_EMIT_CHAR
         ld a,(DECOMP_EXT_ARGCOUNT)
         or a
-        jr z,.cext_no_args
-; NOTE: the remaining count lives in DECOMP_EXT_ARGCOUNT itself (memory),
-; not B -- a `push bc` held across DECOMP_FRAG_POP/DECOMP_EMIT_TEXT would
-; be unsafe: either can reach a DECOMP_ERR_* handler, whose own `ret`
-; unwinds via the hardware stack (see this file's own header convention
-; and DECOMP_ERR_BAD_JMPZ_SHAPE's own fix for the same class of bug), and
-; an outstanding push at that moment would be popped as a bogus return
-; address instead. Same reasoning as .op_jmpz's own memory-only parking.
-.cext_arg_loop:
-        call DECOMP_FRAG_POP           ; args pop in reverse call order,
-                                          ; but CALL_EXT's own real
-                                          ; argument order doesn't matter
-                                          ; for re-lexability here the way
-                                          ; PLOT/LINE's own fixed
-                                          ; positional meaning does --
-                                          ; still emitted rightmost-
-                                          ; popped-first, a real,
-                                          ; documented limitation for
-                                          ; more than 1 argument (this
-                                          ; milestone's own R8 scope
-                                          ; boundary, not attempted
-                                          ; further here)
+        jp z,.cext_no_args
+; BUG FOUND (real hardware, post-R8.5 SPRITE-module reconciliation):
+; the ORIGINAL version of this handler popped fragments in reverse call
+; order and emitted them AS POPPED, with a comment explicitly flagging
+; this as "a real, documented limitation for more than 1 argument" --
+; but that's not just a cosmetic ordering quirk: since a popped value's
+; own POSITION determines which EXT_CALL_ARGn slot it lands in at
+; runtime (OP_CALL_EXT's own pop_loop), a decompiled-then-recompiled
+; multi-argument extension call with the args left in pop order
+; compiles to a DIFFERENT bytecode than the original -- e.g. "GRAB
+; 0,2,3,2,2" decompiled as "GRAB 2,2,3,2,0" and, if recompiled, would
+; assign slot=2 instead of slot=0. Never caught before because no
+; existing test decompiled a >1-argument extension call (rom/test_v2_
+; ext_demo.asm's own TRIADD demo only checks the VM's own computed
+; result, never calls DECOMPILE_PROGRAM) -- caught by rom/test_v2_
+; sprite_module.asm's own real decompile-round-trip check. Fixed by
+; popping all N fragments into slots first (DECOMP_ARG_PTR0-3/LEN0-3
+; for the first 4, DECOMP_TMP_A/DECOMP_ARR_INDEX_TMP for a 5th --
+; EXT2_REGISTER's own cap is 5 now, GRAB's own real argcount), THEN
+; emitting slot 0..N-1 forward -- restoring original write order.
+        ld b,a                    ; B = N -- DECOMP_FRAG_POP does NOT
+                                    ; destroy B (checked its own header),
+                                    ; safe as a loop counter across it
+.cext_pop_loop:
+        call DECOMP_FRAG_POP        ; pops argN first, then argN-1, ...
+        push hl
+        push bc
+        ld a,b
+        dec a                        ; this pop's own slot index (N-1
+                                       ; on the first iteration, down to 0)
+        cp 0
+        jr z,.cps0
+        cp 1
+        jr z,.cps1
+        cp 2
+        jr z,.cps2
+        cp 3
+        jr z,.cps3
+        jr .cps4
+.cps0:
+        pop bc
+        pop hl
+        ld (DECOMP_ARG_PTR0),hl
+        ld a,c
+        ld (DECOMP_ARG_LEN0),a
+        jr .cext_pop_next
+.cps1:
+        pop bc
+        pop hl
+        ld (DECOMP_ARG_PTR1),hl
+        ld a,c
+        ld (DECOMP_ARG_LEN1),a
+        jr .cext_pop_next
+.cps2:
+        pop bc
+        pop hl
+        ld (DECOMP_ARG_PTR2),hl
+        ld a,c
+        ld (DECOMP_ARG_LEN2),a
+        jr .cext_pop_next
+.cps3:
+        pop bc
+        pop hl
+        ld (DECOMP_ARG_PTR3),hl
+        ld a,c
+        ld (DECOMP_ARG_LEN3),a
+        jr .cext_pop_next
+.cps4:
+        pop bc
+        pop hl
         ld (DECOMP_TMP_A),hl
         ld a,c
-        ld (DECOMP_TMP_LEN),a
+        ld (DECOMP_ARR_INDEX_TMP),a
+.cext_pop_next:
+        djnz .cext_pop_loop
+        ; DECOMP_EXT_SLOT's own original purpose (registry slot id) is
+        ; already consumed (the name was emitted above) -- reused here
+        ; as the emit loop's own current-slot-index scratch, memory-
+        ; based throughout (never a register across DECOMP_EMIT_TEXT/
+        ; CHAR, both of which destroy BC per their own header).
+        xor a
+        ld (DECOMP_EXT_SLOT),a
+.cext_emit_loop:
+        ld a,(DECOMP_EXT_SLOT)
+        cp 0
+        jr z,.ce0
+        cp 1
+        jr z,.ce1
+        cp 2
+        jr z,.ce2
+        cp 3
+        jr z,.ce3
+        jr .ce4
+.ce0:
+        ld hl,(DECOMP_ARG_PTR0)
+        ld a,(DECOMP_ARG_LEN0)
+        jr .cext_emit_common
+.ce1:
+        ld hl,(DECOMP_ARG_PTR1)
+        ld a,(DECOMP_ARG_LEN1)
+        jr .cext_emit_common
+.ce2:
+        ld hl,(DECOMP_ARG_PTR2)
+        ld a,(DECOMP_ARG_LEN2)
+        jr .cext_emit_common
+.ce3:
+        ld hl,(DECOMP_ARG_PTR3)
+        ld a,(DECOMP_ARG_LEN3)
+        jr .cext_emit_common
+.ce4:
         ld hl,(DECOMP_TMP_A)
-        ld a,(DECOMP_TMP_LEN)
+        ld a,(DECOMP_ARR_INDEX_TMP)
+.cext_emit_common:
         ld c,a
         call DECOMP_EMIT_TEXT
         ld a,(DECOMP_EXT_ARGCOUNT)
@@ -2501,7 +2571,10 @@ DECOMPILE_PROGRAM:
         jr z,.cext_args_done
         ld a,','
         call DECOMP_EMIT_CHAR
-        jr .cext_arg_loop
+        ld a,(DECOMP_EXT_SLOT)
+        inc a
+        ld (DECOMP_EXT_SLOT),a
+        jr .cext_emit_loop
 .cext_args_done:
 .cext_no_args:
         call DECOMP_EMIT_NEWLINE
@@ -2776,143 +2849,6 @@ DECOMPILE_PROGRAM:
         call DECOMP_EMIT_2ARG_STMT
         jp DECOMPILE_PROGRAM.loop
 
-; R8.5 Group 5 -- SPRITE GRAB/SHOW/HIDE/MOVE. Renders as ONE statement
-; with a sub-keyword, matching V1's own real grammar -- "SPRITE GRAB
-; s,r,c,w,h" etc, not a separate top-level statement per sub-keyword.
-.op_sprite_grab:
-        call DECOMP_FRAG_POP          ; h
-        ld (DECOMP_ARG_PTR0),hl
-        ld a,c
-        ld (DECOMP_ARG_LEN0),a
-        call DECOMP_FRAG_POP          ; w
-        ld (DECOMP_ARG_PTR1),hl
-        ld a,c
-        ld (DECOMP_ARG_LEN1),a
-        call DECOMP_FRAG_POP          ; col
-        ld (DECOMP_ARG_PTR2),hl
-        ld a,c
-        ld (DECOMP_ARG_LEN2),a
-        call DECOMP_FRAG_POP          ; row
-        ld (DECOMP_ARG_PTR3),hl
-        ld a,c
-        ld (DECOMP_ARG_LEN3),a
-        call DECOMP_FRAG_POP          ; slot -- a 5th arg needs a slot
-        ld (DECOMP_TMP_A),hl           ; beyond DECOMP_ARG_PTR0-3's own
-        ld a,c                          ; 4; DECOMP_TMP_A/B are safe here
-        ld (DECOMP_TMP_B),a              ; (not touched by DECOMP_EMIT_
-                                           ; CHAR, unlike DECOMP_TMP_LEN)
-        ld hl,STR_SPRITE_GRAB
-        ld c,STR_SPRITE_GRAB_LEN
-        call DECOMP_EMIT_TEXT
-        ld hl,(DECOMP_TMP_A)           ; slot
-        ld a,(DECOMP_TMP_B)
-        ld c,a
-        call DECOMP_EMIT_TEXT
-        ld a,','
-        call DECOMP_EMIT_CHAR
-        ld hl,(DECOMP_ARG_PTR3)         ; row
-        ld a,(DECOMP_ARG_LEN3)
-        ld c,a
-        call DECOMP_EMIT_TEXT
-        ld a,','
-        call DECOMP_EMIT_CHAR
-        ld hl,(DECOMP_ARG_PTR2)         ; col
-        ld a,(DECOMP_ARG_LEN2)
-        ld c,a
-        call DECOMP_EMIT_TEXT
-        ld a,','
-        call DECOMP_EMIT_CHAR
-        ld hl,(DECOMP_ARG_PTR1)         ; w
-        ld a,(DECOMP_ARG_LEN1)
-        ld c,a
-        call DECOMP_EMIT_TEXT
-        ld a,','
-        call DECOMP_EMIT_CHAR
-        ld hl,(DECOMP_ARG_PTR0)         ; h
-        ld a,(DECOMP_ARG_LEN0)
-        ld c,a
-        call DECOMP_EMIT_TEXT
-        call DECOMP_EMIT_NEWLINE
-        jp DECOMPILE_PROGRAM.loop
-
-.op_sprite_show:
-        call DECOMP_FRAG_POP          ; col
-        ld (DECOMP_ARG_PTR0),hl
-        ld a,c
-        ld (DECOMP_ARG_LEN0),a
-        call DECOMP_FRAG_POP          ; row
-        ld (DECOMP_ARG_PTR1),hl
-        ld a,c
-        ld (DECOMP_ARG_LEN1),a
-        call DECOMP_FRAG_POP          ; slot
-        ld (DECOMP_TMP_A),hl
-        ld a,c
-        ld (DECOMP_TMP_B),a
-        ld hl,STR_SPRITE_SHOW
-        ld c,STR_SPRITE_SHOW_LEN
-        call DECOMP_EMIT_TEXT
-        ld hl,(DECOMP_TMP_A)
-        ld a,(DECOMP_TMP_B)
-        ld c,a
-        call DECOMP_EMIT_TEXT
-        ld a,','
-        call DECOMP_EMIT_CHAR
-        ld hl,(DECOMP_ARG_PTR1)         ; row
-        ld a,(DECOMP_ARG_LEN1)
-        ld c,a
-        call DECOMP_EMIT_TEXT
-        ld a,','
-        call DECOMP_EMIT_CHAR
-        ld hl,(DECOMP_ARG_PTR0)         ; col
-        ld a,(DECOMP_ARG_LEN0)
-        ld c,a
-        call DECOMP_EMIT_TEXT
-        call DECOMP_EMIT_NEWLINE
-        jp DECOMPILE_PROGRAM.loop
-
-.op_sprite_hide:
-        ld hl,STR_SPRITE_HIDE
-        ld (DECOMP_TMP_A),hl
-        ld a,STR_SPRITE_HIDE_LEN
-        ld (DECOMP_TMP_LEN),a
-        call DECOMP_EMIT_1ARG_STMT
-        jp DECOMPILE_PROGRAM.loop
-
-.op_sprite_move:
-        call DECOMP_FRAG_POP          ; col
-        ld (DECOMP_ARG_PTR0),hl
-        ld a,c
-        ld (DECOMP_ARG_LEN0),a
-        call DECOMP_FRAG_POP          ; row
-        ld (DECOMP_ARG_PTR1),hl
-        ld a,c
-        ld (DECOMP_ARG_LEN1),a
-        call DECOMP_FRAG_POP          ; slot
-        ld (DECOMP_TMP_A),hl
-        ld a,c
-        ld (DECOMP_TMP_B),a
-        ld hl,STR_SPRITE_MOVE
-        ld c,STR_SPRITE_MOVE_LEN
-        call DECOMP_EMIT_TEXT
-        ld hl,(DECOMP_TMP_A)
-        ld a,(DECOMP_TMP_B)
-        ld c,a
-        call DECOMP_EMIT_TEXT
-        ld a,','
-        call DECOMP_EMIT_CHAR
-        ld hl,(DECOMP_ARG_PTR1)         ; row
-        ld a,(DECOMP_ARG_LEN1)
-        ld c,a
-        call DECOMP_EMIT_TEXT
-        ld a,','
-        call DECOMP_EMIT_CHAR
-        ld hl,(DECOMP_ARG_PTR0)         ; col
-        ld a,(DECOMP_ARG_LEN0)
-        ld c,a
-        call DECOMP_EMIT_TEXT
-        call DECOMP_EMIT_NEWLINE
-        jp DECOMPILE_PROGRAM.loop
-
 ; R8.5 Group 3 -- the remaining relops, plus AND/OR/NOT. Same shape as
 ; .op_cmplt/.op_cmpeq above.
 .op_cmple:
@@ -3145,14 +3081,6 @@ STR_ULAPLUS:   db "ULAPLUS "
 STR_ULAPLUS_LEN: equ $-STR_ULAPLUS
 STR_PALETTE:   db "PALETTE "
 STR_PALETTE_LEN: equ $-STR_PALETTE
-STR_SPRITE_GRAB: db "SPRITE GRAB "
-STR_SPRITE_GRAB_LEN: equ $-STR_SPRITE_GRAB
-STR_SPRITE_SHOW: db "SPRITE SHOW "
-STR_SPRITE_SHOW_LEN: equ $-STR_SPRITE_SHOW
-STR_SPRITE_HIDE: db "SPRITE HIDE "
-STR_SPRITE_HIDE_LEN: equ $-STR_SPRITE_HIDE
-STR_SPRITE_MOVE: db "SPRITE MOVE "
-STR_SPRITE_MOVE_LEN: equ $-STR_SPRITE_MOVE
 STR_END:       db "END"
 STR_END_LEN:   equ $-STR_END
 STR_ABS:       db "ABS"

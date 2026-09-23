@@ -226,6 +226,7 @@ EXT2_LOOKUP:
 EXT2_SLOT_ADDR:
     ret
 EXT_CALL_ARG0: equ $8B00
+EXT_CALL_ARG4: equ $8B00
 EXT2_TABLE:    equ $8B00
 
 ; IO_READ_KEY -- REPLACED with the scripted mock described in this

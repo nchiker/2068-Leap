@@ -83,6 +83,17 @@ EXT_CALL_ARG2:        equ $8FDC
 EXT_CALL_ARG3:        equ $8FDE
 EXT_CALL_RESULT:      equ $8FE0   ; 2 bytes; reserved, unused by
                                     ; statement extensions for now
+EXT_CALL_ARG4:        equ $8FEC   ; 2 bytes -- the 5th arg slot (GRAB's
+                                    ; own w/h/etc.), placed in the real
+                                    ; free gap between EXT2_REG_NAMELEN's
+                                    ; own end ($8FEC) and VM_CODE_BASE
+                                    ; ($9000), not contiguous with ARG0-3
+                                    ; (which would require shifting
+                                    ; EXT_CALL_RESULT/EXT2_GEN_COUNTER/
+                                    ; every EXT2_REG_* scratch cell after
+                                    ; it) -- OP_CALL_EXT's own arg-index
+                                    ; math (EXT_CALL_ARG0 + index*2) only
+                                    ; needs to special-case index 4
 EXT2_GEN_COUNTER:     equ $8FE2   ; 1 byte; rolling, never 0
 EXT2_REG_NAME:        equ $8FE3   ; EXT2_REGISTER scratch (2 bytes)
 EXT2_REG_EXEC:        equ $8FE5   ; (2 bytes)
@@ -147,15 +158,22 @@ EXT2_NAME_LEN:
 
 ; ===========================================================================
 ; EXT2_REGISTER — In: HL = null-terminated name (<=8 significant chars),
-; DE = exec entry point, B = argcount (0-4). Out: carry set + A=0xFF on
-; failure (table full, or argcount>4); carry clear + A=slot id on
+; DE = exec entry point, B = argcount (0-5). Out: carry set + A=0xFF on
+; failure (table full, or argcount>5); carry clear + A=slot id on
 ; success. Destroys: AF, BC, DE, HL.
-; ===========================================================================
+;
+; Cap raised 4->5 (2068-Leap's own post-R8.5 sprite-module reconciliation
+; -- see docs/v2/ARCHITECTURE_B_IMPLEMENTATION_PLAN.md's own SPRITE
+; section): GRAB needs 5 args (slot,row,col,w,h). Same-size instruction
+; change (`cp 5`->`cp 6`), zero net resident cost. COMPILE_EXT_CALL/
+; OP_CALL_EXT's own arg-loops were already argcount-generic (no
+; hardcoded max), so this is the ONLY code change the whole mechanism
+; needed to support a 5-argument extension.
 EXT2_REGISTER:
         ld (EXT2_REG_NAME),hl
         ld (EXT2_REG_EXEC),de
         ld a,b
-        cp 5
+        cp 6
         jr nc,.fail
         ld (EXT2_REG_ARGCOUNT),a
         ld c,0                  ; slot index

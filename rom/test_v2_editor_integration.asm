@@ -364,6 +364,7 @@ EXT2_SLOT_ADDR:
 ; decompiler.asm's own name-lookup path), so these alias existing RAM
 ; rather than reserving real ROM bytes for space that's never touched.
 EXT_CALL_ARG0: equ $8B00
+EXT_CALL_ARG4: equ $8B00
 EXT2_TABLE:    equ $8B00
     INCLUDE "rom/exrom_format.asm"
     INCLUDE "rom/exrom_v2_vm_core.asm"
