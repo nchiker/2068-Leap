@@ -469,6 +469,17 @@ VM_INPUT_DIGITS:     equ $87DD  ; numeric INPUT only: up to 6 accepted
                                    ; 16-bit value once ENTER closes input
 VM_INPUT_DIGITS_MAX: equ 5      ; -32768..32767 -- 5 digits, sign tracked
                                    ; separately in VM_INPUT_NEG_TMP
+
+VM_FOR_STEP:         equ $87E2  ; R8.5 Group 5 -- FOR...STEP. Remembered
+                                   ; loop step (2 bytes), same single-
+                                   ; active-loop scope as VM_FOR_LIMIT
+                                   ; above (no nesting support, unchanged
+                                   ; from R1/R3's own documented limit).
+                                   ; A STEP-less FOR compiles a literal
+                                   ; PUSH_I8 1 here (rom/exrom_v2_
+                                   ; compiler.asm's own COMPILE_FOR), so
+                                   ; OP_FOR_INIT/OP_FOR_NEXT never need to
+                                   ; special-case "no step" at runtime.
 VM_OUTPUT_ROW:       equ $87C9    ; current PRINT row, 0-23 (1 byte)
 VM_OUTPUT_COL:        equ $87CA    ; unused after a PRINT (V1's own real
                                      ; PRINT always ends its own line --
@@ -1581,6 +1592,11 @@ OP_FOR_INIT:
         inc hl
         ld (VM_IP),hl
         ld c,a
+        call VM_POP             ; HL = step (R8.5 Group 5 -- pushed last
+                                  ; by COMPILE_FOR, so popped first; a
+                                  ; STEP-less FOR's own literal PUSH_I8 1
+                                  ; lands here exactly the same way)
+        ld (VM_FOR_STEP),hl
         call VM_POP             ; HL = limit
         ld (VM_FOR_LIMIT),hl
         call VM_POP             ; HL = initial value
@@ -1612,9 +1628,10 @@ OP_FOR_NEXT:
         ld e,(hl)
         inc hl
         ld d,(hl)               ; DE = current value
-        inc de                  ; DE = new current value (fixed STEP=1)
-        ld (VM_FOR_NEXT_NEWVAL),de
-        ex de,hl                ; HL = new current value
+        ld hl,(VM_FOR_STEP)
+        add hl,de                ; HL = new current value (R8.5 Group 5 --
+                                   ; was a fixed `inc de`/STEP=1 before)
+        ld (VM_FOR_NEXT_NEWVAL),hl
         ld de,(VM_FOR_LIMIT)
         call MATH_COMPARE16     ; A = 0 if equal, 1 if HL(new)>DE(limit),
                                  ; $FF if HL(new)<DE(limit); destroys HL
@@ -1623,8 +1640,18 @@ OP_FOR_NEXT:
         ld (hl),e
         inc hl
         ld (hl),d               ; write the incremented value back
+        ld hl,(VM_FOR_STEP)
+        bit 7,h
+        jr nz,.negative_step
         cp 1
-        jp z,.past_limit        ; new value > limit: loop ends
+        jp z,.past_limit         ; positive/zero step: loop ends once
+                                   ; the new value exceeds the limit
+        jr .continue
+.negative_step:
+        cp $FF
+        jp z,.past_limit         ; negative step: loop ends once the new
+                                   ; value drops below the limit
+.continue:
         ld de,(VM_FOR_NEXT_BRANCH)
         ld hl,VM_CODE_BASE
         add hl,de

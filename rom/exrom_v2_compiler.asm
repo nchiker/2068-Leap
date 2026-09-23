@@ -156,6 +156,9 @@
 ;   41 = expected ')' to close an array index
 ;   42 = array assignment target was never DIM'd
 ;   43 = expected an identifier or string identifier after INPUT
+;   44 = expected FOR after EXIT
+;   45 = too many EXIT FOR statements in one loop (more than
+;        EXITFOR_MAX outstanding at once)
 ; ============================================================================
 
 ; ---------------------------------------------------------------------------
@@ -365,6 +368,20 @@ CINPUT_INDEX_TMP:     equ $8B4E   ; COMPILE_INPUT scratch (1 byte): the
                                     ; DECOMP_EMIT_CHAR bug this same
                                     ; milestone) — not worth the risk to
                                     ; save one equ.
+EXITFOR_COUNT:        equ $8B4F  ; R8.5 Group 5 -- number of outstanding
+                                    ; EXIT FOR patch addresses for the
+                                    ; loop CURRENTLY being compiled, reset
+                                    ; to 0 at COMPILE_FOR's own start (no
+                                    ; nesting support — same single-
+                                    ; active-loop scope FOR/NEXT already
+                                    ; has — so this never needs to be
+                                    ; saved/restored across a nested loop)
+EXITFOR_PATCH_TABLE:  equ $8B50   ; free gap between EXITFOR_COUNT and
+                                    ; STRSYMTAB_BASE ($8B60) — 4 slots *
+                                    ; 2 bytes = 8 bytes, checked directly
+                                    ; against every other v2 file's own
+                                    ; equ's before placing this
+EXITFOR_MAX:          equ 4
 ARRSYMTAB_BASE:       equ $8990   ; compile-time array name table (free
                                     ; gap between CSYMTAB_BASE+16*9=$8990
                                     ; and LABELTAB_BASE=$8A00 — checked
@@ -463,6 +480,11 @@ TOK_KW_ENDIF:       equ 51
 TOK_KW_DIM:         equ 52   ; R8.5 Group 4 -- array declaration
 TOK_KW_INPUT:       equ 53   ; R8.5 Group 2 -- closed out late (see the
                                ; implementation plan's own status note)
+TOK_KW_STEP:        equ 54   ; R8.5 Group 5 -- FOR...STEP
+TOK_KW_EXIT:        equ 55   ; R8.5 Group 5 -- EXIT FOR (V1's own real
+                               ; grammar is "EXIT FOR", not bare EXIT --
+                               ; confirmed against basic.asm's own
+                               ; BASIC_STMT_EXIT header)
 
 ; ---------------------------------------------------------------------------
 ; COMPILER_INIT — call once before COMPILE_PROGRAM.
@@ -905,7 +927,7 @@ LEX_CLASSIFY_KEYWORD:
         ret                       ; no match — TOK_TYPE stays TOK_IDENT
 
 KEYWORD_ENTRY_LEN:  equ 11        ; [len:1][text:9, unused tail ignored][token:1]
-KEYWORD_TABLE_COUNT: equ 32
+KEYWORD_TABLE_COUNT: equ 34
 
 ; Every row is exactly KEYWORD_ENTRY_LEN (11) bytes: [len][9 text bytes,
 ; zero-padded][token]. Generated and byte-counted mechanically (a Python
@@ -948,6 +970,8 @@ KEYWORD_TABLE:
         db 5, "ENDIF", 0, 0, 0, 0, TOK_KW_ENDIF
         db 3, "DIM", 0, 0, 0, 0, 0, 0, TOK_KW_DIM       ; R8.5 Group 4
         db 5, "INPUT", 0, 0, 0, 0, TOK_KW_INPUT          ; R8.5 Group 2
+        db 4, "STEP", 0, 0, 0, 0, 0, TOK_KW_STEP          ; R8.5 Group 5
+        db 4, "EXIT", 0, 0, 0, 0, 0, TOK_KW_EXIT
 
 ; ===========================================================================
 ; COMPILE-TIME SYMBOL TABLE — real name storage, real comparison (the piece
@@ -3017,6 +3041,11 @@ COMPILE_IF_BLOCK:
 ; STEP is also deferred, matching R1's VM core's own FOR_NEXT opcode, which
 ; only supports STEP=1)
 COMPILE_FOR:
+        xor a
+        ld (EXITFOR_COUNT),a     ; R8.5 Group 5 -- reset for THIS loop; no
+                                   ; nesting support (see FOR/NEXT's own
+                                   ; single-active-loop scope), so this
+                                   ; never needs saving/restoring
         call LEX_NEXT_TOKEN     ; consume FOR
         ld a,(TOK_TYPE)
         cp TOK_IDENT
@@ -3049,6 +3078,17 @@ COMPILE_FOR:
 .have_to:
         call LEX_NEXT_TOKEN     ; consume TO
         call COMPILE_EXPR       ; limit value -> VM operand stack
+        ld a,(TOK_TYPE)
+        cp TOK_KW_STEP
+        jr z,.have_step
+        call EMIT_BYTE_OP_PUSH_I8   ; R8.5 Group 5 -- no STEP written:
+        ld a,1                       ; compile a literal step of 1, same
+        call EMIT_BYTE                ; as OP_FOR_INIT/OP_FOR_NEXT always
+        jr .emit_init                  ; expect a real step operand now
+.have_step:
+        call LEX_NEXT_TOKEN     ; consume STEP
+        call COMPILE_EXPR       ; step value -> VM operand stack
+.emit_init:
         call EMIT_OP_FOR_INIT
         ld a,(FOR_LOOP_VAR_INDEX)
         call EMIT_BYTE
@@ -3057,6 +3097,47 @@ COMPILE_FOR:
         or a
         sbc hl,de                ; HL = loop body's start, relative offset
         ld (FOR_LOOP_TOP_OFFSET),hl
+        ret
+
+; COMPILE_EXIT_FOR — EXIT FOR. Compiles to a plain JMP whose target is
+; patched once COMPILE_NEXT knows the loop's real exit address (the same
+; "record a patch address now, resolve it later" shape GOTO's own
+; FIXUPTAB already uses, but scoped to the SINGLE currently-compiling
+; loop rather than a named label — no nesting support, matching FOR/
+; NEXT's own existing scope).
+COMPILE_EXIT_FOR:
+        call LEX_NEXT_TOKEN     ; consume EXIT
+        ld a,(TOK_TYPE)
+        cp TOK_KW_FOR
+        jr z,.have_for
+        ld a,44
+        ld (COMPILE_ERROR_CODE),a
+        ret
+.have_for:
+        ld a,(EXITFOR_COUNT)
+        cp EXITFOR_MAX
+        jr nz,.record
+        ld a,45
+        ld (COMPILE_ERROR_CODE),a
+        ret
+.record:
+        call EMIT_OP_JMP
+        call EMIT_PLACEHOLDER_16
+        ld (BRANCH_PATCH_TMP),hl   ; this JMP's own operand address
+        ld a,(EXITFOR_COUNT)
+        ld hl,EXITFOR_PATCH_TABLE
+        ld c,a
+        ld b,0
+        add hl,bc
+        add hl,bc                  ; HL = EXITFOR_PATCH_TABLE + index*2
+        ld de,(BRANCH_PATCH_TMP)
+        ld (hl),e
+        inc hl
+        ld (hl),d
+        ld a,(EXITFOR_COUNT)
+        inc a
+        ld (EXITFOR_COUNT),a
+        call LEX_NEXT_TOKEN         ; consume FOR
         ret
 
 ; COMPILE_NEXT — NEXT <ident>
@@ -3109,6 +3190,37 @@ COMPILE_NEXT:
         call EMIT_BYTE
         ld a,(FOR_NEXT_HIGH_TMP)
         call EMIT_BYTE
+        ; R8.5 Group 5 -- resolve every pending EXIT FOR from this loop's
+        ; own body now: the loop's real exit point is exactly here, the
+        ; first bytecode position past NEXT's own operand (the same
+        ; position OP_FOR_NEXT's own .past_limit falls through to at
+        ; runtime).
+        ld hl,(EMIT_PTR)
+        ld de,VM_CODE_BASE
+        or a
+        sbc hl,de                 ; HL = relative exit offset
+        ld (RESOLVE_PATCH_TMP),hl
+        ld a,(EXITFOR_COUNT)
+        or a
+        ret z
+        ld b,a
+        ld hl,EXITFOR_PATCH_TABLE
+.patch_loop:
+        push bc
+        push hl
+        ld e,(hl)
+        inc hl
+        ld d,(hl)                 ; DE = this slot's own patch address
+        ex de,hl                  ; HL = patch address
+        ld de,(RESOLVE_PATCH_TMP)
+        ld (hl),e
+        inc hl
+        ld (hl),d
+        pop hl
+        pop bc
+        inc hl
+        inc hl
+        djnz .patch_loop
         ret
 
 ; ===========================================================================
@@ -3196,6 +3308,8 @@ COMPILE_STATEMENT_LIST:
         jp z,.dim
         cp TOK_KW_INPUT
         jp z,.input
+        cp TOK_KW_EXIT
+        jp z,.exit_for
         cp TOK_IDENT
         jp z,.ident_stmt
         cp TOK_STR_IDENT
@@ -3278,6 +3392,9 @@ COMPILE_STATEMENT_LIST:
         jp .after_stmt
 .input:
         call COMPILE_INPUT
+        jp .after_stmt
+.exit_for:
+        call COMPILE_EXIT_FOR
         jp .after_stmt
 .ident_stmt:
         ; R7.5 addition: BEFORE assuming this identifier starts an

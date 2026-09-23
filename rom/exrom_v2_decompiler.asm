@@ -1988,19 +1988,30 @@ DECOMPILE_PROGRAM:
         ld a,(hl)
         inc hl
         ld (DECOMP_IP),hl
-        ld (DECOMP_TMP_LEN),a       ; symtab index
+        ld (DECOMP_ARR_INDEX_TMP),a   ; symtab index -- NOT DECOMP_TMP_LEN:
+                                        ; DECOMP_EMIT_CHAR reuses THAT cell
+                                        ; as its own internal scratch (see
+                                        ; this file's own .op_arr_store bug
+                                        ; this same milestone) -- avoided
+                                        ; here on purpose, not by luck
+        call DECOMP_FRAG_POP        ; HL = step text, C = length (R8.5
+                                       ; Group 5 -- pushed last at compile
+                                       ; time, so popped first here)
+        ld (DECOMP_OP_PTR),hl
+        ld a,c
+        ld (DECOMP_OP_LEN),a
         call DECOMP_FRAG_POP        ; HL = limit text, C = length
         ld (DECOMP_TMP_A),hl
         ld a,c
-        ld (DECOMP_TMP_B),a          ; park limit length (low byte only)
+        ld (DECOMP_TMP_B),a
         call DECOMP_FRAG_POP        ; HL = init text, C = length
-        push hl                      ; save init text ptr/len on the real
-        push bc                      ; stack -- DECOMP_EMIT_VARNAME/TEXT
-                                       ; below clobber HL/BC themselves
+        ld (DECOMP_ARG_PTR0),hl
+        ld a,c
+        ld (DECOMP_ARG_LEN0),a
         ld hl,STR_FOR
         ld c,STR_FOR_LEN
         call DECOMP_EMIT_TEXT
-        ld a,(DECOMP_TMP_LEN)
+        ld a,(DECOMP_ARR_INDEX_TMP)
         call DECOMP_EMIT_VARNAME
         ld a,' '
         call DECOMP_EMIT_CHAR
@@ -2008,8 +2019,9 @@ DECOMPILE_PROGRAM:
         call DECOMP_EMIT_CHAR
         ld a,' '
         call DECOMP_EMIT_CHAR
-        pop bc
-        pop hl
+        ld hl,(DECOMP_ARG_PTR0)
+        ld a,(DECOMP_ARG_LEN0)
+        ld c,a
         call DECOMP_EMIT_TEXT       ; init text
         ld hl,STR_TO
         ld c,STR_TO_LEN
@@ -2018,6 +2030,17 @@ DECOMPILE_PROGRAM:
         ld a,(DECOMP_TMP_B)
         ld c,a
         call DECOMP_EMIT_TEXT       ; limit text
+        ld hl,STR_STEP
+        ld c,STR_STEP_LEN
+        call DECOMP_EMIT_TEXT
+        ld hl,(DECOMP_OP_PTR)
+        ld a,(DECOMP_OP_LEN)
+        ld c,a
+        call DECOMP_EMIT_TEXT       ; step text -- always rendered, even
+                                      ; for a STEP-less FOR (which compiles
+                                      ; a literal 1) -- "valid, not byte-
+                                      ; identical" re-rendering, same bar
+                                      ; this whole file already uses
         call DECOMP_EMIT_NEWLINE
         jp DECOMPILE_PROGRAM.loop
 
@@ -3054,5 +3077,7 @@ STR_FOR:       db "FOR "
 STR_FOR_LEN:   equ $-STR_FOR
 STR_TO:        db " TO "
 STR_TO_LEN:    equ $-STR_TO
+STR_STEP:      db " STEP "
+STR_STEP_LEN:  equ $-STR_STEP
 STR_NEXT:      db "NEXT "
 STR_NEXT_LEN:  equ $-STR_NEXT
