@@ -1147,6 +1147,25 @@ extension module needs going forward"** as a named, checked item.
 
 ### R8 — Editor integration
 
+**Status: Phase 1 (bytecode decompiler) complete and real-hardware-
+validated; Phase 2 (strings/floats/native-calls/procedures decompile),
+editor-integration glue, and the SAVE/LOAD hard gate below remain.**
+`rom/exrom_v2_decompiler.asm`'s `DECOMPILE_PROGRAM` now covers R1-R3's
+full numeric/control-flow opcode set (PUSH_I8/PUSH_I16/LOAD_VAR/
+STORE_VAR/ADD/SUB/MUL/DIV/CMP_LT/CMP_EQ/JMP/JMPZ/FOR_INIT/FOR_NEXT,
+including GOTO and IF...THEN GOTO pattern-matched back from its own
+compiled JMPZ+JMP pair), tested end to end by `rom/
+test_v2_decompiler.asm` (compile a real program, decompile it, byte-
+compare the reconstructed text against a real captured-then-verified
+rendering). Real hardware result: PASS. See that commit for two real
+register-clobber bugs and a real workspace/sysvar address collision
+found and fixed along the way (the collision also turned out to affect
+R7.5's own already-committed `EXT2_TABLE`, fixed separately in the same
+session). Not yet covered, same honest-partial-completion split R7
+already established: strings (R5), floats (R6), the native-call/
+platform opcode family (R7), and procedures (R4's CALL/RET) -- R8
+Phase 2, tracked as a real, scoped remainder, not a silent gap.
+
 - **Objective**: wire the V2 compiler/decompiler into the existing editor
   via the minimal interface defined in `V2_ARCHITECTURE.md`'s decision
   section (editor calls compile-on-RUN and decompile-for-`LIST`/`EDIT`;
