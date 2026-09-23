@@ -987,6 +987,164 @@ where that boundary gets redefined.
 
 </details>
 
+### R7.5 — V2-native loadable-extension mechanism
+
+**Status: REDESIGNED FROM FIRST PRINCIPLES per explicit user direction,
+then implemented and real-hardware-validated.** Raised mid-R8: does
+V1's loadable-RAM-package capability survive under V2? First pass
+investigated whether V1's OWN mechanism (`BASIC_EXTENSION_REGISTER`,
+the `EXT_SERVICE_*` veneer table, register-passed arguments, text-based
+per-run keyword rematching) could be preserved or adapted. The user then
+explicitly overrode that framing: **the requirement is the CAPABILITY
+(load optional code into RAM that extends the system without permanent
+ROM cost), not compatibility with V1's specific ABI, package format,
+registration mechanism, or calling convention** — every one of those is
+explicitly replaceable, to be redesigned for what fits Architecture B
+best, compared quantitatively (ROM, RAM, runtime performance, compiler
+complexity, robustness, usefulness, architectural fit), not preserved
+for compatibility's own sake. The user also settled `HIT()` specifically
+by direct decision: it moves back into the resident sprite subsystem
+(V1's own P0.3 move of it into an extension "wasn't the best decision"),
+not into either V1's or V2's extension mechanism at all — a resident
+sprite-subsystem function/opcode, same shape as R7's other native-call
+opcodes, is a separate, later platform-integration item, not part of
+this design.
+
+**Two alternatives compared, quantitatively, before choosing:**
+
+| Criterion | Alt A — runtime name-rescan (dispatch by re-matching the keyword's text against the registry on every call, V1-shaped) | Alt B — compile-time-resolved ID + runtime generation-checked table (SYMTAB/STRTAB/FLOATTAB-shaped) |
+|---|---|---|
+| ROM cost | Compiler: one name-scan at compile time (~80B, same as B). VM opcode: a string-compare loop against every registered name, every call (~60B handler) | Compiler: same one-time name-scan (~80B). VM opcode: index a fixed-stride table + one byte compare + one indirect call (~30B handler) — smaller, because there's no comparison LOOP at runtime |
+| RAM cost | A registry is still needed for the compiler's own compile-time scan (name+exec_ptr+argcount per slot) — same table either way | Identical table, same cost — B adds nothing here; the ID is just which ROW the compiler already found |
+| Runtime perf | O(registered-slot-count × name-length) string comparisons on EVERY call site execution (a statement inside a loop pays this every iteration) | O(1): one table index, one byte compare, one indirect call — no string comparison at runtime at all |
+| Compiler complexity | Identical — both need the exact same compile-time name-scan; the only difference is what gets baked into the bytecode operand afterward (name text vs. a 1-byte slot id) | Identical to A |
+| Robustness | Always correct: a mismatched/unloaded/swapped module is caught by name, every call, with no false positive possible | Slightly weaker in theory (an ID could point at a DIFFERENT module if slots get reused) — closed with a cheap generation counter: each (re)registration into a slot bumps a byte; the compiled operand carries the generation value seen at compile time; a mismatch at call time is treated exactly like "not found." This reduces the gap to "another module reusing the exact same slot AND getting the exact same generation value by coincidence," not a real practical risk for this platform |
+| Usefulness | Full, for statements. Functions (arbitrary-arity, expression-position) need a call-expression grammar V2 has never had — true for BOTH alternatives equally, not a difference between them | Same |
+| Architectural fit | Foreign to V2's own established shape — nothing else in this VM does a runtime name comparison; V1-shaped, not Architecture-B-shaped | **Exact match to the pattern already used everywhere else in V2**: `SYMTAB`/`STRTAB`/`FLOATTAB` are all "resolve a name to a small index at compile time, index a fixed-stride RAM table at runtime." This is the SAME idea, applied to extensions instead of variables/strings/floats |
+
+Alt B dominates on ROM, runtime performance, and architectural fit,
+matches A on RAM and compiler complexity, and gives up only a
+theoretical sliver of robustness that a one-byte generation counter
+closes back up almost entirely. **Chosen: Alt B.**
+
+**Concrete design, implemented**:
+- A fresh, V2-native, NEVER-`basic.asm`-resident registry (`kernel/
+  extensions/ext_registry.asm`, so it needs no relocation before R9 the
+  way reusing V1's own gateway would have) — 8 slots, each `[magic/
+  generation:1][name_len:1][name:8][exec_ptr:2][argcount:1]` = 13 bytes
+  (104 bytes total). Registration: `EXT2_REGISTER` (name ptr, exec ptr,
+  argcount) — finds a free or reusable slot, writes the fields, and
+  sets the generation byte to a rolling never-0 counter that is bumped
+  on every registration into that slot (closing the "stale ID" gap
+  above).
+- Argument passing is DELIBERATELY not register-based (V1's own
+  register-passed ABI is exactly the kind of historical-implementation
+  detail the user said not to preserve for its own sake, and Z80's 4
+  general registers don't scale to an arbitrary argument count anyway):
+  a small fixed memory block, `EXT_CALL_ARG0..3` (2 bytes each — full
+  16-bit, not V1's 1-byte `EXTENSION_ARG0..3`), holds up to 4 arguments
+  in call order. This scales uniformly to 0-4 args with ONE compiler
+  code path (an ordinary comma-separated `COMPILE_EXPR` loop, no more
+  V1-shaped "grammar 0/1/3" special-casing at all) and ONE VM handler.
+- Compiler: when an identifier fails the built-in keyword table AND the
+  assignment/label grammar, scan the registry by name (linear, 8 slots);
+  on a match, compile `argcount` comma-separated expressions (reading
+  `argcount` from the matched slot), then emit `OP_CALL_EXT` with a
+  3-byte operand `[slot_id:1][generation:1][argcount:1]`.
+- VM: `OP_CALL_EXT` pops `argcount` values into `EXT_CALL_ARG0..
+  (argcount-1)`, indexes the registry by `slot_id`, compares the stored
+  generation to the operand's own, and — on a match — calls `exec_ptr`
+  (which reads its own args from `EXT_CALL_ARG0..3` and may write a
+  result into `EXT_CALL_RESULT`, unused by statements for now, reserved
+  for a later function-extension design); a mismatch is a real, caught
+  `VM_ERR_EXTENSION_NOT_FOUND`.
+- Functions (arbitrary-arity, expression-position calls, `HIT()`'s own
+  former shape) are explicitly OUT of this design's scope, same as
+  before — they need call-expression grammar V2 doesn't have for ANY
+  identifier yet, extension or built-in, and per the user's own
+  decision `HIT()` itself doesn't need this mechanism at all (resident
+  sprite-subsystem opcode instead, tracked as a separate future
+  platform-integration item, not R7.5's problem).
+- V1's own extension mechanism is UNTOUCHED (per the standing "V1 stays
+  completely unaffected until R9" isolation discipline) — this registry
+  is purely additive. A module wanting to be usable from BOTH a V1
+  program and a V2 program during the R7.5-R9 coexistence window would
+  call both registration APIs from its own install routine; once R9
+  removes V1, only the V2 registry remains, and modules simplify back
+  down to one registration call. V1's own `BASIC_EXTENSION_REGISTER`
+  needs no relocation for THIS design (it's simply deleted along with
+  the rest of `basic.asm` at R9, since V2 never depended on it) —
+  **this design also fully resolves the earlier investigation's own
+  "Problem A" (registry survival) by construction, not by relocating
+  the old one.**
+
+**Files**: `kernel/extensions/ext_registry.asm` (new: `EXT2_REGISTER`,
+the descriptor table); `rom/exrom_v2_vm_core.asm` (new opcode `OP_CALL_
+EXT`, 34, plus `VM_ERR_EXTENSION_NOT_FOUND`, error code 9);
+`rom/exrom_v2_compiler.asm` (registry name-scan fallback in
+`COMPILE_STATEMENT_LIST` plus `COMPILE_EXT_CALL`); `rom/
+test_v2_ext_demo.asm` (new: a small, fresh V2-native demo extension,
+`TRIADD <a>,<b>,<destaddr>` — writes `(a+b)`'s low byte to `destaddr`,
+deliberately a 3-argument statement, a shape V1's own grammar-0
+`expr,expr` ABI could never express in one uniform code path — plus a
+standalone compiler+VM test driver, same shape as every other `rom/
+test_v2_compiler_rN.asm`). Deliberately NOT an adapted V1 extension, per
+the user's own explicit "existing V1 extensions may require
+rebuilding... that is acceptable" direction.
+
+**Real hardware result: PASS**, after finding and fixing two real bugs
+during implementation (both caught by direct memory/register
+inspection, not by inspection alone, and both before the docs below were
+finalized):
+1. `EXT2_NAME_LEN` returned the just-read NULL byte's own value (0)
+   instead of the accumulated character count on hitting the
+   terminator — every registered extension's own `name_len` came out 0
+   regardless of its real name's length, confirmed via a direct
+   registry-table memory read after a real run.
+2. The demo's first chosen name, `SUM3`, is not a valid identifier in
+   THIS compiler's own lexer at all — `LEX_SCAN_IDENT` (`rom/
+   exrom_v2_compiler.asm`) only accepts `A`-`Z`, no digits (an existing,
+   documented R2-era design choice, not something this milestone
+   changed) — so `SUM3` tokenized as `SUM` followed by a separate
+   number token `3`, never reaching the extension-lookup fallback at
+   all. Renamed the demo to `TRIADD` (letters only); real hardware run
+   then passed. Also surfaces a real, honest note for a LATER milestone
+   (not fixed here): `rom/exrom_v2_decompiler.asm`'s own synthesized
+   variable names (`V0`, `V1`, ...) are letters-then-digits too, so
+   decompiled text containing them is not yet re-lexable by this same
+   compiler without also widening `LEX_SCAN_IDENT` to accept trailing
+   digits — a real, tracked gap for R8's own decompile-then-recompile
+   round-trip claim, not silently glossed over.
+3. Real, end-to-end confirmation, independent of the border-color pass/
+   fail signal: the registry table at `EXT2_TABLE` read back exactly
+   `[generation=1][name_len=6]["TRIADD",padded][exec_ptr=SUM3_EXEC's
+   real address][argcount=3]`, and the target RAM byte at `$9800` read
+   back `7` (`3+4`, computed for real by the extension's own exec
+   routine, not hand-decoded).
+
+**ROM/RAM measured, real, on the actual assembled test image** (not
+estimated): `kernel/extensions/ext_registry.asm` (new file) — **~250
+bytes** (`EXT2_CLEAR_ALL` through `EXT2_LOOKUP`, including the 104-byte
+fixed 8-slot descriptor table). `rom/exrom_v2_vm_core.asm` grew 2,013 ->
+**2,119 bytes** (+106: `OP_CALL_EXT`, `VM_CALL_INDIRECT`, one new error
+code). `rom/exrom_v2_compiler.asm` grew 3,095 -> **3,208 bytes** (+113:
+the registry-fallback check in `COMPILE_STATEMENT_LIST` plus
+`COMPILE_EXT_CALL`). **Combined ~469 bytes for the whole mechanism** —
+registration, compile-time resolution, generation-checked runtime
+dispatch, and uniform 0-4-argument support — comfortably cheap for what
+it buys, and consistent with the R7.5 comparison table's own prediction
+that Alt B would cost about the same at compile time and less at
+runtime than a name-rescanning alternative. Shipping ROM confirmed
+unaffected (`make budget`: unchanged 554 HOME / 109 EXROM free). Full
+V1 regression suite re-run: see below.
+
+**This is a genuine R9 precondition, not an R8 dependency**: R8's own
+editor-integration/decompiler work does not touch extensions at all and
+proceeds independently. **R9's own "statement-set coverage audit" must
+explicitly include "the V2-native extension registry and `OP_CALL_EXT`
+dispatch are real, tested, and cover every capability a V1 loadable
+extension module needs going forward"** as a named, checked item.
+
 ### R8 — Editor integration
 
 - **Objective**: wire the V2 compiler/decompiler into the existing editor
@@ -1023,7 +1181,15 @@ where that boundary gets redefined.
   13,988-byte V1 language core — once R1-R8 demonstrate full statement-set
   coverage.
 - **Dependencies**: R1-R8, plus an explicit statement-set coverage audit
-  (every V1 statement type has a working V2 equivalent, tested).
+  (every V1 statement type has a working V2 equivalent, tested) — this
+  audit MUST explicitly include R7.5's two named items: loadable
+  extensions still register (`BASIC_EXTENSION_REGISTER`/`BASIC_
+  EXTENSION_READ_OVER` relocated out of `basic.asm` before it's deleted,
+  `EXT_SERVICE_PRINT_ATTR`'s veneer repointed to `VM_COMPUTE_PRINT_ATTR`)
+  and still dispatch from a V2-compiled program (`OP_CALL_EXT_STMT` or
+  equivalent, per R7.5's own design, actually built and tested against a
+  real loaded module) — not discovered missing after `basic.asm` is
+  already gone. See R7.5's own section for the full investigation.
 - **Files**: deletes/guts the V1 language-core files listed above.
 - **Tests**: the **entire** existing V1 regression suite, re-run against
   V2, program-by-program, per §21's oracle-comparison discipline —

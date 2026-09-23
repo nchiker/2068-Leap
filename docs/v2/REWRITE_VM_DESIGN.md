@@ -343,6 +343,62 @@ account.
 
 
 
+## Update: R7.5 (V2-native loadable-extension mechanism) is complete
+
+Raised mid-R8: does V1's runtime-loadable extension capability survive
+under V2? The user then explicitly redirected the investigation:
+preserve the CAPABILITY (load optional RAM code without permanent ROM
+cost), not V1's specific ABI/registration/dispatch mechanism -- redesign
+freely for Architecture B, compared quantitatively. Two alternatives
+were scored on ROM/RAM/runtime-perf/compiler-complexity/robustness/
+usefulness/architectural-fit: a V1-shaped runtime name-rescan versus a
+compile-time-resolved slot id with a runtime generation check (the same
+"resolve a name to a small index at compile time, index a fixed-stride
+table at runtime" shape SYMTAB/STRTAB/FLOATTAB already use throughout
+V2). The generation-checked table won on ROM, runtime performance, and
+architectural fit, tied on RAM and compiler complexity, and gave up only
+a theoretical sliver of robustness a one-byte rolling generation counter
+closes back up. HIT() was separately, explicitly settled by the user:
+it moves into the resident sprite subsystem (a future platform-
+integration item, not this mechanism at all) rather than needing any
+extension capability, since V1's own move of it into an extension
+"wasn't the best decision."
+
+Built and real-hardware-validated: kernel/extensions/ext_registry.asm
+(new, ~250 bytes -- never basic.asm-resident, so no R9 relocation is
+needed at all, unlike V1's own gateway); rom/exrom_v2_vm_core.asm grew
+2,013 -> 2,119 bytes (+106: OP_CALL_EXT, a VM_CALL_INDIRECT tail-call
+helper, one new error code); rom/exrom_v2_compiler.asm grew 3,095 ->
+3,208 bytes (+113: a registry-fallback check plus COMPILE_EXT_CALL).
+Arguments are memory-passed (EXT_CALL_ARG0..3, full 16-bit), not
+register-passed like V1's own ABI -- Z80's 4 registers don't scale to
+arbitrary argument count anyway, and this uses ONE uniform code path for
+0-4 args instead of V1's three separate "grammar" shapes. rom/
+test_v2_ext_demo.asm's real demo (TRIADD a,b,destaddr -- a 3-argument
+statement, a shape V1's own grammar-0 ABI could never express in one
+path) passed on real ZEsarUX hardware, confirmed independently (not just
+via border colour): the registry table read back exactly right, and the
+target RAM byte read back 7 (3+4), computed for real by the extension's
+own code.
+
+Two real bugs found and fixed: EXT2_NAME_LEN returned the just-read NULL
+byte (0) instead of the accumulated length on hitting the terminator --
+every registered name's own length came out 0, caught via a real
+registry-table memory read; and the demo's first name, SUM3, silently
+failed to match at all because LEX_SCAN_IDENT (an existing, pre-R7.5
+design choice) only accepts A-Z, no digits -- SUM3 tokenized as SUM plus
+a separate number 3. Renamed to TRIADD; this also surfaces an honest,
+tracked note for R8: the decompiler's own synthesized names (V0, V1,
+...) have the same letters-then-digits shape and aren't yet re-lexable
+by this same compiler without widening LEX_SCAN_IDENT -- not silently
+glossed over.
+
+Shipping ROM confirmed unaffected (make budget: unchanged 554 HOME / 109
+EXROM free). Full V1 regression suite re-run: see the implementation
+plan's own R7.5 section for the result.
+
+
+
 ## Update: the statement-compiler spike has been built and measured
 
 See `STATEMENT_COMPILER_SPIKE.md` for the full result:

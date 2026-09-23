@@ -271,6 +271,12 @@ CNUM_DIVISOR_TMP:   equ $8B39   ; LEX_SCAN_NUMBER scratch (2 bytes): running
                                   ; 10^(fractional digits) accumulator
 TOK_FLOAT_DIVISOR:  equ $8B3B   ; token field (2 bytes): companion to
                                   ; TOK_VAL for a TOK_FLOAT_NUMBER token
+CEXT_SLOT:          equ $8B3D   ; R7.5 (COMPILE_EXT_CALL) scratch, 1
+CEXT_GEN:           equ $8B3E   ; byte each unless noted: the matched
+CEXT_ARGCOUNT:      equ $8B3F   ; extension's own slot id/generation/
+CEXT_REMAINING:     equ $8B40   ; argcount, and a countdown while
+                                  ; compiling that many comma-separated
+                                  ; argument expressions
 
 ; every one of the scratch cells above is real RAM (not a register
 ; held across a call, not inline ROM data) — the two bug classes this
@@ -1022,6 +1028,7 @@ EMIT_OP_SOUND:                   ld a,30 : jp EMIT_BYTE
 EMIT_OP_POKE:                     ld a,31 : jp EMIT_BYTE
 EMIT_OP_PAUSE:                     ld a,32 : jp EMIT_BYTE
 EMIT_OP_RANDOMISE:                  ld a,33 : jp EMIT_BYTE
+EMIT_OP_CALL_EXT:                     ld a,34 : jp EMIT_BYTE
 
 ; EMIT_PLACEHOLDER_16 — writes two dummy zero bytes (a forward-reference
 ; branch target not yet known), returns the ABSOLUTE address of the first
@@ -2150,6 +2157,27 @@ COMPILE_STATEMENT_LIST:
         call COMPILE_STR_ASSIGN
         jp .after_stmt
 .ident_stmt:
+        ; R7.5 addition: BEFORE assuming this identifier starts an
+        ; assignment or a label definition, check whether its exact name
+        ; matches a currently-registered V2-native extension (kernel/
+        ; extensions/ext_registry.asm) — extension keywords take
+        ; priority over "just a variable name," matching V1's own
+        ; BASIC_TRY_EXTENSION ordering (checked before BASIC_TRY_
+        ; ASSIGNMENT there too). This is safe to check at COMPILE time
+        ; (not just runtime) because compiling happens with the same
+        ; extension module(s) already loaded that running the equivalent
+        ; V1 line would have needed — the same precondition V1 itself
+        ; already imposes (see the regression suite's own `*_unloaded`
+        ; tests). If nothing matches, this identifier is genuinely just
+        ; a variable/label, exactly as before this addition.
+        ld hl,(TOK_NAME)
+        ld a,(TOK_LEN)
+        ld b,a
+        call EXT2_LOOKUP
+        jr c,.not_extension
+        call COMPILE_EXT_CALL
+        jp .after_stmt
+.not_extension:
         ; genuine one-token lookahead: save this identifier's name, then
         ; fetch the NEXT token. If it's ':', this was a label definition —
         ; the ':' is consumed as an ordinary TOK_COLON here, not specially
@@ -2401,6 +2429,62 @@ COMPILE_CALL_STMT:
         ld (hl),e
         inc hl
         ld (hl),d
+        ret
+
+; ===========================================================================
+; COMPILE_EXT_CALL — R7.5. Called with A = the matched extension's slot
+; id (from EXT2_LOOKUP, kernel/extensions/ext_registry.asm), TOK_TYPE
+; still the un-consumed identifier token. Compiles
+; "KEYWORD <expr>[,<expr>]*" (argcount comma-separated expressions, read
+; from the matched slot's own registration — no more V1-shaped "grammar
+; 0/1/3" special-casing; any argcount 0-4 uses this one path) and emits
+; OP_CALL_EXT with the resolved [slot_id][generation][argcount] operand.
+; ===========================================================================
+COMPILE_EXT_CALL:
+        ld (CEXT_SLOT),a
+        call EXT2_SLOT_ADDR      ; HL -> registry record
+        ld a,(hl)                  ; generation
+        ld (CEXT_GEN),a
+        push hl
+        ld de,12
+        add hl,de
+        ld a,(hl)                   ; argcount
+        pop hl
+        ld (CEXT_ARGCOUNT),a
+        ld (CEXT_REMAINING),a
+        call LEX_NEXT_TOKEN         ; consume the extension keyword
+        ld a,(CEXT_REMAINING)
+        or a
+        jr z,.emit                  ; 0-argument extension — nothing to
+                                    ; compile, straight to the opcode
+.arg_loop:
+        call COMPILE_EXPR
+        ld a,(COMPILE_ERROR_CODE)
+        or a
+        ret nz
+        ld a,(CEXT_REMAINING)
+        dec a
+        ld (CEXT_REMAINING),a
+        or a
+        jr z,.emit
+        ld a,(TOK_TYPE)
+        cp TOK_COMMA
+        jr z,.have_comma
+        ld a,28                     ; expected ',' between an
+                                    ; extension call's own arguments
+        ld (COMPILE_ERROR_CODE),a
+        ret
+.have_comma:
+        call LEX_NEXT_TOKEN         ; consume ','
+        jr .arg_loop
+.emit:
+        call EMIT_OP_CALL_EXT
+        ld a,(CEXT_SLOT)
+        call EMIT_BYTE
+        ld a,(CEXT_GEN)
+        call EMIT_BYTE
+        ld a,(CEXT_ARGCOUNT)
+        call EMIT_BYTE
         ret
 
 COMPILER_END:

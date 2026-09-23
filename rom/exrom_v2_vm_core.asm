@@ -177,6 +177,17 @@
 ;                 platform primitive" reason as VM_COMPUTE_PRINT_ATTR)
 ;   33 = RANDOMISE (R7 Phase 2; pops n, calls the real, unmodified
 ;                 MATH_RND_SEED)
+;   34 = CALL_EXT (R7.5; operand [slot_id:1][generation:1][argcount:1];
+;                 pops argcount values into EXT_CALL_ARG0..3 (kernel/
+;                 extensions/ext_registry.asm), re-checks the matched
+;                 slot's current generation against the compiled-in
+;                 value, and calls through its exec_ptr — a real,
+;                 V2-native loadable-extension dispatch mechanism, NOT a
+;                 port of V1's own register-passed/name-rescanned
+;                 mechanism; see ext_registry.asm's own header and docs/
+;                 v2/ARCHITECTURE_B_IMPLEMENTATION_PLAN.md's R7.5 section
+;                 for the full design and the quantitative comparison it
+;                 was chosen from)
 ;
 ; VM error codes (VM_ERROR_CODE, set on any abnormal halt):
 ;   0 = no error (normal HALT)
@@ -191,6 +202,10 @@
 ;   8 = invalid SOUND register (R7 Phase 2; SOUND_EXROM's own real 1-16
 ;       range check failed — a real, caught error, matching V1's own
 ;       MSG_INVALID_SOUND_REGISTER, not silently ignored)
+;   9 = extension not found (R7.5; OP_CALL_EXT's own registry generation
+;       check failed — the module was never loaded, was unloaded, or a
+;       different module now occupies that slot; see kernel/extensions/
+;       ext_registry.asm's own header for the full design)
 ;
 ; Operand-stack record layout (3 bytes, at address SP, SP+1, SP+2):
 ;   [value_lo][value_hi][tag]   -- SP points at the lowest (most recent) record
@@ -369,6 +384,12 @@ VM_PLOT_OVER_TMP:   equ $87C0    ; VM_CLAMP_Y191 rather than kept live in
                                   ; standing discipline as every other
                                   ; scratch cell above, applied up front
                                   ; this time instead of found via a bug
+VM_EXT_SLOT:        equ $87C1    ; R7.5 (OP_CALL_EXT) scratch, 1 byte
+VM_EXT_GEN:         equ $87C2    ; each unless noted: the operand's own
+VM_EXT_ARGCOUNT:    equ $87C3    ; [slot_id][generation][argcount], and
+VM_EXT_REMAINING:   equ $87C4    ; a countdown used while popping args
+VM_EXT_POPVAL:      equ $87C5    ; (2 bytes): this iteration's popped value
+VM_EXT_RECPTR:      equ $87C7    ; (2 bytes): the matched registry record
 
 ; every one of these is real RAM, not a register held across a call or a
 ; loop that itself calls something else — the standing discipline
@@ -404,7 +425,7 @@ VM_RUN:
         ld a,(hl)               ; fetch opcode
         inc hl
         ld (VM_IP),hl
-        cp 34                   ; 34 opcodes defined (0-33)
+        cp 35                   ; 35 opcodes defined (0-34)
         jp nc,VM_ERR_ILLEGAL_OPCODE
         ld l,a
         ld h,0
@@ -453,6 +474,7 @@ VM_OP_TABLE:
         dw OP_POKE                    ; 31
         dw OP_PAUSE                    ; 32
         dw OP_RANDOMISE                 ; 33
+        dw OP_CALL_EXT                   ; 34 (R7.5)
 
 ; ---------------------------------------------------------------------------
 ; String-table access: index (A) -> HL = record address
@@ -1755,6 +1777,93 @@ OP_RANDOMISE:
         call MATH_RND_SEED
         jp VM_RUN.loop
 
+; ===========================================================================
+; R7.5 — V2-native loadable-extension dispatch. See kernel/extensions/
+; ext_registry.asm's own header for the full design (compile-time-
+; resolved slot id + a runtime generation check, chosen over a V1-shaped
+; runtime name-rescan — the quantitative comparison lives in docs/v2/
+; ARCHITECTURE_B_IMPLEMENTATION_PLAN.md's R7.5 section) and docs/v2/
+; REWRITE_VM_DESIGN.md's own cross-link.
+; ===========================================================================
+
+; VM_CALL_INDIRECT — input: DE = target address. `call VM_CALL_INDIRECT`
+; is a real call (pushes a return address); this routine's own `jp (hl)`
+; then tail-jumps into the target WITHOUT pushing anything further, so
+; the target's own eventual `ret` pops the SAME return address straight
+; back to whoever called VM_CALL_INDIRECT — the identical tail-call
+; shape basic.asm's own BASIC_CALL_USR (`jp (hl)`) already uses for V1's
+; extension callbacks. Destroys: whatever the target itself destroys.
+VM_CALL_INDIRECT:
+        ex de,hl
+        jp (hl)
+
+; OP_CALL_EXT — operand: [slot_id:1][generation:1][argcount:1]. Pops
+; `argcount` values (tag ignored — this milestone's extension ABI is
+; plain-int-only, matching V1's own extension ABI, which was also always
+; 16-bit ints) into EXT_CALL_ARG0..(argcount-1) in call order (the LAST
+; value popped — since VM_POP is LIFO — is the FIRST argument, so this
+; fills from the highest index down), verifies the matched slot's
+; CURRENT generation against the one baked into the bytecode, and calls
+; through its exec_ptr. A mismatch (module unloaded, or a different
+; module now occupying that slot) is a real, caught VM error.
+OP_CALL_EXT:
+        ld hl,(VM_IP)
+        ld a,(hl)
+        ld (VM_EXT_SLOT),a
+        inc hl
+        ld a,(hl)
+        ld (VM_EXT_GEN),a
+        inc hl
+        ld a,(hl)
+        ld (VM_EXT_ARGCOUNT),a
+        inc hl
+        ld (VM_IP),hl
+        ld a,(VM_EXT_ARGCOUNT)
+        ld (VM_EXT_REMAINING),a
+.pop_loop:
+        ld a,(VM_EXT_REMAINING)
+        or a
+        jr z,.args_done
+        dec a
+        ld (VM_EXT_REMAINING),a   ; A = the arg index this value fills
+                                    ; (argcount-1 on the first iteration,
+                                    ; counting down to 0)
+        call VM_POP                ; HL = value, A = tag (ignored)
+        ld (VM_EXT_POPVAL),hl
+        ld a,(VM_EXT_REMAINING)
+        add a,a                    ; *2 (each arg slot is 2 bytes)
+        ld hl,EXT_CALL_ARG0
+        ld e,a
+        ld d,0
+        add hl,de
+        ld de,(VM_EXT_POPVAL)
+        ld (hl),e
+        inc hl
+        ld (hl),d
+        jr .pop_loop
+.args_done:
+        ld a,(VM_EXT_SLOT)
+        call EXT2_SLOT_ADDR        ; HL -> registry record
+        ld (VM_EXT_RECPTR),hl
+        ld a,(hl)                   ; the slot's CURRENT generation
+        ld b,a
+        ld a,(VM_EXT_GEN)
+        cp b
+        jp nz,VM_ERR_EXTENSION_NOT_FOUND
+        ld hl,(VM_EXT_RECPTR)
+        ld de,10                     ; record layout: [gen:1][name_len:1]
+                                     ; [name:8][exec_ptr:2][argcount:1] —
+                                     ; exec_ptr always starts at +10,
+                                     ; regardless of the real name's own
+                                     ; length (the 8-byte name FIELD is
+                                     ; fixed-width, zero-padded)
+        add hl,de
+        ld e,(hl)
+        inc hl
+        ld d,(hl)                    ; DE = exec_ptr
+        call VM_CALL_INDIRECT
+        jp VM_RUN.loop
+
 ; ---------------------------------------------------------------------------
 ; Error exits — each sets VM_ERROR_CODE and VM_HALTED, then returns to the
 ; caller (the driver), which inspects both.
@@ -1789,6 +1898,10 @@ VM_ERR_CALL_STACK_UNDERFLOW:
 
 VM_ERR_INVALID_SOUND_REGISTER:
         ld a,8
+        jp VM_ERR_COMMON
+
+VM_ERR_EXTENSION_NOT_FOUND:
+        ld a,9
         jp VM_ERR_COMMON
 
 VM_ERR_COMMON:
