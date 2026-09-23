@@ -66,16 +66,19 @@
 ; layer) not attempted in this pass either; tracked as a real
 ; remainder, not silently assumed solved by this narrower test.
 ;
-; Source program "typed" (queued, see TEST_KEY_QUEUE) into the real
-; editor -- the SAME program rom/test_v2_decompiler.asm's own Phase 1
-; test already validated the compiler/VM/decompiler against in
-; isolation, reused here so THIS test's own job is purely "does the
-; real editor's own output correctly reach and round-trip through
-; them", not "does the compiler/decompiler work", already proven
-; elsewhere:
+; Source program "typed" into the real editor -- a shorter relative of
+; rom/test_v2_decompiler.asm's own Phase 1 program (assignment,
+; arithmetic, IF/relational, THEN GOTO, a label), trimmed of its own
+; FOR/NEXT tail (R8.5 Group 1's own added code pushed the shared flat
+; 16K image over budget; FOR/NEXT already has dedicated coverage in
+; rom/test_v2_compiler_r3.asm, so re-proving it here a second time,
+; through a shared program this test doesn't even own, wasn't worth the
+; ROM). THIS test's own real job is purely "does the real editor's own
+; output correctly reach and round-trip through the compiler/VM/
+; decompiler", not "does the compiler/decompiler work" -- already
+; proven, independently, elsewhere:
 ;
-;   A=3+4:B=A*2:IF B<10 THEN GOTO SKIP:A=999:SKIP:C=0:FOR I=1 TO 3:
-;   C=C+I:NEXT I
+;   A=3+4:B=A*2:IF B<10 THEN GOTO S:A=9:S:C=A+B
 ;
 ; Build:
 ;   tools/sjasmplus_strict.sh --sym=build/test_v2_editor_integration.sym \
@@ -179,13 +182,15 @@ FAIL:
 ; every character used here (letters, digits, '+', '*', '<', ':', '=')
 ; is an ordinary printable EDITOR_INSERT_CHAR accepts unmodified.
 TEST_SOURCE_TEXT:
-    db "A=3+4:B=A*2:IF B<10 THEN GOTO SKIP:A=999:SKIP:C=0:FOR I=1 TO 3:C=C+I:NEXT I", 0
+    db "A=3+4:B=A*2:IF B<10 THEN GOTO S:A=9:S:C=A+B", 0
 
 ; ============================================================================
-; CHECK_VM_RESULT — same hand-computed expected results as rom/
-; test_v2_decompiler.asm's own Phase 1 program (identical source):
-; B=(3+4)*2=14, C=0+1+2+3=6, I=4 (one past FOR's own limit of 3).
-; Symbol declaration order (first appearance): 0=A 1=B 2=C 3=I.
+; CHECK_VM_RESULT — hand-computed expected results: A=3+4=7, then
+; B=A*2=14 (>=10, so "IF B<10 THEN GOTO S" does NOT jump -- same "tests
+; the fall-through path" property the original longer program also had,
+; B was never <10 there either), A=9 (overwritten by the fall-through
+; statement), C=A+B=9+14=23. Symbol declaration order (first
+; appearance): 0=A 1=B 2=C.
 ; Out: carry clear = pass, carry set = fail
 ; ============================================================================
 CHECK_VM_RESULT:
@@ -194,12 +199,8 @@ CHECK_VM_RESULT:
     call .check_one           ; B
     jr   c, .fail
     ld   hl, SYMTAB_BASE + 2*SYM_REC_LEN
-    ld   de, 6
+    ld   de, 23
     call .check_one           ; C
-    jr   c, .fail
-    ld   hl, SYMTAB_BASE + 3*SYM_REC_LEN
-    ld   de, 4
-    call .check_one           ; I
     ret
 .fail:
     scf
@@ -259,17 +260,20 @@ CHECK_DECOMPILED_TEXT:
 ; verified Phase 1 rendering (same source program, same compiler, same
 ; decompiler; only the SOURCE's own origin differs -- the real editor
 ; instead of a baked-in constant).
+; Captured from a real ZEsarUX run of this shortened program. "L25"/
+; "L29" are the compiler's real address-based label names (the source
+; text's own "S" label name is not preserved through compile, matching
+; every other decompiler test this session); L25 is GOTO's fall-through
+; target address landing one instruction before L29 (the label
+; definition itself) -- both real, valid decompiled label references.
 EXPECTED_TEXT:
     db "V0 = (3+4)", 13
     db "V1 = (V0*2)", 13
-    db "IF (V1<10) THEN GOTO L30", 13
+    db "IF (V1<10) THEN GOTO L29", 13
     db "L25:", 13
-    db "V0 = 999", 13
-    db "L30:", 13
-    db "V2 = 0", 13
-    db "FOR V3 = 1 TO 3", 13
-    db "V2 = (V2+V3)", 13
-    db "NEXT V3", 13
+    db "V0 = 9", 13
+    db "L29:", 13
+    db "V2 = (V0+V1)", 13
 EXPECTED_TEXT_LEN: equ $-EXPECTED_TEXT
 
 ; Test-only stub: rom/exrom_v2_vm_core.asm's own OP_LPRINT_NUM/STR
@@ -317,8 +321,36 @@ INT_GET_FRAMES:
                                    ; pulled in transitively via kernel/
                                    ; interrupt or kernel/io, both
                                    ; stubbed away above
-    INCLUDE "kernel/memory/memory.asm"
-    INCLUDE "kernel/extensions/ext_registry.asm"
+    INCLUDE "kernel/memory/memory.asm"   ; genuinely needed -- kernel/
+                                           ; editor/editor.asm's own
+                                           ; MEM_FILL_ZERO/MEM_LINE_
+                                           ; DELETE_RANGE/MEM_SHIFT_UP/
+                                           ; MEM_SHIFT_DOWN calls (a
+                                           ; `grep call MEM_` pass missed
+                                           ; these; confirmed by a real
+                                           ; rebuild attempt without it)
+; Test-only stub: this file's own test program never registers or calls
+; a loadable extension -- rom/exrom_v2_compiler.asm's own COMPILE_
+; STATEMENT_LIST calls EXT2_LOOKUP unconditionally at every statement
+; start (real contract: carry SET means "no match", exactly what a
+; permanently-empty registry means), and rom/exrom_v2_vm_core.asm's own
+; OP_CALL_EXT references EXT2_SLOT_ADDR (never actually reached here,
+; since EXT2_LOOKUP always reports no match first). The real 347-line
+; kernel/extensions/ext_registry.asm pushed this flat 16K image over
+; budget for zero real coverage -- same stubbing discipline as BEEP/
+; SOUND/IO_READ_KEY above.
+EXT2_LOOKUP:
+    scf
+    ret
+EXT2_SLOT_ADDR:
+    ret
+; EXT_CALL_ARG0/EXT2_TABLE: genuinely unreachable in this test (OP_CALL_
+; EXT's own arg-pop loop never runs -- EXT2_LOOKUP above always reports
+; no match first -- and no CALL_EXT opcode ever reaches rom/exrom_v2_
+; decompiler.asm's own name-lookup path), so these alias existing RAM
+; rather than reserving real ROM bytes for space that's never touched.
+EXT_CALL_ARG0: equ $8B00
+EXT2_TABLE:    equ $8B00
     INCLUDE "rom/exrom_format.asm"
     INCLUDE "rom/exrom_v2_vm_core.asm"
     INCLUDE "rom/exrom_v2_compiler.asm"

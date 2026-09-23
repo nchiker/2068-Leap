@@ -830,6 +830,8 @@ DECOMP_SKIP_OPERAND:
         jr z,.w1
         cp 18                     ; STORE_STR_VAR (R5)
         jr z,.w1
+        cp 39                     ; CALL_FN (R8.5 Group 1)
+        jr z,.w1
         cp 2                      ; PUSH_I16
         jr z,.w2
         cp 15                     ; CALL (R4)
@@ -1251,6 +1253,8 @@ DECOMPILE_PROGRAM:
         jp z,.op_lprint_num
         cp 38
         jp z,.op_lprint_str
+        cp 39
+        jp z,.op_call_fn
         jp DECOMP_ERR_UNSUPPORTED_OPCODE
 
 .op_halt:
@@ -2194,6 +2198,56 @@ DECOMPILE_PROGRAM:
         call DECOMP_EMIT_NEWLINE
         jp DECOMPILE_PROGRAM.loop
 
+; R8.5 Group 1 -- CALL_FN is an EXPRESSION fragment producer (like ADD/
+; SUB/etc. above), not a statement: it pops its one argument's own
+; already-decompiled fragment, wraps it as "NAME(<arg>)", and pushes
+; the result back as a new fragment for whatever consumes it next
+; (PRINT, an assignment, another expression) -- never emits a newline
+; itself.
+.op_call_fn:
+        ld hl,(DECOMP_IP)
+        ld a,(hl)
+        inc hl
+        ld (DECOMP_IP),hl
+        call DECOMP_BUILTIN_FN_NAME   ; A = fn_index in; HL = name text,
+                                        ; C = name length, out
+        ld (DECOMP_OP_PTR),hl
+        ld a,c
+        ld (DECOMP_OP_LEN),a
+        call DECOMP_FRAG_POP           ; HL = arg text, C = arg length
+        ld (DECOMP_TMP_A),hl
+        ld a,c
+        ld (DECOMP_TMP_LEN),a
+        call DECOMP_COMBINE_RESET
+        ld hl,(DECOMP_OP_PTR)
+        ld a,(DECOMP_OP_LEN)
+        call DECOMP_COMBINE_TEXT
+        ld a,'('
+        call DECOMP_COMBINE_CHAR
+        ld hl,(DECOMP_TMP_A)
+        ld a,(DECOMP_TMP_LEN)
+        call DECOMP_COMBINE_TEXT
+        ld a,')'
+        call DECOMP_COMBINE_CHAR
+        ld a,(DECOMP_COMBINE_LEN)
+        cp DECOMP_FRAG_TEXT_MAX+1
+        jp nc,DECOMP_ERR_EXPR_TOO_LONG
+        ld c,a
+        ld hl,DECOMP_COMBINE_BUF
+        call DECOMP_FRAG_PUSH
+        jp DECOMPILE_PROGRAM.loop
+
+; DECOMP_BUILTIN_FN_NAME -- input: A = fn_index. Output: HL = name text
+; pointer, C = name length. Destroys: AF, BC, HL. Only fn_index 0 (ABS)
+; exists yet; Group 6 replaces this with a real indexed table as the
+; remaining ~24 functions are added (same shape as rom/exrom_v2_
+; compiler.asm's own BUILTIN_FN_TABLE, kept in sync by construction
+; since both sides list functions in the same fn_index order).
+DECOMP_BUILTIN_FN_NAME:
+        ld hl,STR_ABS
+        ld c,STR_ABS_LEN
+        ret
+
 ; DECOMP_STR_OPERAND -- input: HL = a fragment's own text pointer, C =
 ; its length (as popped from the fragment stack by a string-typed
 ; consumer below). A string-typed sub-expression's only two possible
@@ -2385,6 +2439,8 @@ STR_LPRINT:    db "LPRINT "
 STR_LPRINT_LEN: equ $-STR_LPRINT
 STR_END:       db "END"
 STR_END_LEN:   equ $-STR_END
+STR_ABS:       db "ABS"
+STR_ABS_LEN:   equ $-STR_ABS
 
 STR_GOTO:      db "GOTO "
 STR_GOTO_LEN:  equ $-STR_GOTO

@@ -128,6 +128,15 @@
 ;   19 = expected a parameter name after PROC's '('
 ;   20 = expected ')' after a PROC's parameter name
 ;   21 = expected ':' before a PROC's body
+;   22 = expected ',' between PLOT's x and y
+;   23 = expected ',' after LINE's x0
+;   24 = expected TO in LINE
+;   25 = expected ',' after LINE's x1
+;   26 = expected ',' in BEEP
+;   28 = expected ',' between an extension call's own arguments
+;   29 = expected '(' after a built-in function name (R8.5 Group 1)
+;   30 = expected ',' between a built-in function's own arguments
+;   31 = expected ')' to close a built-in function call
 ; ============================================================================
 
 ; ---------------------------------------------------------------------------
@@ -277,6 +286,20 @@ CEXT_ARGCOUNT:      equ $8B3F   ; extension's own slot id/generation/
 CEXT_REMAINING:     equ $8B40   ; argcount, and a countdown while
                                   ; compiling that many comma-separated
                                   ; argument expressions
+
+; R8.5 Group 1 -- built-in (resident) function-call grammar. Same
+; "resolve a name to a small compile-time index" idea R7.5's own
+; extension registry uses, but simpler: no runtime generation check --
+; resident functions are compiled in, never unloaded/reloaded.
+BFN_FOUND_ARGCOUNT: equ $8B41   ; BUILTIN_FN_FIND's own output: the
+                                  ; matched function's declared argcount
+CFN_INDEX:          equ $8B42   ; COMPILE_FACTOR.fn_call scratch, 1 byte
+CFN_ARGCOUNT:       equ $8B43   ; each: the matched function's own
+CFN_REMAINING:      equ $8B44   ; index/argcount, and a countdown while
+                                  ; compiling that many comma-separated
+                                  ; argument expressions (same shape as
+                                  ; CEXT_SLOT/CEXT_GEN/CEXT_ARGCOUNT/
+                                  ; CEXT_REMAINING above, deliberately)
 
 ; every one of the scratch cells above is real RAM (not a register
 ; held across a call, not inline ROM data) — the two bug classes this
@@ -1065,6 +1088,7 @@ EMIT_OP_PRINT_NUM:                      ld a,35 : jp EMIT_BYTE  ; R8.5
 EMIT_OP_PRINT_STR:                       ld a,36 : jp EMIT_BYTE
 EMIT_OP_LPRINT_NUM:                       ld a,37 : jp EMIT_BYTE
 EMIT_OP_LPRINT_STR:                        ld a,38 : jp EMIT_BYTE
+EMIT_OP_CALL_FN:                            ld a,39 : jp EMIT_BYTE  ; R8.5 Group 1
 
 ; EMIT_PLACEHOLDER_16 — writes two dummy zero bytes (a forward-reference
 ; branch target not yet known), returns the ABSOLUTE address of the first
@@ -1209,9 +1233,128 @@ COMPILE_FACTOR:
         call LEX_NEXT_TOKEN
         ret
 .ident:
+        call BUILTIN_FN_FIND
+        jr c,.fn_call
         call COMPILE_IDENT_LOAD
         call LEX_NEXT_TOKEN
         ret
+.fn_call:
+        ld (CFN_INDEX),a
+        ld a,(BFN_FOUND_ARGCOUNT)
+        ld (CFN_ARGCOUNT),a
+        ld (CFN_REMAINING),a
+        call LEX_NEXT_TOKEN       ; consume the function name
+        ld a,(TOK_TYPE)
+        cp TOK_LPAREN
+        jr z,.fn_have_lparen
+        ld a,29                    ; expected '(' after a built-in
+        ld (COMPILE_ERROR_CODE),a   ; function name
+        ret
+.fn_have_lparen:
+        call LEX_NEXT_TOKEN         ; consume '('
+        ld a,(CFN_REMAINING)
+        or a
+        jr z,.fn_rparen              ; 0-arg function (none exist yet,
+                                       ; kept general for group 6)
+.fn_arg_loop:
+        call COMPILE_EXPR
+        ld a,(COMPILE_ERROR_CODE)
+        or a
+        ret nz
+        ld a,(CFN_REMAINING)
+        dec a
+        ld (CFN_REMAINING),a
+        or a
+        jr z,.fn_rparen
+        ld a,(TOK_TYPE)
+        cp TOK_COMMA
+        jr z,.fn_have_comma
+        ld a,30                     ; expected ',' between a built-in
+        ld (COMPILE_ERROR_CODE),a    ; function's own arguments
+        ret
+.fn_have_comma:
+        call LEX_NEXT_TOKEN
+        jr .fn_arg_loop
+.fn_rparen:
+        ld a,(TOK_TYPE)
+        cp TOK_RPAREN
+        jr z,.fn_have_rparen
+        ld a,31                      ; expected ')' to close a built-in
+        ld (COMPILE_ERROR_CODE),a     ; function call
+        ret
+.fn_have_rparen:
+        call LEX_NEXT_TOKEN            ; consume ')'
+        call EMIT_OP_CALL_FN
+        ld a,(CFN_INDEX)
+        call EMIT_BYTE
+        ret
+
+; ===========================================================================
+; R8.5 Group 1 -- built-in (resident) function-call grammar. Compile-
+; time name resolution, same "linear scan a fixed table" pattern
+; LEX_CLASSIFY_KEYWORD already established for statement keywords, but
+; against a SEPARATE table (a function name is never a statement
+; keyword or vice versa in this dialect, so no ambiguity). Entry layout
+; matches KEYWORD_TABLE's own shape: [len:1][text:8, zero-padded]
+; [argcount:1][fn_index:1] = 11 bytes/row.
+; ===========================================================================
+BUILTIN_FN_FIND:               ; input: TOK_NAME/TOK_LEN (current, not
+                                 ; yet consumed, identifier token).
+                                 ; Output: carry set + A = fn_index +
+                                 ; BFN_FOUND_ARGCOUNT = the matched
+                                 ; function's own argcount, if found;
+                                 ; carry clear (A/BFN_FOUND_ARGCOUNT
+                                 ; unchanged) if this identifier does
+                                 ; not name a built-in function.
+                                 ; Destroys: AF, BC, DE, HL.
+        ld hl,BUILTIN_FN_TABLE
+        ld b,BUILTIN_FN_TABLE_COUNT
+.loop:
+        ld a,(TOK_LEN)
+        cp (hl)
+        jr nz,.next
+        push hl
+        inc hl                    ; -> name text
+        ld de,(TOK_NAME)
+        ld c,a
+.cmp_loop:
+        ld a,(de)
+        cp (hl)
+        jr nz,.cmp_fail
+        inc hl
+        inc de
+        dec c
+        jr nz,.cmp_loop
+        ; match: argcount sits 9 bytes past the entry's start (1 length
+        ; byte + 8 text bytes), fn_index right after it
+        pop hl
+        ld de,9
+        add hl,de
+        ld a,(hl)
+        ld (BFN_FOUND_ARGCOUNT),a
+        inc hl
+        ld a,(hl)
+        scf
+        ret
+.cmp_fail:
+        pop hl
+.next:
+        ld de,BUILTIN_FN_ENTRY_LEN
+        add hl,de
+        dec b
+        jr nz,.loop
+        or a                       ; clear carry -- not a built-in
+        ret                          ; function name
+
+BUILTIN_FN_ENTRY_LEN:   equ 11
+BUILTIN_FN_TABLE_COUNT: equ 1
+
+; fn_index 0 = ABS (rom/exrom_v2_vm_core.asm's own BUILTIN_FN_ABS).
+; Group 6 appends the remaining ~24 functions to this same table --
+; only the table grows, BUILTIN_FN_FIND/COMPILE_FACTOR's own .fn_call
+; grammar above needs no change per function added.
+BUILTIN_FN_TABLE:
+    db 3, "ABS", 0,0,0,0,0, 1, 0
 
 COMPILE_NUMBER_LITERAL:
         ld de,(TOK_VAL)

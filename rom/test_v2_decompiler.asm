@@ -166,12 +166,34 @@ KTAB_CALC_EXIT_TRAMPOLINE:
     INCLUDE "kernel/math/math.asm"
     INCLUDE "rom/exrom_calc.asm"
     INCLUDE "kernel/graphics/graphics.asm"
-    INCLUDE "kernel/sound/sound.asm"
-    INCLUDE "rom/exrom_sound.asm"
-    INCLUDE "kernel/io/io.asm"
-    INCLUDE "kernel/interrupt/interrupt.asm"
+; Test-only stubs: this file's own test program never exercises BEEP/
+; SOUND/PAUSE, and never registers or calls a loadable extension -- same
+; stubbing discipline (and same real contracts: EXT2_LOOKUP's carry SET
+; means "no match", exactly what a permanently-empty registry means)
+; already established for rom/test_v2_editor_integration.asm/rom/
+; test_v2_save_load.asm/rom/test_v2_decompiler_phase2.asm. The real
+; kernel/sound+kernel/io+kernel/interrupt+kernel/extensions/
+; ext_registry.asm modules pushed this flat 16K image over budget for
+; zero real coverage.
+SOUND_BEEP:
+    ret
+SOUND_EXROM:
+    or a
+    ret
+IO_READ_KEY:
+    xor a
+    ret
+INT_GET_FRAMES:
+    ld hl,0
+    ret
+EXT2_LOOKUP:
+    scf
+    ret
+EXT2_SLOT_ADDR:
+    ret
+EXT_CALL_ARG0: equ $8B00   ; unreachable -- see rom/test_v2_editor_
+EXT2_TABLE:    equ $8B00   ; integration.asm's own identical stub note
     INCLUDE "kernel/memory/memory.asm"
-    INCLUDE "kernel/extensions/ext_registry.asm"
     INCLUDE "rom/exrom_format.asm"
     INCLUDE "rom/exrom_v2_vm_core.asm"
     INCLUDE "rom/exrom_v2_compiler.asm"

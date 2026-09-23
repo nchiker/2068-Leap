@@ -316,8 +316,19 @@ IO_READ_KEY:
 INT_GET_FRAMES:
     ld hl,0
     ret
+; Test-only stub: this file's own test program never registers or calls
+; a loadable extension -- same stubbing discipline as above (real
+; contract: EXT2_LOOKUP's carry SET means "no match", exactly what a
+; permanently-empty registry means; see rom/test_v2_editor_integration.
+; asm's own identical stub for the full rationale).
+EXT2_LOOKUP:
+    scf
+    ret
+EXT2_SLOT_ADDR:
+    ret
+EXT_CALL_ARG0: equ $8B00
+EXT2_TABLE:    equ $8B00
     INCLUDE "kernel/memory/memory.asm"
-    INCLUDE "kernel/extensions/ext_registry.asm"
     INCLUDE "rom/exrom_format.asm"
     INCLUDE "rom/exrom_v2_vm_core.asm"
     INCLUDE "rom/exrom_v2_compiler.asm"

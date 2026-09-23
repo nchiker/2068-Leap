@@ -409,6 +409,11 @@ VM_PRINT_TEXT_TMP:    equ $87CB    ; (2 bytes): text pointer parked
                                      ; across VM_COMPUTE_PRINT_ATTR
 VM_PRINT_SIGN_TMP:    equ $87CD    ; (1 byte): nonzero if a float being
                                      ; printed was negative
+BFN_ABS_IDX_TMP:      equ $87CE    ; (2 bytes): R8.5 Group 1 -- BUILTIN_
+                                     ; FN_ABS's own float-index scratch,
+                                     ; parked across the VM_FLOAT_ADDR/
+                                     ; sign-check calls that would
+                                     ; otherwise clobber it
 
 ; every one of these is real RAM, not a register held across a call or a
 ; loop that itself calls something else — the standing discipline
@@ -450,8 +455,9 @@ VM_RUN:
         ld a,(hl)               ; fetch opcode
         inc hl
         ld (VM_IP),hl
-        cp 39                   ; 39 opcodes defined (0-38, R8.5 adds
-                                 ; 35-38: PRINT_NUM/STR, LPRINT_NUM/STR)
+        cp 40                   ; 40 opcodes defined (0-39, R8.5 adds
+                                 ; 35-38: PRINT_NUM/STR, LPRINT_NUM/STR;
+                                 ; 39: CALL_FN, Group 1)
         jp nc,VM_ERR_ILLEGAL_OPCODE
         ld l,a
         ld h,0
@@ -505,6 +511,7 @@ VM_OP_TABLE:
         dw OP_PRINT_STR                    ; 36
         dw OP_LPRINT_NUM                    ; 37
         dw OP_LPRINT_STR                     ; 38
+        dw OP_CALL_FN                         ; 39 (R8.5 Group 1)
 
 ; ---------------------------------------------------------------------------
 ; String-table access: index (A) -> HL = record address
@@ -2088,6 +2095,95 @@ OP_LPRINT_STR:
         call VM_STR_ADDR
         inc hl
         jp BASIC_STMT_LPRINT_EXROM
+
+; ===========================================================================
+; R8.5 Group 1 -- built-in (resident) function calls. Operand: [fn_index:1].
+; Argcount is NOT re-checked at runtime -- rom/exrom_v2_compiler.asm's own
+; BUILTIN_FN_FIND already verified it at compile time against the same
+; table's own argcount field, so each function routine below simply pops
+; exactly as many values as it knows it needs. Same tail-jump-through-
+; call trampoline OP_CALL_EXT already established (VM_CALL_INDIRECT does
+; `jp (hl)`, not `call (hl)` -- the callee's own `ret` returns to
+; wherever OP_CALL_FN's own `call VM_CALL_INDIRECT` was invoked from).
+; ===========================================================================
+OP_CALL_FN:
+        ld hl,(VM_IP)
+        ld a,(hl)
+        inc hl
+        ld (VM_IP),hl
+        ld l,a
+        ld h,0
+        add hl,hl              ; *2 (word-sized table entries)
+        ld de,BUILTIN_FN_JUMP_TABLE
+        add hl,de
+        ld e,(hl)
+        inc hl
+        ld d,(hl)
+        call VM_CALL_INDIRECT
+        jp VM_RUN.loop
+
+BUILTIN_FN_JUMP_TABLE:
+        dw BUILTIN_FN_ABS       ; fn_index 0
+
+; BUILTIN_FN_ABS — ABS(x). Pops one value (either tag), pushes its
+; magnitude. Int path: plain two's-complement negate (always safe, the
+; value is a raw operand-stack word, never a table index). Float path:
+; checks the FLOATTAB record's own sign byte directly (same technique
+; VM_NUM_TO_TEXT's own float path already uses) and, only if negative,
+; computes "0 - x" via the calculator (VM_FLOAT_STORE_RESULT's own
+; fresh-temp-slot allocation, same as OP_SUB's float path) -- never
+; mutates the popped record in place, which would risk aliasing a live
+; variable's own FLOATTAB slot if OP_LOAD_VAR ever pushes a variable's
+; real index rather than a copy.
+BUILTIN_FN_ABS:
+        call VM_POP             ; HL = value, A = tag
+        cp TAG_FLOAT
+        jr z,.float
+        bit 7,h
+        jr z,.int_push
+        xor a
+        sub l
+        ld l,a
+        ld a,0
+        sbc a,h
+        ld h,a
+.int_push:
+        ld a,TAG_INT
+        jp VM_PUSH
+.float:
+        ld (BFN_ABS_IDX_TMP),hl
+        ld a,l
+        call VM_FLOAT_ADDR       ; HL -> record
+        ld a,(hl)                 ; byte0 (exponent, or 0 = small-int form)
+        or a
+        jr z,.small_int_form
+        inc hl
+        ld a,(hl)                  ; general form: sign is byte1's bit7
+        and $80
+        jr .have_sign
+.small_int_form:
+        inc hl
+        ld a,(hl)                   ; small-int form: byte1 itself is
+                                      ; $00/$FF
+.have_sign:
+        or a
+        jr z,.float_positive
+        xor a
+        ld (CALC_SP),a
+        ld hl,0
+        call CALC_INT_TO_FP          ; push 0.0
+        ld a,TAG_FLOAT
+        ld (VM_FLOAT_OPERAND_TAG),a
+        ld hl,(BFN_ABS_IDX_TMP)
+        ld (VM_FLOAT_OPERAND_VAL),hl
+        call VM_FLOAT_PUSH_OPERAND    ; push the real value
+        call VM_CALC_SUB_STUB
+        call VM_FLOAT_STORE_RESULT     ; fresh temp slot + VM_PUSH, no
+        ret                              ; aliasing risk
+.float_positive:
+        ld hl,(BFN_ABS_IDX_TMP)
+        ld a,TAG_FLOAT
+        jp VM_PUSH
 
 ; ---------------------------------------------------------------------------
 ; Error exits — each sets VM_ERROR_CODE and VM_HALTED, then returns to the
