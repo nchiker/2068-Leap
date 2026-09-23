@@ -114,8 +114,10 @@
 ;   7  = undefined label (a GOTO/IF...THEN GOTO/CALL referenced a name that
 ;        was never defined as a label or procedure anywhere in the program)
 ;   8  = expected THEN after an IF condition
-;   9  = expected GOTO after THEN (block IF is not yet supported — see the
-;        grammar above)
+;   9  = expected ELSE or ENDIF to close a block IF's own THEN/ELSE body
+;        (R8.5 Group 3 -- was "expected GOTO after THEN" before block IF
+;        existed; "THEN GOTO" is still supported unchanged, but anything
+;        else after THEN now starts a block IF body instead of failing)
 ;   10 = expected a loop variable after FOR or NEXT
 ;   11 = expected TO after a FOR loop's initial value
 ;   12 = expected a label name after GOTO (or after IF...THEN GOTO)
@@ -301,6 +303,13 @@ CFN_REMAINING:      equ $8B44   ; index/argcount, and a countdown while
                                   ; CEXT_SLOT/CEXT_GEN/CEXT_ARGCOUNT/
                                   ; CEXT_REMAINING above, deliberately)
 
+; R8.5 Group 3 -- block IF/ELSE/ENDIF.
+IF_ELSE_SKIP_PATCH_TMP: equ $8B45  ; COMPILE_IF_BLOCK scratch (2 bytes):
+                                     ; the "skip the ELSE body" JMP's own
+                                     ; patch address, same role as
+                                     ; PROC_SKIP_PATCH_TMP above but for
+                                     ; the THEN-body's own trailing jump
+
 ; every one of the scratch cells above is real RAM (not a register
 ; held across a call, not inline ROM data) — the two bug classes this
 ; module has already found and fixed once each (docs/v2/
@@ -364,6 +373,20 @@ TOK_KW_LPRINT:      equ 39    ; system, plus END/STOP/REM (see docs/v2/
 TOK_KW_END:         equ 40     ; ARCHITECTURE_B_IMPLEMENTATION_PLAN.md's
 TOK_KW_STOP:        equ 41      ; own R8.5 section for the real capability
 TOK_KW_REM:         equ 42       ; audit this covers)
+; R8.5 Group 3 -- the full relop set (this dialect only ever had '<' and
+; '=' before) plus AND/OR/NOT.
+TOK_GT:             equ 43   ; '>'
+TOK_LE:             equ 44   ; '<='
+TOK_GE:             equ 45   ; '>='
+TOK_NE:             equ 46   ; '<>'
+TOK_KW_AND:         equ 47
+TOK_KW_OR:          equ 48
+TOK_KW_NOT:         equ 49
+TOK_KW_ELSE:        equ 50   ; block IF's own ELSE (ELSEIF compiles as
+                               ; "ELSE IF", not a separate keyword --
+                               ; matches this dialect's existing "no
+                               ; special-cased grammar shapes" preference)
+TOK_KW_ENDIF:       equ 51
 
 ; ---------------------------------------------------------------------------
 ; COMPILER_INIT — call once before COMPILE_PROGRAM.
@@ -428,6 +451,8 @@ LEX_NEXT_TOKEN:
         jr z,.single8
         cp '<'
         jr z,.single9
+        cp '>'
+        jr z,.gt_start
         cp ','
         jr z,.single10
         cp '"'
@@ -489,8 +514,38 @@ LEX_NEXT_TOKEN:
         ld a,TOK_RPAREN
         jp .advance1
 .single9:
+        ; R8.5 Group 3 -- '<' now needs one character of lookahead: '<='
+        ; and '<>' are both real relops this dialect never supported
+        ; before (only bare '<' and '=' existed). Bare '<' remains the
+        ; fallback, unchanged.
+        ld hl,(SRC_PTR)
+        inc hl
+        ld a,(hl)
+        cp '='
+        jr z,.lt_eq
+        cp '>'
+        jr z,.lt_gt
         ld a,TOK_LT
         jp .advance1
+.lt_eq:
+        ld a,TOK_LE
+        jp .advance2
+.lt_gt:
+        ld a,TOK_NE
+        jp .advance2
+.gt_start:
+        ; R8.5 Group 3 -- '>' didn't exist as a token at all before this;
+        ; '>=' is the only two-character form.
+        ld hl,(SRC_PTR)
+        inc hl
+        ld a,(hl)
+        cp '='
+        jr z,.gt_eq
+        ld a,TOK_GT
+        jp .advance1
+.gt_eq:
+        ld a,TOK_GE
+        jp .advance2
 .single10:
         ld a,TOK_COMMA
         jp .advance1
@@ -502,6 +557,13 @@ LEX_NEXT_TOKEN:
 .advance1:
         ld (TOK_TYPE),a
         ld hl,(SRC_PTR)
+        inc hl
+        ld (SRC_PTR),hl
+        ret
+.advance2:
+        ld (TOK_TYPE),a
+        ld hl,(SRC_PTR)
+        inc hl
         inc hl
         ld (SRC_PTR),hl
         ret
@@ -766,7 +828,7 @@ LEX_CLASSIFY_KEYWORD:
         ret                       ; no match — TOK_TYPE stays TOK_IDENT
 
 KEYWORD_ENTRY_LEN:  equ 11        ; [len:1][text:9, unused tail ignored][token:1]
-KEYWORD_TABLE_COUNT: equ 25
+KEYWORD_TABLE_COUNT: equ 30
 
 ; Every row is exactly KEYWORD_ENTRY_LEN (11) bytes: [len][9 text bytes,
 ; zero-padded][token]. Generated and byte-counted mechanically (a Python
@@ -802,6 +864,11 @@ KEYWORD_TABLE:
         db 3, "END", 0, 0, 0, 0, 0, 0, TOK_KW_END
         db 4, "STOP", 0, 0, 0, 0, 0, TOK_KW_STOP
         db 3, "REM", 0, 0, 0, 0, 0, 0, TOK_KW_REM
+        db 3, "AND", 0, 0, 0, 0, 0, 0, TOK_KW_AND      ; R8.5 Group 3
+        db 2, "OR", 0, 0, 0, 0, 0, 0, 0, TOK_KW_OR
+        db 3, "NOT", 0, 0, 0, 0, 0, 0, TOK_KW_NOT
+        db 4, "ELSE", 0, 0, 0, 0, 0, TOK_KW_ELSE
+        db 5, "ENDIF", 0, 0, 0, 0, TOK_KW_ENDIF
 
 ; ===========================================================================
 ; COMPILE-TIME SYMBOL TABLE — real name storage, real comparison (the piece
@@ -1089,6 +1156,25 @@ EMIT_OP_PRINT_STR:                       ld a,36 : jp EMIT_BYTE
 EMIT_OP_LPRINT_NUM:                       ld a,37 : jp EMIT_BYTE
 EMIT_OP_LPRINT_STR:                        ld a,38 : jp EMIT_BYTE
 EMIT_OP_CALL_FN:                            ld a,39 : jp EMIT_BYTE  ; R8.5 Group 1
+EMIT_OP_CMP_LE:                              ld a,40 : jp EMIT_BYTE  ; R8.5 Group 3
+EMIT_OP_CMP_GT:                               ld a,41 : jp EMIT_BYTE
+EMIT_OP_CMP_GE:                                ld a,42 : jp EMIT_BYTE
+EMIT_OP_CMP_NE:                                 ld a,43 : jp EMIT_BYTE
+EMIT_OP_AND:                                     ld a,44 : jp EMIT_BYTE
+EMIT_OP_OR:                                       ld a,45 : jp EMIT_BYTE
+EMIT_OP_NOT:                                       ld a,46 : jp EMIT_BYTE
+EMIT_OP_JMP_ELSE:                                    ld a,47 : jp EMIT_BYTE  ; R8.5 Group 3
+                                                       ; -- COMPILE_IF_BLOCK's own
+                                                       ; else-skip jump. Runtime-
+                                                       ; identical to plain JMP (same
+                                                       ; VM_OP_TABLE entry, rom/
+                                                       ; exrom_v2_vm_core.asm's own
+                                                       ; header explains why), but a
+                                                       ; DISTINCT opcode number so the
+                                                       ; decompiler can tell it apart
+                                                       ; from a bare user GOTO
+                                                       ; unambiguously -- no heuristic
+                                                       ; byte-pattern guessing needed.
 
 ; EMIT_PLACEHOLDER_16 — writes two dummy zero bytes (a forward-reference
 ; branch target not yet known), returns the ABSOLUTE address of the first
@@ -1112,11 +1198,62 @@ EMIT_PLACEHOLDER_16:
 ;               IF's condition can be more than "any nonzero integer")
 ; additive   := term (('+' | '-') term)*
 ; ===========================================================================
-COMPILE_EXPR:                   ; top level: comparison
+; ===========================================================================
+; R8.5 Group 3 -- boolean-OR is now COMPILE_EXPR's own top level (was
+; COMPILE_RELATIONAL, i.e. bare comparison, before this milestone).
+; Precedence, loosest to tightest: OR, AND, NOT, relational, additive,
+; term, factor -- the usual order (NOT binds tighter than AND/OR, a
+; relational binds tighter than NOT so "NOT A<B" parses as "NOT (A<B)",
+; matching every mainstream BASIC's own convention, not "(NOT A)<B").
+; ===========================================================================
+COMPILE_EXPR:
+        call COMPILE_BOOL_AND
+.loop:
+        ld a,(TOK_TYPE)
+        cp TOK_KW_OR
+        jr nz,.done
+        call LEX_NEXT_TOKEN
+        call COMPILE_BOOL_AND
+        call EMIT_OP_OR
+        jr .loop
+.done:
+        ret
+
+COMPILE_BOOL_AND:
+        call COMPILE_BOOL_NOT
+.loop:
+        ld a,(TOK_TYPE)
+        cp TOK_KW_AND
+        jr nz,.done
+        call LEX_NEXT_TOKEN
+        call COMPILE_BOOL_NOT
+        call EMIT_OP_AND
+        jr .loop
+.done:
+        ret
+
+COMPILE_BOOL_NOT:
+        ld a,(TOK_TYPE)
+        cp TOK_KW_NOT
+        jr nz,COMPILE_RELATIONAL
+        call LEX_NEXT_TOKEN
+        call COMPILE_BOOL_NOT   ; recurses on itself, not COMPILE_RELATIONAL
+                                  ; directly, so "NOT NOT X" (double
+                                  ; negation) also parses, same reasoning
+                                  ; COMPILE_FACTOR's own unary-minus
+                                  ; recursion already uses
+        call EMIT_OP_NOT
+        ret
+
+; COMPILE_RELATIONAL — bare comparison (was COMPILE_EXPR's own whole body
+; before this milestone). The full relop set: <, <=, =, >=, >, <>.
+COMPILE_RELATIONAL:
         call COMPILE_ADDITIVE
         ld a,(TOK_TYPE)
         cp TOK_LT
         jr z,.do_lt
+        cp TOK_LE
+        jr z,.do_le
         cp TOK_ASSIGN            ; '=' doubles as equality inside an
                                   ; expression, same token classic BASIC
                                   ; reuses for assignment vs. comparison by
@@ -1127,16 +1264,42 @@ COMPILE_EXPR:                   ; top level: comparison
                                   ; '=' COMPILE_EXPR itself sees is
                                   ; genuinely a comparison
         jr z,.do_eq
+        cp TOK_GE
+        jr z,.do_ge
+        cp TOK_GT
+        jr z,.do_gt
+        cp TOK_NE
+        jr z,.do_ne
         ret
 .do_lt:
         call LEX_NEXT_TOKEN
         call COMPILE_ADDITIVE
         call EMIT_OP_CMP_LT
         ret
+.do_le:
+        call LEX_NEXT_TOKEN
+        call COMPILE_ADDITIVE
+        call EMIT_OP_CMP_LE
+        ret
 .do_eq:
         call LEX_NEXT_TOKEN
         call COMPILE_ADDITIVE
         call EMIT_OP_CMP_EQ
+        ret
+.do_ge:
+        call LEX_NEXT_TOKEN
+        call COMPILE_ADDITIVE
+        call EMIT_OP_CMP_GE
+        ret
+.do_gt:
+        call LEX_NEXT_TOKEN
+        call COMPILE_ADDITIVE
+        call EMIT_OP_CMP_GT
+        ret
+.do_ne:
+        call LEX_NEXT_TOKEN
+        call COMPILE_ADDITIVE
+        call EMIT_OP_CMP_NE
         ret
 
 COMPILE_ADDITIVE:
@@ -2149,9 +2312,10 @@ COMPILE_IF:
         ld a,(TOK_TYPE)
         cp TOK_KW_GOTO
         jr z,.have_goto
-        ld a,9                   ; expected GOTO
-        ld (COMPILE_ERROR_CODE),a
-        ret
+        jp COMPILE_IF_BLOCK      ; R8.5 Group 3 -- anything other than
+                                    ; GOTO after THEN is the start of a
+                                    ; block IF's own THEN-body (see
+                                    ; COMPILE_IF_BLOCK's own header)
 .have_goto:
         call LEX_NEXT_TOKEN     ; consume GOTO
         ld a,(TOK_TYPE)
@@ -2177,6 +2341,131 @@ COMPILE_IF:
         ld (hl),e
         inc hl
         ld (hl),d
+        ret
+
+; ===========================================================================
+; COMPILE_IF_BLOCK — R8.5 Group 3. Entry: THEN has already been consumed;
+; TOK_TYPE is the first token of the THEN-body (COMPILE_IF's own
+; .have_then dispatches here for anything other than GOTO). IF_SKIP_
+; PATCH_TMP already holds JMPZ's own false-branch patch address.
+;
+;   IF <cond> THEN <then-body> ENDIF
+;   IF <cond> THEN <then-body> ELSE <else-body> ENDIF
+;
+; Reuses COMPILE_STATEMENT_LIST recursively for each body, exactly the
+; way COMPILE_PROC already reuses it for a PROC body -- COMPILE_
+; STATEMENT_LIST's own top-level loop now also stops on TOK_KW_ELSE/
+; TOK_KW_ENDIF (added alongside its existing TOK_EOF/TOK_KW_ENDP stops).
+; ELSEIF is not a separate keyword: "ELSE IF <cond2> THEN ... ENDIF"
+; nested inside an ELSE-body reaches the same result (one more ENDIF per
+; nesting level) — reusing an existing grammar shape rather than adding
+; a special-cased chain-flattening one, same preference this dialect's
+; grammar already shows elsewhere (see e.g. COMPILE_FACTOR's own unary-
+; minus reusing OP_SUB instead of a dedicated opcode).
+; ===========================================================================
+; NESTING SAFETY: IF_SKIP_PATCH_TMP/IF_ELSE_SKIP_PATCH_TMP are single
+; shared memory cells, but COMPILE_IF_BLOCK is genuinely recursive (an
+; IF nested inside another IF's own THEN/ELSE body, via COMPILE_
+; STATEMENT_LIST's own reentrant reuse) -- a naive read of either cell
+; AFTER the recursive COMPILE_STATEMENT_LIST call returns would get the
+; INNER call's own value, not this invocation's, silently leaving the
+; outer IF's own placeholder forever unpatched (stuck at 0 -- a real
+; bug found via a real ZEsarUX run: a JMPZ decompiling with target 0,
+; traced back to exactly this). Fixed by saving each patch address on
+; the hardware stack IMMEDIATELY (before the recursive call that could
+; clobber the shared cell), and popping it back only once it's actually
+; needed again -- carefully balanced on every exit path, including
+; every error return, since an unbalanced push would corrupt the next
+; `ret`'s own return address.
+COMPILE_IF_BLOCK:
+        ld hl,(IF_SKIP_PATCH_TMP)
+        push hl                        ; save THIS invocation's own patch
+                                         ; address across the recursive call
+        call COMPILE_STATEMENT_LIST   ; compiles the THEN-body
+        ld a,(COMPILE_ERROR_CODE)
+        or a
+        jr nz,.err_pop1
+        ld a,(TOK_TYPE)
+        cp TOK_KW_ELSE
+        jr z,.have_else
+        cp TOK_KW_ENDIF
+        jr z,.have_endif
+        ld a,9                   ; expected ELSE or ENDIF
+        ld (COMPILE_ERROR_CODE),a
+        pop hl
+        ret
+.err_pop1:
+        pop hl
+        ret
+.have_else:
+        ; the THEN-body's own real execution must skip over the ELSE-
+        ; body entirely once it finishes -- emit that jump BEFORE
+        ; patching the THEN-body's own false-branch target, which is
+        ; the ELSE-body's own start (right here), not past it. Uses the
+        ; dedicated OP_JMP_ELSE opcode, not plain JMP -- see its own
+        ; EMIT_OP_JMP_ELSE header for why.
+        call EMIT_OP_JMP_ELSE
+        call EMIT_PLACEHOLDER_16
+        ld (IF_ELSE_SKIP_PATCH_TMP),hl  ; not yet at risk -- the ELSE-body's
+                                          ; own recursive call hasn't
+                                          ; happened yet
+        ld hl,(EMIT_PTR)
+        ld de,VM_CODE_BASE
+        or a
+        sbc hl,de
+        ex de,hl                          ; DE = relative offset
+        pop hl                              ; HL = our own saved THEN-body
+                                              ; patch address (balances the
+                                              ; entry push)
+        ld (hl),e
+        inc hl
+        ld (hl),d
+        ld hl,(IF_ELSE_SKIP_PATCH_TMP)
+        push hl                            ; save THIS invocation's own
+                                             ; else-skip patch address
+                                             ; across the ELSE-body's own
+                                             ; recursive call
+        call LEX_NEXT_TOKEN            ; consume ELSE
+        call COMPILE_STATEMENT_LIST     ; compiles the ELSE-body
+        ld a,(COMPILE_ERROR_CODE)
+        or a
+        jr nz,.err_pop2
+        ld a,(TOK_TYPE)
+        cp TOK_KW_ENDIF
+        jr z,.else_have_endif
+        ld a,9
+        ld (COMPILE_ERROR_CODE),a
+        pop hl
+        ret
+.err_pop2:
+        pop hl
+        ret
+.else_have_endif:
+        ld hl,(EMIT_PTR)
+        ld de,VM_CODE_BASE
+        or a
+        sbc hl,de
+        ex de,hl
+        pop hl                            ; HL = our own saved else-skip
+                                            ; patch address
+        ld (hl),e
+        inc hl
+        ld (hl),d
+        call LEX_NEXT_TOKEN                ; consume ENDIF
+        ret
+.have_endif:
+        ld hl,(EMIT_PTR)
+        ld de,VM_CODE_BASE
+        or a
+        sbc hl,de
+        ex de,hl
+        pop hl                            ; HL = our own saved THEN-body
+                                            ; patch address (balances the
+                                            ; entry push)
+        ld (hl),e
+        inc hl
+        ld (hl),d
+        call LEX_NEXT_TOKEN             ; consume ENDIF
         ret
 
 ; ===========================================================================
@@ -2313,6 +2602,11 @@ COMPILE_STATEMENT_LIST:
         jp z,.done
         cp TOK_KW_ENDP
         jp z,.done
+        cp TOK_KW_ELSE            ; R8.5 Group 3 -- a block IF's own
+        jp z,.done                  ; ELSE/ENDIF is exactly the same
+        cp TOK_KW_ENDIF              ; "closing keyword ends the nested
+        jp z,.done                    ; statement list" shape ENDP
+                                        ; already established for PROC
         cp TOK_KW_GOTO
         jp z,.goto                ; jp, not jr -- R7's new dispatch clauses
                                     ; below pushed these existing handler

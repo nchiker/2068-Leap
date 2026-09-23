@@ -292,7 +292,21 @@ KTAB_CALC_EXIT_TRAMPOLINE:
     ret
 
     INCLUDE "kernel/math/math.asm"
-    INCLUDE "rom/exrom_calc.asm"
+; rom/exrom_calc.asm (1772 lines -- the real calculator engine) is NOT
+; included here: this test's own program (TEST_SOURCE_TEXT below) is
+; pure integer arithmetic -- no float literal, no mixed int/float
+; ADD/SUB -- so none of the float paths that reach the calculator are
+; ever exercised at runtime. The 1772 real lines pushed this flat 16K
+; image well over budget for zero real coverage. Stubs below resolve
+; the handful of symbols rom/exrom_v2_vm_core.asm/rom/exrom_format.asm
+; still reference unconditionally from their own (unreachable, for
+; this program) float-handling code.
+CALC_INT_TO_FP:
+    ret
+CALC_FP_TO_INT:
+    ret
+CALC_SP_TO_NEXT_FREE_PTR:
+    ret
     INCLUDE "kernel/graphics/graphics.asm"
 ; Test-only stubs: neither this file's own test program nor its
 ; purpose exercises BEEP/SOUND -- rom/exrom_v2_vm_core.asm's own

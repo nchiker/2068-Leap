@@ -292,7 +292,21 @@ KTAB_CALC_EXIT_TRAMPOLINE:
     ret
 
     INCLUDE "kernel/math/math.asm"
-    INCLUDE "rom/exrom_calc.asm"
+; rom/exrom_calc.asm (1772 lines -- the real calculator engine) is NOT
+; included here: this test's own program (SOURCE_TEXT below) is pure
+; integer arithmetic -- no PUSH_FLOAT_LIT, no mixed int/float ADD/SUB,
+; no PRINT of a float -- so none of the float paths that reach the
+; calculator are ever exercised at runtime. The 1772 real lines pushed
+; this flat 16K image well over budget for zero real coverage. Stubs
+; below resolve the handful of symbols rom/exrom_v2_vm_core.asm/rom/
+; exrom_format.asm still reference unconditionally from their own
+; (unreachable, for this program) float-handling code.
+CALC_INT_TO_FP:
+    ret
+CALC_FP_TO_INT:
+    ret
+CALC_SP_TO_NEXT_FREE_PTR:
+    ret
     INCLUDE "kernel/graphics/graphics.asm"
 ; Test-only stubs: neither this file's own test program nor its
 ; purpose exercises BEEP/SOUND -- rom/exrom_v2_vm_core.asm's own
@@ -328,7 +342,12 @@ EXT2_SLOT_ADDR:
     ret
 EXT_CALL_ARG0: equ $8B00
 EXT2_TABLE:    equ $8B00
-    INCLUDE "kernel/memory/memory.asm"
+; kernel/memory/memory.asm is NOT included here -- checked directly:
+; neither rom/exrom_v2_vm_core.asm/compiler.asm/decompiler.asm nor
+; kernel/storage/storage.asm/rom/exrom_storage_test.asm reference any
+; MEM_*/PROG_END/PROG_AREA_START/ARRAYS_END/VARS_START symbol, and this
+; test never touches the real editor engine (kernel/editor/editor.asm,
+; memory.asm's own real dependent elsewhere).
     INCLUDE "rom/exrom_format.asm"
     INCLUDE "rom/exrom_v2_vm_core.asm"
     INCLUDE "rom/exrom_v2_compiler.asm"

@@ -455,9 +455,11 @@ VM_RUN:
         ld a,(hl)               ; fetch opcode
         inc hl
         ld (VM_IP),hl
-        cp 40                   ; 40 opcodes defined (0-39, R8.5 adds
+        cp 48                   ; 48 opcodes defined (0-47, R8.5 adds
                                  ; 35-38: PRINT_NUM/STR, LPRINT_NUM/STR;
-                                 ; 39: CALL_FN, Group 1)
+                                 ; 39: CALL_FN (Group 1); 40-43: CMP_LE/
+                                 ; GT/GE/NE; 44-46: AND/OR/NOT; 47:
+                                 ; JMP_ELSE (Group 3))
         jp nc,VM_ERR_ILLEGAL_OPCODE
         ld l,a
         ld h,0
@@ -512,6 +514,25 @@ VM_OP_TABLE:
         dw OP_LPRINT_NUM                    ; 37
         dw OP_LPRINT_STR                     ; 38
         dw OP_CALL_FN                         ; 39 (R8.5 Group 1)
+        dw OP_CMP_LE                           ; 40 (R8.5 Group 3)
+        dw OP_CMP_GT                            ; 41
+        dw OP_CMP_GE                             ; 42
+        dw OP_CMP_NE                              ; 43
+        dw OP_AND                                  ; 44
+        dw OP_OR                                    ; 45
+        dw OP_NOT                                    ; 46
+        dw OP_JMP                                     ; 47 (R8.5 Group 3
+                                                        ; -- OP_JMP_ELSE:
+                                                        ; runtime-identical
+                                                        ; to plain JMP,
+                                                        ; deliberately
+                                                        ; aliased to the
+                                                        ; SAME handler --
+                                                        ; only the opcode
+                                                        ; NUMBER differs,
+                                                        ; for the
+                                                        ; decompiler's own
+                                                        ; benefit)
 
 ; ---------------------------------------------------------------------------
 ; String-table access: index (A) -> HL = record address
@@ -1014,6 +1035,148 @@ OP_CMP_EQ:
         jr nz,.not_equal
         inc l                   ; HL = 1 (true)
 .not_equal:
+        ld a,TAG_INT
+        call VM_PUSH
+        jp VM_RUN.loop
+
+; ===========================================================================
+; R8.5 Group 3 -- the remaining relops (<=, >, >=, <>) OP_CMP_LT/EQ never
+; needed, plus AND/OR/NOT. Same int-only restriction OP_CMP_LT/EQ already
+; had (MATH_COMPARE16 is a 16-bit integer compare; float relational/
+; boolean support is not this group's scope, matching the plan's own
+; "full relop set + AND/OR/NOT" wording -- not "float relop support",
+; a separate, unscoped feature).
+; ===========================================================================
+OP_CMP_LE:
+        call VM_POP             ; HL = b, A = tag_b
+        ld c,a
+        push hl
+        call VM_POP             ; HL = a, A = tag_a
+        or c
+        jp nz,VM_ERR_FLOAT_NOT_IMPLEMENTED
+        pop de                  ; DE = b
+        call MATH_COMPARE16     ; A = 0 if a=b, 1 if a>b, $FF if a<b
+        ld hl,0
+        cp 1
+        jr z,.not_le            ; true unless a>b
+        inc l
+.not_le:
+        ld a,TAG_INT
+        call VM_PUSH
+        jp VM_RUN.loop
+
+OP_CMP_GT:
+        call VM_POP
+        ld c,a
+        push hl
+        call VM_POP
+        or c
+        jp nz,VM_ERR_FLOAT_NOT_IMPLEMENTED
+        pop de
+        call MATH_COMPARE16
+        ld hl,0
+        cp 1
+        jr nz,.not_gt
+        inc l
+.not_gt:
+        ld a,TAG_INT
+        call VM_PUSH
+        jp VM_RUN.loop
+
+OP_CMP_GE:
+        call VM_POP
+        ld c,a
+        push hl
+        call VM_POP
+        or c
+        jp nz,VM_ERR_FLOAT_NOT_IMPLEMENTED
+        pop de
+        call MATH_COMPARE16
+        ld hl,0
+        cp $FF
+        jr z,.not_ge             ; true unless a<b
+        inc l
+.not_ge:
+        ld a,TAG_INT
+        call VM_PUSH
+        jp VM_RUN.loop
+
+OP_CMP_NE:
+        call VM_POP
+        ld c,a
+        push hl
+        call VM_POP
+        or c
+        jp nz,VM_ERR_FLOAT_NOT_IMPLEMENTED
+        pop de
+        call MATH_COMPARE16
+        ld hl,0
+        or a
+        jr z,.not_ne
+        inc l
+.not_ne:
+        ld a,TAG_INT
+        call VM_PUSH
+        jp VM_RUN.loop
+
+OP_AND:
+        call VM_POP             ; HL = b, A = tag_b
+        ld c,a
+        push hl
+        call VM_POP              ; HL = a, A = tag_a
+        or c
+        jp nz,VM_ERR_FLOAT_NOT_IMPLEMENTED
+        pop de                   ; DE = b
+        ld a,h
+        or l
+        jr z,.false               ; a == 0 -> false regardless of b
+        ld a,d
+        or e
+        jr z,.false                ; b == 0 -> false
+        ld hl,1
+        jr .push
+.false:
+        ld hl,0
+.push:
+        ld a,TAG_INT
+        call VM_PUSH
+        jp VM_RUN.loop
+
+OP_OR:
+        call VM_POP
+        ld c,a
+        push hl
+        call VM_POP
+        or c
+        jp nz,VM_ERR_FLOAT_NOT_IMPLEMENTED
+        pop de
+        ld a,h
+        or l
+        jr nz,.true
+        ld a,d
+        or e
+        jr nz,.true
+        ld hl,0
+        jr .push
+.true:
+        ld hl,1
+.push:
+        ld a,TAG_INT
+        call VM_PUSH
+        jp VM_RUN.loop
+
+OP_NOT:
+        call VM_POP              ; HL = value, A = tag
+        cp TAG_FLOAT
+        jp z,VM_ERR_FLOAT_NOT_IMPLEMENTED
+        ld a,h
+        or l
+        jr nz,.false
+        ld hl,1
+        jr .push
+.false:
+        ld hl,0
+.push:
         ld a,TAG_INT
         call VM_PUSH
         jp VM_RUN.loop

@@ -205,8 +205,24 @@ IO_READ_KEY:
 INT_GET_FRAMES:
     ld hl,0
     ret
-    INCLUDE "kernel/memory/memory.asm"
-    INCLUDE "kernel/extensions/ext_registry.asm"
+; kernel/memory/memory.asm is NOT included here -- checked directly:
+; neither rom/exrom_v2_vm_core.asm/compiler.asm/decompiler.asm reference
+; any MEM_*/PROG_END/PROG_AREA_START/ARRAYS_END/VARS_START symbol (V2's
+; own storage model never used V1's line/label MEM_* apparatus), and
+; this test never touches the real editor engine (kernel/editor/
+; editor.asm, memory.asm's own real dependent elsewhere).
+; Test-only stub: this file's own test program never registers or calls
+; a loadable extension -- same stubbing discipline as rom/
+; test_v2_decompiler.asm/rom/test_v2_print.asm (real contract:
+; EXT2_LOOKUP's carry SET means "no match", exactly what a permanently-
+; empty registry means).
+EXT2_LOOKUP:
+    scf
+    ret
+EXT2_SLOT_ADDR:
+    ret
+EXT_CALL_ARG0: equ $8B00
+EXT2_TABLE:    equ $8B00
     INCLUDE "rom/exrom_format.asm"
     INCLUDE "rom/exrom_v2_vm_core.asm"
     INCLUDE "rom/exrom_v2_compiler.asm"

@@ -193,7 +193,12 @@ EXT2_SLOT_ADDR:
     ret
 EXT_CALL_ARG0: equ $8B00   ; unreachable -- see rom/test_v2_editor_
 EXT2_TABLE:    equ $8B00   ; integration.asm's own identical stub note
-    INCLUDE "kernel/memory/memory.asm"
+; kernel/memory/memory.asm is NOT included here -- checked directly:
+; neither rom/exrom_v2_vm_core.asm/compiler.asm/decompiler.asm reference
+; any MEM_*/PROG_END/PROG_AREA_START/ARRAYS_END/VARS_START symbol (V2's
+; own storage model never used V1's line/label MEM_* apparatus), and
+; this test never touches the real editor engine (kernel/editor/
+; editor.asm, memory.asm's own real dependent elsewhere).
     INCLUDE "rom/exrom_format.asm"
     INCLUDE "rom/exrom_v2_vm_core.asm"
     INCLUDE "rom/exrom_v2_compiler.asm"
