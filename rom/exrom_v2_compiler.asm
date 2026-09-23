@@ -485,6 +485,9 @@ TOK_KW_EXIT:        equ 55   ; R8.5 Group 5 -- EXIT FOR (V1's own real
                                ; grammar is "EXIT FOR", not bare EXIT --
                                ; confirmed against basic.asm's own
                                ; BASIC_STMT_EXIT header)
+TOK_KW_MODE:        equ 56   ; R8.5 Group 5
+TOK_KW_ULAPLUS:      equ 57
+TOK_KW_PALETTE:      equ 58
 
 ; ---------------------------------------------------------------------------
 ; COMPILER_INIT — call once before COMPILE_PROGRAM.
@@ -927,7 +930,7 @@ LEX_CLASSIFY_KEYWORD:
         ret                       ; no match — TOK_TYPE stays TOK_IDENT
 
 KEYWORD_ENTRY_LEN:  equ 11        ; [len:1][text:9, unused tail ignored][token:1]
-KEYWORD_TABLE_COUNT: equ 34
+KEYWORD_TABLE_COUNT: equ 37
 
 ; Every row is exactly KEYWORD_ENTRY_LEN (11) bytes: [len][9 text bytes,
 ; zero-padded][token]. Generated and byte-counted mechanically (a Python
@@ -972,6 +975,9 @@ KEYWORD_TABLE:
         db 5, "INPUT", 0, 0, 0, 0, TOK_KW_INPUT          ; R8.5 Group 2
         db 4, "STEP", 0, 0, 0, 0, 0, TOK_KW_STEP          ; R8.5 Group 5
         db 4, "EXIT", 0, 0, 0, 0, 0, TOK_KW_EXIT
+        db 4, "MODE", 0, 0, 0, 0, 0, TOK_KW_MODE
+        db 7, "ULAPLUS", 0, 0, TOK_KW_ULAPLUS
+        db 7, "PALETTE", 0, 0, TOK_KW_PALETTE
 
 ; ===========================================================================
 ; COMPILE-TIME SYMBOL TABLE — real name storage, real comparison (the piece
@@ -1263,6 +1269,9 @@ EMIT_OP_ARR_LOAD:                           ld a,48 : jp EMIT_BYTE  ; R8.5 Group
 EMIT_OP_ARR_STORE:                          ld a,49 : jp EMIT_BYTE  ; R8.5 Group 4
 EMIT_OP_INPUT_NUM:                          ld a,50 : jp EMIT_BYTE  ; R8.5 Group 2
 EMIT_OP_INPUT_STR:                          ld a,51 : jp EMIT_BYTE  ; R8.5 Group 2
+EMIT_OP_MODE:                               ld a,52 : jp EMIT_BYTE  ; R8.5 Group 5
+EMIT_OP_ULAPLUS:                            ld a,53 : jp EMIT_BYTE  ; R8.5 Group 5
+EMIT_OP_PALETTE:                            ld a,54 : jp EMIT_BYTE  ; R8.5 Group 5
 EMIT_OP_CMP_LE:                              ld a,40 : jp EMIT_BYTE  ; R8.5 Group 3
 EMIT_OP_CMP_GT:                               ld a,41 : jp EMIT_BYTE
 EMIT_OP_CMP_GE:                                ld a,42 : jp EMIT_BYTE
@@ -1685,11 +1694,27 @@ BUILTIN_FN_TABLE_COUNT: equ 1
 BUILTIN_FN_TABLE:
     db 3, "ABS", 0,0,0,0,0, 1, 0
 
+; BUG FOUND (real hardware, R8.5 Group 5): a literal 128-255 has TOK_VAL
+; high byte 0, so this used to take the PUSH_I8 path below -- but
+; OP_PUSH_I8's own runtime handler sign-extends any byte with bit 7 set
+; (a deliberate, correct trick for small negative values reached via
+; unary minus's own "PUSH_I8 0, PUSH_I8 <magnitude>, SUB" pattern, where
+; <magnitude> is always < 128). A DIRECTLY WRITTEN literal like "200"
+; has no such sign context -- it silently became -56 at runtime. Caught
+; via a real ZEsarUX run + a real decompile: "PALETTE 5,200" decompiled
+; back as "PALETTE 5,-56". Pre-existing since R2 (affects PLOT/POKE/any
+; byte-range literal >=128), not introduced by Group 5 -- just the
+; first test in this session to happen to use one. Fixed by routing
+; 128-255 through PUSH_I16 instead (3 bytes instead of 2, but always
+; correct); 0-127 still uses PUSH_I8 unchanged.
 COMPILE_NUMBER_LITERAL:
         ld de,(TOK_VAL)
         ld a,d
         or a
         jr nz,.wide
+        ld a,e
+        bit 7,a
+        jr nz,.wide            ; 128-255 -- PUSH_I8 would sign-extend
         call EMIT_BYTE_OP_PUSH_I8
         ld a,e
         call EMIT_BYTE
@@ -2633,6 +2658,39 @@ COMPILE_PLOT:
         call EMIT_OP_PLOT
         ret
 
+; R8.5 Group 5 -- MODE/ULAPLUS/PALETTE. Same "native-call opcode into an
+; unmodified platform primitive" shape as CLS/BORDER/INK/PAPER/PLOT
+; above (this milestone's own reuse audit confirmed MODE reaches real
+; kernel/graphics's GFX_SET_MODE directly, and ULAPLUS/PALETTE's real
+; payload is two port writes -- neither needs rom/exrom_ulaplus.asm's
+; own KTAB_-coupled parse code).
+COMPILE_MODE:
+        call LEX_NEXT_TOKEN     ; consume MODE
+        call COMPILE_EXPR
+        call EMIT_OP_MODE
+        ret
+
+COMPILE_ULAPLUS:
+        call LEX_NEXT_TOKEN     ; consume ULAPLUS
+        call COMPILE_EXPR
+        call EMIT_OP_ULAPLUS
+        ret
+
+COMPILE_PALETTE:
+        call LEX_NEXT_TOKEN     ; consume PALETTE
+        call COMPILE_EXPR       ; index -> VM operand stack
+        ld a,(TOK_TYPE)
+        cp TOK_COMMA
+        jr z,.have_comma
+        ld a,22                  ; expected ',' -- same code PLOT's own
+        ld (COMPILE_ERROR_CODE),a ; identical grammar shape already uses
+        ret
+.have_comma:
+        call LEX_NEXT_TOKEN     ; consume ','
+        call COMPILE_EXPR       ; value -> VM operand stack
+        call EMIT_OP_PALETTE
+        ret
+
 ; ===========================================================================
 ; R7 PHASE 2 — the real remainder of this ROM's own graphics/system
 ; statement set (checked against include/checker_keywords.inc, not
@@ -3310,6 +3368,12 @@ COMPILE_STATEMENT_LIST:
         jp z,.input
         cp TOK_KW_EXIT
         jp z,.exit_for
+        cp TOK_KW_MODE
+        jp z,.mode
+        cp TOK_KW_ULAPLUS
+        jp z,.ulaplus
+        cp TOK_KW_PALETTE
+        jp z,.palette
         cp TOK_IDENT
         jp z,.ident_stmt
         cp TOK_STR_IDENT
@@ -3395,6 +3459,15 @@ COMPILE_STATEMENT_LIST:
         jp .after_stmt
 .exit_for:
         call COMPILE_EXIT_FOR
+        jp .after_stmt
+.mode:
+        call COMPILE_MODE
+        jp .after_stmt
+.ulaplus:
+        call COMPILE_ULAPLUS
+        jp .after_stmt
+.palette:
+        call COMPILE_PALETTE
         jp .after_stmt
 .ident_stmt:
         ; R7.5 addition: BEFORE assuming this identifier starts an

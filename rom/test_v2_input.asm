@@ -278,6 +278,8 @@ GFX_PRINT_STRING_ATTR:
     ret
 GFX_SCROLL_OUTPUT_UP:
     ret
+GFX_SET_MODE:
+    ret
 ; kernel/memory/memory.asm is NOT included here -- checked directly:
 ; neither rom/exrom_v2_vm_core.asm/compiler.asm/decompiler.asm reference
 ; any MEM_*/PROG_END/PROG_AREA_START/ARRAYS_END/VARS_START symbol, and

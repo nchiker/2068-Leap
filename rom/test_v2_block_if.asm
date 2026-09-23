@@ -254,7 +254,27 @@ CALC_FP_TO_INT:
     ret
 CALC_SP_TO_NEXT_FREE_PTR:
     ret
-    INCLUDE "kernel/graphics/graphics.asm"
+; kernel/graphics/graphics.asm (2235 real lines) is NOT included here:
+; this test never checks real screen bitmap content (only SYMTAB memory
+; and the decompiled text). R8.5 Group 5's own real ROM growth pushed
+; this flat 16K image over budget with graphics.asm included; same
+; stubbing discipline as rom/test_v2_call_fn.asm's own identical fix.
+GFX_CLS:
+    ret
+GFX_PAINT_ATTR:
+    ret
+GFX_SET_BORDER:
+    ret
+GFX_WRITE_PIXEL:
+    ret
+GFX_LINE:
+    ret
+GFX_PRINT_STRING_ATTR:
+    ret
+GFX_SCROLL_OUTPUT_UP:
+    ret
+GFX_SET_MODE:
+    ret
     INCLUDE "rom/exrom_format.asm"
     INCLUDE "rom/exrom_v2_vm_core.asm"
     INCLUDE "rom/exrom_v2_compiler.asm"

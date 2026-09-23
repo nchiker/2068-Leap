@@ -964,6 +964,12 @@ DECOMP_SKIP_OPERAND:
         jr z,.w2
         cp 49                     ; ARR_STORE (R8.5 Group 4)
         jr z,.w2
+        cp 52                     ; MODE (R8.5 Group 5)
+        jp z,.w0
+        cp 53                     ; ULAPLUS (R8.5 Group 5)
+        jp z,.w0
+        cp 54                     ; PALETTE (R8.5 Group 5)
+        jp z,.w0
         cp 14                     ; FOR_NEXT
         jr z,.w3
         cp 34                     ; CALL_EXT (R7.5)
@@ -1610,6 +1616,12 @@ DECOMPILE_PROGRAM:
         jp z,.op_input_num
         cp 51
         jp z,.op_input_str
+        cp 52
+        jp z,.op_mode
+        cp 53
+        jp z,.op_ulaplus
+        cp 54
+        jp z,.op_palette
         jp DECOMP_ERR_UNSUPPORTED_OPCODE
 
 .op_halt:
@@ -2830,6 +2842,30 @@ DECOMPILE_PROGRAM:
         call DECOMP_EMIT_NEWLINE
         jp DECOMPILE_PROGRAM.loop
 
+; R8.5 Group 5 -- MODE/ULAPLUS/PALETTE. Same generic-1/2-arg-statement
+; shape as .op_border/.op_plot above.
+.op_mode:
+        ld hl,STR_MODE
+        ld (DECOMP_TMP_A),hl
+        ld a,STR_MODE_LEN
+        ld (DECOMP_TMP_LEN),a
+        call DECOMP_EMIT_1ARG_STMT
+        jp DECOMPILE_PROGRAM.loop
+.op_ulaplus:
+        ld hl,STR_ULAPLUS
+        ld (DECOMP_TMP_A),hl
+        ld a,STR_ULAPLUS_LEN
+        ld (DECOMP_TMP_LEN),a
+        call DECOMP_EMIT_1ARG_STMT
+        jp DECOMPILE_PROGRAM.loop
+.op_palette:
+        ld hl,STR_PALETTE
+        ld (DECOMP_TMP_A),hl
+        ld a,STR_PALETTE_LEN
+        ld (DECOMP_TMP_LEN),a
+        call DECOMP_EMIT_2ARG_STMT
+        jp DECOMPILE_PROGRAM.loop
+
 ; R8.5 Group 3 -- the remaining relops, plus AND/OR/NOT. Same shape as
 ; .op_cmplt/.op_cmpeq above.
 .op_cmple:
@@ -3056,6 +3092,12 @@ STR_LPRINT:    db "LPRINT "
 STR_LPRINT_LEN: equ $-STR_LPRINT
 STR_INPUT:     db "INPUT "
 STR_INPUT_LEN: equ $-STR_INPUT
+STR_MODE:      db "MODE "
+STR_MODE_LEN:  equ $-STR_MODE
+STR_ULAPLUS:   db "ULAPLUS "
+STR_ULAPLUS_LEN: equ $-STR_ULAPLUS
+STR_PALETTE:   db "PALETTE "
+STR_PALETTE_LEN: equ $-STR_PALETTE
 STR_END:       db "END"
 STR_END_LEN:   equ $-STR_END
 STR_ABS:       db "ABS"

@@ -210,6 +210,10 @@
 ;       runtime bounds check against the operand-baked declared size)
 ;  11 = array index must be an integer (a FLOAT-tagged value popped where
 ;       OP_ARR_LOAD/STORE expected a TAG_INT array index)
+;  12 = invalid MODE value (must be 0 or 1 -- real, raised error, not
+;       silently masked, matching V1's own real MSG_INVALID_MODE)
+;  13 = invalid ULAPLUS mode value (must be 0 or 1)
+;  14 = invalid PALETTE index (must be 0-63)
 ;
 ; Operand-stack record layout (3 bytes, at address SP, SP+1, SP+2):
 ;   [value_lo][value_hi][tag]   -- SP points at the lowest (most recent) record
@@ -537,13 +541,14 @@ VM_RUN:
         ld a,(hl)               ; fetch opcode
         inc hl
         ld (VM_IP),hl
-        cp 52                   ; 52 opcodes defined (0-51, R8.5 adds
+        cp 55                   ; 55 opcodes defined (0-54, R8.5 adds
                                  ; 35-38: PRINT_NUM/STR, LPRINT_NUM/STR;
                                  ; 39: CALL_FN (Group 1); 40-43: CMP_LE/
                                  ; GT/GE/NE; 44-46: AND/OR/NOT; 47:
                                  ; JMP_ELSE (Group 3); 48-49: ARR_LOAD/
                                  ; ARR_STORE (Group 4); 50-51: INPUT_NUM/
-                                 ; INPUT_STR (Group 2's own late close-out))
+                                 ; INPUT_STR (Group 2's own late close-out);
+                                 ; 52-54: MODE/ULAPLUS/PALETTE (Group 5))
         jp nc,VM_ERR_ILLEGAL_OPCODE
         ld l,a
         ld h,0
@@ -621,6 +626,9 @@ VM_OP_TABLE:
         dw OP_ARR_STORE                                  ; 49
         dw OP_INPUT_NUM                                   ; 50 (R8.5 Group 2)
         dw OP_INPUT_STR                                    ; 51
+        dw OP_MODE                                          ; 52 (R8.5 Group 5)
+        dw OP_ULAPLUS                                        ; 53
+        dw OP_PALETTE                                         ; 54
 
 ; ---------------------------------------------------------------------------
 ; String-table access: index (A) -> HL = record address
@@ -2216,6 +2224,62 @@ OP_BORDER:
         call GFX_SET_BORDER      ; masks to the low 3 bits itself
         jp VM_RUN.loop
 
+; ---------------------------------------------------------------------------
+; R8.5 Group 5 -- MODE/ULAPLUS/PALETTE. Confirmed via this milestone's own
+; reuse audit: MODE reaches kernel/graphics's real GFX_SET_MODE directly
+; (basic.asm's own BASIC_STMT_MODE is just a thin parse-and-call wrapper
+; around it); ULAPLUS/PALETTE's own real payload in rom/exrom_ulaplus.asm
+; is just two `out (c),a` port writes (that file's surrounding parse code
+; is KTAB_-coupled, not reusable, but the actual hardware op is trivial
+; enough to write V2-native directly, same call the reuse audit made).
+; ---------------------------------------------------------------------------
+OP_MODE:
+        call VM_POP             ; HL = value, A = tag
+        ld a,h
+        or a
+        jp nz,VM_ERR_INVALID_MODE
+        ld a,l
+        cp 2
+        jp nc,VM_ERR_INVALID_MODE
+        call GFX_SET_MODE
+        jp VM_RUN.loop
+
+OP_ULAPLUS:
+        call VM_POP             ; HL = value, A = tag
+        ld a,h
+        or a
+        jp nz,VM_ERR_INVALID_ULAPLUS
+        ld a,l
+        cp 2
+        jp nc,VM_ERR_INVALID_ULAPLUS
+        push af
+        ld a,ULAPLUS_MODE_GROUP
+        ld bc,PORT_ULAPLUS_SELECT
+        out (c),a
+        pop af
+        ld bc,PORT_ULAPLUS_DATA
+        out (c),a
+        jp VM_RUN.loop
+
+OP_PALETTE:
+        call VM_POP             ; HL = value (top of stack)
+        ld a,l
+        ld (VM_ARR_VALUE_TMP),a   ; reuse -- 1 byte used, not live at the
+                                    ; same time as an ARR_STORE
+        call VM_POP             ; HL = index
+        ld a,h
+        or a
+        jp nz,VM_ERR_INVALID_PALETTE
+        ld a,l
+        cp 64
+        jp nc,VM_ERR_INVALID_PALETTE
+        ld bc,PORT_ULAPLUS_SELECT
+        out (c),a
+        ld a,(VM_ARR_VALUE_TMP)
+        ld bc,PORT_ULAPLUS_DATA
+        out (c),a
+        jp VM_RUN.loop
+
 OP_INK:
         call VM_POP
         ld a,l
@@ -2792,6 +2856,18 @@ VM_ERR_ARRAY_BOUNDS:
 
 VM_ERR_ARRAY_TYPE:
         ld a,11
+        jp VM_ERR_COMMON
+
+VM_ERR_INVALID_MODE:
+        ld a,12
+        jp VM_ERR_COMMON
+
+VM_ERR_INVALID_ULAPLUS:
+        ld a,13
+        jp VM_ERR_COMMON
+
+VM_ERR_INVALID_PALETTE:
+        ld a,14
         jp VM_ERR_COMMON
 
 VM_ERR_COMMON:

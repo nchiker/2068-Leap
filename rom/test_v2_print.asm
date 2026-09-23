@@ -237,6 +237,8 @@ GFX_PRINT_STRING_ATTR:
     ret
 GFX_SCROLL_OUTPUT_UP:
     ret
+GFX_SET_MODE:
+    ret
 ; Test-only stubs: this file's own test program never exercises BEEP/
 ; SOUND/PAUSE, and never registers or calls a loadable extension -- same
 ; stubbing discipline (and same real contracts) already established for

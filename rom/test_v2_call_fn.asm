@@ -201,6 +201,8 @@ GFX_PRINT_STRING_ATTR:
     ret
 GFX_SCROLL_OUTPUT_UP:
     ret
+GFX_SET_MODE:
+    ret
 ; Test-only stubs: this file's own test program never exercises BEEP/
 ; SOUND/PAUSE -- rom/exrom_v2_vm_core.asm's own OP_BEEP/OP_SOUND/OP_PAUSE
 ; still reference these unconditionally, and the real kernel/sound+

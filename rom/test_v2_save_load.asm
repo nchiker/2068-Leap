@@ -271,7 +271,11 @@ EXPECTED_TEXT:
     db "V0 = 999", 13
     db "L30:", 13
     db "V2 = 0", 13
-    db "FOR V3 = 1 TO 3", 13
+    db "FOR V3 = 1 TO 3 STEP 1", 13   ; R8.5 Group 5 -- FOR always
+                                        ; renders STEP now, even for a
+                                        ; STEP-less FOR (compiles a
+                                        ; literal step of 1); real
+                                        ; captured text
     db "V2 = (V2+V3)", 13
     db "NEXT V3", 13
 EXPECTED_TEXT_LEN: equ $-EXPECTED_TEXT
@@ -307,7 +311,27 @@ CALC_FP_TO_INT:
     ret
 CALC_SP_TO_NEXT_FREE_PTR:
     ret
-    INCLUDE "kernel/graphics/graphics.asm"
+; kernel/graphics/graphics.asm (2235 real lines) is NOT included here:
+; this test never checks real screen bitmap content. R8.5 Group 5's
+; own real ROM growth pushed this flat 16K image over budget with
+; graphics.asm included; same stubbing discipline as rom/
+; test_v2_call_fn.asm's own identical fix.
+GFX_CLS:
+    ret
+GFX_PAINT_ATTR:
+    ret
+GFX_SET_BORDER:
+    ret
+GFX_WRITE_PIXEL:
+    ret
+GFX_LINE:
+    ret
+GFX_PRINT_STRING_ATTR:
+    ret
+GFX_SCROLL_OUTPUT_UP:
+    ret
+GFX_SET_MODE:
+    ret
 ; Test-only stubs: neither this file's own test program nor its
 ; purpose exercises BEEP/SOUND -- rom/exrom_v2_vm_core.asm's own
 ; OP_BEEP/OP_SOUND still reference these unconditionally (same class

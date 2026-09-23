@@ -143,7 +143,13 @@ EXPECTED_TEXT:
     db "V0 = 999", 13
     db "L30:", 13
     db "V2 = 0", 13
-    db "FOR V3 = 1 TO 3", 13
+    db "FOR V3 = 1 TO 3 STEP 1", 13   ; R8.5 Group 5 -- FOR always
+                                        ; renders STEP now, even when
+                                        ; the source omitted it (a
+                                        ; STEP-less FOR compiles a
+                                        ; literal step of 1); real
+                                        ; captured text, not hand-
+                                        ; predicted
     db "V2 = (V2+V3)", 13
     db "NEXT V3", 13
 EXPECTED_TEXT_LEN: equ $-EXPECTED_TEXT
