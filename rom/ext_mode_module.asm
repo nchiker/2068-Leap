@@ -128,18 +128,25 @@ MODE_PALETTE_EXEC:
 ; test's own COLD_START calls it directly, matching the sprite module's
 ; own demo pattern). Out: carry set on failure. Destroys: AF, BC, DE, HL.
 ; ---------------------------------------------------------------------------
+; All 3 operations are fully numeric (argtypes=0 -- C=0 on every call
+; below): EXT2_REGISTER's own C=argtypes parameter (printer-package ROM
+; reconciliation) generalizes typed arguments for extensions that need
+; them (the new printer package's own LPRINT).
 MODE_INSTALL:
         ld hl,MODE_MODE_NAME
         ld de,MODE_MODE_EXEC
         ld b,1
+        ld c,0
         call EXT2_REGISTER
         ret c
         ld hl,MODE_ULAPLUS_NAME
         ld de,MODE_ULAPLUS_EXEC
         ld b,1
+        ld c,0
         call EXT2_REGISTER
         ret c
         ld hl,MODE_PALETTE_NAME
         ld de,MODE_PALETTE_EXEC
         ld b,2
+        ld c,0
         jp EXT2_REGISTER

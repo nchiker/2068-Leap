@@ -65,18 +65,50 @@
 ; rom/exrom_v2_*.asm file's own local `equ`s). Unlike the decompiler's
 ; own workspace, this table must NOT reuse compile-time/decompile-time
 ; scratch -- a registered extension has to survive across compile/RUN/
-; LIST cycles -- so it needs genuinely unclaimed, permanent space; the
-; small tail left over after the decompiler's own relocation (144
-; bytes between $8F70 and VM_CODE_BASE) is exactly that, and this
-; table's 128 bytes fit inside it with 16 bytes to spare.
+; LIST cycles -- so it needs genuinely unclaimed, permanent space.
+;
+; CAPACITY INCREASE (printer-package ROM reconciliation): raising
+; EXT2_MAX 8->12 and EXT2_REC_LEN 13->14 (to carry each record's own
+; argtypes bitmask -- see EXT2_REGISTER's own header) would grow this
+; table from 104 to 168 bytes -- no longer fitting the 144-byte gap
+; between $8F70 and VM_CODE_BASE ($9000) alongside EXT_CALL_ARG0-4/
+; EXT_CALL_RESULT/EXT2_GEN_COUNTER/EXT2_REG_* (which all stay exactly
+; where they were -- only the table itself needs to move). Relocated to
+; $9820, comfortably past VM_CODE_BASE's own real bytecode growth
+; ($9000-$97FF, 2048 bytes -- already the same real margin rom/
+; ext_sprite_module.asm's own workspace at $9800 already trusts) and
+; past that module's own 12-byte SPR_* block ($9800-$980B), confirmed
+; via the same "grep every rom/*.asm and kernel/*/*.asm equ in this
+; address range" audit this project always runs before a new placement
+; decision (checked: nothing else claims $980C-$9820 today).
 ; ---------------------------------------------------------------------------
-EXT2_MAX:            equ 8        ; up to 8 registered extensions —
-                                    ; generous; V1's own gateway only
-                                    ; ever supported 2 statement keywords
-                                    ; + 1 function
-EXT2_REC_LEN:        equ 13       ; [gen:1][name_len:1][name:8][exec:2]
-                                    ; [argcount:1]
-EXT2_TABLE:          equ $8F70    ; 8*13 = 104 bytes, ends $8FD8
+EXT2_MAX:            equ 12       ; up to 12 registered extensions --
+                                    ; SPRITE(4)+MODE/ULAPLUS/PALETTE(3)
+                                    ; already used 7 of the old 8-slot
+                                    ; cap; 12 leaves room for the new
+                                    ; printer package (2 slots -- see
+                                    ; that module's own header) plus
+                                    ; genuine future headroom, at pure-
+                                    ; RAM cost only (verified: EXT2_
+                                    ; REGISTER/LOOKUP/CLEAR_ALL's own
+                                    ; `cp EXT2_MAX`/`ld bc,EXT2_MAX*
+                                    ; EXT2_REC_LEN` are immediate-operand
+                                    ; instructions, unchanged size
+                                    ; regardless of the constant's value
+                                    ; -- raising it costs zero ROM)
+EXT2_REC_LEN:        equ 14       ; [gen:1][name_len:1][name:8][exec:2]
+                                    ; [argcount:1][argtypes:1] -- the new
+                                    ; last byte is a per-argument-position
+                                    ; bitmask (bit N set = argument N is
+                                    ; a STRING expression), generalizing
+                                    ; rom/exrom_v2_compiler.asm's own
+                                    ; BUILTIN_FN_TABLE argtype column
+                                    ; (R8.5 Group 6, LEN/CODE/VAL) to
+                                    ; extensions with several arguments
+                                    ; of different types
+EXT2_TABLE:          equ $9820    ; 12*14 = 168 bytes, ends $98C8 --
+                                    ; relocated, see this block's own
+                                    ; header above
 EXT_CALL_ARG0:        equ $8FD8   ; 2 bytes each — full 16-bit, not V1's
 EXT_CALL_ARG1:        equ $8FDA   ; 1-byte EXTENSION_ARG0..3
 EXT_CALL_ARG2:        equ $8FDC
@@ -102,6 +134,16 @@ EXT2_REG_SLOT:        equ $8FE8   ; (1 byte): the slot index being filled
 EXT2_REG_SLOTPTR:     equ $8FE9   ; (2 bytes): a moving write cursor
                                     ; into the slot being filled
 EXT2_REG_NAMELEN:     equ $8FEB   ; (1 byte)
+EXT2_REG_ARGTYPES:    equ $9810   ; (1 byte) -- EXT2_REGISTER's own copy
+                                    ; of its new C=argtypes input,
+                                    ; stashed at entry before C is reused
+                                    ; as the slot-scan index. Placed
+                                    ; alongside the relocated table
+                                    ; (genuinely free space -- the
+                                    ; original $8F70 block has no spare
+                                    ; byte left; see that block's own
+                                    ; header) rather than shifting
+                                    ; anything in it.
 
 ; ===========================================================================
 ; EXT2_CLEAR_ALL — zeroes the whole registry (every slot's generation
@@ -158,9 +200,11 @@ EXT2_NAME_LEN:
 
 ; ===========================================================================
 ; EXT2_REGISTER — In: HL = null-terminated name (<=8 significant chars),
-; DE = exec entry point, B = argcount (0-5). Out: carry set + A=0xFF on
-; failure (table full, or argcount>5); carry clear + A=slot id on
-; success. Destroys: AF, BC, DE, HL.
+; DE = exec entry point, B = argcount (0-5), C = argtypes bitmask (bit N
+; set = argument N is a STRING expression; 0 = every argument numeric,
+; the only value every pre-printer-package extension uses). Out: carry
+; set + A=0xFF on failure (table full, or argcount>5); carry clear +
+; A=slot id on success. Destroys: AF, BC, DE, HL.
 ;
 ; Cap raised 4->5 (2068-Leap's own post-R8.5 sprite-module reconciliation
 ; -- see docs/v2/ARCHITECTURE_B_IMPLEMENTATION_PLAN.md's own SPRITE
@@ -169,9 +213,18 @@ EXT2_NAME_LEN:
 ; OP_CALL_EXT's own arg-loops were already argcount-generic (no
 ; hardcoded max), so this is the ONLY code change the whole mechanism
 ; needed to support a 5-argument extension.
+;
+; C=argtypes ADDED (printer-package ROM reconciliation, generalizing
+; typed arguments -- see COMPILE_EXT_CALL's own header): C is stashed
+; into EXT2_REG_ARGTYPES immediately, before it's reused below as the
+; slot-scan index, same "value that must survive a destructive
+; register reuse lives in memory first" discipline this whole rewrite
+; already follows everywhere else.
 EXT2_REGISTER:
         ld (EXT2_REG_NAME),hl
         ld (EXT2_REG_EXEC),de
+        ld a,c
+        ld (EXT2_REG_ARGTYPES),a
         ld a,b
         cp 6
         jr nc,.fail
@@ -252,14 +305,18 @@ EXT2_REGISTER:
         djnz .pad_loop
 .pad_done:
         ; HL now -> byte right after the 8-byte name field == where
-        ; exec_ptr/argcount go (record layout: gen,name_len,name[8],
-        ; exec_ptr[2],argcount[1] -- exactly where we are now)
+        ; exec_ptr/argcount/argtypes go (record layout: gen,name_len,
+        ; name[8],exec_ptr[2],argcount[1],argtypes[1] -- exactly where
+        ; we are now)
         ld de,(EXT2_REG_EXEC)
         ld (hl),e
         inc hl
         ld (hl),d
         inc hl
         ld a,(EXT2_REG_ARGCOUNT)
+        ld (hl),a
+        inc hl
+        ld a,(EXT2_REG_ARGTYPES)
         ld (hl),a
         ld a,(EXT2_REG_SLOT)
         or a
@@ -270,11 +327,14 @@ EXT2_REGISTER:
         ret
 
 ; ===========================================================================
-; EXT2_SLOT_ADDR — input: A = slot id (0-7). Output: HL = record address
-; (EXT2_TABLE + id*13). *13 computed as *8+*4+*1 (8+4+1=13) — a first
-; draft's *2,*4,+*5,*10,+*5 chain (=*15, wrong) was caught by hand-
-; tracing the arithmetic before ever assembling it, not by a failed
-; test. Destroys: AF, BC, DE, HL.
+; EXT2_SLOT_ADDR — input: A = slot id (0-11). Output: HL = record
+; address (EXT2_TABLE + id*14, EXT2_REC_LEN having grown 13->14 for the
+; printer-package's own argtypes byte -- see EXT2_REC_LEN's own header).
+; *14 computed as *8+*4+*1+*1 (8+4+1+1=14) — *13 computed as *8+*4+*1 (a
+; first draft's *2,*4,+*5,*10,+*5 chain (=*15, wrong) was caught by
+; hand-tracing the arithmetic before ever assembling it, not by a
+; failed test) plus one more `add hl,de` for the new 14th byte.
+; Destroys: AF, BC, DE, HL.
 ; ===========================================================================
 EXT2_SLOT_ADDR:
         ld l,a
@@ -290,6 +350,7 @@ EXT2_SLOT_ADDR:
         pop bc                        ; BC = *4
         add hl,bc                      ; *8+*4 = *12
         add hl,de                       ; *12+*1 = *13
+        add hl,de                        ; *13+*1 = *14
         ld de,EXT2_TABLE
         add hl,de
         ret

@@ -44,6 +44,16 @@
 
     DEVICE NOSLOT64K
 
+; DECOMP_END_ADDR stub: this test never includes rom/exrom_v2_
+; decompiler.asm (it only exercises compile+run, per this file's own
+; header), but rom/exrom_v2_compiler.asm's own COMPILE_PROGRAM now
+; unconditionally sets DECOMP_END_ADDR at the end of every compile
+; (printer-package ROM reconciliation -- resolves DECOMPILE_PROGRAM's
+; own former "caller contract" automatically; see that routine's own
+; header). $9900, real RAM, clear of $9800 (this file's own TRIADD
+; destaddr) and every VM/registry workspace table.
+DECOMP_END_ADDR: equ $9900
+
     ORG $0000
 RST_00:
     di
@@ -142,6 +152,11 @@ SUM3_INSTALL:
     ld   hl, SUM3_NAME
     ld   de, SUM3_EXEC
     ld   b, 3                  ; argcount = 3
+    ld   c, 0                  ; argtypes = 0 (all-numeric) -- EXT2_
+                                ; REGISTER's own new typed-argument
+                                ; parameter (printer-package ROM
+                                ; reconciliation); TRIADD has no string
+                                ; arguments
     call EXT2_REGISTER
     ret                          ; carry already set/clear correctly by
                                 ; EXT2_REGISTER itself — nothing more to

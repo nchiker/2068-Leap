@@ -602,8 +602,8 @@ VM_OP_TABLE:
         dw OP_CALL_EXT                   ; 34 (R7.5)
         dw OP_PRINT_NUM                   ; 35 (R8.5)
         dw OP_PRINT_STR                    ; 36
-        dw OP_LPRINT_NUM                    ; 37
-        dw OP_LPRINT_STR                     ; 38
+        dw VM_ERR_ILLEGAL_OPCODE             ; 37 (was OP_LPRINT_NUM)
+        dw VM_ERR_ILLEGAL_OPCODE              ; 38 (was OP_LPRINT_STR)
         dw OP_CALL_FN                         ; 39 (R8.5 Group 1)
         dw OP_CMP_LE                           ; 40 (R8.5 Group 3)
         dw OP_CMP_GT                            ; 41
@@ -2671,18 +2671,18 @@ VM_ADVANCE_OUTPUT_ROW:
         ld (VM_OUTPUT_ROW),a
         ret
 
-OP_LPRINT_NUM:
-        call VM_POP
-        ld (VM_PRINT_TEXT_TMP),hl
-        call VM_NUM_TO_TEXT
-        jp BASIC_STMT_LPRINT_EXROM
-
-OP_LPRINT_STR:
-        call VM_POP
-        ld a,l
-        call VM_STR_ADDR
-        inc hl
-        jp BASIC_STMT_LPRINT_EXROM
+; OP_LPRINT_NUM/OP_LPRINT_STR (opcodes 37-38) removed -- printer-
+; package ROM reconciliation: LPRINT is no longer a resident opcode
+; (rom/exrom_v2_compiler.asm's own COMPILE_LPRINT now compiles it as a
+; plain OP_CALL_EXT to the loadable rom/ext_printer_module.asm, same
+; mechanism SPRITE/MODE already use). Opcodes 37-38 are NOT the highest-
+; numbered pair in this table (CALL_FN=39 and everything after it still
+; needs to keep its own number), so rather than renumber every opcode
+; from 39 up (real, unnecessary churn/risk for two now-permanently-dead
+; slots), the jump-table entries below simply point at VM_ERR_ILLEGAL_
+; OPCODE instead -- a real caught error if bytecode somehow still
+; contained one (it never will: nothing emits opcode 37/38 anymore),
+; not silent garbage.
 
 ; ===========================================================================
 ; R8.5 Group 1 -- built-in (resident) function calls. Operand: [fn_index:1].

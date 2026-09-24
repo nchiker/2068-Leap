@@ -337,6 +337,20 @@ BFN_FOUND_ARGTYPE:  equ $8B58   ; R8.5 Group 6 (LEN/CODE/VAL) -- BUILTIN_
 CFN_ARGTYPE:        equ $8B59   ; COMPILE_FACTOR.fn_call's own copy of
                                   ; the above, same shape as CFN_INDEX/
                                   ; CFN_ARGCOUNT/CFN_REMAINING
+CEXT_ARGTYPES:      equ $8B5A   ; R8.5 (generic typed extension args,
+                                  ; printer-package ROM reconciliation)
+                                  ; -- COMPILE_EXT_CALL's own copy of the
+                                  ; matched extension's argtypes bitmask
+                                  ; (one bit per argument position, bit
+                                  ; N set = argument N is a STRING
+                                  ; expression; same "0=numeric,1=string"
+                                  ; convention BFN_FOUND_ARGTYPE/
+                                  ; CFN_ARGTYPE already established for
+                                  ; BUILTIN_FN, generalized here to
+                                  ; multiple argument positions since an
+                                  ; extension can have several arguments
+                                  ; of different types, unlike a single-
+                                  ; argument built-in function)
 
 ; R8.5 Group 3 -- block IF/ELSE/ENDIF.
 IF_ELSE_SKIP_PATCH_TMP: equ $8B45  ; COMPILE_IF_BLOCK scratch (2 bytes):
@@ -1282,8 +1296,6 @@ EMIT_OP_RANDOMISE:                  ld a,33 : jp EMIT_BYTE
 EMIT_OP_CALL_EXT:                     ld a,34 : jp EMIT_BYTE
 EMIT_OP_PRINT_NUM:                      ld a,35 : jp EMIT_BYTE  ; R8.5
 EMIT_OP_PRINT_STR:                       ld a,36 : jp EMIT_BYTE
-EMIT_OP_LPRINT_NUM:                       ld a,37 : jp EMIT_BYTE
-EMIT_OP_LPRINT_STR:                        ld a,38 : jp EMIT_BYTE
 EMIT_OP_CALL_FN:                            ld a,39 : jp EMIT_BYTE  ; R8.5 Group 1
 EMIT_OP_ARR_LOAD:                           ld a,48 : jp EMIT_BYTE  ; R8.5 Group 4
 EMIT_OP_ARR_STORE:                          ld a,49 : jp EMIT_BYTE  ; R8.5 Group 4
@@ -2899,6 +2911,34 @@ COMPILE_PRINT:
         call EMIT_OP_PRINT_STR
         ret
 
+; COMPILE_LPRINT -- printer-package ROM reconciliation: LPRINT is no
+; longer a resident opcode. Its own real body (rom/exrom_printer.asm's
+; BASIC_STMT_LPRINT_EXROM) moved to a loadable extension package (rom/
+; ext_printer_module.asm), registered through the SAME R7.5 EXT2_
+; REGISTER/OP_CALL_EXT mechanism SPRITE/MODE already use.
+;
+; WHY THIS SHELL STAYS RESIDENT (a real limitation, not an avoided
+; special case): the new generic typed-argument mechanism (see
+; COMPILE_EXT_CALL's own header) gives each argument POSITION a FIXED
+; type, chosen once at registration time -- exactly right for GRAB's
+; own shape (5 arguments, each always the same type) but NOT expressive
+; enough for LPRINT's real grammar, where the SAME single argument
+; position can be EITHER a numeric or a string expression depending on
+; what the caller actually writes (a union, not a fixed per-position
+; type). Resolving that union at compile time genuinely needs to peek
+; the argument's own shape BEFORE deciding which registered slot to
+; target -- there is no way to express "this argument is numeric OR
+; string" as a single registry argtypes bit. So this routine keeps
+; exactly the same peek PRINT/COMPILE_PRINT already does, but resolves
+; ONE of two internal extension names (LPRINT_NUM_NAME for the numeric
+; case, LPRINT_STR_NAME for the string case -- the module registers
+; both; only "LPRINT" is ever user-visible, since COMPILE_STATEMENT_
+; LIST's own TOK_KW_LPRINT dispatch is what reaches this routine, not
+; the generic identifier-driven EXT2_LOOKUP path) and emits a plain
+; OP_CALL_EXT, argcount=1, the same encoding COMPILE_EXT_CALL's own
+; `.emit:` tail produces -- just without that routine's own `call LEX_
+; NEXT_TOKEN` (there is no separate keyword token left to consume here;
+; LPRINT itself was already consumed by this routine's own first line).
 COMPILE_LPRINT:
         call LEX_NEXT_TOKEN     ; consume LPRINT
         ld a,(TOK_TYPE)
@@ -2906,15 +2946,59 @@ COMPILE_LPRINT:
         jr z,.str_arg
         cp TOK_STR_IDENT
         jr z,.str_arg
+        ld hl,LPRINT_NUM_NAME
+        ld b,LPRINT_NUM_NAME_LEN
+        call EXT2_LOOKUP
+        jr c,.not_loaded
+        call COMPILE_LPRINT_RESOLVE_SLOT
         call COMPILE_EXPR
+        jr COMPILE_LPRINT_EMIT
+.str_arg:
+        ld hl,LPRINT_STR_NAME
+        ld b,LPRINT_STR_NAME_LEN
+        call EXT2_LOOKUP
+        jr c,.not_loaded
+        call COMPILE_LPRINT_RESOLVE_SLOT
+        call COMPILE_STR_EXPR
+        jr COMPILE_LPRINT_EMIT
+.not_loaded:
+        ld a,32                  ; LPRINT used but the printer package
+        ld (COMPILE_ERROR_CODE),a  ; isn't loaded/registered
+        ret
+
+LPRINT_NUM_NAME: db "LPRINT",0
+LPRINT_NUM_NAME_LEN: equ $-LPRINT_NUM_NAME-1
+LPRINT_STR_NAME: db "LPRINT$",0
+LPRINT_STR_NAME_LEN: equ $-LPRINT_STR_NAME-1
+
+; COMPILE_LPRINT_RESOLVE_SLOT -- input: A = slot id (from EXT2_LOOKUP).
+; Parks CEXT_SLOT/CEXT_GEN exactly like COMPILE_EXT_CALL's own entry
+; does, reused here since COMPILE_LPRINT_EMIT's own tail is otherwise
+; identical to COMPILE_EXT_CALL's `.emit:`. Destroys: AF, HL.
+COMPILE_LPRINT_RESOLVE_SLOT:
+        ld (CEXT_SLOT),a
+        call EXT2_SLOT_ADDR
+        ld a,(hl)
+        ld (CEXT_GEN),a
+        ret
+
+; COMPILE_LPRINT_EMIT -- shared tail for both COMPILE_LPRINT branches:
+; checks COMPILE_ERROR_CODE (set by the just-compiled argument
+; expression), then emits OP_CALL_EXT [slot][gen][argcount=1] -- same
+; operand shape COMPILE_EXT_CALL's own `.emit:` produces, so .op_call_
+; ext's existing generic decompile path needs no LPRINT-specific code
+; at all.
+COMPILE_LPRINT_EMIT:
         ld a,(COMPILE_ERROR_CODE)
         or a
         ret nz
-        call EMIT_OP_LPRINT_NUM
-        ret
-.str_arg:
-        call COMPILE_STR_EXPR
-        call EMIT_OP_LPRINT_STR
+        call EMIT_OP_CALL_EXT
+        ld a,(CEXT_SLOT)
+        call EMIT_BYTE
+        ld a,(CEXT_GEN)
+        call EMIT_BYTE
+        ld a,1
+        call EMIT_BYTE
         ret
 
 ; COMPILE_GOTO — GOTO <label>
@@ -3607,6 +3691,20 @@ COMPILE_STATEMENT_LIST:
 ; on EOF, not ENDP — a stray ENDP with no matching PROC is simply where
 ; compilation ends, in this scope's happy-path error handling), emits the
 ; final HALT, and resolves every outstanding forward reference.
+; COMPILE_PROGRAM — real entry: HL=SRC_PTR, EMIT_PTR already set to
+; VM_CODE_BASE by the caller (COMPILER_INIT's own contract, unchanged).
+;
+; DECOMP_END_ADDR is now set HERE, automatically, from the real final
+; EMIT_PTR, rather than being a "caller must remember" convention.
+; Before this, every single caller across every rom/test_v2_*.asm file
+; (and, eventually, whatever real V2 command-loop integration replaces
+; them at R9) had to manually do `ld hl,(EMIT_PTR): ld (DECOMP_END_
+; ADDR),hl` right after calling this -- a real, easy-to-forget
+; duplicated step (rom/exrom_v2_decompiler.asm's own DECOMP_END_ADDR
+; comment used to document it only as a "CALLER CONTRACT"). Folding it
+; in here makes DECOMPILE_PROGRAM (and now LLIST, which calls it at
+; genuine RUNTIME, long after any test harness's own COLD_START) work
+; correctly by construction, with no separate step to remember.
 COMPILE_PROGRAM:
         call LEX_NEXT_TOKEN
         call COMPILE_STATEMENT_LIST
@@ -3615,6 +3713,8 @@ COMPILE_PROGRAM:
         ret nz
         call EMIT_OP_HALT
         call RESOLVE_ALL_FIXUPS
+        ld hl,(EMIT_PTR)
+        ld (DECOMP_END_ADDR),hl
         ret
 
 ; ===========================================================================
@@ -3798,13 +3898,29 @@ COMPILE_CALL_STMT:
         ret
 
 ; ===========================================================================
-; COMPILE_EXT_CALL — R7.5. Called with A = the matched extension's slot
-; id (from EXT2_LOOKUP, kernel/extensions/ext_registry.asm), TOK_TYPE
-; still the un-consumed identifier token. Compiles
-; "KEYWORD <expr>[,<expr>]*" (argcount comma-separated expressions, read
-; from the matched slot's own registration — no more V1-shaped "grammar
-; 0/1/3" special-casing; any argcount 0-4 uses this one path) and emits
-; OP_CALL_EXT with the resolved [slot_id][generation][argcount] operand.
+; COMPILE_EXT_CALL — R7.5, extended for typed arguments (printer-package
+; ROM reconciliation). Called with A = the matched extension's slot id
+; (from EXT2_LOOKUP, kernel/extensions/ext_registry.asm), TOK_TYPE still
+; the un-consumed identifier token. Compiles "KEYWORD <expr>[,<expr>]*"
+; (argcount comma-separated expressions, read from the matched slot's
+; own registration -- no V1-shaped "grammar 0/1/3" special-casing; any
+; argcount 0-4 uses this one path) and emits OP_CALL_EXT with the
+; resolved [slot_id][generation][argcount] operand.
+;
+; TYPED ARGUMENTS: the registry record now also carries an argtypes
+; bitmask (one bit per argument position, bit N set = argument N is a
+; STRING expression, compiled via COMPILE_STR_EXPR instead of
+; COMPILE_EXPR) -- generalizes the SAME concept rom/exrom_v2_compiler.
+; asm's own BUILTIN_FN_TABLE argtype column already established for
+; LEN/CODE/VAL (R8.5 Group 6), just per-ARGUMENT-POSITION here instead
+; of per-function, since an extension can have several arguments of
+; different types (LPRINT: exactly one argument, either type). The
+; VM's own OP_CALL_EXT needed NO change for this -- it only ever pops
+; and stores raw 16-bit values, and a string "value" is already just a
+; plain STRTAB index pushed via the ordinary PUSH_I16 opcode (same
+; convention every other string-carrying V2 opcode already uses); the
+; type distinction is purely a COMPILE-TIME (which grammar to parse)
+; and DECOMPILE-TIME (how to render the fragment back) concern.
 ; ===========================================================================
 COMPILE_EXT_CALL:
         ld (CEXT_SLOT),a
@@ -3815,8 +3931,12 @@ COMPILE_EXT_CALL:
         ld de,12
         add hl,de
         ld a,(hl)                   ; argcount
-        pop hl
         ld (CEXT_ARGCOUNT),a
+        inc hl
+        ld a,(hl)                   ; argtypes bitmask
+        ld (CEXT_ARGTYPES),a
+        pop hl
+        ld a,(CEXT_ARGCOUNT)
         ld (CEXT_REMAINING),a
         call LEX_NEXT_TOKEN         ; consume the extension keyword
         ld a,(CEXT_REMAINING)
@@ -3824,7 +3944,22 @@ COMPILE_EXT_CALL:
         jr z,.emit                  ; 0-argument extension — nothing to
                                     ; compile, straight to the opcode
 .arg_loop:
+        ; this argument's own 0-based index = argcount - remaining
+        ld a,(CEXT_ARGCOUNT)
+        ld b,a
+        ld a,(CEXT_REMAINING)
+        ld c,a
+        ld a,b
+        sub c
+        ld b,a                      ; B = rotate count for the bit test
+        ld a,(CEXT_ARGTYPES)
+        call COMPILE_TEST_ARGTYPE_BIT  ; Z = numeric, NZ = string
+        jr z,.arg_numeric
+        call COMPILE_STR_EXPR
+        jr .arg_checked
+.arg_numeric:
         call COMPILE_EXPR
+.arg_checked:
         ld a,(COMPILE_ERROR_CODE)
         or a
         ret nz
@@ -3851,6 +3986,41 @@ COMPILE_EXT_CALL:
         call EMIT_BYTE
         ld a,(CEXT_ARGCOUNT)
         call EMIT_BYTE
+        ret
+
+; COMPILE_TEST_ARGTYPE_BIT -- input: A = argtypes bitmask, B = argument
+; index (0-7). Output: Z flag set if that bit is clear (numeric), NZ if
+; set (string). Destroys: AF, B, D. A plain variable-position bit test
+; (rotate the mask right B times, then test bit 0) rather than a fixed
+; per-index branch table -- correctly generalizes to any argument
+; position up to 8 (GRAB's own 5-argument shape included) with one
+; small shared routine instead of one branch per position.
+;
+; Uses D as its own rotating-mask scratch, NOT C: a real bug, found via
+; a real ZEsarUX run (rom/exrom_v2_decompiler.asm's own identical
+; DECOMP_TEST_ARGTYPE_BIT sibling used C for this, silently destroying
+; the caller's own fragment-length value already live in C at that
+; call site -- GRAB/SHOW/MOVE/HIDE all decompiled with every argument
+; blank). This routine's own compiler-side call site doesn't keep
+; anything live in C across the call today, so the bug never manifested
+; here -- but the ORIGINAL "Destroys: AF, B" claim was still wrong (it
+; silently destroyed C too), a latent footgun for any future caller
+; that DOES need C to survive. Fixed in both places for the same reason.
+COMPILE_TEST_ARGTYPE_BIT:
+        ld d,b                  ; D = index (rotation count)
+        ld b,a                  ; B = mask (rotated in place)
+.rot_loop:
+        ld a,d
+        or a
+        jr z,.done
+        ld a,b
+        srl a
+        ld b,a
+        dec d
+        jr .rot_loop
+.done:
+        ld a,b
+        bit 0,a
         ret
 
 COMPILER_END:

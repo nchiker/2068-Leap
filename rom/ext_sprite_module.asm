@@ -501,23 +501,32 @@ SPR_MOVE_EXEC:
 ; failed -- table full, or this module loaded twice without a NEW/
 ; EXT2_CLEAR_ALL in between). Destroys: AF, BC, DE, HL.
 ; ---------------------------------------------------------------------------
+; All 4 operations are fully numeric (argtypes=0 -- C=0 on every call
+; below): EXT2_REGISTER's own C=argtypes parameter (printer-package ROM
+; reconciliation) generalizes typed arguments for extensions that need
+; them (the new printer package's own LPRINT); sprite has no string
+; arguments, so every registration here stays exactly as it was.
 SPR_INSTALL:
         ld hl,SPR_GRAB_NAME
         ld de,SPR_GRAB_EXEC
         ld b,5
+        ld c,0
         call EXT2_REGISTER
         ret c
         ld hl,SPR_SHOW_NAME
         ld de,SPR_SHOW_EXEC
         ld b,3
+        ld c,0
         call EXT2_REGISTER
         ret c
         ld hl,SPR_HIDE_NAME
         ld de,SPR_HIDE_EXEC
         ld b,1
+        ld c,0
         call EXT2_REGISTER
         ret c
         ld hl,SPR_MOVE_NAME
         ld de,SPR_MOVE_EXEC
         ld b,3
+        ld c,0
         jp EXT2_REGISTER

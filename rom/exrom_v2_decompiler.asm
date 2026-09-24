@@ -156,6 +156,48 @@ DECOMP_FN_ARGTYPE:    equ $8EA7  ; R8.5 Group 6 (LEN/CODE/VAL) -- the
                                     ; byte): 0 = numeric, 1 = string
                                     ; (needs DECOMP_STR_OPERAND applied
                                     ; to each popped argument fragment)
+DECOMP_EXT_ARGTYPES:  equ $8EA8  ; printer-package ROM reconciliation --
+                                    ; .op_call_ext's own live-registry
+                                    ; readback (1 byte): the matched
+                                    ; extension's argtypes bitmask (see
+                                    ; kernel/extensions/ext_registry.
+                                    ; asm's own EXT2_REC_LEN header),
+                                    ; same role DECOMP_FN_ARGTYPE plays
+                                    ; for .op_call_fn but read live from
+                                    ; the registry instead of a static
+                                    ; resident table (an extension's own
+                                    ; argtypes can change across a
+                                    ; module unload/reload, unlike a
+                                    ; resident built-in function's)
+DECOMP_EXT_RECPTR:    equ $8EAA  ; .op_call_ext's own matched registry
+                                    ; record base address (2 bytes),
+                                    ; parked so DECOMP_EXT_ARGTYPES can
+                                    ; be fetched (record offset 13)
+                                    ; after HL has already moved on to
+                                    ; extract name_len/name from the
+                                    ; same record
+DECOMP_LINE_CALLBACK: equ $8EAC  ; printer-package ROM reconciliation
+                                    ; (LLIST) -- (2 bytes) 0 = disabled,
+                                    ; the default: DECOMPILE_PROGRAM
+                                    ; accumulates the WHOLE reconstructed
+                                    ; program in DECOMP_OUT_BUF exactly
+                                    ; as it always has, unchanged for
+                                    ; every existing caller. Non-zero:
+                                    ; DECOMP_EMIT_NEWLINE calls through
+                                    ; this address after each statement's
+                                    ; own trailing newline and resets
+                                    ; DECOMP_OUT_PTR back to DECOMP_OUT_
+                                    ; BUF -- lets a caller (LLIST) stream
+                                    ; one reconstructed line at a time to
+                                    ; the printer instead of needing the
+                                    ; ENTIRE program's text to fit in
+                                    ; DECOMP_OUT_BUF's own fixed 400-byte
+                                    ; capacity at once. See DECOMP_EMIT_
+                                    ; NEWLINE's own header for the full
+                                    ; contract.
+DECOMP_LINE_LEN:      equ $8EAE  ; (1 byte) length of the line just
+                                    ; written to DECOMP_OUT_BUF, valid
+                                    ; only during the callback above
 DECOMP_ENDIF_SAVE_CNT: equ $8EA4  ; the matching remaining-slot-count
                                     ; (1 byte)
 DECOMP_END_ADDR:      equ $8E9F   ; (2 bytes) R8.5 addition: the real
@@ -877,10 +919,6 @@ DECOMP_SKIP_OPERAND:
         jp z,.w0
         cp 36                     ; PRINT_STR (R8.5)
         jp z,.w0
-        cp 37                     ; LPRINT_NUM (R8.5)
-        jp z,.w0
-        cp 38                     ; LPRINT_STR (R8.5)
-        jp z,.w0
         cp 40                     ; CMP_LE (R8.5 Group 3)
         jp z,.w0
         cp 41                     ; CMP_GT
@@ -1267,9 +1305,46 @@ DECOMP_CHECK_ENDIF_HERE:
 ; DECOMP_EMIT_NEWLINE — emits a CR (13) line terminator, the same
 ; convention `DECOMPILE_PROGRAM` uses to separate every reconstructed
 ; source line. Destroys: AF, BC, DE, HL.
+;
+; STREAMING HOOK (printer-package ROM reconciliation, LLIST): when
+; DECOMP_LINE_CALLBACK is non-zero, calls through it right after
+; writing the CR (same "call via jp (hl), reached through a `call` so
+; the callee's own RET returns here" tail-dispatch trampoline this
+; rewrite already uses for BUILTIN_FN_USR/VM_CALL_USR_TRAMPOLINE), then
+; resets DECOMP_OUT_PTR back to DECOMP_OUT_BUF -- the callback's own
+; job is to consume/print DECOMP_OUT_BUF[0..DECOMP_LINE_LEN) BEFORE
+; returning, since that text is gone the moment this routine's caller
+; (DECOMPILE_PROGRAM.loop) resumes and starts overwriting the buffer
+; with the NEXT line. Every EXISTING caller leaves DECOMP_LINE_CALLBACK
+; at 0 (MEM_INIT's cold-start zeroing, same as every other sysvar) and
+; sees IDENTICAL behavior to before this addition -- this is opt-in,
+; not a change to the default whole-buffer contract.
 DECOMP_EMIT_NEWLINE:
         ld a,13
-        jp DECOMP_EMIT_CHAR
+        call DECOMP_EMIT_CHAR
+        ld hl,(DECOMP_LINE_CALLBACK)
+        ld a,h
+        or l
+        ret z                        ; disabled -- default behavior
+        ld hl,(DECOMP_OUT_PTR)
+        ld de,DECOMP_OUT_BUF
+        or a
+        sbc hl,de                    ; HL = length of the line just
+                                        ; written (fragments are bounded
+                                        ; well under 256 bytes by
+                                        ; DECOMP_FRAG_TEXT_MAX, so the
+                                        ; low byte alone is always
+                                        ; correct here)
+        ld a,l
+        ld (DECOMP_LINE_LEN),a
+        ld hl,(DECOMP_LINE_CALLBACK)
+        call DECOMP_CALL_LINE_HOOK
+        ld hl,DECOMP_OUT_BUF
+        ld (DECOMP_OUT_PTR),hl       ; reset for the next line
+        ret
+
+DECOMP_CALL_LINE_HOOK:
+        jp (hl)
 
 ; ===========================================================================
 ; Decompile-error handlers — each sets DECOMP_ERROR_CODE (see the value
@@ -1485,10 +1560,6 @@ DECOMPILE_PROGRAM:
         jp z,.op_print_num
         cp 36
         jp z,.op_print_str
-        cp 37
-        jp z,.op_lprint_num
-        cp 38
-        jp z,.op_lprint_str
         cp 39
         jp z,.op_call_fn
         cp 40
@@ -2422,7 +2493,10 @@ DECOMPILE_PROGRAM:
         inc hl
         ld (DECOMP_IP),hl
         ; slot*EXT2_REC_LEN + EXT2_TABLE -> record; [gen:1][name_len:1]
-        ; [name:8][exec:2][argcount:1]
+        ; [name:8][exec:2][argcount:1][argtypes:1]. EXT2_REC_LEN grew
+        ; 13->14 (printer-package ROM reconciliation, the new argtypes
+        ; byte -- see kernel/extensions/ext_registry.asm's own header);
+        ; one more `add hl,de` below than before.
         ld a,(DECOMP_EXT_SLOT)
         ld l,a
         ld h,0
@@ -2431,13 +2505,18 @@ DECOMPILE_PROGRAM:
         add hl,hl                        ; *2
         add hl,hl                        ; *4
         add hl,hl                        ; *8
-        add hl,de                        ; *9  (EXT2_REC_LEN = 13,
-        add hl,de                        ; *10  8 + 5 more DE(=slot)
+        add hl,de                        ; *9  (EXT2_REC_LEN = 14,
+        add hl,de                        ; *10  8 + 6 more DE(=slot)
         add hl,de                        ; *11  additions gets there)
         add hl,de                        ; *12
         add hl,de                        ; *13
+        add hl,de                        ; *14
         ld de,EXT2_TABLE
         add hl,de                        ; HL -> record
+        ld (DECOMP_EXT_RECPTR),hl        ; parked -- needed again below
+                                            ; for the argtypes byte, once
+                                            ; HL has moved on past name_len/
+                                            ; name/exec/argcount
         inc hl                            ; -> name_len
         ld a,(hl)
         ld (DECOMP_TMP_LEN),a
@@ -2449,6 +2528,11 @@ DECOMPILE_PROGRAM:
         call DECOMP_EMIT_TEXT
         ld a,' '
         call DECOMP_EMIT_CHAR
+        ld hl,(DECOMP_EXT_RECPTR)
+        ld de,13
+        add hl,de
+        ld a,(hl)                          ; argtypes bitmask
+        ld (DECOMP_EXT_ARGTYPES),a
         ld a,(DECOMP_EXT_ARGCOUNT)
         or a
         jp z,.cext_no_args
@@ -2565,6 +2649,19 @@ DECOMPILE_PROGRAM:
         ld a,(DECOMP_ARR_INDEX_TMP)
 .cext_emit_common:
         ld c,a
+        ld a,(DECOMP_EXT_SLOT)      ; current argument's own 0-based
+        ld b,a                        ; index (this loop's own counter)
+        ld a,(DECOMP_EXT_ARGTYPES)
+        call DECOMP_TEST_ARGTYPE_BIT  ; Z = numeric, NZ = string
+        jr z,.cext_emit_plain
+        call DECOMP_STR_OPERAND       ; string-typed argument (printer
+                                         ; package's own LPRINT): a bare
+                                         ; variable-reference fragment
+                                         ; needs the same "PUSH_I16-as-
+                                         ; strsym-index" reinterpretation
+                                         ; .op_call_fn's own LEN/CODE/VAL
+                                         ; fix already established
+.cext_emit_plain:
         call DECOMP_EMIT_TEXT
         ld a,(DECOMP_EXT_ARGCOUNT)
         dec a
@@ -2615,29 +2712,13 @@ DECOMPILE_PROGRAM:
         call DECOMP_EMIT_TEXT
         call DECOMP_EMIT_NEWLINE
         jp DECOMPILE_PROGRAM.loop
-.op_lprint_num:
-        ld hl,STR_LPRINT
-        ld (DECOMP_TMP_A),hl
-        ld a,STR_LPRINT_LEN
-        ld (DECOMP_TMP_LEN),a
-        call DECOMP_EMIT_1ARG_STMT
-        jp DECOMPILE_PROGRAM.loop
-.op_lprint_str:
-        call DECOMP_FRAG_POP
-        call DECOMP_STR_OPERAND
-        ld (DECOMP_TMP_B),hl
-        ld a,c
-        ld (DECOMP_BLEN),a
-        ld hl,STR_LPRINT
-        ld a,STR_LPRINT_LEN
-        ld c,a
-        call DECOMP_EMIT_TEXT
-        ld hl,(DECOMP_TMP_B)
-        ld a,(DECOMP_BLEN)
-        ld c,a
-        call DECOMP_EMIT_TEXT
-        call DECOMP_EMIT_NEWLINE
-        jp DECOMPILE_PROGRAM.loop
+; .op_lprint_num/.op_lprint_str removed -- printer-package ROM
+; reconciliation: LPRINT no longer compiles to a dedicated opcode (see
+; rom/exrom_v2_compiler.asm's own COMPILE_LPRINT header), so it now
+; decompiles through the ALREADY-GENERIC .op_call_ext path above with
+; zero LPRINT-specific decompiler code at all -- the whole point of
+; emitting the same OP_CALL_EXT encoding COMPILE_EXT_CALL's own
+; generic path produces.
 
 ; R8.5 Group 1 -- CALL_FN is an EXPRESSION fragment producer (like ADD/
 ; SUB/etc. above), not a statement: it pops its one argument's own
@@ -3069,6 +3150,42 @@ DECOMP_STR_OPERAND:
                                         ; plain FRAG_POP would have
         ret
 
+; DECOMP_TEST_ARGTYPE_BIT -- input: A = argtypes bitmask, B = argument
+; index (0-7). Output: Z flag set if that bit is clear (numeric), NZ if
+; set (string). Destroys: AF, B, D. Decompiler-side mirror of rom/
+; exrom_v2_compiler.asm's own COMPILE_TEST_ARGTYPE_BIT (same rotate-by-
+; index-then-test-bit-0 approach, generalizing to any argument position
+; instead of a fixed per-index branch table).
+;
+; REAL BUG FOUND AND FIXED (real ZEsarUX run, printer-package ROM
+; reconciliation): the first version used C as its own rotating-mask
+; scratch -- but .cext_emit_common's own call site here has the popped
+; fragment's LENGTH already live in C at the moment of this call
+; (loaded via `ld c,a` right before), needed again immediately after
+; for DECOMP_EMIT_TEXT. Silently destroying it made every extension-
+; call argument decompile as empty text (confirmed: GRAB/SHOW/MOVE/
+; HIDE all decompiled with every argument blank, e.g. "GRAB ,,,,"
+; instead of "GRAB 0,2,3,2,2"). Fixed by using D instead, which is not
+; live across this call. Same "a callee's own internal scratch can
+; alias a caller's own live register just as easily as a documented
+; sysvar cell" lesson this whole rewrite keeps re-learning.
+DECOMP_TEST_ARGTYPE_BIT:
+        ld d,b                  ; D = index (rotation count)
+        ld b,a                  ; B = mask (rotated in place)
+.rot_loop:
+        ld a,d
+        or a
+        jr z,.done
+        ld a,b
+        srl a
+        ld b,a
+        dec d
+        jr .rot_loop
+.done:
+        ld a,b
+        bit 0,a
+        ret
+
 ; STR_CONCAT/STR_CMP_LT/STR_CMP_EQ -- binary string ops, same pop-two-
 ; combine-one shape as DECOMP_BINARY_OP, but with DECOMP_STR_OPERAND
 ; applied to EACH popped operand first (both operands of a string-typed
@@ -3196,8 +3313,6 @@ STR_RANDOMISE: db "RANDOMISE "
 STR_RANDOMISE_LEN: equ $-STR_RANDOMISE
 STR_PRINT:     db "PRINT "
 STR_PRINT_LEN: equ $-STR_PRINT
-STR_LPRINT:    db "LPRINT "
-STR_LPRINT_LEN: equ $-STR_LPRINT
 STR_INPUT:     db "INPUT "
 STR_INPUT_LEN: equ $-STR_INPUT
 ; STR_MODE/STR_ULAPLUS/STR_PALETTE removed -- no longer resident
