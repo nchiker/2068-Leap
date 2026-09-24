@@ -500,9 +500,11 @@ TOK_KW_EXIT:        equ 55   ; R8.5 Group 5 -- EXIT FOR (V1's own real
                                ; grammar is "EXIT FOR", not bare EXIT --
                                ; confirmed against basic.asm's own
                                ; BASIC_STMT_EXIT header)
-TOK_KW_MODE:        equ 56   ; R8.5 Group 5
-TOK_KW_ULAPLUS:      equ 57
-TOK_KW_PALETTE:      equ 58
+; TOK_KW_MODE/ULAPLUS/PALETTE (56-58) removed -- these are no longer
+; resident statement keywords (product decision, same principle as the
+; earlier SPRITE-to-loadable-module move). Token values 56-58 are now
+; unused, kept unassigned rather than renumbered (nothing else depends
+; on token-value contiguity).
 
 ; ---------------------------------------------------------------------------
 ; COMPILER_INIT — call once before COMPILE_PROGRAM.
@@ -945,7 +947,7 @@ LEX_CLASSIFY_KEYWORD:
         ret                       ; no match — TOK_TYPE stays TOK_IDENT
 
 KEYWORD_ENTRY_LEN:  equ 11        ; [len:1][text:9, unused tail ignored][token:1]
-KEYWORD_TABLE_COUNT: equ 37
+KEYWORD_TABLE_COUNT: equ 34
 
 ; Every row is exactly KEYWORD_ENTRY_LEN (11) bytes: [len][9 text bytes,
 ; zero-padded][token]. Generated and byte-counted mechanically (a Python
@@ -990,9 +992,12 @@ KEYWORD_TABLE:
         db 5, "INPUT", 0, 0, 0, 0, TOK_KW_INPUT          ; R8.5 Group 2
         db 4, "STEP", 0, 0, 0, 0, 0, TOK_KW_STEP          ; R8.5 Group 5
         db 4, "EXIT", 0, 0, 0, 0, 0, TOK_KW_EXIT
-        db 4, "MODE", 0, 0, 0, 0, 0, TOK_KW_MODE
-        db 7, "ULAPLUS", 0, 0, TOK_KW_ULAPLUS
-        db 7, "PALETTE", 0, 0, TOK_KW_PALETTE
+        ; MODE/ULAPLUS/PALETTE keyword rows removed (product decision,
+        ; same principle as the earlier SPRITE-to-loadable-module move):
+        ; these are now a loadable extension package (rom/ext_mode_
+        ; module.asm), reached via the ordinary TOK_IDENT/extension-
+        ; registry dispatch path (COMPILE_EXT_CALL), not resident
+        ; statement keywords.
 
 ; ===========================================================================
 ; COMPILE-TIME SYMBOL TABLE — real name storage, real comparison (the piece
@@ -1284,9 +1289,6 @@ EMIT_OP_ARR_LOAD:                           ld a,48 : jp EMIT_BYTE  ; R8.5 Group
 EMIT_OP_ARR_STORE:                          ld a,49 : jp EMIT_BYTE  ; R8.5 Group 4
 EMIT_OP_INPUT_NUM:                          ld a,50 : jp EMIT_BYTE  ; R8.5 Group 2
 EMIT_OP_INPUT_STR:                          ld a,51 : jp EMIT_BYTE  ; R8.5 Group 2
-EMIT_OP_MODE:                               ld a,52 : jp EMIT_BYTE  ; R8.5 Group 5
-EMIT_OP_ULAPLUS:                            ld a,53 : jp EMIT_BYTE  ; R8.5 Group 5
-EMIT_OP_PALETTE:                            ld a,54 : jp EMIT_BYTE  ; R8.5 Group 5
 EMIT_OP_CMP_LE:                              ld a,40 : jp EMIT_BYTE  ; R8.5 Group 3
 EMIT_OP_CMP_GT:                               ld a,41 : jp EMIT_BYTE
 EMIT_OP_CMP_GE:                                ld a,42 : jp EMIT_BYTE
@@ -2767,29 +2769,13 @@ COMPILE_PLOT:
         call EMIT_OP_PLOT
         ret
 
-; R8.5 Group 5 -- MODE/ULAPLUS/PALETTE. Same "native-call opcode into an
-; unmodified platform primitive" shape as CLS/BORDER/INK/PAPER/PLOT
-; above (this milestone's own reuse audit confirmed MODE reaches real
-; kernel/graphics's GFX_SET_MODE directly, and ULAPLUS/PALETTE's real
-; payload is two port writes -- neither needs rom/exrom_ulaplus.asm's
-; own KTAB_-coupled parse code).
-COMPILE_MODE:
-        ld hl,EMIT_OP_MODE
-        jp COMPILE_1ARG_STMT
-
-COMPILE_ULAPLUS:
-        ld hl,EMIT_OP_ULAPLUS
-        jp COMPILE_1ARG_STMT
-
-COMPILE_PALETTE:
-        call LEX_NEXT_TOKEN     ; consume PALETTE
-        call COMPILE_EXPR       ; index -> VM operand stack
-        call COMPILE_EXPECT_COMMA_EXPR  ; value -> VM operand stack
-        ld a,(COMPILE_ERROR_CODE)
-        or a
-        ret nz
-        call EMIT_OP_PALETTE
-        ret
+; R8.5 Group 5's own resident MODE/ULAPLUS/PALETTE removed (product
+; decision, following the same principle that moved SPRITE off resident
+; ROM): specialized/optional hardware facilities don't need to consume
+; permanent ROM. MODE/ULAPLUS/PALETTE are now a loadable R7.5-style
+; extension package (rom/ext_mode_module.asm) using the exact same
+; EXT2_REGISTER/OP_CALL_EXT mechanism the sprite module already
+; established -- see that module's own header for the architecture.
 
 ; ===========================================================================
 ; R7 PHASE 2 — the real remainder of this ROM's own graphics/system
@@ -3450,12 +3436,6 @@ COMPILE_STATEMENT_LIST:
         jp z,.input
         cp TOK_KW_EXIT
         jp z,.exit_for
-        cp TOK_KW_MODE
-        jp z,.mode
-        cp TOK_KW_ULAPLUS
-        jp z,.ulaplus
-        cp TOK_KW_PALETTE
-        jp z,.palette
         cp TOK_IDENT
         jp z,.ident_stmt
         cp TOK_STR_IDENT
@@ -3541,15 +3521,6 @@ COMPILE_STATEMENT_LIST:
         jp .after_stmt
 .exit_for:
         call COMPILE_EXIT_FOR
-        jp .after_stmt
-.mode:
-        call COMPILE_MODE
-        jp .after_stmt
-.ulaplus:
-        call COMPILE_ULAPLUS
-        jp .after_stmt
-.palette:
-        call COMPILE_PALETTE
         jp .after_stmt
 .ident_stmt:
         ; R7.5 addition: BEFORE assuming this identifier starts an

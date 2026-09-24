@@ -210,11 +210,11 @@
 ;       runtime bounds check against the operand-baked declared size)
 ;  11 = array index must be an integer (a FLOAT-tagged value popped where
 ;       OP_ARR_LOAD/STORE expected a TAG_INT array index)
-;  12 = invalid MODE value (must be 0 or 1 -- real, raised error, not
-;       silently masked, matching V1's own real MSG_INVALID_MODE)
-;  13 = invalid ULAPLUS mode value (must be 0 or 1)
-;  14 = invalid PALETTE index (must be 0-63)
+;  12-14 = (formerly invalid MODE/ULAPLUS/PALETTE value) -- retired;
+;       MODE/ULAPLUS/PALETTE moved to a loadable extension package
+;       (rom/ext_mode_module.asm), which owns its own error codes
 ;
+
 ; Operand-stack record layout (3 bytes, at address SP, SP+1, SP+2):
 ;   [value_lo][value_hi][tag]   -- SP points at the lowest (most recent) record
 ; ============================================================================
@@ -541,14 +541,16 @@ VM_RUN:
         ld a,(hl)               ; fetch opcode
         inc hl
         ld (VM_IP),hl
-        cp 55                   ; 55 opcodes defined (0-54, R8.5 adds
+        cp 52                   ; 52 opcodes defined (0-51, R8.5 adds
                                  ; 35-38: PRINT_NUM/STR, LPRINT_NUM/STR;
                                  ; 39: CALL_FN (Group 1); 40-43: CMP_LE/
                                  ; GT/GE/NE; 44-46: AND/OR/NOT; 47:
                                  ; JMP_ELSE (Group 3); 48-49: ARR_LOAD/
                                  ; ARR_STORE (Group 4); 50-51: INPUT_NUM/
-                                 ; INPUT_STR (Group 2's own late close-out);
-                                 ; 52-54: MODE/ULAPLUS/PALETTE (Group 5))
+                                 ; INPUT_STR (Group 2's own late close-out).
+                                 ; 52-54 (MODE/ULAPLUS/PALETTE, Group 5)
+                                 ; removed -- now a loadable extension
+                                 ; package, rom/ext_mode_module.asm)
         jp nc,VM_ERR_ILLEGAL_OPCODE
         ld l,a
         ld h,0
@@ -626,9 +628,8 @@ VM_OP_TABLE:
         dw OP_ARR_STORE                                  ; 49
         dw OP_INPUT_NUM                                   ; 50 (R8.5 Group 2)
         dw OP_INPUT_STR                                    ; 51
-        dw OP_MODE                                          ; 52 (R8.5 Group 5)
-        dw OP_ULAPLUS                                        ; 53
-        dw OP_PALETTE                                         ; 54
+        ; 52-54 (OP_MODE/OP_ULAPLUS/OP_PALETTE) removed -- now a
+        ; loadable extension package, rom/ext_mode_module.asm
 
 ; ---------------------------------------------------------------------------
 ; String-table access: index (A) -> HL = record address
@@ -2224,61 +2225,13 @@ OP_BORDER:
         call GFX_SET_BORDER      ; masks to the low 3 bits itself
         jp VM_RUN.loop
 
-; ---------------------------------------------------------------------------
-; R8.5 Group 5 -- MODE/ULAPLUS/PALETTE. Confirmed via this milestone's own
-; reuse audit: MODE reaches kernel/graphics's real GFX_SET_MODE directly
-; (basic.asm's own BASIC_STMT_MODE is just a thin parse-and-call wrapper
-; around it); ULAPLUS/PALETTE's own real payload in rom/exrom_ulaplus.asm
-; is just two `out (c),a` port writes (that file's surrounding parse code
-; is KTAB_-coupled, not reusable, but the actual hardware op is trivial
-; enough to write V2-native directly, same call the reuse audit made).
-; ---------------------------------------------------------------------------
-OP_MODE:
-        call VM_POP             ; HL = value, A = tag
-        ld a,h
-        or a
-        jp nz,VM_ERR_INVALID_MODE
-        ld a,l
-        cp 2
-        jp nc,VM_ERR_INVALID_MODE
-        call GFX_SET_MODE
-        jp VM_RUN.loop
-
-OP_ULAPLUS:
-        call VM_POP             ; HL = value, A = tag
-        ld a,h
-        or a
-        jp nz,VM_ERR_INVALID_ULAPLUS
-        ld a,l
-        cp 2
-        jp nc,VM_ERR_INVALID_ULAPLUS
-        push af
-        ld a,ULAPLUS_MODE_GROUP
-        ld bc,PORT_ULAPLUS_SELECT
-        out (c),a
-        pop af
-        ld bc,PORT_ULAPLUS_DATA
-        out (c),a
-        jp VM_RUN.loop
-
-OP_PALETTE:
-        call VM_POP             ; HL = value (top of stack)
-        ld a,l
-        ld (VM_ARR_VALUE_TMP),a   ; reuse -- 1 byte used, not live at the
-                                    ; same time as an ARR_STORE
-        call VM_POP             ; HL = index
-        ld a,h
-        or a
-        jp nz,VM_ERR_INVALID_PALETTE
-        ld a,l
-        cp 64
-        jp nc,VM_ERR_INVALID_PALETTE
-        ld bc,PORT_ULAPLUS_SELECT
-        out (c),a
-        ld a,(VM_ARR_VALUE_TMP)
-        ld bc,PORT_ULAPLUS_DATA
-        out (c),a
-        jp VM_RUN.loop
+; R8.5 Group 5's own resident OP_MODE/OP_ULAPLUS/OP_PALETTE removed
+; (product decision, same principle as the earlier SPRITE-to-loadable-
+; module move): now a loadable extension package, rom/ext_mode_
+; module.asm, using the same EXT2_REGISTER/OP_CALL_EXT mechanism the
+; sprite module already established. Opcodes 52-54 are now unused
+; (they were the highest-numbered opcodes in this table, so no
+; renumbering of anything else was needed).
 
 OP_INK:
         call VM_POP
@@ -3151,17 +3104,10 @@ VM_ERR_ARRAY_TYPE:
         ld a,11
         jp VM_ERR_COMMON
 
-VM_ERR_INVALID_MODE:
-        ld a,12
-        jp VM_ERR_COMMON
-
-VM_ERR_INVALID_ULAPLUS:
-        ld a,13
-        jp VM_ERR_COMMON
-
-VM_ERR_INVALID_PALETTE:
-        ld a,14
-        jp VM_ERR_COMMON
+; VM_ERR_INVALID_MODE/ULAPLUS/PALETTE (error codes 12-14) removed --
+; dead code now that OP_MODE/OP_ULAPLUS/OP_PALETTE no longer exist here.
+; The loadable ext_mode_module.asm owns its own error codes/reporting,
+; same as ext_sprite_module.asm already does.
 
 VM_ERR_COMMON:
         ld (VM_ERROR_CODE),a
