@@ -151,6 +151,11 @@ DECOMP_FN_ARGCOUNT:   equ $8EA6  ; R8.5 Group 6 -- .op_call_fn's own
                                     ; fragments to pop/re-render, same
                                     ; role DECOMP_EXT_ARGCOUNT plays for
                                     ; .op_call_ext
+DECOMP_FN_ARGTYPE:    equ $8EA7  ; R8.5 Group 6 (LEN/CODE/VAL) -- the
+                                    ; matched function's own argtype (1
+                                    ; byte): 0 = numeric, 1 = string
+                                    ; (needs DECOMP_STR_OPERAND applied
+                                    ; to each popped argument fragment)
 DECOMP_ENDIF_SAVE_CNT: equ $8EA4  ; the matching remaining-slot-count
                                     ; (1 byte)
 DECOMP_END_ADDR:      equ $8E9F   ; (2 bytes) R8.5 addition: the real
@@ -2673,7 +2678,35 @@ DECOMPILE_PROGRAM:
         ld a,(DECOMP_FN_ARGCOUNT)
         ld b,a
 .cfn_pop_loop:
-        call DECOMP_FRAG_POP
+        call DECOMP_FRAG_POP      ; HL = ptr, C = len; B = outer loop
+                                    ; counter (DECOMP_FRAG_POP itself
+                                    ; doesn't destroy B)
+        ld a,(DECOMP_FN_ARGTYPE)
+        or a
+        jr z,.cfn_pop_numeric
+        push bc                    ; DECOMP_STR_OPERAND's own contract
+                                     ; destroys BC entirely -- park B
+                                     ; (the outer loop counter) across
+                                     ; it, same "value that must survive
+                                     ; a destructive call lives off the
+                                     ; register it's about to be
+                                     ; destroyed in" discipline this
+                                     ; whole rewrite keeps needing
+        call DECOMP_STR_OPERAND   ; LEN/CODE/VAL (Group 6): a bare
+                                    ; string-variable-reference fragment
+                                    ; would otherwise render as plain
+                                    ; digits (PUSH_I16's own generic
+                                    ; rendering, which has no idea it's
+                                    ; really a string index) -- same
+                                    ; reinterpretation COMPILE_STR_ASSIGN/
+                                    ; PRINT_STR's own decompile paths
+                                    ; already need for the identical
+                                    ; reason (see DECOMP_STR_OPERAND's
+                                    ; own header)
+        ld a,c                     ; A = the (possibly new) fragment length
+        pop bc                     ; B restored; C about to be overwritten
+        ld c,a
+.cfn_pop_numeric:
         push hl
         push bc
         ld a,b
@@ -2972,17 +3005,21 @@ DECOMPILE_PROGRAM:
         jp DECOMPILE_PROGRAM.loop
 
 ; DECOMP_BUILTIN_FN_NAME -- input: A = fn_index. Output: HL = name text
-; pointer, C = name length, DECOMP_FN_ARGCOUNT = the function's own
-; declared argcount. Destroys: AF, BC, DE, HL. Real indexed lookup into
-; DECOMP_BUILTIN_FN_TABLE (4 bytes/row: [text_ptr:2][len:1][argcount:1]),
-; same order as rom/exrom_v2_compiler.asm's own BUILTIN_FN_TABLE and
-; rom/exrom_v2_vm_core.asm's own BUILTIN_FN_JUMP_TABLE. Group 6 appends
-; further rows here as functions are added -- no other change needed.
+; pointer, C = name length, DECOMP_FN_ARGCOUNT/DECOMP_FN_ARGTYPE = the
+; function's own declared argcount/argtype. Destroys: AF, BC, DE, HL.
+; Real indexed lookup into DECOMP_BUILTIN_FN_TABLE (5 bytes/row:
+; [text_ptr:2][len:1][argcount:1][argtype:1]), same order as rom/
+; exrom_v2_compiler.asm's own BUILTIN_FN_TABLE and rom/exrom_v2_vm_
+; core.asm's own BUILTIN_FN_JUMP_TABLE. Group 6 appends further rows
+; here as functions are added -- no other change needed.
 DECOMP_BUILTIN_FN_NAME:
         ld l,a
         ld h,0
+        ld d,h
+        ld e,l                  ; DE = fn_index
         add hl,hl
         add hl,hl               ; HL = fn_index*4
+        add hl,de               ; HL = fn_index*5
         ld de,DECOMP_BUILTIN_FN_TABLE
         add hl,de               ; HL -> this fn_index's own row
         ld e,(hl)
@@ -2994,6 +3031,9 @@ DECOMP_BUILTIN_FN_NAME:
         inc hl
         ld a,(hl)
         ld (DECOMP_FN_ARGCOUNT),a
+        inc hl
+        ld a,(hl)
+        ld (DECOMP_FN_ARGTYPE),a
         ex de,hl                ; HL = name text pointer
         ret
 
@@ -3216,6 +3256,12 @@ STR_PEEK:      db "PEEK"
 STR_PEEK_LEN:  equ $-STR_PEEK
 STR_USR:       db "USR"
 STR_USR_LEN:   equ $-STR_USR
+STR_LEN_FN:    db "LEN"
+STR_LEN_FN_LEN: equ $-STR_LEN_FN
+STR_CODE_FN:   db "CODE"
+STR_CODE_FN_LEN: equ $-STR_CODE_FN
+STR_VAL_FN:    db "VAL"
+STR_VAL_FN_LEN: equ $-STR_VAL_FN
 
 ; DECOMP_BUILTIN_FN_TABLE -- [text_ptr:2][len:1][argcount:1] per
 ; fn_index, same order as rom/exrom_v2_compiler.asm's own
@@ -3224,27 +3270,38 @@ STR_USR_LEN:   equ $-STR_USR
 ; either at build time). argcount is needed here (not just the name)
 ; because .op_call_fn must know how many fragments to pop and
 ; re-render in the right order -- see that routine's own header.
+; 5 bytes/row: [text_ptr:2][len:1][argcount:1][argtype:1]. argtype: 0 =
+; numeric argument(s) (rendered straight from DECOMP_FRAG_POP), 1 =
+; string argument (needs DECOMP_STR_OPERAND's own reinterpretation --
+; see .op_call_fn's own header for why a bare variable-reference
+; fragment needs this).
 DECOMP_BUILTIN_FN_TABLE:
         dw STR_ABS
-        db STR_ABS_LEN, 1
+        db STR_ABS_LEN, 1, 0
         dw STR_SGN
-        db STR_SGN_LEN, 1
+        db STR_SGN_LEN, 1, 0
         dw STR_MOD
-        db STR_MOD_LEN, 2
+        db STR_MOD_LEN, 2, 0
         dw STR_DIV
-        db STR_DIV_LEN, 2
+        db STR_DIV_LEN, 2, 0
         dw STR_RND
-        db STR_RND_LEN, 1
+        db STR_RND_LEN, 1, 0
         dw STR_POINT
-        db STR_POINT_LEN, 2
+        db STR_POINT_LEN, 2, 0
         dw STR_ATTR
-        db STR_ATTR_LEN, 2
+        db STR_ATTR_LEN, 2, 0
         dw STR_INT
-        db STR_INT_LEN, 1
+        db STR_INT_LEN, 1, 0
         dw STR_PEEK
-        db STR_PEEK_LEN, 1
+        db STR_PEEK_LEN, 1, 0
         dw STR_USR
-        db STR_USR_LEN, 1
+        db STR_USR_LEN, 1, 0
+        dw STR_LEN_FN
+        db STR_LEN_FN_LEN, 1, 1
+        dw STR_CODE_FN
+        db STR_CODE_FN_LEN, 1, 1
+        dw STR_VAL_FN
+        db STR_VAL_FN_LEN, 1, 1
 
 STR_GOTO:      db "GOTO "
 STR_GOTO_LEN:  equ $-STR_GOTO

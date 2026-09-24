@@ -325,6 +325,18 @@ CFN_REMAINING:      equ $8B44   ; index/argcount, and a countdown while
                                   ; argument expressions (same shape as
                                   ; CEXT_SLOT/CEXT_GEN/CEXT_ARGCOUNT/
                                   ; CEXT_REMAINING above, deliberately)
+BFN_FOUND_ARGTYPE:  equ $8B58   ; R8.5 Group 6 (LEN/CODE/VAL) -- BUILTIN_
+                                  ; FN_FIND's own output: 0 = this
+                                  ; function's arguments are numeric
+                                  ; (COMPILE_EXPR), 1 = string (COMPILE_
+                                  ; STR_EXPR). Placed in the free gap
+                                  ; between EXITFOR_PATCH_TABLE ($8B50 +
+                                  ; 4*2=8 bytes = $8B58) and STRSYMTAB_
+                                  ; BASE ($8B60) -- every byte from $8B41
+                                  ; through $8B57 is already spoken for.
+CFN_ARGTYPE:        equ $8B59   ; COMPILE_FACTOR.fn_call's own copy of
+                                  ; the above, same shape as CFN_INDEX/
+                                  ; CFN_ARGCOUNT/CFN_REMAINING
 
 ; R8.5 Group 3 -- block IF/ELSE/ENDIF.
 IF_ELSE_SKIP_PATCH_TMP: equ $8B45  ; COMPILE_IF_BLOCK scratch (2 bytes):
@@ -1584,6 +1596,8 @@ COMPILE_FACTOR:
         ld a,(BFN_FOUND_ARGCOUNT)
         ld (CFN_ARGCOUNT),a
         ld (CFN_REMAINING),a
+        ld a,(BFN_FOUND_ARGTYPE)
+        ld (CFN_ARGTYPE),a
         call LEX_NEXT_TOKEN       ; consume the function name
         ld a,(TOK_TYPE)
         cp TOK_LPAREN
@@ -1598,7 +1612,17 @@ COMPILE_FACTOR:
         jr z,.fn_rparen              ; 0-arg function (none exist yet,
                                        ; kept general for group 6)
 .fn_arg_loop:
+        ld a,(CFN_ARGTYPE)
+        or a
+        jr nz,.fn_arg_str
         call COMPILE_EXPR
+        jr .fn_arg_done
+.fn_arg_str:
+        call COMPILE_STR_EXPR         ; LEN/CODE/VAL (Group 6): argument
+                                        ; is a string expression, not
+                                        ; numeric -- result is still
+                                        ; pushed as numeric either way
+.fn_arg_done:
         ld a,(COMPILE_ERROR_CODE)
         or a
         ret nz
@@ -1637,16 +1661,23 @@ COMPILE_FACTOR:
 ; against a SEPARATE table (a function name is never a statement
 ; keyword or vice versa in this dialect, so no ambiguity). Entry layout
 ; matches KEYWORD_TABLE's own shape: [len:1][text:8, zero-padded]
-; [argcount:1][fn_index:1] = 11 bytes/row.
+; [argcount:1][fn_index:1][argtype:1] = 12 bytes/row. argtype (added
+; for LEN/CODE/VAL): 0 = this function's arguments are numeric
+; (COMPILE_EXPR), 1 = string (COMPILE_STR_EXPR) -- the function's own
+; RESULT is always numeric either way (OP_CALL_FN always pushes back
+; through the same TAG_INT/TAG_FLOAT path), only the ARGUMENT grammar
+; differs.
 ; ===========================================================================
 BUILTIN_FN_FIND:               ; input: TOK_NAME/TOK_LEN (current, not
                                  ; yet consumed, identifier token).
                                  ; Output: carry set + A = fn_index +
-                                 ; BFN_FOUND_ARGCOUNT = the matched
-                                 ; function's own argcount, if found;
-                                 ; carry clear (A/BFN_FOUND_ARGCOUNT
-                                 ; unchanged) if this identifier does
-                                 ; not name a built-in function.
+                                 ; BFN_FOUND_ARGCOUNT/BFN_FOUND_ARGTYPE
+                                 ; = the matched function's own
+                                 ; argcount/argtype, if found; carry
+                                 ; clear (A/BFN_FOUND_ARGCOUNT/
+                                 ; BFN_FOUND_ARGTYPE unchanged) if this
+                                 ; identifier does not name a built-in
+                                 ; function.
                                  ; Destroys: AF, BC, DE, HL.
         ld hl,BUILTIN_FN_TABLE
         ld b,BUILTIN_FN_TABLE_COUNT
@@ -1667,14 +1698,20 @@ BUILTIN_FN_FIND:               ; input: TOK_NAME/TOK_LEN (current, not
         dec c
         jr nz,.cmp_loop
         ; match: argcount sits 9 bytes past the entry's start (1 length
-        ; byte + 8 text bytes), fn_index right after it
+        ; byte + 8 text bytes), fn_index right after it, argtype after that
         pop hl
         ld de,9
         add hl,de
         ld a,(hl)
         ld (BFN_FOUND_ARGCOUNT),a
         inc hl
+        ld c,(hl)                 ; fn_index, parked in C (B is this
+                                     ; loop's own counter, no longer
+                                     ; needed once matched)
+        inc hl
         ld a,(hl)
+        ld (BFN_FOUND_ARGTYPE),a
+        ld a,c
         scf
         ret
 .cmp_fail:
@@ -1687,8 +1724,8 @@ BUILTIN_FN_FIND:               ; input: TOK_NAME/TOK_LEN (current, not
         or a                       ; clear carry -- not a built-in
         ret                          ; function name
 
-BUILTIN_FN_ENTRY_LEN:   equ 11
-BUILTIN_FN_TABLE_COUNT: equ 10
+BUILTIN_FN_ENTRY_LEN:   equ 12
+BUILTIN_FN_TABLE_COUNT: equ 13
 
 ; fn_index 0 = ABS (rom/exrom_v2_vm_core.asm's own BUILTIN_FN_ABS).
 ; Group 6 appends the remaining ~24 functions to this same table --
@@ -1704,11 +1741,11 @@ BUILTIN_FN_TABLE_COUNT: equ 10
 ; deliberately integer-only ("this is a pure-integer BASIC") -- V2
 ; matching that is full capability preservation, not a new scope cut.
 BUILTIN_FN_TABLE:
-    db 3, "ABS", 0,0,0,0,0, 1, 0
-    db 3, "SGN", 0,0,0,0,0, 1, 1
-    db 3, "MOD", 0,0,0,0,0, 2, 2
-    db 3, "DIV", 0,0,0,0,0, 2, 3
-    db 3, "RND", 0,0,0,0,0, 1, 4
+    db 3, "ABS", 0,0,0,0,0, 1, 0, 0
+    db 3, "SGN", 0,0,0,0,0, 1, 1, 0
+    db 3, "MOD", 0,0,0,0,0, 2, 2, 0
+    db 3, "DIV", 0,0,0,0,0, 2, 3, 0
+    db 3, "RND", 0,0,0,0,0, 1, 4, 0
 
 ; POINT/ATTR/INT (fn_index 5-7): confirmed via basic.asm's own real
 ; dispatch (.call_point/.call_attr/.call_int) -- POINT/ATTR are thin
@@ -1717,9 +1754,9 @@ BUILTIN_FN_TABLE:
 ; returns-0 behavior V1 already established (not an error condition);
 ; INT is a true no-op (V1's own comment: "this is a pure-integer BASIC,
 ; so every value is already its own INT()").
-    db 5, "POINT", 0,0,0, 2, 5
-    db 4, "ATTR", 0,0,0,0, 2, 6
-    db 3, "INT", 0,0,0,0,0, 1, 7
+    db 5, "POINT", 0,0,0, 2, 5, 0
+    db 4, "ATTR", 0,0,0,0, 2, 6, 0
+    db 3, "INT", 0,0,0,0,0, 1, 7, 0
 
 ; PEEK/USR (fn_index 8-9): confirmed via basic.asm's own real dispatch
 ; (.call_peek/.call_usr) -- both read/jump raw caller-supplied
@@ -1728,8 +1765,21 @@ BUILTIN_FN_TABLE:
 ; both (real bugs where V1's live-typing checker evaluates expressions
 ; during static checking) don't apply here -- V2 compiles ahead of
 ; time and never evaluates an expression at compile time.
-    db 4, "PEEK", 0,0,0,0, 1, 8
-    db 3, "USR", 0,0,0,0,0, 1, 9
+    db 4, "PEEK", 0,0,0,0, 1, 8, 0
+    db 3, "USR", 0,0,0,0,0, 1, 9, 0
+
+; LEN/CODE/VAL (fn_index 10-12): confirmed via basic.asm's own real
+; dispatch (.str_arg_len/.str_arg_code and CODE/VAL's own STRING_
+; FUNCTION_TABLE ARGC_STR1 entries) -- the first built-ins whose
+; ARGUMENT is a string expression, not numeric (argtype=1 below routes
+; COMPILE_FACTOR.fn_call's own argument loop through COMPILE_STR_EXPR
+; instead of COMPILE_EXPR). The RESULT is still numeric either way --
+; OP_CALL_FN's own dispatch/push-result mechanism needs no change.
+; VAL reuses V2's own existing VM_PARSE_INPUT_INT (already used by
+; OP_INPUT_NUM) rather than porting basic.asm's own separate parser.
+    db 3, "LEN", 0,0,0,0,0, 1, 10, 1
+    db 4, "CODE", 0,0,0,0, 1, 11, 1
+    db 3, "VAL", 0,0,0,0,0, 1, 12, 1
 
 ; BUG FOUND (real hardware, R8.5 Group 5): a literal 128-255 has TOK_VAL
 ; high byte 0, so this used to take the PUSH_I8 path below -- but

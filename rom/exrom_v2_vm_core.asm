@@ -2768,6 +2768,9 @@ BUILTIN_FN_JUMP_TABLE:
         dw BUILTIN_FN_INT       ; fn_index 7
         dw BUILTIN_FN_PEEK      ; fn_index 8
         dw BUILTIN_FN_USR       ; fn_index 9
+        dw BUILTIN_FN_LEN       ; fn_index 10
+        dw BUILTIN_FN_CODE      ; fn_index 11
+        dw BUILTIN_FN_VAL       ; fn_index 12
 
 ; BUILTIN_FN_ABS — ABS(x). Pops one value (either tag), pushes its
 ; magnitude. Int path: plain two's-complement negate (always safe, the
@@ -2982,6 +2985,123 @@ BUILTIN_FN_USR:
 
 VM_CALL_USR_TRAMPOLINE:
         jp (hl)
+
+; LEN(a$)/CODE(a$)/VAL(a$) -- confirmed via basic.asm's own real
+; dispatch (.str_arg_len/.str_arg_code/.str_arg_val): the first built-
+; ins whose argument is a STRING (compiled via COMPILE_STR_EXPR, per
+; rom/exrom_v2_compiler.asm's own BUILTIN_FN_TABLE argtype column --
+; see that table's own header). A string "value" on the operand stack
+; is a plain STRTAB index (TAG_INT), same as everywhere else in this
+; VM -- VM_STR_ADDR turns it into a real record address ([len:1]
+; [content:31]).
+
+; LEN(a$) -- the record's own length byte, directly.
+BUILTIN_FN_LEN:
+        call VM_POP             ; HL = string index (L; H=0 always --
+                                 ; STRSYM_FIND_OR_CREATE's own indices
+                                 ; are always small)
+        ld a,l
+        call VM_STR_ADDR        ; HL = record address
+        ld a,(hl)
+        ld l,a
+        ld h,0
+        ld a,TAG_INT
+        jp VM_PUSH
+
+; CODE(a$) -- the ASCII code of the first character, or 0 for an empty
+; string (V1's own real .str_arg_code behavior, matched exactly).
+BUILTIN_FN_CODE:
+        call VM_POP
+        ld a,l
+        call VM_STR_ADDR        ; HL = record address
+        ld a,(hl)               ; length byte
+        or a
+        jr z,.code_empty
+        inc hl
+        ld a,(hl)               ; first content byte
+        ld l,a
+        ld h,0
+        ld a,TAG_INT
+        jp VM_PUSH
+.code_empty:
+        ld hl,0
+        ld a,TAG_INT
+        jp VM_PUSH
+
+; VAL(a$) -- parses the string's own content as a signed decimal
+; integer, reusing the REAL digit-accumulation math OP_INPUT_NUM's own
+; VM_PARSE_INPUT_INT already provides (see that routine's own header)
+; rather than porting basic.asm's own separate BASIC_STRFUNC_EXROM
+; parser. VM_PARSE_INPUT_INT itself only ever consumes VM_INPUT_DIGITS/
+; VM_INPUT_COUNT/VM_INPUT_NEG_TMP -- it has no idea whether they were
+; filled by OP_INPUT_NUM's own live-keyboard scan or, as here, a plain
+; in-memory buffer scan; this is a thin adapter feeding it the same
+; shape of data from a different source, not a reimplementation of the
+; actual parsing arithmetic. Same char-filtering rules as OP_INPUT_NUM's
+; own scanner: non-digit characters are silently skipped, '-' is only
+; accepted as the very first character, and digits beyond
+; VM_INPUT_DIGITS_MAX are discarded (matching, not inventing, that
+; scanner's own existing overflow behavior).
+BUILTIN_FN_VAL:
+        call VM_POP
+        ld a,l
+        call VM_STR_ADDR        ; HL = record address
+        ld a,(hl)               ; length byte
+        ld c,a                  ; C = remaining chars
+        inc hl                  ; HL -> content
+        xor a
+        ld (VM_INPUT_COUNT),a
+        ld (VM_INPUT_NEG_TMP),a
+.val_loop:
+        ld a,c
+        or a
+        jr z,.val_done
+        dec c
+        ld a,(hl)
+        inc hl
+        cp '-'
+        jr nz,.val_check_digit
+        ld a,(VM_INPUT_COUNT)
+        or a
+        jr nz,.val_loop          ; '-' only accepted as the very first char
+        ld a,1
+        ld (VM_INPUT_NEG_TMP),a
+        jr .val_loop
+.val_check_digit:
+        cp '0'
+        jr c,.val_loop
+        cp '9'+1
+        jr nc,.val_loop
+        sub '0'
+        ld b,a                   ; B = digit value 0-9, parked across
+                                 ; the writes below -- no call happens
+                                 ; between here and its use, so a plain
+                                 ; register park is safe (not the
+                                 ; across-a-call clobber class this
+                                 ; rewrite keeps finding elsewhere)
+        ld a,(VM_INPUT_COUNT)
+        cp VM_INPUT_DIGITS_MAX
+        jr nc,.val_loop          ; discard once full -- same behavior
+                                 ; OP_INPUT_NUM's own scanner already has
+        push hl
+        push bc
+        ld hl,VM_INPUT_DIGITS
+        ld e,a
+        ld d,0
+        add hl,de
+        ld a,b
+        add a,'0'
+        ld (hl),a
+        pop bc
+        pop hl
+        ld a,(VM_INPUT_COUNT)
+        inc a
+        ld (VM_INPUT_COUNT),a
+        jr .val_loop
+.val_done:
+        call VM_PARSE_INPUT_INT ; HL = parsed value
+        ld a,TAG_INT
+        jp VM_PUSH
 
 ; ---------------------------------------------------------------------------
 ; Error exits — each sets VM_ERROR_CODE and VM_HALTED, then returns to the

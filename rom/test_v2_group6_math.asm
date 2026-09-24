@@ -27,6 +27,10 @@
 ;   I = INT(7)
 ;   J = PEEK(0)
 ;   K = USR(4)
+;   Z$ = "HI"
+;   L = LEN(Z$)
+;   M = CODE(Z$)
+;   N = VAL("123")
 ;
 ; PEEK(0) reads this very ROM image's own RST_00 byte (DI = $F3 = 243).
 ; USR(4) calls USR_TEST_ROUTINE, placed at the fixed address $0004
@@ -35,7 +39,15 @@
 ; BASIC_CALL_USR documents (tail-jump via `jp (hl)`, reached through a
 ; `call` so the user routine's own RET returns control to the caller).
 ;
-; Verification: A-E, G-K are checked directly against their real, hand-
+; L/M/N exercise the first built-ins whose argument is a STRING
+; expression, not numeric (rom/exrom_v2_compiler.asm's own BUILTIN_FN_
+; TABLE argtype column routes their argument through COMPILE_STR_EXPR
+; instead of COMPILE_EXPR) -- L/M read back a real string VARIABLE
+; (proving the decompiler's own DECOMP_STR_OPERAND reinterpretation
+; fires correctly for a built-in function argument, not just PRINT/
+; assignment), N reads back a string LITERAL directly.
+;
+; Verification: A-E, G-N are checked directly against their real, hand-
 ; computable expected values by reading their SYMTAB_BASE record (real
 ; runtime variable storage, not just decompiled source text -- this
 ; milestone's own math is worth checking for real, since decompiled text
@@ -61,7 +73,8 @@
 ; read, not a hand-picked constant.
 ;
 ; Symbol declaration order (CSYM_FIND_OR_CREATE, first appearance):
-;   0=A 1=B 2=C 3=D 4=E 5=F 6=G 7=H 8=I 9=J 10=K
+;   0=A 1=B 2=C 3=D 4=E 5=F 6=G 7=H 8=I 9=J 10=K 11=L 12=M 13=N.
+;   String symbols (STRSYMTAB, separate namespace): 0=Z$.
 ;
 ; Build:
 ;   tools/sjasmplus_strict.sh --sym=build/test_v2_group6_math.sym \
@@ -231,6 +244,36 @@ COLD_START:
     cp   (4321 >> 8)
     jp   nz, FAIL
 
+    ; L (index 11): LEN(Z$) where Z$="HI" -> 2
+    ld   hl, SYMTAB_BASE + 11*3 + 1
+    ld   a, (hl)
+    cp   2
+    jp   nz, FAIL
+    inc  hl
+    ld   a, (hl)
+    or   a
+    jp   nz, FAIL
+
+    ; M (index 12): CODE(Z$) where Z$="HI" -> ASCII 'H' = 72
+    ld   hl, SYMTAB_BASE + 12*3 + 1
+    ld   a, (hl)
+    cp   'H'
+    jp   nz, FAIL
+    inc  hl
+    ld   a, (hl)
+    or   a
+    jp   nz, FAIL
+
+    ; N (index 13): VAL("123") -> 123
+    ld   hl, SYMTAB_BASE + 13*3 + 1
+    ld   a, (hl)
+    cp   123
+    jp   nz, FAIL
+    inc  hl
+    ld   a, (hl)
+    or   a
+    jp   nz, FAIL
+
     call DECOMPILE_PROGRAM
 
     ld   a, (DECOMP_ERROR_CODE)
@@ -252,7 +295,8 @@ FAIL:
 
 SOURCE_TEXT:
     db "A=SGN(-5):B=SGN(0):C=SGN(5):D=MOD(17,5):E=DIV(17,5):F=RND(10):"
-    db "G=POINT(5,10):H=ATTR(2,3):I=INT(7):J=PEEK(0):K=USR(4)", 0
+    db "G=POINT(5,10):H=ATTR(2,3):I=INT(7):J=PEEK(0):K=USR(4):"
+    db 'Z$="HI":L=LEN(Z$):M=CODE(Z$):N=VAL("123")', 0
 
 ; ============================================================================
 ; CHECK_DECOMPILED_TEXT — byte-for-byte against a real captured-then-
@@ -303,6 +347,10 @@ EXPECTED_TEXT:
     db "V8 = INT(7)",13
     db "V9 = PEEK(0)",13
     db "V10 = USR(4)",13
+    db 'S0$ = "HI"',13
+    db "V11 = LEN(S0$)",13
+    db "V12 = CODE(S0$)",13
+    db 'V13 = VAL("123")',13
 EXPECTED_TEXT_LEN: equ $-EXPECTED_TEXT
 
 ; Test-only stub: this test's own SOURCE_TEXT never calls LPRINT, but
