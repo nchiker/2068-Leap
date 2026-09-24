@@ -25,8 +25,17 @@
 ;   G = POINT(5,10)
 ;   H = ATTR(2,3)
 ;   I = INT(7)
+;   J = PEEK(0)
+;   K = USR(4)
 ;
-; Verification: A-E, G-I are checked directly against their real, hand-
+; PEEK(0) reads this very ROM image's own RST_00 byte (DI = $F3 = 243).
+; USR(4) calls USR_TEST_ROUTINE, placed at the fixed address $0004
+; right after RST_00's own "di:jp COLD_START" (4 bytes), which loads
+; HL=4321 and returns -- the real CALL/USR convention basic.asm's own
+; BASIC_CALL_USR documents (tail-jump via `jp (hl)`, reached through a
+; `call` so the user routine's own RET returns control to the caller).
+;
+; Verification: A-E, G-K are checked directly against their real, hand-
 ; computable expected values by reading their SYMTAB_BASE record (real
 ; runtime variable storage, not just decompiled source text -- this
 ; milestone's own math is worth checking for real, since decompiled text
@@ -52,7 +61,7 @@
 ; read, not a hand-picked constant.
 ;
 ; Symbol declaration order (CSYM_FIND_OR_CREATE, first appearance):
-;   0=A 1=B 2=C 3=D 4=E 5=F 6=G 7=H 8=I
+;   0=A 1=B 2=C 3=D 4=E 5=F 6=G 7=H 8=I 9=J 10=K
 ;
 ; Build:
 ;   tools/sjasmplus_strict.sh --sym=build/test_v2_group6_math.sym \
@@ -72,6 +81,9 @@
 RST_00:
     di
     jp   COLD_START
+USR_TEST_ROUTINE:              ; fixed address $0004 -- real CALL/USR
+    ld   hl, 4321                ; convention: ends in its own RET,
+    ret                           ; result left in HL
     DS   $0100 - $, $FF
 
 COLD_START:
@@ -199,6 +211,26 @@ COLD_START:
     or   a
     jp   nz, FAIL
 
+    ; J (index 9): PEEK(0) -- this ROM's own RST_00 byte (DI = $F3 = 243)
+    ld   hl, SYMTAB_BASE + 9*3 + 1
+    ld   a, (hl)
+    cp   243
+    jp   nz, FAIL
+    inc  hl
+    ld   a, (hl)
+    or   a
+    jp   nz, FAIL
+
+    ; K (index 10): USR(4) -- USR_TEST_ROUTINE loads HL=4321 and RETs
+    ld   hl, SYMTAB_BASE + 10*3 + 1
+    ld   a, (hl)
+    cp   (4321 & $FF)
+    jp   nz, FAIL
+    inc  hl
+    ld   a, (hl)
+    cp   (4321 >> 8)
+    jp   nz, FAIL
+
     call DECOMPILE_PROGRAM
 
     ld   a, (DECOMP_ERROR_CODE)
@@ -220,7 +252,7 @@ FAIL:
 
 SOURCE_TEXT:
     db "A=SGN(-5):B=SGN(0):C=SGN(5):D=MOD(17,5):E=DIV(17,5):F=RND(10):"
-    db "G=POINT(5,10):H=ATTR(2,3):I=INT(7)", 0
+    db "G=POINT(5,10):H=ATTR(2,3):I=INT(7):J=PEEK(0):K=USR(4)", 0
 
 ; ============================================================================
 ; CHECK_DECOMPILED_TEXT — byte-for-byte against a real captured-then-
@@ -269,6 +301,8 @@ EXPECTED_TEXT:
     db "V6 = POINT(5,10)",13
     db "V7 = ATTR(2,3)",13
     db "V8 = INT(7)",13
+    db "V9 = PEEK(0)",13
+    db "V10 = USR(4)",13
 EXPECTED_TEXT_LEN: equ $-EXPECTED_TEXT
 
 ; Test-only stub: this test's own SOURCE_TEXT never calls LPRINT, but

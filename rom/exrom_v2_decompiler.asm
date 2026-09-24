@@ -3212,6 +3212,10 @@ STR_ATTR:      db "ATTR"
 STR_ATTR_LEN:  equ $-STR_ATTR
 STR_INT:       db "INT"
 STR_INT_LEN:   equ $-STR_INT
+STR_PEEK:      db "PEEK"
+STR_PEEK_LEN:  equ $-STR_PEEK
+STR_USR:       db "USR"
+STR_USR_LEN:   equ $-STR_USR
 
 ; DECOMP_BUILTIN_FN_TABLE -- [text_ptr:2][len:1][argcount:1] per
 ; fn_index, same order as rom/exrom_v2_compiler.asm's own
@@ -3237,6 +3241,10 @@ DECOMP_BUILTIN_FN_TABLE:
         db STR_ATTR_LEN, 2
         dw STR_INT
         db STR_INT_LEN, 1
+        dw STR_PEEK
+        db STR_PEEK_LEN, 1
+        dw STR_USR
+        db STR_USR_LEN, 1
 
 STR_GOTO:      db "GOTO "
 STR_GOTO_LEN:  equ $-STR_GOTO

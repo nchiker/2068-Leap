@@ -1688,7 +1688,7 @@ BUILTIN_FN_FIND:               ; input: TOK_NAME/TOK_LEN (current, not
         ret                          ; function name
 
 BUILTIN_FN_ENTRY_LEN:   equ 11
-BUILTIN_FN_TABLE_COUNT: equ 8
+BUILTIN_FN_TABLE_COUNT: equ 10
 
 ; fn_index 0 = ABS (rom/exrom_v2_vm_core.asm's own BUILTIN_FN_ABS).
 ; Group 6 appends the remaining ~24 functions to this same table --
@@ -1720,6 +1720,16 @@ BUILTIN_FN_TABLE:
     db 5, "POINT", 0,0,0, 2, 5
     db 4, "ATTR", 0,0,0,0, 2, 6
     db 3, "INT", 0,0,0,0,0, 1, 7
+
+; PEEK/USR (fn_index 8-9): confirmed via basic.asm's own real dispatch
+; (.call_peek/.call_usr) -- both read/jump raw caller-supplied
+; addresses directly, deliberately outside any kernel/ API (same
+; reasoning V1 already documents). V1's own BASIC_CHECK_ONLY guards for
+; both (real bugs where V1's live-typing checker evaluates expressions
+; during static checking) don't apply here -- V2 compiles ahead of
+; time and never evaluates an expression at compile time.
+    db 4, "PEEK", 0,0,0,0, 1, 8
+    db 3, "USR", 0,0,0,0,0, 1, 9
 
 ; BUG FOUND (real hardware, R8.5 Group 5): a literal 128-255 has TOK_VAL
 ; high byte 0, so this used to take the PUSH_I8 path below -- but

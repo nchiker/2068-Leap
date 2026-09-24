@@ -2766,6 +2766,8 @@ BUILTIN_FN_JUMP_TABLE:
         dw BUILTIN_FN_POINT     ; fn_index 5
         dw BUILTIN_FN_ATTR      ; fn_index 6
         dw BUILTIN_FN_INT       ; fn_index 7
+        dw BUILTIN_FN_PEEK      ; fn_index 8
+        dw BUILTIN_FN_USR       ; fn_index 9
 
 ; BUILTIN_FN_ABS — ABS(x). Pops one value (either tag), pushes its
 ; magnitude. Int path: plain two's-complement negate (always safe, the
@@ -2944,6 +2946,42 @@ BUILTIN_FN_ATTR:
 BUILTIN_FN_INT:
         call VM_POP
         jp VM_PUSH
+
+; PEEK(addr) -- confirmed via basic.asm's own .call_peek: reads raw
+; memory directly, deliberately NOT routed through a kernel/ API (the
+; address is arbitrary caller-supplied data, not kernel-owned hardware/
+; sysvar state). V1's own real .call_peek carries a BASIC_CHECK_ONLY
+; guard against a real bug (GitHub issue #4) where V1's interpreter
+; evaluates expressions live during whole-program static checking,
+; auto-vivifying an unassigned variable to 0 and peeking address 0 as a
+; side effect of merely checking syntax. That hazard does not exist
+; here: V2 compiles ahead of time and never evaluates an expression
+; during compilation, so no equivalent guard is needed.
+BUILTIN_FN_PEEK:
+        call VM_POP             ; HL = address
+        ld a,(hl)
+        ld l,a
+        ld h,0
+        ld a,TAG_INT
+        jp VM_PUSH
+
+; USR(addr) -- confirmed via basic.asm's own .call_usr/BASIC_CALL_USR:
+; tail-jumps into the caller-supplied machine code address via `jp
+; (hl)`, reached through a `call` so the user routine's own closing RET
+; returns control right back here (real Sinclair BASIC CALL/USR
+; convention: result left in HL). V1's own real .call_usr carries a
+; BASIC_CHECK_ONLY guard against a real hang (a live-typing/whole-
+; program checker evaluating "X=USR(0)" without truly running it would
+; otherwise jump to this ROM's own RST_00 reset vector). That hazard
+; does not exist here for the same reason PEEK's header above gives.
+BUILTIN_FN_USR:
+        call VM_POP             ; HL = address
+        call VM_CALL_USR_TRAMPOLINE
+        ld a,TAG_INT
+        jp VM_PUSH
+
+VM_CALL_USR_TRAMPOLINE:
+        jp (hl)
 
 ; ---------------------------------------------------------------------------
 ; Error exits — each sets VM_ERROR_CODE and VM_HALTED, then returns to the
