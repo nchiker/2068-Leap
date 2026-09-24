@@ -3206,6 +3206,12 @@ STR_DIV:       db "DIV"
 STR_DIV_LEN:   equ $-STR_DIV
 STR_RND:       db "RND"
 STR_RND_LEN:   equ $-STR_RND
+STR_POINT:     db "POINT"
+STR_POINT_LEN: equ $-STR_POINT
+STR_ATTR:      db "ATTR"
+STR_ATTR_LEN:  equ $-STR_ATTR
+STR_INT:       db "INT"
+STR_INT_LEN:   equ $-STR_INT
 
 ; DECOMP_BUILTIN_FN_TABLE -- [text_ptr:2][len:1][argcount:1] per
 ; fn_index, same order as rom/exrom_v2_compiler.asm's own
@@ -3225,6 +3231,12 @@ DECOMP_BUILTIN_FN_TABLE:
         db STR_DIV_LEN, 2
         dw STR_RND
         db STR_RND_LEN, 1
+        dw STR_POINT
+        db STR_POINT_LEN, 2
+        dw STR_ATTR
+        db STR_ATTR_LEN, 2
+        dw STR_INT
+        db STR_INT_LEN, 1
 
 STR_GOTO:      db "GOTO "
 STR_GOTO_LEN:  equ $-STR_GOTO

@@ -2763,6 +2763,9 @@ BUILTIN_FN_JUMP_TABLE:
         dw BUILTIN_FN_MOD       ; fn_index 2
         dw BUILTIN_FN_DIV       ; fn_index 3
         dw BUILTIN_FN_RND       ; fn_index 4
+        dw BUILTIN_FN_POINT     ; fn_index 5
+        dw BUILTIN_FN_ATTR      ; fn_index 6
+        dw BUILTIN_FN_INT       ; fn_index 7
 
 ; BUILTIN_FN_ABS — ABS(x). Pops one value (either tag), pushes its
 ; magnitude. Int path: plain two's-complement negate (always safe, the
@@ -2879,6 +2882,67 @@ BUILTIN_FN_RND:
         call VM_POP
         call MATH_RND16
         ld a,TAG_INT
+        jp VM_PUSH
+
+; POINT(x,y) -- confirmed via basic.asm's own .call_point: a thin
+; adapter onto GFX_READ_PIXEL's own B=x/C=y -> A=0/1 contract (not the
+; HL/DE-in MATH_* convention SGN/MOD/DIV/RND above share -- POINT isn't
+; itself a MATH_* routine). Y is clamped to 191 (192 pixels tall, not a
+; power of 2), same as V1's own real behavior; X's full 0-255 range is
+; already the whole valid screen width, no clamp needed.
+BUILTIN_FN_POINT:
+        call VM_POP             ; HL = y
+        push hl                 ; VM_POP destroys DE -- same fix as
+                                 ; BUILTIN_FN_MOD/DIV above
+        call VM_POP             ; HL = x
+        pop de                  ; DE = y
+        ld b,l                  ; B = x (low byte)
+        ld a,e
+        cp 192
+        jr c,.point_y_ok
+        ld a,191
+.point_y_ok:
+        ld c,a                  ; C = y (clamped)
+        call GFX_READ_PIXEL     ; A = 0 or 1
+        ld l,a
+        ld h,0
+        ld a,TAG_INT
+        jp VM_PUSH
+
+; ATTR(row,col) -- confirmed via basic.asm's own .call_attr: reads the
+; normal 32x24 attribute grid via GFX_CELL_ATTR_ADDR. Invalid
+; coordinates (either value's own high byte nonzero, i.e. >255, or
+; GFX_CELL_ATTR_ADDR's own row<24/col<32 range check failing) return 0,
+; matching POINT's deliberately forgiving screen-query behavior --
+; not an error condition.
+BUILTIN_FN_ATTR:
+        call VM_POP             ; HL = col
+        push hl
+        call VM_POP             ; HL = row
+        pop de                  ; DE = col
+        ld a,h
+        or d
+        jr nz,.attr_zero
+        ld b,l                  ; B = row
+        ld c,e                  ; C = col
+        call GFX_CELL_ATTR_ADDR
+        jr c,.attr_zero
+        ld a,(hl)
+        ld l,a
+        ld h,0
+        ld a,TAG_INT
+        jp VM_PUSH
+.attr_zero:
+        ld hl,0
+        ld a,TAG_INT
+        jp VM_PUSH
+
+; INT(x) -- true no-op: this is a pure-integer BASIC, so every value is
+; already its own INT() (V1's own .call_int comment, verbatim reasoning).
+; Kept as its own table entry/dispatch case for SuperBASIC-syntax
+; compatibility, not because it computes anything.
+BUILTIN_FN_INT:
+        call VM_POP
         jp VM_PUSH
 
 ; ---------------------------------------------------------------------------

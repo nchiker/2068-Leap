@@ -1688,7 +1688,7 @@ BUILTIN_FN_FIND:               ; input: TOK_NAME/TOK_LEN (current, not
         ret                          ; function name
 
 BUILTIN_FN_ENTRY_LEN:   equ 11
-BUILTIN_FN_TABLE_COUNT: equ 5
+BUILTIN_FN_TABLE_COUNT: equ 8
 
 ; fn_index 0 = ABS (rom/exrom_v2_vm_core.asm's own BUILTIN_FN_ABS).
 ; Group 6 appends the remaining ~24 functions to this same table --
@@ -1709,6 +1709,17 @@ BUILTIN_FN_TABLE:
     db 3, "MOD", 0,0,0,0,0, 2, 2
     db 3, "DIV", 0,0,0,0,0, 2, 3
     db 3, "RND", 0,0,0,0,0, 1, 4
+
+; POINT/ATTR/INT (fn_index 5-7): confirmed via basic.asm's own real
+; dispatch (.call_point/.call_attr/.call_int) -- POINT/ATTR are thin
+; adapters onto real, unmodified kernel/graphics/graphics.asm primitives
+; (GFX_READ_PIXEL/GFX_CELL_ATTR_ADDR), same forgiving out-of-range-
+; returns-0 behavior V1 already established (not an error condition);
+; INT is a true no-op (V1's own comment: "this is a pure-integer BASIC,
+; so every value is already its own INT()").
+    db 5, "POINT", 0,0,0, 2, 5
+    db 4, "ATTR", 0,0,0,0, 2, 6
+    db 3, "INT", 0,0,0,0,0, 1, 7
 
 ; BUG FOUND (real hardware, R8.5 Group 5): a literal 128-255 has TOK_VAL
 ; high byte 0, so this used to take the PUSH_I8 path below -- but

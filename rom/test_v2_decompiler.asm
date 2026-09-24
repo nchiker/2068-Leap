@@ -210,6 +210,17 @@ GFX_SPRITE_CAPTURE:
 GFX_SPRITE_DRAW:
     or a
     ret
+; R8.5 Group 6 -- POINT/ATTR need real GFX_* contracts; this
+; test never exercises real pixel/attribute content, so a plain
+; deterministic stub (same discipline as every other GFX_*
+; stub in this file) satisfies the reference without a real
+; bitmap.
+GFX_READ_PIXEL:
+    xor a
+    ret
+GFX_CELL_ATTR_ADDR:
+    scf
+    ret
 ; Test-only stubs: this file's own test program never exercises BEEP/
 ; SOUND/PAUSE, and never registers or calls a loadable extension -- same
 ; stubbing discipline (and same real contracts: EXT2_LOOKUP's carry SET
