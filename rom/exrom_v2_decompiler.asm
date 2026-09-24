@@ -145,6 +145,12 @@ DECOMP_ARR_INDEX_TMP: equ $8EA5  ; R8.5 Group 4 -- .op_arr_load/.op_arr_store
                                     ; DECOMP_FRAG_POP (which destroys
                                     ; AF/DE/HL, same discipline as every
                                     ; other handler in this file)
+DECOMP_FN_ARGCOUNT:   equ $8EA6  ; R8.5 Group 6 -- .op_call_fn's own
+                                    ; DECOMP_BUILTIN_FN_NAME readback
+                                    ; (1 byte): how many argument
+                                    ; fragments to pop/re-render, same
+                                    ; role DECOMP_EXT_ARGCOUNT plays for
+                                    ; .op_call_ext
 DECOMP_ENDIF_SAVE_CNT: equ $8EA4  ; the matching remaining-slot-count
                                     ; (1 byte)
 DECOMP_END_ADDR:      equ $8E9F   ; (2 bytes) R8.5 addition: the real
@@ -2644,29 +2650,121 @@ DECOMPILE_PROGRAM:
 ; the result back as a new fragment for whatever consumes it next
 ; (PRINT, an assignment, another expression) -- never emits a newline
 ; itself.
+; Multi-argument shape: fragments come off DECOMP_FRAG_POP in REVERSE
+; (rightmost-argument-first) order, same as .op_call_ext's own operand
+; stack -- popping and emitting in that same order would silently
+; reverse a 2+-arg call's rendered argument order (a real, semantic-
+; changing bug this milestone already found and fixed once for
+; .op_call_ext's own identical shape). Fixed here the same way: pop all
+; N fragments into fixed slots first, then emit forward in original
+; write order.
 .op_call_fn:
         ld hl,(DECOMP_IP)
         ld a,(hl)
         inc hl
         ld (DECOMP_IP),hl
         call DECOMP_BUILTIN_FN_NAME   ; A = fn_index in; HL = name text,
-                                        ; C = name length, out
+                                        ; C = name length, DECOMP_FN_
+                                        ; ARGCOUNT out
         ld (DECOMP_OP_PTR),hl
         ld a,c
         ld (DECOMP_OP_LEN),a
-        call DECOMP_FRAG_POP           ; HL = arg text, C = arg length
-        ld (DECOMP_TMP_A),hl
+
+        ld a,(DECOMP_FN_ARGCOUNT)
+        ld b,a
+.cfn_pop_loop:
+        call DECOMP_FRAG_POP
+        push hl
+        push bc
+        ld a,b
+        dec a
+        cp 0
+        jr z,.cfnp0
+        cp 1
+        jr z,.cfnp1
+        cp 2
+        jr z,.cfnp2
+        jr .cfnp3
+.cfnp0:
+        pop bc
+        pop hl
+        ld (DECOMP_ARG_PTR0),hl
         ld a,c
-        ld (DECOMP_TMP_LEN),a
+        ld (DECOMP_ARG_LEN0),a
+        jr .cfn_pop_next
+.cfnp1:
+        pop bc
+        pop hl
+        ld (DECOMP_ARG_PTR1),hl
+        ld a,c
+        ld (DECOMP_ARG_LEN1),a
+        jr .cfn_pop_next
+.cfnp2:
+        pop bc
+        pop hl
+        ld (DECOMP_ARG_PTR2),hl
+        ld a,c
+        ld (DECOMP_ARG_LEN2),a
+        jr .cfn_pop_next
+.cfnp3:
+        pop bc
+        pop hl
+        ld (DECOMP_ARG_PTR3),hl
+        ld a,c
+        ld (DECOMP_ARG_LEN3),a
+.cfn_pop_next:
+        djnz .cfn_pop_loop
+
         call DECOMP_COMBINE_RESET
         ld hl,(DECOMP_OP_PTR)
         ld a,(DECOMP_OP_LEN)
         call DECOMP_COMBINE_TEXT
         ld a,'('
         call DECOMP_COMBINE_CHAR
-        ld hl,(DECOMP_TMP_A)
-        ld a,(DECOMP_TMP_LEN)
+
+        xor a
+        ld (DECOMP_EXT_SLOT),a         ; reused as this loop's own
+                                          ; index -- .op_call_ext's own
+                                          ; use of this cell is long
+                                          ; finished by the time this
+                                          ; opcode's handler ever runs
+.cfn_emit_loop:
+        ld a,(DECOMP_EXT_SLOT)
+        cp 0
+        jr z,.cfne0
+        cp 1
+        jr z,.cfne1
+        cp 2
+        jr z,.cfne2
+        jr .cfne3
+.cfne0:
+        ld hl,(DECOMP_ARG_PTR0)
+        ld a,(DECOMP_ARG_LEN0)
+        jr .cfn_emit_common
+.cfne1:
+        ld hl,(DECOMP_ARG_PTR1)
+        ld a,(DECOMP_ARG_LEN1)
+        jr .cfn_emit_common
+.cfne2:
+        ld hl,(DECOMP_ARG_PTR2)
+        ld a,(DECOMP_ARG_LEN2)
+        jr .cfn_emit_common
+.cfne3:
+        ld hl,(DECOMP_ARG_PTR3)
+        ld a,(DECOMP_ARG_LEN3)
+.cfn_emit_common:
         call DECOMP_COMBINE_TEXT
+        ld a,(DECOMP_FN_ARGCOUNT)
+        dec a
+        ld (DECOMP_FN_ARGCOUNT),a
+        jr z,.cfn_args_done
+        ld a,','
+        call DECOMP_COMBINE_CHAR
+        ld a,(DECOMP_EXT_SLOT)
+        inc a
+        ld (DECOMP_EXT_SLOT),a
+        jr .cfn_emit_loop
+.cfn_args_done:
         ld a,')'
         call DECOMP_COMBINE_CHAR
         ld a,(DECOMP_COMBINE_LEN)
@@ -2874,14 +2972,29 @@ DECOMPILE_PROGRAM:
         jp DECOMPILE_PROGRAM.loop
 
 ; DECOMP_BUILTIN_FN_NAME -- input: A = fn_index. Output: HL = name text
-; pointer, C = name length. Destroys: AF, BC, HL. Only fn_index 0 (ABS)
-; exists yet; Group 6 replaces this with a real indexed table as the
-; remaining ~24 functions are added (same shape as rom/exrom_v2_
-; compiler.asm's own BUILTIN_FN_TABLE, kept in sync by construction
-; since both sides list functions in the same fn_index order).
+; pointer, C = name length, DECOMP_FN_ARGCOUNT = the function's own
+; declared argcount. Destroys: AF, BC, DE, HL. Real indexed lookup into
+; DECOMP_BUILTIN_FN_TABLE (4 bytes/row: [text_ptr:2][len:1][argcount:1]),
+; same order as rom/exrom_v2_compiler.asm's own BUILTIN_FN_TABLE and
+; rom/exrom_v2_vm_core.asm's own BUILTIN_FN_JUMP_TABLE. Group 6 appends
+; further rows here as functions are added -- no other change needed.
 DECOMP_BUILTIN_FN_NAME:
-        ld hl,STR_ABS
-        ld c,STR_ABS_LEN
+        ld l,a
+        ld h,0
+        add hl,hl
+        add hl,hl               ; HL = fn_index*4
+        ld de,DECOMP_BUILTIN_FN_TABLE
+        add hl,de               ; HL -> this fn_index's own row
+        ld e,(hl)
+        inc hl
+        ld d,(hl)
+        inc hl
+        ld a,(hl)
+        ld c,a
+        inc hl
+        ld a,(hl)
+        ld (DECOMP_FN_ARGCOUNT),a
+        ex de,hl                ; HL = name text pointer
         ret
 
 ; DECOMP_STR_OPERAND -- input: HL = a fragment's own text pointer, C =
@@ -3085,6 +3198,33 @@ STR_END:       db "END"
 STR_END_LEN:   equ $-STR_END
 STR_ABS:       db "ABS"
 STR_ABS_LEN:   equ $-STR_ABS
+STR_SGN:       db "SGN"
+STR_SGN_LEN:   equ $-STR_SGN
+STR_MOD:       db "MOD"
+STR_MOD_LEN:   equ $-STR_MOD
+STR_DIV:       db "DIV"
+STR_DIV_LEN:   equ $-STR_DIV
+STR_RND:       db "RND"
+STR_RND_LEN:   equ $-STR_RND
+
+; DECOMP_BUILTIN_FN_TABLE -- [text_ptr:2][len:1][argcount:1] per
+; fn_index, same order as rom/exrom_v2_compiler.asm's own
+; BUILTIN_FN_TABLE and rom/exrom_v2_vm_core.asm's own
+; BUILTIN_FN_JUMP_TABLE (kept in sync by construction, not derived from
+; either at build time). argcount is needed here (not just the name)
+; because .op_call_fn must know how many fragments to pop and
+; re-render in the right order -- see that routine's own header.
+DECOMP_BUILTIN_FN_TABLE:
+        dw STR_ABS
+        db STR_ABS_LEN, 1
+        dw STR_SGN
+        db STR_SGN_LEN, 1
+        dw STR_MOD
+        db STR_MOD_LEN, 2
+        dw STR_DIV
+        db STR_DIV_LEN, 2
+        dw STR_RND
+        db STR_RND_LEN, 1
 
 STR_GOTO:      db "GOTO "
 STR_GOTO_LEN:  equ $-STR_GOTO

@@ -2759,6 +2759,10 @@ OP_CALL_FN:
 
 BUILTIN_FN_JUMP_TABLE:
         dw BUILTIN_FN_ABS       ; fn_index 0
+        dw BUILTIN_FN_SGN       ; fn_index 1
+        dw BUILTIN_FN_MOD       ; fn_index 2
+        dw BUILTIN_FN_DIV       ; fn_index 3
+        dw BUILTIN_FN_RND       ; fn_index 4
 
 ; BUILTIN_FN_ABS — ABS(x). Pops one value (either tag), pushes its
 ; magnitude. Int path: plain two's-complement negate (always safe, the
@@ -2818,6 +2822,63 @@ BUILTIN_FN_ABS:
 .float_positive:
         ld hl,(BFN_ABS_IDX_TMP)
         ld a,TAG_FLOAT
+        jp VM_PUSH
+
+; ---------------------------------------------------------------------------
+; R8.5 Group 6 -- SGN/MOD/DIV/RND. Confirmed via this milestone's own
+; reuse audit AND a direct check of basic.asm's own real dispatch: each
+; is a thin wrapper over a real, already-reusable kernel/math/math.asm
+; primitive operating on plain 16-bit integers (this whole function
+; family is deliberately integer-only in V1 too -- "this is a pure-
+; integer BASIC", basic.asm's own .call_int comment). No float path:
+; matching V1's real behavior exactly, not a new V2 scope cut.
+; ---------------------------------------------------------------------------
+
+; SGN(x) -- pops one int, pushes -1/0/1. MATH_SGN16: HL in, HL out.
+BUILTIN_FN_SGN:
+        call VM_POP             ; HL = value, A = tag (ignored -- int-only)
+        call MATH_SGN16
+        ld a,TAG_INT
+        jp VM_PUSH
+
+; MOD(dividend,divisor) -- 2 args, compiled left-to-right so the
+; operand stack has divisor on top (pushed last, popped first).
+; MATH_MOD16: HL=dividend, DE=divisor -> HL=remainder.
+BUILTIN_FN_MOD:
+        call VM_POP             ; HL = divisor
+        push hl                 ; VM_POP's own body uses DE internally
+                                 ; (ld de,VM_STACK_TOP) -- parking the
+                                 ; divisor in DE across the second
+                                 ; VM_POP call clobbered it (real bug,
+                                 ; found via this milestone's own
+                                 ; ZEsarUX regression run: D came back
+                                 ; as the untouched dividend). Hardware
+                                 ; stack instead, same fix pattern this
+                                 ; session has repeatedly needed.
+        call VM_POP             ; HL = dividend
+        pop de                  ; DE = divisor
+        call MATH_MOD16
+        ld a,TAG_INT
+        jp VM_PUSH
+
+; DIV(dividend,divisor) -- same argument order as MOD above.
+; MATH_DIVIDE16: HL=dividend, DE=divisor -> HL=quotient.
+BUILTIN_FN_DIV:
+        call VM_POP             ; HL = divisor
+        push hl                 ; same VM_POP-destroys-DE fix as
+                                 ; BUILTIN_FN_MOD above
+        call VM_POP             ; HL = dividend
+        pop de                  ; DE = divisor
+        call MATH_DIVIDE16
+        ld a,TAG_INT
+        jp VM_PUSH
+
+; RND(x) -- pops one int (the upper bound), pushes a random value.
+; MATH_RND16: HL in, HL out.
+BUILTIN_FN_RND:
+        call VM_POP
+        call MATH_RND16
+        ld a,TAG_INT
         jp VM_PUSH
 
 ; ---------------------------------------------------------------------------

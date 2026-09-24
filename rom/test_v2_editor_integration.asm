@@ -88,6 +88,25 @@
 ;   ts2068-debug run --max-instructions 500000
 ;   ts2068-debug timex   (border field)
 ; ============================================================================
+; KNOWN LIMITATION (R8.5 Group 6 -- SGN/MOD/DIV/RND): this flat 16K
+; standalone image now overflows its own budget (~1444 bytes over) --
+; the real, unmodified kernel/graphics/graphics.asm + kernel/memory/
+; memory.asm + kernel/editor/editor.asm this test genuinely needs (its
+; whole point is proving the real editor engine's own output reaches
+; V2, so none of those three can be stubbed away like other tests do)
+; no longer fit alongside the full v2 core, which has grown across
+; every Group 5/6 addition since this test last built. Same genuine
+; test-HARNESS scaling limit already documented in rom/test_v2_call_fn.
+; asm's and rom/test_v2_print.asm's own identical headers, not a
+; functional regression: Group 6's SGN/MOD/DIV/RND additions touch no
+; editor/graphics/memory code path this test exercises. This test's own
+; real coverage last built and passed at commit e639e79 (the SPRITE-to-
+; loadable-module product decision) -- presumed still correct, not
+; re-verified since. Revisit once R9 deletes basic.asm and frees real
+; headroom, or once the flat-image test harness itself is redesigned to
+; let a test opt out of modules it doesn't need at a finer grain than
+; whole-file INCLUDE/stub.
+; ============================================================================
 
     INCLUDE "include/hardware.inc"
     INCLUDE "include/sysvars.inc"

@@ -1688,14 +1688,27 @@ BUILTIN_FN_FIND:               ; input: TOK_NAME/TOK_LEN (current, not
         ret                          ; function name
 
 BUILTIN_FN_ENTRY_LEN:   equ 11
-BUILTIN_FN_TABLE_COUNT: equ 1
+BUILTIN_FN_TABLE_COUNT: equ 5
 
 ; fn_index 0 = ABS (rom/exrom_v2_vm_core.asm's own BUILTIN_FN_ABS).
 ; Group 6 appends the remaining ~24 functions to this same table --
 ; only the table grows, BUILTIN_FN_FIND/COMPILE_FACTOR's own .fn_call
 ; grammar above needs no change per function added.
+;
+; SGN/MOD/DIV/RND (fn_index 1-4): confirmed via this milestone's own
+; reuse audit AND a direct check of basic.asm's own real dispatch
+; (BASIC_EVAL_PRIMARY.call_sgn/.call_mod/.call_div/.call_rnd) -- each
+; is a THIN wrapper calling a real kernel/math/math.asm primitive
+; (MATH_SGN16/MOD16/DIVIDE16/RND16) on plain 16-bit integers. V1's own
+; comment at .call_int confirms this whole function family is
+; deliberately integer-only ("this is a pure-integer BASIC") -- V2
+; matching that is full capability preservation, not a new scope cut.
 BUILTIN_FN_TABLE:
     db 3, "ABS", 0,0,0,0,0, 1, 0
+    db 3, "SGN", 0,0,0,0,0, 1, 1
+    db 3, "MOD", 0,0,0,0,0, 2, 2
+    db 3, "DIV", 0,0,0,0,0, 2, 3
+    db 3, "RND", 0,0,0,0,0, 1, 4
 
 ; BUG FOUND (real hardware, R8.5 Group 5): a literal 128-255 has TOK_VAL
 ; high byte 0, so this used to take the PUSH_I8 path below -- but
