@@ -921,91 +921,114 @@ LEX_SCAN_STRING:
 ; real table loop specifically so this class of "one candidate's failure
 ; path forgets to fall through to the next candidate" bug structurally
 ; cannot happen again — the loop tries every entry unconditionally.
+; VARIABLE-STRIDE table (bounded ROM consolidation pass): each row is
+; now exactly [len:1][text:len][token:1], no fixed-width zero padding
+; -- the OLD fixed-11-byte-per-row layout (padded to fit "RANDOMISE",
+; the longest keyword) wasted (9-real_len) bytes on every SHORTER
+; keyword ("IF"/"TO"/"OR" each wasted 7 of their own 11 bytes), 169
+; bytes of pure padding across all 34 rows, real-measured via a direct
+; before/after size comparison. The scan below tracks each row's own
+; real length in C throughout (both to compare text AND, on ANY
+; mismatch -- wrong length or a failed char compare partway through --
+; to skip however many text bytes remain unconsumed plus the trailing
+; token byte, landing exactly on the next row). B remains the untouched
+; OUTER row counter throughout (only C is used for the inner per-
+; character work), same B/C separation this file's own COMPILE_EXT_
+; CALL-family code already relies on elsewhere.
 LEX_CLASSIFY_KEYWORD:
         ld hl,KEYWORD_TABLE
         ld b,KEYWORD_TABLE_COUNT
 .loop:
+        ld a,(hl)                ; A = this row's own real length
+        inc hl                    ; HL -> keyword text
+        ld c,a                    ; C = length (full row length here;
+                                     ; becomes "remaining unconsumed"
+                                     ; once the compare loop starts)
         ld a,(TOK_LEN)
-        cp (hl)                  ; stored length
-        jr nz,.next
-        push hl
-        inc hl                    ; -> keyword text
+        cp c
+        jr nz,.skip                ; length mismatch -- C already holds
+                                     ; the full row length to skip
         ld de,(TOK_NAME)
-        ld c,a                    ; C = length to compare
+        ld a,c
+        or a
+        jr z,.matched                ; zero-length keyword (never
+                                        ; occurs in practice; kept safe)
 .cmp_loop:
         ld a,(de)
         cp (hl)                  ; CP only supports (hl), not (de)
-        jr nz,.cmp_fail
+        jr nz,.skip                ; mismatch partway through -- C
+                                     ; already holds the remaining
+                                     ; unconsumed length to skip
         inc hl
         inc de
         dec c
         jr nz,.cmp_loop
-        ; match: the token-type byte sits 10 bytes past the entry's start
-        ; (1 length byte + 9 text bytes, fixed width regardless of the
-        ; keyword's real length — widened from 6 to 9 in R7 Phase 2 to
-        ; fit "RANDOMISE", the longest keyword this compiler recognizes
-        ; so far)
-        pop hl
-        ld de,10
-        add hl,de
+.matched:
+        ; HL is now exactly at the token byte (text-start + the row's
+        ; own real length) -- no fixed offset to add, unlike the old
+        ; padded layout.
         ld a,(hl)
         ld (TOK_TYPE),a
         ret
-.cmp_fail:
-        pop hl
-.next:
-        ld de,KEYWORD_ENTRY_LEN
-        add hl,de
+.skip:
+        ld a,c
+        or a
+        jr z,.skip_done
+        inc hl
+        dec c
+        jr .skip
+.skip_done:
+        inc hl                    ; skip the token byte too -- HL now
+                                     ; -> the next row's own length byte
         dec b
         jr nz,.loop
         ret                       ; no match — TOK_TYPE stays TOK_IDENT
 
-KEYWORD_ENTRY_LEN:  equ 11        ; [len:1][text:9, unused tail ignored][token:1]
 KEYWORD_TABLE_COUNT: equ 34
 
-; Every row is exactly KEYWORD_ENTRY_LEN (11) bytes: [len][9 text bytes,
-; zero-padded][token]. Generated and byte-counted mechanically (a Python
-; one-liner, not by hand) after R7 Phase 2 widened this table for the
-; second time (4->6->9 text bytes) — the R7 Phase 1 version of this table
-; had a real, self-caught padding-count bug in this same spot (PAPER's
-; row was one zero byte short) found by re-deriving every row's zero
-; count programmatically instead of trusting manual arithmetic a second
-; time.
+; Each row is [len:1][text:len][token:1], variable-stride (bounded ROM
+; consolidation pass -- converted from a fixed-11-byte padded layout
+; via a Python one-liner, not by hand, 169 bytes of pure zero-padding
+; recovered; see LEX_CLASSIFY_KEYWORD's own header for the real scan
+; this needs). The OLD fixed-width layout's own R7 Phase 1 version had
+; a real, self-caught padding-count bug in this same spot (PAPER's row
+; was one zero byte short) -- moot now that there is no padding to
+; miscount.
 KEYWORD_TABLE:
-        db 4, "GOTO", 0, 0, 0, 0, 0, TOK_KW_GOTO
-        db 2, "IF", 0, 0, 0, 0, 0, 0, 0, TOK_KW_IF
-        db 2, "TO", 0, 0, 0, 0, 0, 0, 0, TOK_KW_TO
-        db 4, "THEN", 0, 0, 0, 0, 0, TOK_KW_THEN
-        db 3, "FOR", 0, 0, 0, 0, 0, 0, TOK_KW_FOR
-        db 4, "NEXT", 0, 0, 0, 0, 0, TOK_KW_NEXT
-        db 4, "PROC", 0, 0, 0, 0, 0, TOK_KW_PROC
-        db 4, "ENDP", 0, 0, 0, 0, 0, TOK_KW_ENDP
-        db 4, "CALL", 0, 0, 0, 0, 0, TOK_KW_CALL
-        db 3, "CLS", 0, 0, 0, 0, 0, 0, TOK_KW_CLS      ; R7 Phase 1
-        db 6, "BORDER", 0, 0, 0, TOK_KW_BORDER
-        db 3, "INK", 0, 0, 0, 0, 0, 0, TOK_KW_INK
-        db 5, "PAPER", 0, 0, 0, 0, TOK_KW_PAPER
-        db 4, "PLOT", 0, 0, 0, 0, 0, TOK_KW_PLOT
-        db 4, "LINE", 0, 0, 0, 0, 0, TOK_KW_LINE       ; R7 Phase 2
-        db 4, "BEEP", 0, 0, 0, 0, 0, TOK_KW_BEEP
-        db 5, "SOUND", 0, 0, 0, 0, TOK_KW_SOUND
-        db 4, "POKE", 0, 0, 0, 0, 0, TOK_KW_POKE
-        db 5, "PAUSE", 0, 0, 0, 0, TOK_KW_PAUSE
+        db 4, "GOTO", TOK_KW_GOTO
+        db 2, "IF", TOK_KW_IF
+        db 2, "TO", TOK_KW_TO
+        db 4, "THEN", TOK_KW_THEN
+        db 3, "FOR", TOK_KW_FOR
+        db 4, "NEXT", TOK_KW_NEXT
+        db 4, "PROC", TOK_KW_PROC
+        db 4, "ENDP", TOK_KW_ENDP
+        db 4, "CALL", TOK_KW_CALL
+        db 3, "CLS", TOK_KW_CLS      ; R7 Phase 1
+        db 6, "BORDER", TOK_KW_BORDER
+        db 3, "INK", TOK_KW_INK
+        db 5, "PAPER", TOK_KW_PAPER
+        db 4, "PLOT", TOK_KW_PLOT
+        db 4, "LINE", TOK_KW_LINE       ; R7 Phase 2
+        db 4, "BEEP", TOK_KW_BEEP
+        db 5, "SOUND", TOK_KW_SOUND
+        db 4, "POKE", TOK_KW_POKE
+        db 5, "PAUSE", TOK_KW_PAUSE
         db 9, "RANDOMISE", TOK_KW_RANDOMISE
-        db 5, "PRINT", 0, 0, 0, 0, TOK_KW_PRINT        ; R8.5
-        db 6, "LPRINT", 0, 0, 0, TOK_KW_LPRINT
-        db 3, "END", 0, 0, 0, 0, 0, 0, TOK_KW_END
-        db 4, "STOP", 0, 0, 0, 0, 0, TOK_KW_STOP
-        db 3, "REM", 0, 0, 0, 0, 0, 0, TOK_KW_REM
-        db 3, "AND", 0, 0, 0, 0, 0, 0, TOK_KW_AND      ; R8.5 Group 3
-        db 2, "OR", 0, 0, 0, 0, 0, 0, 0, TOK_KW_OR
-        db 3, "NOT", 0, 0, 0, 0, 0, 0, TOK_KW_NOT
-        db 4, "ELSE", 0, 0, 0, 0, 0, TOK_KW_ELSE
-        db 5, "ENDIF", 0, 0, 0, 0, TOK_KW_ENDIF
-        db 3, "DIM", 0, 0, 0, 0, 0, 0, TOK_KW_DIM       ; R8.5 Group 4
-        db 5, "INPUT", 0, 0, 0, 0, TOK_KW_INPUT          ; R8.5 Group 2
-        db 4, "STEP", 0, 0, 0, 0, 0, TOK_KW_STEP          ; R8.5 Group 5
-        db 4, "EXIT", 0, 0, 0, 0, 0, TOK_KW_EXIT
+        db 5, "PRINT", TOK_KW_PRINT        ; R8.5
+        db 6, "LPRINT", TOK_KW_LPRINT
+        db 3, "END", TOK_KW_END
+        db 4, "STOP", TOK_KW_STOP
+        db 3, "REM", TOK_KW_REM
+        db 3, "AND", TOK_KW_AND      ; R8.5 Group 3
+        db 2, "OR", TOK_KW_OR
+        db 3, "NOT", TOK_KW_NOT
+        db 4, "ELSE", TOK_KW_ELSE
+        db 5, "ENDIF", TOK_KW_ENDIF
+        db 3, "DIM", TOK_KW_DIM       ; R8.5 Group 4
+        db 5, "INPUT", TOK_KW_INPUT          ; R8.5 Group 2
+        db 4, "STEP", TOK_KW_STEP          ; R8.5 Group 5
+        db 4, "EXIT", TOK_KW_EXIT
         ; MODE/ULAPLUS/PALETTE keyword rows removed (product decision,
         ; same principle as the earlier SPRITE-to-loadable-module move):
         ; these are now a loadable extension package (rom/ext_mode_
@@ -1508,8 +1531,7 @@ COMPILE_FACTOR:
         cp TOK_IDENT
         jr z,.ident
         ld a,3
-        ld (COMPILE_ERROR_CODE),a
-        ret
+        jp COMPILE_RAISE_ERROR
 .unary_minus:
         call LEX_NEXT_TOKEN     ; consume '-'
         call EMIT_BYTE_OP_PUSH_I8
@@ -1567,8 +1589,7 @@ COMPILE_FACTOR:
         cp TOK_LPAREN
         jr z,.arr_have_lparen
         ld a,40
-        ld (COMPILE_ERROR_CODE),a
-        ret
+        jp COMPILE_RAISE_ERROR
 .arr_have_lparen:
         call LEX_NEXT_TOKEN          ; consume '('
         ; BUG FOUND (real hardware, R8.5 Group 4): the index sub-expression
@@ -1595,8 +1616,7 @@ COMPILE_FACTOR:
         cp TOK_RPAREN
         jr z,.arr_have_rparen
         ld a,41
-        ld (COMPILE_ERROR_CODE),a
-        ret
+        jp COMPILE_RAISE_ERROR
 .arr_have_rparen:
         call LEX_NEXT_TOKEN           ; consume ')'
         call EMIT_OP_ARR_LOAD
@@ -1682,6 +1702,11 @@ COMPILE_FACTOR:
 ; through the same TAG_INT/TAG_FLOAT path), only the ARGUMENT grammar
 ; differs.
 ; ===========================================================================
+; VARIABLE-STRIDE table (bounded ROM consolidation pass, same technique
+; LEX_CLASSIFY_KEYWORD's own header explains in full): each row is now
+; [len:1][text:len][argcount:1][fn_index:1][argtype:1], no fixed-8-byte
+; zero-padded text field. 60 bytes of pure padding recovered, real-
+; measured via a direct before/after size comparison.
 BUILTIN_FN_FIND:               ; input: TOK_NAME/TOK_LEN (current, not
                                  ; yet consumed, identifier token).
                                  ; Output: carry set + A = fn_index +
@@ -1696,26 +1721,32 @@ BUILTIN_FN_FIND:               ; input: TOK_NAME/TOK_LEN (current, not
         ld hl,BUILTIN_FN_TABLE
         ld b,BUILTIN_FN_TABLE_COUNT
 .loop:
+        ld a,(hl)                 ; A = this row's own real length
+        inc hl                     ; HL -> name text
+        ld c,a                     ; C = length (full, then remaining
+                                      ; unconsumed once compare starts)
         ld a,(TOK_LEN)
-        cp (hl)
-        jr nz,.next
-        push hl
-        inc hl                    ; -> name text
+        cp c
+        jr nz,.skip                 ; length mismatch -- C already
+                                      ; holds the full row length to skip
         ld de,(TOK_NAME)
-        ld c,a
+        ld a,c
+        or a
+        jr z,.matched                ; zero-length name (never occurs
+                                        ; in practice; kept safe)
 .cmp_loop:
         ld a,(de)
         cp (hl)
-        jr nz,.cmp_fail
+        jr nz,.skip                  ; mismatch partway -- C already
+                                       ; holds the remaining length to skip
         inc hl
         inc de
         dec c
         jr nz,.cmp_loop
-        ; match: argcount sits 9 bytes past the entry's start (1 length
-        ; byte + 8 text bytes), fn_index right after it, argtype after that
-        pop hl
-        ld de,9
-        add hl,de
+.matched:
+        ; HL is now exactly at argcount (text-start + the row's own
+        ; real length) -- no fixed offset to add, unlike the old
+        ; padded-to-8 layout.
         ld a,(hl)
         ld (BFN_FOUND_ARGCOUNT),a
         inc hl
@@ -1728,17 +1759,24 @@ BUILTIN_FN_FIND:               ; input: TOK_NAME/TOK_LEN (current, not
         ld a,c
         scf
         ret
-.cmp_fail:
-        pop hl
-.next:
-        ld de,BUILTIN_FN_ENTRY_LEN
-        add hl,de
+.skip:
+        ld a,c
+        or a
+        jr z,.skip_text_done
+        inc hl
+        dec c
+        jr .skip
+.skip_text_done:
+        inc hl
+        inc hl
+        inc hl                     ; skip argcount+fn_index+argtype ->
+                                      ; HL now -> next row's own length
+                                      ; byte
         dec b
         jr nz,.loop
         or a                       ; clear carry -- not a built-in
         ret                          ; function name
 
-BUILTIN_FN_ENTRY_LEN:   equ 12
 BUILTIN_FN_TABLE_COUNT: equ 13
 
 ; fn_index 0 = ABS (rom/exrom_v2_vm_core.asm's own BUILTIN_FN_ABS).
@@ -1755,11 +1793,11 @@ BUILTIN_FN_TABLE_COUNT: equ 13
 ; deliberately integer-only ("this is a pure-integer BASIC") -- V2
 ; matching that is full capability preservation, not a new scope cut.
 BUILTIN_FN_TABLE:
-    db 3, "ABS", 0,0,0,0,0, 1, 0, 0
-    db 3, "SGN", 0,0,0,0,0, 1, 1, 0
-    db 3, "MOD", 0,0,0,0,0, 2, 2, 0
-    db 3, "DIV", 0,0,0,0,0, 2, 3, 0
-    db 3, "RND", 0,0,0,0,0, 1, 4, 0
+    db 3, "ABS", 1, 0, 0
+    db 3, "SGN", 1, 1, 0
+    db 3, "MOD", 2, 2, 0
+    db 3, "DIV", 2, 3, 0
+    db 3, "RND", 1, 4, 0
 
 ; POINT/ATTR/INT (fn_index 5-7): confirmed via basic.asm's own real
 ; dispatch (.call_point/.call_attr/.call_int) -- POINT/ATTR are thin
@@ -1768,9 +1806,9 @@ BUILTIN_FN_TABLE:
 ; returns-0 behavior V1 already established (not an error condition);
 ; INT is a true no-op (V1's own comment: "this is a pure-integer BASIC,
 ; so every value is already its own INT()").
-    db 5, "POINT", 0,0,0, 2, 5, 0
-    db 4, "ATTR", 0,0,0,0, 2, 6, 0
-    db 3, "INT", 0,0,0,0,0, 1, 7, 0
+    db 5, "POINT", 2, 5, 0
+    db 4, "ATTR", 2, 6, 0
+    db 3, "INT", 1, 7, 0
 
 ; PEEK/USR (fn_index 8-9): confirmed via basic.asm's own real dispatch
 ; (.call_peek/.call_usr) -- both read/jump raw caller-supplied
@@ -1779,8 +1817,8 @@ BUILTIN_FN_TABLE:
 ; both (real bugs where V1's live-typing checker evaluates expressions
 ; during static checking) don't apply here -- V2 compiles ahead of
 ; time and never evaluates an expression at compile time.
-    db 4, "PEEK", 0,0,0,0, 1, 8, 0
-    db 3, "USR", 0,0,0,0,0, 1, 9, 0
+    db 4, "PEEK", 1, 8, 0
+    db 3, "USR", 1, 9, 0
 
 ; LEN/CODE/VAL (fn_index 10-12): confirmed via basic.asm's own real
 ; dispatch (.str_arg_len/.str_arg_code and CODE/VAL's own STRING_
@@ -1791,9 +1829,9 @@ BUILTIN_FN_TABLE:
 ; OP_CALL_FN's own dispatch/push-result mechanism needs no change.
 ; VAL reuses V2's own existing VM_PARSE_INPUT_INT (already used by
 ; OP_INPUT_NUM) rather than porting basic.asm's own separate parser.
-    db 3, "LEN", 0,0,0,0,0, 1, 10, 1
-    db 4, "CODE", 0,0,0,0, 1, 11, 1
-    db 3, "VAL", 0,0,0,0,0, 1, 12, 1
+    db 3, "LEN", 1, 10, 1
+    db 4, "CODE", 1, 11, 1
+    db 3, "VAL", 1, 12, 1
 
 ; BUG FOUND (real hardware, R8.5 Group 5): a literal 128-255 has TOK_VAL
 ; high byte 0, so this used to take the PUSH_I8 path below -- but
@@ -1898,8 +1936,7 @@ COMPILE_ASSIGN_CONTINUED:
         cp TOK_ASSIGN
         jr z,.have_assign
         ld a,2
-        ld (COMPILE_ERROR_CODE),a
-        ret
+        jp COMPILE_RAISE_ERROR
 .have_assign:
         call LEX_NEXT_TOKEN     ; consume '='
         call COMPILE_EXPR
@@ -1930,8 +1967,7 @@ COMPILE_DIM:
         cp TOK_IDENT
         jr z,.have_ident
         ld a,32
-        ld (COMPILE_ERROR_CODE),a
-        ret
+        jp COMPILE_RAISE_ERROR
 .have_ident:
         ld hl,(TOK_NAME)
         ld (ARRSYM_FIND_NAME_PTR),hl
@@ -1946,16 +1982,14 @@ COMPILE_DIM:
         cp TOK_LPAREN
         jr z,.have_lparen
         ld a,33
-        ld (COMPILE_ERROR_CODE),a
-        ret
+        jp COMPILE_RAISE_ERROR
 .have_lparen:
         call LEX_NEXT_TOKEN       ; consume '(', fetch the size literal
         ld a,(TOK_TYPE)
         cp TOK_NUMBER
         jr z,.have_size
         ld a,34
-        ld (COMPILE_ERROR_CODE),a
-        ret
+        jp COMPILE_RAISE_ERROR
 .have_size:
         ld a,(TOK_VAL)            ; low byte -- DIM sizes never legitimately
                                     ; exceed ARRAY_MAX_ELEMS (16), so TOK_VAL's
@@ -1963,14 +1997,12 @@ COMPILE_DIM:
         or a
         jr nz,.size_nonzero
         ld a,35
-        ld (COMPILE_ERROR_CODE),a
-        ret
+        jp COMPILE_RAISE_ERROR
 .size_nonzero:
         cp ARRAY_MAX_ELEMS+1
         jr c,.size_ok
         ld a,36
-        ld (COMPILE_ERROR_CODE),a
-        ret
+        jp COMPILE_RAISE_ERROR
 .size_ok:
         ld (ARR_SIZE_TMP),a
         call LEX_NEXT_TOKEN       ; consume the size literal, fetch next
@@ -1978,8 +2010,7 @@ COMPILE_DIM:
         cp TOK_RPAREN
         jr z,.have_rparen
         ld a,37
-        ld (COMPILE_ERROR_CODE),a
-        ret
+        jp COMPILE_RAISE_ERROR
 .have_rparen:
         call LEX_NEXT_TOKEN       ; consume ')'
         ld hl,(ARRSYM_FIND_NAME_PTR)
@@ -2000,8 +2031,7 @@ COMPILE_ARRAY_ASSIGN:
         call ARRSYM_LOOKUP
         jr nc,.found
         ld a,42
-        ld (COMPILE_ERROR_CODE),a
-        ret
+        jp COMPILE_RAISE_ERROR
 .found:
         ; BUG FOUND (real hardware, R8.5 Group 4), TWO layers deep:
         ; (1) both sub-expressions compiled below can contain their OWN
@@ -2137,15 +2167,13 @@ ARRSYM_FIND_OR_CREATE:
         jr .scan_loop
 .already:
         ld a,38
-        ld (COMPILE_ERROR_CODE),a
-        ret
+        jp COMPILE_RAISE_ERROR
 .not_found:
         ld a,(ARRSYM_COUNT)
         cp ARRSYMTAB_MAX_ENTRIES
         jr nz,.create
         ld a,39
-        ld (COMPILE_ERROR_CODE),a
-        ret
+        jp COMPILE_RAISE_ERROR
 .create:
         ld a,(ARRSYM_COUNT)
         ld c,a
@@ -2257,8 +2285,7 @@ COMPILE_INPUT:
         cp TOK_STR_IDENT
         jr z,.string
         ld a,43
-        ld (COMPILE_ERROR_CODE),a
-        ret
+        jp COMPILE_RAISE_ERROR
 .numeric:
         ld hl,(TOK_NAME)
         ld a,(TOK_LEN)
@@ -2400,8 +2427,7 @@ COMPILE_STR_ASSIGN:
         cp TOK_ASSIGN
         jr z,.have_assign
         ld a,2
-        ld (COMPILE_ERROR_CODE),a
-        ret
+        jp COMPILE_RAISE_ERROR
 .have_assign:
         call LEX_NEXT_TOKEN       ; consume '='
         call COMPILE_STR_EXPR
@@ -2462,8 +2488,7 @@ LABEL_DEFINE:
         cp LABELTAB_MAX_ENTRIES
         jr nz,.have_room
         ld a,5                  ; label table full
-        ld (COMPILE_ERROR_CODE),a
-        ret
+        jp COMPILE_RAISE_ERROR
 .have_room:
         ld c,a
         call LABEL_ENTRY_ADDR   ; HL -> new entry
@@ -2580,8 +2605,7 @@ FIXUP_RECORD:
         cp FIXUPTAB_MAX_ENTRIES
         jr nz,.have_room
         ld a,6                  ; fixup table full
-        ld (COMPILE_ERROR_CODE),a
-        ret
+        jp COMPILE_RAISE_ERROR
 .have_room:
         ld c,a
         call FIXUP_ENTRY_ADDR   ; HL -> new entry
@@ -2667,8 +2691,7 @@ RESOLVE_ALL_FIXUPS:
         jr .loop
 .undefined:
         ld a,7
-        ld (COMPILE_ERROR_CODE),a
-        ret
+        jp COMPILE_RAISE_ERROR
 
 ; ===========================================================================
 ; BRANCH STATEMENT COMPILERS (R3 addition: GOTO, IF...THEN GOTO)
@@ -2762,8 +2785,7 @@ COMPILE_EXPECT_COMMA_EXPR:
         cp TOK_COMMA
         jr z,.have_comma
         ld a,22
-        ld (COMPILE_ERROR_CODE),a
-        ret
+        jp COMPILE_RAISE_ERROR
 .have_comma:
         call LEX_NEXT_TOKEN
         jp COMPILE_EXPR
@@ -2809,8 +2831,7 @@ COMPILE_LINE:
         cp TOK_COMMA
         jr z,.have_comma1
         ld a,23                  ; expected ',' after LINE's x0
-        ld (COMPILE_ERROR_CODE),a
-        ret
+        jp COMPILE_RAISE_ERROR
 .have_comma1:
         call LEX_NEXT_TOKEN     ; consume ','
         call COMPILE_EXPR       ; y0
@@ -2818,8 +2839,7 @@ COMPILE_LINE:
         cp TOK_KW_TO
         jr z,.have_to
         ld a,24                  ; expected TO in LINE
-        ld (COMPILE_ERROR_CODE),a
-        ret
+        jp COMPILE_RAISE_ERROR
 .have_to:
         call LEX_NEXT_TOKEN     ; consume TO
         call COMPILE_EXPR       ; x1
@@ -2827,8 +2847,7 @@ COMPILE_LINE:
         cp TOK_COMMA
         jr z,.have_comma2
         ld a,25                  ; expected ',' after LINE's x1
-        ld (COMPILE_ERROR_CODE),a
-        ret
+        jp COMPILE_RAISE_ERROR
 .have_comma2:
         call LEX_NEXT_TOKEN     ; consume ','
         call COMPILE_EXPR       ; y1
@@ -2980,6 +2999,13 @@ COMPILE_LPRINT_RESOLVE_SLOT:
         call EXT2_SLOT_ADDR
         ld a,(hl)
         ld (CEXT_GEN),a
+        ld a,1
+        ld (CEXT_ARGCOUNT),a    ; bounded ROM consolidation pass: set
+                                  ; here so COMPILE_LPRINT_EMIT below can
+                                  ; just reuse COMPILE_EXT_CALL's own
+                                  ; `.emit:` tail instead of duplicating
+                                  ; its 3x "ld a,(CEXT_x):call EMIT_BYTE"
+                                  ; sequence
         ret
 
 ; COMPILE_LPRINT_EMIT -- shared tail for both COMPILE_LPRINT branches:
@@ -2992,14 +3018,13 @@ COMPILE_LPRINT_EMIT:
         ld a,(COMPILE_ERROR_CODE)
         or a
         ret nz
-        call EMIT_OP_CALL_EXT
-        ld a,(CEXT_SLOT)
-        call EMIT_BYTE
-        ld a,(CEXT_GEN)
-        call EMIT_BYTE
-        ld a,1
-        call EMIT_BYTE
-        ret
+        jp COMPILE_EXT_CALL.emit  ; CEXT_SLOT/CEXT_GEN/CEXT_ARGCOUNT
+                                     ; already set (COMPILE_LPRINT_
+                                     ; RESOLVE_SLOT above) -- reuses the
+                                     ; SAME 3x "ld a,(CEXT_x):call
+                                     ; EMIT_BYTE" tail COMPILE_EXT_CALL's
+                                     ; own generic path already has,
+                                     ; rather than a second copy
 
 ; COMPILE_GOTO — GOTO <label>
 COMPILE_GOTO:
@@ -3010,8 +3035,7 @@ COMPILE_GOTO:
         cp TOK_IDENT
         jr z,.have_target
         ld a,12                 ; expected a label name after GOTO
-        ld (COMPILE_ERROR_CODE),a
-        ret
+        jp COMPILE_RAISE_ERROR
 .have_target:
         call COMPILE_BRANCH_TARGET
         ret
@@ -3071,8 +3095,7 @@ COMPILE_IF:
         cp TOK_KW_THEN
         jr z,.have_then
         ld a,8                   ; expected THEN
-        ld (COMPILE_ERROR_CODE),a
-        ret
+        jp COMPILE_RAISE_ERROR
 .have_then:
         call LEX_NEXT_TOKEN     ; consume THEN
         ld a,(TOK_TYPE)
@@ -3088,8 +3111,7 @@ COMPILE_IF:
         cp TOK_IDENT
         jr z,.have_target
         ld a,12
-        ld (COMPILE_ERROR_CODE),a
-        ret
+        jp COMPILE_RAISE_ERROR
 .have_target:
         call EMIT_OP_JMP
         call EMIT_PLACEHOLDER_16   ; HL = patch address for the real target
@@ -3261,8 +3283,7 @@ COMPILE_FOR:
         cp TOK_IDENT
         jr z,.have_var
         ld a,10                  ; expected a loop variable
-        ld (COMPILE_ERROR_CODE),a
-        ret
+        jp COMPILE_RAISE_ERROR
 .have_var:
         ld hl,(TOK_NAME)
         ld a,(TOK_LEN)
@@ -3274,8 +3295,7 @@ COMPILE_FOR:
         cp TOK_ASSIGN
         jr z,.have_assign
         ld a,2
-        ld (COMPILE_ERROR_CODE),a
-        ret
+        jp COMPILE_RAISE_ERROR
 .have_assign:
         call LEX_NEXT_TOKEN     ; consume '='
         call COMPILE_EXPR       ; initial value -> VM operand stack
@@ -3283,8 +3303,7 @@ COMPILE_FOR:
         cp TOK_KW_TO
         jr z,.have_to
         ld a,11                  ; expected TO
-        ld (COMPILE_ERROR_CODE),a
-        ret
+        jp COMPILE_RAISE_ERROR
 .have_to:
         call LEX_NEXT_TOKEN     ; consume TO
         call COMPILE_EXPR       ; limit value -> VM operand stack
@@ -3321,15 +3340,13 @@ COMPILE_EXIT_FOR:
         cp TOK_KW_FOR
         jr z,.have_for
         ld a,44
-        ld (COMPILE_ERROR_CODE),a
-        ret
+        jp COMPILE_RAISE_ERROR
 .have_for:
         ld a,(EXITFOR_COUNT)
         cp EXITFOR_MAX
         jr nz,.record
         ld a,45
-        ld (COMPILE_ERROR_CODE),a
-        ret
+        jp COMPILE_RAISE_ERROR
 .record:
         call EMIT_OP_JMP
         call EMIT_PLACEHOLDER_16
@@ -3357,8 +3374,7 @@ COMPILE_NEXT:
         cp TOK_IDENT
         jr z,.have_var
         ld a,10
-        ld (COMPILE_ERROR_CODE),a
-        ret
+        jp COMPILE_RAISE_ERROR
 .have_var:
         ld hl,(TOK_NAME)
         ld a,(TOK_LEN)
@@ -3750,8 +3766,7 @@ COMPILE_PROC:
         cp TOK_IDENT
         jr z,.have_name
         ld a,17                  ; expected a procedure name
-        ld (COMPILE_ERROR_CODE),a
-        ret
+        jp COMPILE_RAISE_ERROR
 .have_name:
         ld hl,(TOK_NAME)
         ld (STMT_IDENT_NAME_PTR),hl
@@ -3765,16 +3780,14 @@ COMPILE_PROC:
         cp TOK_LPAREN
         jr z,.have_lparen
         ld a,18                  ; expected '(' after procedure name
-        ld (COMPILE_ERROR_CODE),a
-        ret
+        jp COMPILE_RAISE_ERROR
 .have_lparen:
         call LEX_NEXT_TOKEN     ; consume '('
         ld a,(TOK_TYPE)
         cp TOK_IDENT
         jr z,.have_param
         ld a,19                  ; expected a parameter name
-        ld (COMPILE_ERROR_CODE),a
-        ret
+        jp COMPILE_RAISE_ERROR
 .have_param:
         ld hl,(TOK_NAME)
         ld a,(TOK_LEN)
@@ -3786,16 +3799,14 @@ COMPILE_PROC:
         cp TOK_RPAREN
         jr z,.have_rparen
         ld a,20                  ; expected ')' after the parameter
-        ld (COMPILE_ERROR_CODE),a
-        ret
+        jp COMPILE_RAISE_ERROR
 .have_rparen:
         call LEX_NEXT_TOKEN     ; consume ')'
         ld a,(TOK_TYPE)
         cp TOK_COLON
         jr z,.have_colon
         ld a,21                  ; expected ':' before the procedure body
-        ld (COMPILE_ERROR_CODE),a
-        ret
+        jp COMPILE_RAISE_ERROR
 .have_colon:
         ; define the CALL-entry label HERE — at the bytecode position that
         ; consumes the caller's pushed argument — not at PROC's own
@@ -3819,8 +3830,7 @@ COMPILE_PROC:
         cp TOK_KW_ENDP
         jr z,.have_endp
         ld a,16                  ; unterminated PROC (hit EOF, not ENDP)
-        ld (COMPILE_ERROR_CODE),a
-        ret
+        jp COMPILE_RAISE_ERROR
 .have_endp:
         call EMIT_OP_RET
         ld hl,(EMIT_PTR)
@@ -3850,8 +3860,7 @@ COMPILE_CALL_STMT:
         cp TOK_IDENT
         jr z,.have_name
         ld a,13                  ; expected a procedure name after CALL
-        ld (COMPILE_ERROR_CODE),a
-        ret
+        jp COMPILE_RAISE_ERROR
 .have_name:
         ld hl,(TOK_NAME)
         ld (STMT_IDENT_NAME_PTR),hl
@@ -3862,8 +3871,7 @@ COMPILE_CALL_STMT:
         cp TOK_LPAREN
         jr z,.have_lparen
         ld a,14                  ; expected '(' after the procedure name
-        ld (COMPILE_ERROR_CODE),a
-        ret
+        jp COMPILE_RAISE_ERROR
 .have_lparen:
         call LEX_NEXT_TOKEN     ; consume '('
         call COMPILE_EXPR       ; argument -> pushed onto the VM operand stack
@@ -3871,8 +3879,7 @@ COMPILE_CALL_STMT:
         cp TOK_RPAREN
         jr z,.have_rparen
         ld a,15                  ; expected ')' after the argument
-        ld (COMPILE_ERROR_CODE),a
-        ret
+        jp COMPILE_RAISE_ERROR
 .have_rparen:
         call LEX_NEXT_TOKEN     ; consume ')'
         call EMIT_OP_CALL
@@ -3953,7 +3960,11 @@ COMPILE_EXT_CALL:
         sub c
         ld b,a                      ; B = rotate count for the bit test
         ld a,(CEXT_ARGTYPES)
-        call COMPILE_TEST_ARGTYPE_BIT  ; Z = numeric, NZ = string
+        call VM_TEST_ARGTYPE_BIT  ; Z = numeric, NZ = string (bounded
+                                    ; ROM consolidation pass -- shared
+                                    ; with the decompiler's identical
+                                    ; need, see rom/exrom_v2_vm_core.
+                                    ; asm's own header)
         jr z,.arg_numeric
         call COMPILE_STR_EXPR
         jr .arg_checked
@@ -3973,8 +3984,7 @@ COMPILE_EXT_CALL:
         jr z,.have_comma
         ld a,28                     ; expected ',' between an
                                     ; extension call's own arguments
-        ld (COMPILE_ERROR_CODE),a
-        ret
+        jp COMPILE_RAISE_ERROR
 .have_comma:
         call LEX_NEXT_TOKEN         ; consume ','
         jr .arg_loop
@@ -3988,39 +3998,29 @@ COMPILE_EXT_CALL:
         call EMIT_BYTE
         ret
 
-; COMPILE_TEST_ARGTYPE_BIT -- input: A = argtypes bitmask, B = argument
-; index (0-7). Output: Z flag set if that bit is clear (numeric), NZ if
-; set (string). Destroys: AF, B, D. A plain variable-position bit test
-; (rotate the mask right B times, then test bit 0) rather than a fixed
-; per-index branch table -- correctly generalizes to any argument
-; position up to 8 (GRAB's own 5-argument shape included) with one
-; small shared routine instead of one branch per position.
-;
-; Uses D as its own rotating-mask scratch, NOT C: a real bug, found via
-; a real ZEsarUX run (rom/exrom_v2_decompiler.asm's own identical
-; DECOMP_TEST_ARGTYPE_BIT sibling used C for this, silently destroying
-; the caller's own fragment-length value already live in C at that
-; call site -- GRAB/SHOW/MOVE/HIDE all decompiled with every argument
-; blank). This routine's own compiler-side call site doesn't keep
-; anything live in C across the call today, so the bug never manifested
-; here -- but the ORIGINAL "Destroys: AF, B" claim was still wrong (it
-; silently destroyed C too), a latent footgun for any future caller
-; that DOES need C to survive. Fixed in both places for the same reason.
-COMPILE_TEST_ARGTYPE_BIT:
-        ld d,b                  ; D = index (rotation count)
-        ld b,a                  ; B = mask (rotated in place)
-.rot_loop:
-        ld a,d
-        or a
-        jr z,.done
-        ld a,b
-        srl a
-        ld b,a
-        dec d
-        jr .rot_loop
-.done:
-        ld a,b
-        bit 0,a
+; COMPILE_TEST_ARGTYPE_BIT removed (bounded ROM consolidation pass) --
+; was byte-identical to rom/exrom_v2_decompiler.asm's own DECOMP_TEST_
+; ARGTYPE_BIT; both now share ONE real copy, rom/exrom_v2_vm_core.asm's
+; own VM_TEST_ARGTYPE_BIT (see that routine's own header for the full
+; account, including the real C-register clobber bug originally found
+; and fixed in the decompiler's own copy of this logic). COMPILE_EXT_
+; CALL's own call site below was updated to call it there instead.
+
+; COMPILE_RAISE_ERROR -- bounded ROM consolidation pass: 41 separate
+; "ld a,N / ld (COMPILE_ERROR_CODE),a / ret" sites (each 6 bytes) across
+; this file were mechanically identical past the literal error code --
+; replaced with "ld a,N / jp COMPILE_RAISE_ERROR" (5 bytes) sharing
+; this one real tail. A tail JUMP (not call): each site's own `ret` was
+; returning to THAT SITE's own caller, not to itself, so this must be
+; reached via `jp`, whose own `ret` then pops the SAME return address
+; already on the stack -- semantically identical to the original inline
+; "set the code, then ret" either way. The other ~13 error sites in
+; this file do MORE than just set-and-return (e.g. popping a saved
+; value, jumping to shared cleanup) and were deliberately left alone --
+; only the exact "set-then-immediately-return" shape was touched.
+; Input: A = error code. Destroys: nothing else.
+COMPILE_RAISE_ERROR:
+        ld (COMPILE_ERROR_CODE),a
         ret
 
 COMPILER_END:

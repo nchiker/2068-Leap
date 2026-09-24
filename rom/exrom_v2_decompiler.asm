@@ -1351,39 +1351,39 @@ DECOMP_CALL_LINE_HOOK:
 ; table in this file's own header block) and returns; every caller checks
 ; DECOMP_ERROR_CODE and unwinds rather than continuing on bad state. Real,
 ; caught errors on malformed/unsupported bytecode, never a silent guess.
+;
+; Share one tail (DECOMP_ERR_COMMON, bounded ROM consolidation pass) --
+; the same "ld a,N / jp COMMON" shape rom/exrom_v2_vm_core.asm's own
+; VM_ERR_* handlers already use via VM_ERR_COMMON; this file's own
+; handlers just hadn't been converted yet.
 ; ===========================================================================
 DECOMP_ERR_FRAG_OVERFLOW:
         ld a,1
-        ld (DECOMP_ERROR_CODE),a
-        ret
+        jp DECOMP_ERR_COMMON
 
 DECOMP_ERR_FRAG_UNDERFLOW:
         ld a,2
-        ld (DECOMP_ERROR_CODE),a
-        ret
+        jp DECOMP_ERR_COMMON
 
 DECOMP_ERR_UNSUPPORTED_OPCODE:
         ld a,3
-        ld (DECOMP_ERROR_CODE),a
-        ret
+        jp DECOMP_ERR_COMMON
 
 DECOMP_ERR_EXPR_TOO_LONG:
         ld a,4
-        ld (DECOMP_ERROR_CODE),a
-        ret
+        jp DECOMP_ERR_COMMON
 
 DECOMP_ERR_LABEL_TABLE_FULL:
         ld a,5
-        ld (DECOMP_ERROR_CODE),a
-        ret
+        jp DECOMP_ERR_COMMON
 
 DECOMP_ERR_BAD_JMPZ_SHAPE:
         ld a,6
-        ld (DECOMP_ERROR_CODE),a
-        ret
+        jp DECOMP_ERR_COMMON
 
 DECOMP_ERR_ENDIF_TABLE_FULL:
         ld a,7
+DECOMP_ERR_COMMON:
         ld (DECOMP_ERROR_CODE),a
         ret
 
@@ -2652,7 +2652,11 @@ DECOMPILE_PROGRAM:
         ld a,(DECOMP_EXT_SLOT)      ; current argument's own 0-based
         ld b,a                        ; index (this loop's own counter)
         ld a,(DECOMP_EXT_ARGTYPES)
-        call DECOMP_TEST_ARGTYPE_BIT  ; Z = numeric, NZ = string
+        call VM_TEST_ARGTYPE_BIT  ; Z = numeric, NZ = string (bounded
+                                    ; ROM consolidation pass -- shared
+                                    ; with the compiler's identical
+                                    ; need, see rom/exrom_v2_vm_core.
+                                    ; asm's own header)
         jr z,.cext_emit_plain
         call DECOMP_STR_OPERAND       ; string-typed argument (printer
                                          ; package's own LPRINT): a bare
@@ -3150,41 +3154,13 @@ DECOMP_STR_OPERAND:
                                         ; plain FRAG_POP would have
         ret
 
-; DECOMP_TEST_ARGTYPE_BIT -- input: A = argtypes bitmask, B = argument
-; index (0-7). Output: Z flag set if that bit is clear (numeric), NZ if
-; set (string). Destroys: AF, B, D. Decompiler-side mirror of rom/
-; exrom_v2_compiler.asm's own COMPILE_TEST_ARGTYPE_BIT (same rotate-by-
-; index-then-test-bit-0 approach, generalizing to any argument position
-; instead of a fixed per-index branch table).
-;
-; REAL BUG FOUND AND FIXED (real ZEsarUX run, printer-package ROM
-; reconciliation): the first version used C as its own rotating-mask
-; scratch -- but .cext_emit_common's own call site here has the popped
-; fragment's LENGTH already live in C at the moment of this call
-; (loaded via `ld c,a` right before), needed again immediately after
-; for DECOMP_EMIT_TEXT. Silently destroying it made every extension-
-; call argument decompile as empty text (confirmed: GRAB/SHOW/MOVE/
-; HIDE all decompiled with every argument blank, e.g. "GRAB ,,,,"
-; instead of "GRAB 0,2,3,2,2"). Fixed by using D instead, which is not
-; live across this call. Same "a callee's own internal scratch can
-; alias a caller's own live register just as easily as a documented
-; sysvar cell" lesson this whole rewrite keeps re-learning.
-DECOMP_TEST_ARGTYPE_BIT:
-        ld d,b                  ; D = index (rotation count)
-        ld b,a                  ; B = mask (rotated in place)
-.rot_loop:
-        ld a,d
-        or a
-        jr z,.done
-        ld a,b
-        srl a
-        ld b,a
-        dec d
-        jr .rot_loop
-.done:
-        ld a,b
-        bit 0,a
-        ret
+; DECOMP_TEST_ARGTYPE_BIT removed (bounded ROM consolidation pass) --
+; was byte-identical to rom/exrom_v2_compiler.asm's own (now also
+; removed) COMPILE_TEST_ARGTYPE_BIT. Both call sites now share ONE
+; real copy, rom/exrom_v2_vm_core.asm's own VM_TEST_ARGTYPE_BIT (see
+; that routine's own header for the full account, including the real
+; C-register clobber bug originally found and fixed here). .cext_emit_
+; common's own call site below was updated to call it there instead.
 
 ; STR_CONCAT/STR_CMP_LT/STR_CMP_EQ -- binary string ops, same pop-two-
 ; combine-one shape as DECOMP_BINARY_OP, but with DECOMP_STR_OPERAND

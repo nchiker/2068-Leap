@@ -776,7 +776,7 @@ OP_PUSH_I8:
         jr z,.positive
         ld h,$FF                ; sign-extend
 .positive:
-        ld a,TAG_INT
+        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
         call VM_PUSH
         jp VM_RUN.loop
 
@@ -788,7 +788,7 @@ OP_PUSH_I16:
         inc hl
         ld (VM_IP),hl
         ex de,hl
-        ld a,TAG_INT
+        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
         call VM_PUSH
         jp VM_RUN.loop
 
@@ -938,7 +938,7 @@ OP_ARR_LOAD:
         inc hl
         ld d,(hl)
         ex de,hl
-        ld a,TAG_INT
+        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
         call VM_PUSH
         jp VM_RUN.loop
 
@@ -1057,7 +1057,7 @@ OP_INPUT_NUM:
         ld a,(VM_INPUT_TARGET_TMP)
         call VM_SYM_ADDR
         pop de
-        ld a,TAG_INT
+        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
         ld (hl),a
         inc hl
         ld (hl),e
@@ -1194,7 +1194,7 @@ OP_ADD:
                                  ; integer fast path this whole architecture
                                  ; exists to preserve. Untouched by R6:
                                  ; reached only when BOTH operands are INT.
-        ld a,TAG_INT
+        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
         call VM_PUSH
         jp VM_RUN.loop
 .float_path:
@@ -1244,7 +1244,7 @@ OP_SUB:
         ld de,(VM_FLOAT_B_VAL)
         or a
         sbc hl,de               ; HL = a - b
-        ld a,TAG_INT
+        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
         call VM_PUSH
         jp VM_RUN.loop
 .float_path:
@@ -1288,7 +1288,7 @@ OP_MUL:
                                  ; float arithmetic when a value is
                                  ; ALREADY float-tagged, not auto-promoting
                                  ; on integer overflow)
-        ld a,TAG_INT
+        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
         call VM_PUSH
         jp VM_RUN.loop
 .float_path:
@@ -1349,7 +1349,7 @@ OP_DIV:
         sbc hl,de
         jr nz,.inexact           ; quotient*divisor != dividend -> inexact
         ld hl,(VM_DIV_QUOTIENT_TMP)
-        ld a,TAG_INT
+        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
         call VM_PUSH
         jp VM_RUN.loop
 .inexact:
@@ -1408,7 +1408,7 @@ OP_CMP_LT:
         jr nz,.not_less
         inc l                   ; HL = 1 (true)
 .not_less:
-        ld a,TAG_INT
+        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
         call VM_PUSH
         jp VM_RUN.loop
 
@@ -1426,7 +1426,7 @@ OP_CMP_EQ:
         jr nz,.not_equal
         inc l                   ; HL = 1 (true)
 .not_equal:
-        ld a,TAG_INT
+        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
         call VM_PUSH
         jp VM_RUN.loop
 
@@ -1452,7 +1452,7 @@ OP_CMP_LE:
         jr z,.not_le            ; true unless a>b
         inc l
 .not_le:
-        ld a,TAG_INT
+        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
         call VM_PUSH
         jp VM_RUN.loop
 
@@ -1470,7 +1470,7 @@ OP_CMP_GT:
         jr nz,.not_gt
         inc l
 .not_gt:
-        ld a,TAG_INT
+        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
         call VM_PUSH
         jp VM_RUN.loop
 
@@ -1488,7 +1488,7 @@ OP_CMP_GE:
         jr z,.not_ge             ; true unless a<b
         inc l
 .not_ge:
-        ld a,TAG_INT
+        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
         call VM_PUSH
         jp VM_RUN.loop
 
@@ -1506,7 +1506,7 @@ OP_CMP_NE:
         jr z,.not_ne
         inc l
 .not_ne:
-        ld a,TAG_INT
+        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
         call VM_PUSH
         jp VM_RUN.loop
 
@@ -1529,7 +1529,7 @@ OP_AND:
 .false:
         ld hl,0
 .push:
-        ld a,TAG_INT
+        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
         call VM_PUSH
         jp VM_RUN.loop
 
@@ -1552,7 +1552,7 @@ OP_OR:
 .true:
         ld hl,1
 .push:
-        ld a,TAG_INT
+        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
         call VM_PUSH
         jp VM_RUN.loop
 
@@ -1568,7 +1568,7 @@ OP_NOT:
 .false:
         ld hl,0
 .push:
-        ld a,TAG_INT
+        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
         call VM_PUSH
         jp VM_RUN.loop
 
@@ -1613,7 +1613,7 @@ OP_FOR_INIT:
         ld a,c
         call VM_SYM_ADDR
         pop de
-        ld a,TAG_INT
+        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
         ld (hl),a
         inc hl
         ld (hl),e
@@ -1774,7 +1774,7 @@ OP_PUSH_STR_LIT:
         add a,STRTAB_MAX_VARS
         ld l,a
         ld h,0
-        ld a,TAG_INT
+        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
         call VM_PUSH
         jp VM_RUN.loop
 
@@ -1868,7 +1868,7 @@ OP_STR_CONCAT:
         add a,STRTAB_MAX_VARS
         ld l,a
         ld h,0
-        ld a,TAG_INT
+        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
         call VM_PUSH
         jp VM_RUN.loop
 
@@ -1893,7 +1893,7 @@ OP_STR_CMP_LT:
         jr nz,.not_less
         inc l
 .not_less:
-        ld a,TAG_INT
+        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
         call VM_PUSH
         jp VM_RUN.loop
 
@@ -1912,7 +1912,7 @@ OP_STR_CMP_EQ:
         jr nz,.not_equal
         inc l
 .not_equal:
-        ld a,TAG_INT
+        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
         call VM_PUSH
         jp VM_RUN.loop
 
@@ -2748,7 +2748,7 @@ BUILTIN_FN_ABS:
         sbc a,h
         ld h,a
 .int_push:
-        ld a,TAG_INT
+        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
         jp VM_PUSH
 .float:
         ld (BFN_ABS_IDX_TMP),hl
@@ -2799,7 +2799,7 @@ BUILTIN_FN_ABS:
 BUILTIN_FN_SGN:
         call VM_POP             ; HL = value, A = tag (ignored -- int-only)
         call MATH_SGN16
-        ld a,TAG_INT
+        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
         jp VM_PUSH
 
 ; MOD(dividend,divisor) -- 2 args, compiled left-to-right so the
@@ -2819,7 +2819,7 @@ BUILTIN_FN_MOD:
         call VM_POP             ; HL = dividend
         pop de                  ; DE = divisor
         call MATH_MOD16
-        ld a,TAG_INT
+        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
         jp VM_PUSH
 
 ; DIV(dividend,divisor) -- same argument order as MOD above.
@@ -2831,7 +2831,7 @@ BUILTIN_FN_DIV:
         call VM_POP             ; HL = dividend
         pop de                  ; DE = divisor
         call MATH_DIVIDE16
-        ld a,TAG_INT
+        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
         jp VM_PUSH
 
 ; RND(x) -- pops one int (the upper bound), pushes a random value.
@@ -2839,7 +2839,7 @@ BUILTIN_FN_DIV:
 BUILTIN_FN_RND:
         call VM_POP
         call MATH_RND16
-        ld a,TAG_INT
+        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
         jp VM_PUSH
 
 ; POINT(x,y) -- confirmed via basic.asm's own .call_point: a thin
@@ -2864,7 +2864,7 @@ BUILTIN_FN_POINT:
         call GFX_READ_PIXEL     ; A = 0 or 1
         ld l,a
         ld h,0
-        ld a,TAG_INT
+        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
         jp VM_PUSH
 
 ; ATTR(row,col) -- confirmed via basic.asm's own .call_attr: reads the
@@ -2888,11 +2888,11 @@ BUILTIN_FN_ATTR:
         ld a,(hl)
         ld l,a
         ld h,0
-        ld a,TAG_INT
+        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
         jp VM_PUSH
 .attr_zero:
         ld hl,0
-        ld a,TAG_INT
+        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
         jp VM_PUSH
 
 ; INT(x) -- true no-op: this is a pure-integer BASIC, so every value is
@@ -2918,7 +2918,7 @@ BUILTIN_FN_PEEK:
         ld a,(hl)
         ld l,a
         ld h,0
-        ld a,TAG_INT
+        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
         jp VM_PUSH
 
 ; USR(addr) -- confirmed via basic.asm's own .call_usr/BASIC_CALL_USR:
@@ -2933,7 +2933,7 @@ BUILTIN_FN_PEEK:
 BUILTIN_FN_USR:
         call VM_POP             ; HL = address
         call VM_CALL_USR_TRAMPOLINE
-        ld a,TAG_INT
+        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
         jp VM_PUSH
 
 VM_CALL_USR_TRAMPOLINE:
@@ -2958,7 +2958,7 @@ BUILTIN_FN_LEN:
         ld a,(hl)
         ld l,a
         ld h,0
-        ld a,TAG_INT
+        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
         jp VM_PUSH
 
 ; CODE(a$) -- the ASCII code of the first character, or 0 for an empty
@@ -2974,11 +2974,11 @@ BUILTIN_FN_CODE:
         ld a,(hl)               ; first content byte
         ld l,a
         ld h,0
-        ld a,TAG_INT
+        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
         jp VM_PUSH
 .code_empty:
         ld hl,0
-        ld a,TAG_INT
+        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
         jp VM_PUSH
 
 ; VAL(a$) -- parses the string's own content as a signed decimal
@@ -3053,7 +3053,7 @@ BUILTIN_FN_VAL:
         jr .val_loop
 .val_done:
         call VM_PARSE_INPUT_INT ; HL = parsed value
-        ld a,TAG_INT
+        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
         jp VM_PUSH
 
 ; ---------------------------------------------------------------------------
@@ -3113,6 +3113,39 @@ VM_ERR_COMMON:
         ld (VM_ERROR_CODE),a
         ld a,1
         ld (VM_HALTED),a
+        ret
+
+; VM_TEST_ARGTYPE_BIT -- bounded ROM consolidation pass: rom/exrom_v2_
+; compiler.asm's own COMPILE_TEST_ARGTYPE_BIT and rom/exrom_v2_
+; decompiler.asm's own DECOMP_TEST_ARGTYPE_BIT were byte-IDENTICAL
+; routines (confirmed by direct comparison, not assumed from the
+; similar names) -- both compile-time and decompile-time argtype-bit
+; tests need the exact same "rotate the mask right by the argument
+; index, then test bit 0" logic. Kept here (vm_core.asm is included by
+; every build that includes either of the other two, so this is always
+; reachable) as the ONE real copy; both call sites now just `call
+; VM_TEST_ARGTYPE_BIT` across the file boundary, the same cross-file
+; call pattern this codebase already uses throughout (e.g. compiler.asm
+; calling kernel/extensions/ext_registry.asm's own EXT2_LOOKUP).
+;
+; Input: A = argtypes bitmask, B = argument index (0-7). Output: Z flag
+; set if that bit is clear (numeric), NZ if set (string). Destroys: AF,
+; B, D.
+VM_TEST_ARGTYPE_BIT:
+        ld d,b                  ; D = index (rotation count)
+        ld b,a                  ; B = mask (rotated in place)
+.rot_loop:
+        ld a,d
+        or a
+        jr z,.done
+        ld a,b
+        srl a
+        ld b,a
+        dec d
+        jr .rot_loop
+.done:
+        ld a,b
+        bit 0,a
         ret
 
 VM_CORE_END:
