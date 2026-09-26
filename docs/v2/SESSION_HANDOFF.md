@@ -89,7 +89,34 @@ separately-tested architecture until R9.
   compile-once + real call stack gets multiple functions and real
   recursion "for free").
 
-## Outstanding work, in authoritative order
+## STOP — this section is stale; superseded by later work in this same lineage
+
+Everything below in this "Outstanding work" list describes the state
+*before* the V2 semantic/capability audit and R8.9 existed. It is kept
+for historical continuity only. **Do not start from here.** The
+authoritative current state is:
+
+1. **The V2 semantic/capability audit is DONE**: `docs/v2/
+   V2_SEMANTIC_CAPABILITY_AUDIT.md`. Read its §0 first — the audit's
+   original "READY FOR R9" verdict is superseded.
+2. **A new mandatory milestone, R8.9 — V2 Production Integration, was
+   inserted before R9**, because the audit (only after being accepted)
+   was found to have missed a real gap: V2 has never been wired into the
+   actual production ROM's boot/command loop, and has no multi-line
+   program storage of its own. R9 does not begin until R8.9's success
+   gate is demonstrated.
+3. **R8.9 is IN PROGRESS — design/dependency work is done, implementation
+   has NOT started.** The authoritative current entry point for a fresh
+   session is **`docs/v2/R8_9_HANDOFF.md`** — read that file first, it
+   supersedes the "Recommended first task" section below. It points to
+   `docs/v2/R8_9_PRODUCTION_INTEGRATION_DESIGN.md` (the architecture
+   decisions) and lists the exact next steps, including a RAM-relocation
+   task that must happen before any new production code is written.
+4. R9, DEF FN reintegration, R10, R11 remain queued in that order, after
+   R8.9, exactly as this file originally described below — just insert
+   R8.9 immediately before R9 in that sequence.
+
+## Outstanding work (historical — superseded by §above, kept for context)
 
 1. **V2 semantic/capability audit** (not yet done, should happen next or
    alongside early R9 work) — for each inherited V1 behavior, ask: why did
@@ -120,7 +147,7 @@ separately-tested architecture until R9.
 5. **R11 — ROM services / USR programmer interface**, after R10 stabilizes,
    aiming for zero required ROM growth.
 
-## Recommended first task after `/clear`
+## Recommended first task after `/clear` (historical — see the STOP section above instead)
 
 Read this file, then `docs/v2/ARCHITECTURE_B_IMPLEMENTATION_PLAN.md`'s R8.5
 and R9 sections, then begin the V2 semantic/capability audit (item 1 above)

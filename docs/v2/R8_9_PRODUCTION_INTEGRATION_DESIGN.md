@@ -1,13 +1,18 @@
 # R8.9 — V2 Production Integration: design
 
-Status: design pass complete, implementation starting. This document
-records the architecture decisions for connecting Architecture B (V2
-compiler + VM + decompiler) to the real production ROM, replacing V1's
-language-execution role while reusing every piece of mature platform
-machinery that isn't intrinsically V1-interpreter-specific, per the
-project rule: **preserve capability and intended semantics, not obsolete
-V1 mechanism — and reuse mature platform/editor/storage machinery when it
-is not intrinsically coupled to the obsolete V1 interpreter.**
+**Status: design pass complete, implementation NOT started.** A RAM
+collision was found during implementation prep (§4 below) that must be
+resolved properly before any code is written — see
+`docs/v2/R8_9_HANDOFF.md` for the full handoff: exact verified RAM map,
+what remains unverified, and the explicit next-session task list. Read
+that file first. This document records the architecture decisions for
+connecting Architecture B (V2 compiler + VM + decompiler) to the real
+production ROM, replacing V1's language-execution role while reusing
+every piece of mature platform machinery that isn't intrinsically
+V1-interpreter-specific, per the project rule: **preserve capability and
+intended semantics, not obsolete V1 mechanism — and reuse mature
+platform/editor/storage machinery when it is not intrinsically coupled to
+the obsolete V1 interpreter.**
 
 R8.9's success gate (unchanged from the decision that created this
 milestone): a user can boot the actual production ROM, enter and edit a
@@ -135,7 +140,37 @@ RAM/ROM/editing/SAVE-LOAD/decompiler evidence — which is what the
 reasoning above does. It is documented here in full so it can be
 challenged directly if this reasoning turns out wrong once implemented.
 
-## 4. RAM collision resolution
+## 4. RAM collision — CORRECTION, this section's original resolution was incomplete
+
+**This section originally claimed the RAM collision was "resolved... by
+construction" — that claim was wrong, or at best only half the problem.
+Corrected here; do not act on the original text below the line, kept only
+for the historical record.**
+
+The "V1 and V2 never run concurrently, so there's no collision" argument
+below is real and still holds — but it only resolves *execution*
+collision (V1's interpreter and V2's VM never touch this RAM at the same
+time). It does **not** address a second, separate, more acute problem
+found during implementation prep: **V2's own fixed tables (`FLOATTAB_
+BASE` etc.) sit at literal addresses starting just 171 bytes above
+`PROG_AREA_START`, and `kernel/memory`'s own growth-ceiling check has no
+awareness of those tables at all** — so a sufficiently long *V2 program's
+own source text*, stored via the reused line-store, would silently grow
+into and corrupt V2's own workspace, with no V1 involved on either side of
+that collision.
+
+This is a real, unresolved design problem, not a solved one. Full detail,
+a verified RAM map, and the explicit next-session task list are in
+`docs/v2/R8_9_HANDOFF.md` §6-§10 — read that document before proceeding
+with any implementation. The short version: V2's fixed tables need to be
+relocated (as a block, to freed room near `PROG_AREA_MAX`/`$C000`,
+changing only their `equ` values) before the line-store can safely hold a
+real production program; a temporary hardcoded cap is acceptable only as
+a development-time corruption guard, not as R8.9's shipped design.
+
+---
+
+**Original text (superseded, kept for history):**
 
 V2's own fixed tables/sysvars overlap V1's `PROG_AREA` range. This is
 resolved, not by relocating anything, by construction: **R8.9's new
