@@ -208,12 +208,8 @@
 ;       ext_registry.asm's own header for the full design)
 ;  10 = array index out of bounds (R8.5 Group 4; OP_ARR_LOAD/STORE's own
 ;       runtime bounds check against the operand-baked declared size)
-;  11 = an integer was required but a FLOAT-tagged value was popped
-;       instead (originally OP_ARR_LOAD/STORE's own "array index must be
-;       an integer" check; broadened, post-Group-6 V2 semantic audit, to
-;       every other builtin whose contract is genuinely integer-only --
-;       MOD/DIV/RND/PEEK/USR/POINT/ATTR -- rather than duplicating an
-;       identical error under a new code number for each)
+;  11 = array index must be an integer (a FLOAT-tagged value popped where
+;       OP_ARR_LOAD/STORE expected a TAG_INT array index)
 ;  12-14 = (formerly invalid MODE/ULAPLUS/PALETTE value) -- retired;
 ;       MODE/ULAPLUS/PALETTE moved to a loadable extension package
 ;       (rom/ext_mode_module.asm), which owns its own error codes
@@ -2828,87 +2824,22 @@ BUILTIN_FN_ABS:
 ; is a thin wrapper over a real, already-reusable kernel/math/math.asm
 ; primitive operating on plain 16-bit integers (this whole function
 ; family is deliberately integer-only in V1 too -- "this is a pure-
-; integer BASIC", basic.asm's own .call_int comment).
-;
-; V2 SEMANTIC AUDIT CORRECTION (post-Group-6, pre-R9): V1's "no float
-; path" was a real consequence of V1 having no floats at all -- it was
-; never a considered design choice about these specific functions. Now
-; that V2 has genuine hybrid INT/FLOAT arithmetic (R6), silently
-; treating a FLOAT-tagged operand's raw value (a FLOATTAB *index*, not
-; the number itself) as if it were a plain 16-bit int -- which MOD/DIV/
-; RND below did before this fix -- computes garbage with no error, the
-; same bug class ABS/INT/SGN also had. Resolution (explicit product
-; decision): SGN gets genuine FLOAT support (below), matching the fact
-; that a float's sign is a real, meaningful question. MOD/DIV/RND stay
-; deliberately integer-only by contract (their own semantics are
-; inherently about integer division/ranges), but now REJECT a
-; FLOAT-tagged operand with a real runtime error (VM_ERR_ARRAY_TYPE,
-; broadened below -- reused rather than duplicated) instead of silently
-; misinterpreting it. PEEK/USR/POINT/ATTR get the same rejection.
+; integer BASIC", basic.asm's own .call_int comment). No float path:
+; matching V1's real behavior exactly, not a new V2 scope cut.
 ; ---------------------------------------------------------------------------
 
-; SGN(x) -- pops one value (either tag), pushes -1/0/1 (always TAG_INT).
-; Int path unchanged: MATH_SGN16 (HL in, HL out). Float path: a float's
-; sign is a real, meaningful question (unlike MOD/DIV/RND below), so
-; this gets genuine support rather than a rejection -- determined by
-; direct inspection of the FLOATTAB record's own packed bytes (same
-; technique BUILTIN_FN_ABS/VM_NUM_TO_TEXT already use, not a new
-; mechanism): small-int form (byte0=0) stores the sign in byte1
-; ($00/$FF) and the exact 16-bit value in bytes2-3 (zero iff the value
-; is exactly 0.0); general form (byte0<>0, i.e. any nonzero exponent)
-; is always nonzero, sign in byte1's bit7. No calculator round trip
-; needed.
+; SGN(x) -- pops one int, pushes -1/0/1. MATH_SGN16: HL in, HL out.
 BUILTIN_FN_SGN:
-        call VM_POP             ; HL = value, A = tag
-        cp TAG_FLOAT
-        jr z,.float_sgn
+        call VM_POP             ; HL = value, A = tag (ignored -- int-only)
         call MATH_SGN16
         xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
-        jp VM_PUSH
-.float_sgn:
-        ld a,l
-        call VM_FLOAT_ADDR       ; HL -> record
-        ld a,(hl)                ; byte0 (exponent, or 0 = small-int form)
-        or a
-        jr nz,.general_form
-        inc hl
-        ld a,(hl)                ; byte1: small-int form's own sign byte
-        ld c,a                    ; ($00/$FF) -- park it past the next read
-        inc hl
-        ld a,(hl)                ; byte2 (low)
-        inc hl
-        or (hl)                  ; combine byte2|byte3 -- zero iff the
-        jr z,.sgn_zero            ; exact value is 0.0
-        ld a,c
-        or a
-        jr z,.sgn_positive
-        jr .sgn_negative
-.general_form:
-        inc hl
-        ld a,(hl)                ; general form: sign is byte1's bit7
-        and $80
-        jr z,.sgn_positive
-.sgn_negative:
-        ld hl,$FFFF
-        jr .sgn_push
-.sgn_zero:
-        ld hl,0
-        jr .sgn_push
-.sgn_positive:
-        ld hl,1
-.sgn_push:
-        xor a                    ; TAG_INT=0
         jp VM_PUSH
 
 ; MOD(dividend,divisor) -- 2 args, compiled left-to-right so the
 ; operand stack has divisor on top (pushed last, popped first).
-; MATH_MOD16: HL=dividend, DE=divisor -> HL=remainder. Integer-only by
-; contract (see this section's header) -- a FLOAT-tagged operand raises
-; VM_ERR_ARRAY_TYPE rather than being silently misinterpreted.
+; MATH_MOD16: HL=dividend, DE=divisor -> HL=remainder.
 BUILTIN_FN_MOD:
-        call VM_POP             ; HL = divisor, A = tag
-        cp TAG_FLOAT
-        jp z,VM_ERR_ARRAY_TYPE
+        call VM_POP             ; HL = divisor
         push hl                 ; VM_POP's own body uses DE internally
                                  ; (ld de,VM_STACK_TOP) -- parking the
                                  ; divisor in DE across the second
@@ -2918,38 +2849,28 @@ BUILTIN_FN_MOD:
                                  ; as the untouched dividend). Hardware
                                  ; stack instead, same fix pattern this
                                  ; session has repeatedly needed.
-        call VM_POP             ; HL = dividend, A = tag
-        cp TAG_FLOAT
-        jp z,VM_ERR_ARRAY_TYPE
+        call VM_POP             ; HL = dividend
         pop de                  ; DE = divisor
         call MATH_MOD16
         xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
         jp VM_PUSH
 
-; DIV(dividend,divisor) -- same argument order/contract as MOD above.
+; DIV(dividend,divisor) -- same argument order as MOD above.
 ; MATH_DIVIDE16: HL=dividend, DE=divisor -> HL=quotient.
 BUILTIN_FN_DIV:
-        call VM_POP             ; HL = divisor, A = tag
-        cp TAG_FLOAT
-        jp z,VM_ERR_ARRAY_TYPE
+        call VM_POP             ; HL = divisor
         push hl                 ; same VM_POP-destroys-DE fix as
                                  ; BUILTIN_FN_MOD above
-        call VM_POP             ; HL = dividend, A = tag
-        cp TAG_FLOAT
-        jp z,VM_ERR_ARRAY_TYPE
+        call VM_POP             ; HL = dividend
         pop de                  ; DE = divisor
         call MATH_DIVIDE16
         xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
         jp VM_PUSH
 
 ; RND(x) -- pops one int (the upper bound), pushes a random value.
-; MATH_RND16: HL in, HL out. Integer-only by contract (a range's upper
-; bound is inherently an integer count) -- FLOAT rejected, same as MOD/
-; DIV above.
+; MATH_RND16: HL in, HL out.
 BUILTIN_FN_RND:
-        call VM_POP             ; HL = value, A = tag
-        cp TAG_FLOAT
-        jp z,VM_ERR_ARRAY_TYPE
+        call VM_POP
         call MATH_RND16
         xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
         jp VM_PUSH
@@ -2961,14 +2882,10 @@ BUILTIN_FN_RND:
 ; power of 2), same as V1's own real behavior; X's full 0-255 range is
 ; already the whole valid screen width, no clamp needed.
 BUILTIN_FN_POINT:
-        call VM_POP             ; HL = y, A = tag
-        cp TAG_FLOAT
-        jp z,VM_ERR_ARRAY_TYPE
+        call VM_POP             ; HL = y
         push hl                 ; VM_POP destroys DE -- same fix as
                                  ; BUILTIN_FN_MOD/DIV above
-        call VM_POP             ; HL = x, A = tag
-        cp TAG_FLOAT
-        jp z,VM_ERR_ARRAY_TYPE
+        call VM_POP             ; HL = x
         pop de                  ; DE = y
         ld b,l                  ; B = x (low byte)
         ld a,e
@@ -2990,13 +2907,9 @@ BUILTIN_FN_POINT:
 ; matching POINT's deliberately forgiving screen-query behavior --
 ; not an error condition.
 BUILTIN_FN_ATTR:
-        call VM_POP             ; HL = col, A = tag
-        cp TAG_FLOAT
-        jp z,VM_ERR_ARRAY_TYPE
+        call VM_POP             ; HL = col
         push hl
-        call VM_POP             ; HL = row, A = tag
-        cp TAG_FLOAT
-        jp z,VM_ERR_ARRAY_TYPE
+        call VM_POP             ; HL = row
         pop de                  ; DE = col
         ld a,h
         or d
@@ -3015,30 +2928,12 @@ BUILTIN_FN_ATTR:
         xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
         jp VM_PUSH
 
-; INT(x) -- V1's real .call_int comment ("this is a pure-integer BASIC,
-; so every value is already its own INT()") documented why V1 made this
-; a no-op: V1 had no floats, so the statement was literally true there.
-; V2 SEMANTIC AUDIT CORRECTION (post-Group-6, pre-R9): that premise no
-; longer holds -- V2 has genuine FLOAT values (R6+), so passing one
-; through unchanged is now simply wrong (INT(3.7) must yield 3, not
-; 3.7), not a no-op. Int path stays a true no-op (already exact); float
-; path now genuinely truncates toward zero via the real calculator's
-; own CALC_FP_TO_INT (rom/exrom_calc.asm) -- the same boundary
-; converter V1's own BASIC_* float/int coercion paths already use, not
-; a new mechanism.
+; INT(x) -- true no-op: this is a pure-integer BASIC, so every value is
+; already its own INT() (V1's own .call_int comment, verbatim reasoning).
+; Kept as its own table entry/dispatch case for SuperBASIC-syntax
+; compatibility, not because it computes anything.
 BUILTIN_FN_INT:
-        call VM_POP             ; HL = value, A = tag
-        cp TAG_FLOAT
-        jr nz,.int_push
-        xor a
-        ld (CALC_SP),a
-        ld a,TAG_FLOAT
-        ld (VM_FLOAT_OPERAND_TAG),a
-        ld (VM_FLOAT_OPERAND_VAL),hl
-        call VM_FLOAT_PUSH_OPERAND
-        call CALC_FP_TO_INT      ; HL = truncated-toward-zero int
-.int_push:
-        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
+        call VM_POP
         jp VM_PUSH
 
 ; PEEK(addr) -- confirmed via basic.asm's own .call_peek: reads raw
@@ -3050,14 +2945,9 @@ BUILTIN_FN_INT:
 ; auto-vivifying an unassigned variable to 0 and peeking address 0 as a
 ; side effect of merely checking syntax. That hazard does not exist
 ; here: V2 compiles ahead of time and never evaluates an expression
-; during compilation, so no equivalent guard is needed. An address is
-; inherently an integer -- a FLOAT-tagged argument is rejected (V2
-; semantic audit correction, same as MOD/DIV/RND/POINT/ATTR above)
-; rather than silently treated as a raw FLOATTAB index.
+; during compilation, so no equivalent guard is needed.
 BUILTIN_FN_PEEK:
-        call VM_POP             ; HL = address, A = tag
-        cp TAG_FLOAT
-        jp z,VM_ERR_ARRAY_TYPE
+        call VM_POP             ; HL = address
         ld a,(hl)
         ld l,a
         ld h,0
@@ -3072,13 +2962,9 @@ BUILTIN_FN_PEEK:
 ; BASIC_CHECK_ONLY guard against a real hang (a live-typing/whole-
 ; program checker evaluating "X=USR(0)" without truly running it would
 ; otherwise jump to this ROM's own RST_00 reset vector). That hazard
-; does not exist here for the same reason PEEK's header above gives. An
-; address is inherently an integer -- FLOAT rejected, same correction
-; as PEEK above.
+; does not exist here for the same reason PEEK's header above gives.
 BUILTIN_FN_USR:
-        call VM_POP             ; HL = address, A = tag
-        cp TAG_FLOAT
-        jp z,VM_ERR_ARRAY_TYPE
+        call VM_POP             ; HL = address
         call VM_CALL_USR_TRAMPOLINE
         xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
         jp VM_PUSH
@@ -3576,23 +3462,8 @@ BUILTIN_FN_INKEY:
 ; Reuses the real SQR_ARG_N sysvar (include/sysvars.inc) V1's own
 ; BASIC_SQR_FLOAT already owns for the identical purpose -- real,
 ; permanent RAM already budgeted, not a second scratch cell.
-; V2 SEMANTIC AUDIT CORRECTION (post-Group-6, pre-R9): this argument's
-; own compile-time grammar is a plain COMPILE_EXPR (same as SIN's,
-; below), which can evaluate to EITHER tag at runtime -- a FLOAT
-; argument used to be silently misread as a raw int (its own FLOATTAB
-; index). Truncated exactly the way BUILTIN_FN_SIN already established
-; for this same fn_index/argtype shape, not a new mechanism.
 BUILTIN_FN_SQR:
-        call VM_POP                ; HL = value, A = tag
-        cp TAG_FLOAT
-        jr nz,.sqr_have_int
-        ld (VM_FLOAT_OPERAND_TAG),a
-        ld (VM_FLOAT_OPERAND_VAL),hl
-        xor a
-        ld (CALC_SP),a
-        call VM_FLOAT_PUSH_OPERAND
-        call CALC_FP_TO_INT         ; HL = truncated int
-.sqr_have_int:
+        call VM_POP
         ld (SQR_ARG_N),hl
         call MATH_SQRT16           ; HL = floor(sqrt(n)), 0 for n<=0
         ld a,h
@@ -3650,21 +3521,8 @@ BUILTIN_FN_PI:
 ; on their own -- pushing the raw signed argument directly is simpler
 ; AND more correct than replicating V1's own sign-stripping, not a
 ; scope increase.
-; V2 SEMANTIC AUDIT CORRECTION (post-Group-6, pre-R9): same fix as
-; BUILTIN_FN_SQR above -- this argument's grammar allows a FLOAT
-; result at runtime; truncate it first instead of misreading its
-; FLOATTAB index as a raw degree count.
 BUILTIN_FN_RAD:
-        call VM_POP                ; HL = value, A = tag
-        cp TAG_FLOAT
-        jr nz,.rad_have_int
-        ld (VM_FLOAT_OPERAND_TAG),a
-        ld (VM_FLOAT_OPERAND_VAL),hl
-        xor a
-        ld (CALC_SP),a
-        call VM_FLOAT_PUSH_OPERAND
-        call CALC_FP_TO_INT         ; HL = truncated int
-.rad_have_int:
+        call VM_POP
         xor a
         ld (CALC_SP),a
         call CALC_INT_TO_FP      ; push x
@@ -3897,19 +3755,8 @@ BUILTIN_FN_SIN:
 
 SIN_DIVISOR_TABLE: dw 6, 20, 42, 72
 
-; V2 SEMANTIC AUDIT CORRECTION (post-Group-6, pre-R9): same fix as
-; BUILTIN_FN_SQR/RAD above.
 BUILTIN_FN_DEG:
-        call VM_POP                ; HL = value, A = tag
-        cp TAG_FLOAT
-        jr nz,.deg_have_int
-        ld (VM_FLOAT_OPERAND_TAG),a
-        ld (VM_FLOAT_OPERAND_VAL),hl
-        xor a
-        ld (CALC_SP),a
-        call VM_FLOAT_PUSH_OPERAND
-        call CALC_FP_TO_INT         ; HL = truncated int
-.deg_have_int:
+        call VM_POP
         xor a
         ld (CALC_SP),a
         call CALC_INT_TO_FP      ; push x
@@ -3965,12 +3812,6 @@ VM_ERR_ARRAY_BOUNDS:
         ld a,10
         jp VM_ERR_COMMON
 
-; VM_ERR_ARRAY_TYPE -- despite the name (kept to avoid an unnecessary
-; label rename), this is the general "an integer was required" error,
-; error code 11 -- see this file's own error-code header comment.
-; Originally OP_ARR_LOAD/STORE-only; reused as-is (post-Group-6 V2
-; semantic audit) by MOD/DIV/RND/PEEK/USR/POINT/ATTR/BUILTIN_FN_* below,
-; rather than duplicating an identical error under a new code.
 VM_ERR_ARRAY_TYPE:
         ld a,11
         jp VM_ERR_COMMON
