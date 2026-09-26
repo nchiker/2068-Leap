@@ -270,9 +270,10 @@ TEST4_OFFSET:       equ 80
     DS TEST5_OFFSET - ($ - BYTECODE_IMAGE), 0
 
 TEST5_OFFSET:       equ 96
-    ; FOR I=1 TO 5 : SUM=SUM+I : NEXT I  (symbol 3=I, symbol 4=SUM)
+    ; FOR I=1 TO 5 STEP 1 : SUM=SUM+I : NEXT I  (symbol 3=I, symbol 4=SUM)
     db 1, 1             ; PUSH_I8 1              (initial value for I)
     db 1, 5             ; PUSH_I8 5              (limit)
+    db 1, 1             ; PUSH_I8 1              (step)
     db 13, 3            ; FOR_INIT 3             (I = 1, remember limit 5)
     db 2, 0, 0          ; PUSH_I16 0
     db 4, 4             ; STORE_VAR 4            (SUM = 0)

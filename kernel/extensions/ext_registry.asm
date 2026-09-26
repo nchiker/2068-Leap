@@ -44,9 +44,10 @@
 ; ============================================================================
 
 ; ---------------------------------------------------------------------------
-; Workspace — placed at $8F70-$8FF0, immediately after rom/exrom_v2_
-; decompiler.asm's own relocated workspace and still comfortably below
-; VM_CODE_BASE ($9000). NOT the old $8380 this file used before: that
+; Workspace — R8.9 moved the call/register scratch to $BED8-$BEEF and
+; the persistent table to $BF00-$BFA7, above bytecode and outside the
+; source/staging buffers. Earlier locations below are placement history,
+; not the current layout. NOT the old $8380 this file used before: that
 ; address was believed empty from the same "grep rom/exrom_v2_*.asm's
 ; own equs" check exrom_v2_decompiler.asm's own workspace used, but a
 ; real build's own .sym file shows $8380-$83FF is NOT empty at all --
@@ -106,35 +107,35 @@ EXT2_REC_LEN:        equ 14       ; [gen:1][name_len:1][name:8][exec:2]
                                     ; (R8.5 Group 6, LEN/CODE/VAL) to
                                     ; extensions with several arguments
                                     ; of different types
-EXT2_TABLE:          equ $9820    ; 12*14 = 168 bytes, ends $98C8 --
+EXT2_TABLE:          equ $BF00    ; 12*14 = 168 bytes, ends $BFA8 --
                                     ; relocated, see this block's own
                                     ; header above
-EXT_CALL_ARG0:        equ $8FD8   ; 2 bytes each — full 16-bit, not V1's
-EXT_CALL_ARG1:        equ $8FDA   ; 1-byte EXTENSION_ARG0..3
-EXT_CALL_ARG2:        equ $8FDC
-EXT_CALL_ARG3:        equ $8FDE
-EXT_CALL_RESULT:      equ $8FE0   ; 2 bytes; reserved, unused by
+EXT_CALL_ARG0:        equ $BED8   ; 2 bytes each — full 16-bit, not V1's
+EXT_CALL_ARG1:        equ $BEDA   ; 1-byte EXTENSION_ARG0..3
+EXT_CALL_ARG2:        equ $BEDC
+EXT_CALL_ARG3:        equ $BEDE
+EXT_CALL_RESULT:      equ $BEE0   ; 2 bytes; reserved, unused by
                                     ; statement extensions for now
-EXT_CALL_ARG4:        equ $8FEC   ; 2 bytes -- the 5th arg slot (GRAB's
+EXT_CALL_ARG4:        equ $BEEC   ; 2 bytes -- the 5th arg slot (GRAB's
                                     ; own w/h/etc.), placed in the real
                                     ; free gap between EXT2_REG_NAMELEN's
-                                    ; own end ($8FEC) and VM_CODE_BASE
-                                    ; ($9000), not contiguous with ARG0-3
+                                    ; own end ($BEEC), not contiguous
+                                    ; with ARG0-3
                                     ; (which would require shifting
                                     ; EXT_CALL_RESULT/EXT2_GEN_COUNTER/
                                     ; every EXT2_REG_* scratch cell after
                                     ; it) -- OP_CALL_EXT's own arg-index
                                     ; math (EXT_CALL_ARG0 + index*2) only
                                     ; needs to special-case index 4
-EXT2_GEN_COUNTER:     equ $8FE2   ; 1 byte; rolling, never 0
-EXT2_REG_NAME:        equ $8FE3   ; EXT2_REGISTER scratch (2 bytes)
-EXT2_REG_EXEC:        equ $8FE5   ; (2 bytes)
-EXT2_REG_ARGCOUNT:    equ $8FE7   ; (1 byte)
-EXT2_REG_SLOT:        equ $8FE8   ; (1 byte): the slot index being filled
-EXT2_REG_SLOTPTR:     equ $8FE9   ; (2 bytes): a moving write cursor
+EXT2_GEN_COUNTER:     equ $BEE2   ; 1 byte; rolling, never 0
+EXT2_REG_NAME:        equ $BEE3   ; EXT2_REGISTER scratch (2 bytes)
+EXT2_REG_EXEC:        equ $BEE5   ; (2 bytes)
+EXT2_REG_ARGCOUNT:    equ $BEE7   ; (1 byte)
+EXT2_REG_SLOT:        equ $BEE8   ; (1 byte): the slot index being filled
+EXT2_REG_SLOTPTR:     equ $BEE9   ; (2 bytes): a moving write cursor
                                     ; into the slot being filled
-EXT2_REG_NAMELEN:     equ $8FEB   ; (1 byte)
-EXT2_REG_ARGTYPES:    equ $9810   ; (1 byte) -- EXT2_REGISTER's own copy
+EXT2_REG_NAMELEN:     equ $BEEB   ; (1 byte)
+EXT2_REG_ARGTYPES:    equ $BFA8   ; (1 byte) -- EXT2_REGISTER's own copy
                                     ; of its new C=argtypes input,
                                     ; stashed at entry before C is reused
                                     ; as the slot-scan index. Placed
@@ -357,9 +358,9 @@ EXT2_SLOT_ADDR:
 
 ; ===========================================================================
 ; EXT2_LOOKUP_TMP_NAME/LEN/SLOT — EXT2_LOOKUP's own scratch.
-EXT2_LOOKUP_NAME:     equ $8FEC   ; (2 bytes)
-EXT2_LOOKUP_LEN:      equ $8FEE   ; (1 byte)
-EXT2_LOOKUP_SLOT:     equ $8FEF   ; (1 byte)
+EXT2_LOOKUP_NAME:     equ $BEEC   ; (2 bytes)
+EXT2_LOOKUP_LEN:      equ $BEEE   ; (1 byte)
+EXT2_LOOKUP_SLOT:     equ $BEEF   ; (1 byte)
 
 ; ===========================================================================
 ; EXT2_LOOKUP — In: HL = name pointer, B = length (a compiler token's

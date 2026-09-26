@@ -66,21 +66,19 @@
 ; ============================================================================
 
 ; ---------------------------------------------------------------------------
-; Module-private workspace. Freely chosen -- this file is loaded
-; separately from the resident ROM's own equ space, so it doesn't need
-; to avoid resident v2 workspace, only real sysvar RAM (checked against
-; include/sysvars.inc's own real DEFS chain, same discipline every
-; other new table this session used).
+; Module-private workspace. R8.9 reserves $BFB0-$BFBA for the package's
+; scratch cells. The loaded module and resident V2 code share the same
+; physical RAM, so this range is part of the integrated map.
 ; ---------------------------------------------------------------------------
-SPR_SLOT:      equ $9800
-SPR_ROW:       equ $9801
-SPR_COL:       equ $9802
-SPR_W:         equ $9803
-SPR_H:         equ $9804
-SPR_NEW_ROW:   equ $9805
-SPR_NEW_COL:   equ $9806
-SPR_IMG_ADDR:  equ $9807
-SPR_BG_ADDR:   equ $9809
+SPR_SLOT:      equ $BFB0
+SPR_ROW:       equ $BFB1
+SPR_COL:       equ $BFB2
+SPR_W:         equ $BFB3
+SPR_H:         equ $BFB4
+SPR_NEW_ROW:   equ $BFB5
+SPR_NEW_COL:   equ $BFB6
+SPR_IMG_ADDR:  equ $BFB7
+SPR_BG_ADDR:   equ $BFB9
 
 ; SPR_COMPUTE_ADDRS -- input: SPR_SLOT. Output: SPR_IMG_ADDR/SPR_BG_ADDR
 ; = this slot's own real image/background buffer addresses. Destroys:

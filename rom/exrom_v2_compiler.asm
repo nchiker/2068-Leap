@@ -171,16 +171,16 @@
 ; Compiler state. Placed by the including driver
 ; (rom/test_v2_compiler_r2.asm for now).
 ; ---------------------------------------------------------------------------
-SRC_PTR:            equ $8B00   ; pointer into source text being compiled
-EMIT_PTR:           equ $8B02   ; pointer into bytecode output buffer
-TOK_TYPE:           equ $8B04   ; current token type (1 byte)
-TOK_VAL:            equ $8B05   ; current token numeric value (2 bytes)
-TOK_NAME:           equ $8B07   ; current token identifier text pointer (2B)
-TOK_LEN:            equ $8B09   ; current token identifier length (1 byte)
-COMPILE_ERROR_CODE: equ $8B0A   ; 0 = no error; see header for nonzero codes
+SRC_PTR:            equ $BA00   ; pointer into source text being compiled
+EMIT_PTR:           equ $BA02   ; pointer into bytecode output buffer
+TOK_TYPE:           equ $BA04   ; current token type (1 byte)
+TOK_VAL:            equ $BA05   ; current token numeric value (2 bytes)
+TOK_NAME:           equ $BA07   ; current token identifier text pointer (2B)
+TOK_LEN:            equ $BA09   ; current token identifier length (1 byte)
+COMPILE_ERROR_CODE: equ $BA0A   ; 0 = no error; see header for nonzero codes
 
-CSYM_COUNT:         equ $8B0B   ; number of distinct compile-time symbols
-IDENT_LOAD_INDEX:   equ $8B10   ; COMPILE_IDENT_LOAD scratch (1 byte) — same
+CSYM_COUNT:         equ $BA0B   ; number of distinct compile-time symbols
+IDENT_LOAD_INDEX:   equ $BA10   ; COMPILE_IDENT_LOAD scratch (1 byte) — same
                                 ; bug class as ASSIGN_TARGET_INDEX below:
                                 ; CSYM_FIND_OR_CREATE's returned index (in A)
                                 ; must be saved to memory before calling
@@ -196,7 +196,7 @@ IDENT_LOAD_INDEX:   equ $8B10   ; COMPILE_IDENT_LOAD scratch (1 byte) — same
                                 ; ZEsarUX run (SCORE inside an expression
                                 ; always resolved to whatever index 3
                                 ; happened to be, not SCORE's real index).
-ASSIGN_TARGET_INDEX: equ $8B0F  ; COMPILE_ASSIGN scratch (1 byte) — MUST be
+ASSIGN_TARGET_INDEX: equ $BA0F  ; COMPILE_ASSIGN scratch (1 byte) — MUST be
                                 ; memory, not a register: an earlier version
                                 ; saved this in C across the call to
                                 ; COMPILE_EXPR, but COMPILE_EXPR calls
@@ -209,36 +209,36 @@ ASSIGN_TARGET_INDEX: equ $8B0F  ; COMPILE_ASSIGN scratch (1 byte) — MUST be
                                 ; ZEsarUX run (STORE_VAR targeted the wrong
                                 ; symbol slot; wrong final values), not by
                                 ; inspection.
-CSYM_FIND_NAME_PTR: equ $8B0C   ; CSYM_FIND_OR_CREATE scratch (2 bytes) —
+CSYM_FIND_NAME_PTR: equ $BA0C   ; CSYM_FIND_OR_CREATE scratch (2 bytes) —
                                 ; must be real RAM, not inline ROM data (an
                                 ; earlier version of this file declared this
                                 ; as `dw 0` in the code stream, which would
                                 ; have been a silent no-op write to ROM once
                                 ; assembled into a real ROM image — caught
                                 ; before assembling, not at runtime)
-CSYM_FIND_NAME_LEN: equ $8B0E   ; CSYM_FIND_OR_CREATE scratch (1 byte)
-CSYMTAB_BASE:       equ $8900   ; compile-time symbol name table
+CSYM_FIND_NAME_LEN: equ $BA0E   ; CSYM_FIND_OR_CREATE scratch (1 byte)
+CSYMTAB_BASE:       equ $B800   ; compile-time symbol name table
 CSYM_REC_LEN:       equ 9       ; [name_len:1][name:8]
 CSYMTAB_MAX_ENTRIES: equ 16     ; bounded, per this module's R2 scope
 
 ; --- R3 additions: labels, forward-reference fixups, FOR/NEXT loop state ---
-LABEL_COUNT:        equ $8B11   ; number of labels defined so far
-LABELTAB_BASE:      equ $8A00   ; [name_len:1][name:8][offset:2] = 11B/entry
+LABEL_COUNT:        equ $BA11   ; number of labels defined so far
+LABELTAB_BASE:      equ $B900   ; [name_len:1][name:8][offset:2] = 11B/entry
 LABEL_REC_LEN:       equ 11
 LABELTAB_MAX_ENTRIES: equ 8
 
-FIXUP_COUNT:        equ $8B12   ; number of outstanding forward-reference fixups
-FIXUPTAB_BASE:      equ $8A60   ; [patch_addr:2][name_len:1][name:8] = 11B/entry
+FIXUP_COUNT:        equ $BA12   ; number of outstanding forward-reference fixups
+FIXUPTAB_BASE:      equ $B960   ; [patch_addr:2][name_len:1][name:8] = 11B/entry
 FIXUP_REC_LEN:       equ 11
 FIXUPTAB_MAX_ENTRIES: equ 8
 
-LABEL_FIND_NAME_PTR: equ $8B17  ; LABEL_LOOKUP/LABEL_DEFINE scratch (2 bytes)
-LABEL_FIND_NAME_LEN: equ $8B19  ; (1 byte) — same "must be RAM, not
+LABEL_FIND_NAME_PTR: equ $BA17  ; LABEL_LOOKUP/LABEL_DEFINE scratch (2 bytes)
+LABEL_FIND_NAME_LEN: equ $BA19  ; (1 byte) — same "must be RAM, not
                                   ; register-or-inline-data" discipline as
                                   ; CSYM_FIND_NAME_PTR/LEN above
-LABEL_LOOKUP_RESULT: equ $8B1A  ; LABEL_LOOKUP output (2 bytes): resolved
+LABEL_LOOKUP_RESULT: equ $BA1A  ; LABEL_LOOKUP output (2 bytes): resolved
                                   ; offset if found
-FOR_LOOP_TOP_OFFSET: equ $8B1C  ; COMPILE_FOR/COMPILE_NEXT scratch (2 bytes):
+FOR_LOOP_TOP_OFFSET: equ $BA1C  ; COMPILE_FOR/COMPILE_NEXT scratch (2 bytes):
                                   ; the loop body's starting bytecode offset.
                                   ; SINGLE ACTIVE LOOP ONLY — matches R1's VM
                                   ; core's own single VM_FOR_LIMIT slot
@@ -253,30 +253,30 @@ FOR_LOOP_TOP_OFFSET: equ $8B1C  ; COMPILE_FOR/COMPILE_NEXT scratch (2 bytes):
                                   ; SMALL/TYPICAL programs) do not require
                                   ; nested loops, so this scope cut does not
                                   ; block R3's actual success gate.
-FOR_LOOP_VAR_INDEX: equ $8B1E    ; COMPILE_FOR/COMPILE_NEXT scratch (1 byte)
-BRANCH_PATCH_TMP:   equ $8B1F   ; COMPILE_BRANCH_TARGET scratch (2 bytes)
-FIXUP_PATCH_TMP:    equ $8B21   ; FIXUP_RECORD scratch (2 bytes)
-FIXUP_NAME_PTR_TMP: equ $8B23   ; FIXUP_RECORD scratch (2 bytes)
-FIXUP_NAME_LEN_TMP: equ $8B25   ; FIXUP_RECORD scratch (1 byte)
-RESOLVE_PATCH_TMP:  equ $8B26   ; RESOLVE_ALL_FIXUPS scratch (2 bytes)
-STMT_IDENT_NAME_PTR: equ $8B28  ; COMPILE_PROGRAM scratch (2 bytes): the
+FOR_LOOP_VAR_INDEX: equ $BA1E    ; COMPILE_FOR/COMPILE_NEXT scratch (1 byte)
+BRANCH_PATCH_TMP:   equ $BA1F   ; COMPILE_BRANCH_TARGET scratch (2 bytes)
+FIXUP_PATCH_TMP:    equ $BA21   ; FIXUP_RECORD scratch (2 bytes)
+FIXUP_NAME_PTR_TMP: equ $BA23   ; FIXUP_RECORD scratch (2 bytes)
+FIXUP_NAME_LEN_TMP: equ $BA25   ; FIXUP_RECORD scratch (1 byte)
+RESOLVE_PATCH_TMP:  equ $BA26   ; RESOLVE_ALL_FIXUPS scratch (2 bytes)
+STMT_IDENT_NAME_PTR: equ $BA28  ; COMPILE_PROGRAM scratch (2 bytes): the
                                   ; current statement's leading identifier
                                   ; name, saved BEFORE the one-token
                                   ; lookahead that decides label-def vs.
                                   ; assignment overwrites TOK_NAME
-STMT_IDENT_NAME_LEN: equ $8B2A   ; (1 byte)
-RESOLVE_FIXUP_INDEX: equ $8B2B   ; RESOLVE_ALL_FIXUPS scratch (1 byte) —
+STMT_IDENT_NAME_LEN: equ $BA2A   ; (1 byte)
+RESOLVE_FIXUP_INDEX: equ $BA2B   ; RESOLVE_ALL_FIXUPS scratch (1 byte) —
                                   ; see that routine's own comment for why
                                   ; this must be memory, not just C
-FOR_NEXT_HIGH_TMP:   equ $8B2C   ; COMPILE_NEXT scratch (1 byte) — see that
+FOR_NEXT_HIGH_TMP:   equ $BA2C   ; COMPILE_NEXT scratch (1 byte) — see that
                                    ; routine's own comment for why
-IF_SKIP_PATCH_TMP:   equ $8B2D   ; COMPILE_IF scratch (2 bytes): the
+IF_SKIP_PATCH_TMP:   equ $BA2D   ; COMPILE_IF scratch (2 bytes): the
                                    ; false-branch's own patch address,
                                    ; distinct from BRANCH_PATCH_TMP (the
                                    ; true-branch's target)
-PROC_SKIP_PATCH_TMP: equ $8B2F   ; COMPILE_PROC scratch (2 bytes): the
+PROC_SKIP_PATCH_TMP: equ $BA2F   ; COMPILE_PROC scratch (2 bytes): the
                                    ; skip-over-the-body JMP's patch address
-PROC_PARAM_INDEX_TMP: equ $8B31  ; COMPILE_PROC scratch (1 byte): the
+PROC_PARAM_INDEX_TMP: equ $BA31  ; COMPILE_PROC scratch (1 byte): the
                                    ; procedure's single parameter's symbol
                                    ; index, saved across the body compile
 
@@ -284,34 +284,34 @@ PROC_PARAM_INDEX_TMP: equ $8B31  ; COMPILE_PROC scratch (1 byte): the
 ; from CSYMTAB above — "A" (numeric) and "A$" (string) are different
 ; identifiers with independent index spaces, matching the runtime VM's
 ; own separate SYMTAB/STRTAB split (rom/exrom_v2_vm_core.asm). ---
-STRSYM_COUNT:        equ $8B32  ; number of distinct string symbols
-STRSYMTAB_BASE:      equ $8B60  ; compile-time string-symbol name table
+STRSYM_COUNT:        equ $BA32  ; number of distinct string symbols
+STRSYMTAB_BASE:      equ $BA60  ; compile-time string-symbol name table
 STRSYM_REC_LEN:      equ 9      ; [name_len:1][name:8], same shape as CSYMTAB
 STRSYMTAB_MAX_ENTRIES: equ 4    ; matches STRTAB_MAX_VARS in the VM core —
                                   ; the compiler and the VM must agree on
                                   ; this bound; it is not independently
                                   ; enforced by either side against the
                                   ; other, a documented coupling, not a gap
-STRSYM_FIND_NAME_PTR: equ $8B33 ; STRSYM_FIND_OR_CREATE scratch (2 bytes)
-STRSYM_FIND_NAME_LEN: equ $8B35 ; (1 byte)
-CSTR_LIT_LEN_TMP:    equ $8B36  ; COMPILE_STR_FACTOR scratch (1 byte): a
+STRSYM_FIND_NAME_PTR: equ $BA33 ; STRSYM_FIND_OR_CREATE scratch (2 bytes)
+STRSYM_FIND_NAME_LEN: equ $BA35 ; (1 byte)
+CSTR_LIT_LEN_TMP:    equ $BA36  ; COMPILE_STR_FACTOR scratch (1 byte): a
                                   ; string literal's clamped length, saved
                                   ; across the EMIT_BYTE_OP_PUSH_STR_LIT
                                   ; call that would otherwise clobber A
-CSTR_IDENT_INDEX_TMP: equ $8B37 ; COMPILE_STR_FACTOR scratch (1 byte): a
+CSTR_IDENT_INDEX_TMP: equ $BA37 ; COMPILE_STR_FACTOR scratch (1 byte): a
                                   ; string variable's resolved index, saved
                                   ; across the EMIT_BYTE_OP_PUSH_I16 call
-CSTR_ASSIGN_TARGET_TMP: equ $8B38 ; COMPILE_STR_ASSIGN scratch (1 byte)
+CSTR_ASSIGN_TARGET_TMP: equ $BA38 ; COMPILE_STR_ASSIGN scratch (1 byte)
 
 ; --- R6 addition: decimal literals ---
-CNUM_DIVISOR_TMP:   equ $8B39   ; LEX_SCAN_NUMBER scratch (2 bytes): running
+CNUM_DIVISOR_TMP:   equ $BA39   ; LEX_SCAN_NUMBER scratch (2 bytes): running
                                   ; 10^(fractional digits) accumulator
-TOK_FLOAT_DIVISOR:  equ $8B3B   ; token field (2 bytes): companion to
+TOK_FLOAT_DIVISOR:  equ $BA3B   ; token field (2 bytes): companion to
                                   ; TOK_VAL for a TOK_FLOAT_NUMBER token
-CEXT_SLOT:          equ $8B3D   ; R7.5 (COMPILE_EXT_CALL) scratch, 1
-CEXT_GEN:           equ $8B3E   ; byte each unless noted: the matched
-CEXT_ARGCOUNT:      equ $8B3F   ; extension's own slot id/generation/
-CEXT_REMAINING:     equ $8B40   ; argcount, and a countdown while
+CEXT_SLOT:          equ $BA3D   ; R7.5 (COMPILE_EXT_CALL) scratch, 1
+CEXT_GEN:           equ $BA3E   ; byte each unless noted: the matched
+CEXT_ARGCOUNT:      equ $BA3F   ; extension's own slot id/generation/
+CEXT_REMAINING:     equ $BA40   ; argcount, and a countdown while
                                   ; compiling that many comma-separated
                                   ; argument expressions
 
@@ -319,16 +319,16 @@ CEXT_REMAINING:     equ $8B40   ; argcount, and a countdown while
 ; "resolve a name to a small compile-time index" idea R7.5's own
 ; extension registry uses, but simpler: no runtime generation check --
 ; resident functions are compiled in, never unloaded/reloaded.
-BFN_FOUND_ARGCOUNT: equ $8B41   ; BUILTIN_FN_FIND's own output: the
+BFN_FOUND_ARGCOUNT: equ $BA41   ; BUILTIN_FN_FIND's own output: the
                                   ; matched function's declared argcount
-CFN_INDEX:          equ $8B42   ; COMPILE_FACTOR.fn_call scratch, 1 byte
-CFN_ARGCOUNT:       equ $8B43   ; each: the matched function's own
-CFN_REMAINING:      equ $8B44   ; index/argcount, and a countdown while
+CFN_INDEX:          equ $BA42   ; COMPILE_FACTOR.fn_call scratch, 1 byte
+CFN_ARGCOUNT:       equ $BA43   ; each: the matched function's own
+CFN_REMAINING:      equ $BA44   ; index/argcount, and a countdown while
                                   ; compiling that many comma-separated
                                   ; argument expressions (same shape as
                                   ; CEXT_SLOT/CEXT_GEN/CEXT_ARGCOUNT/
                                   ; CEXT_REMAINING above, deliberately)
-BFN_FOUND_ARGTYPE:  equ $8B58   ; R8.5 Group 6 -- BUILTIN_FN_FIND's own
+BFN_FOUND_ARGTYPE:  equ $BA58   ; R8.5 Group 6 -- BUILTIN_FN_FIND's own
                                   ; output: bits 0-1 = per-argument-
                                   ; position type (bit N set = argument N
                                   ; is a string expression, tested via
@@ -342,14 +342,14 @@ BFN_FOUND_ARGTYPE:  equ $8B58   ; R8.5 Group 6 -- BUILTIN_FN_FIND's own
                                   ; numeric (every function through Group
                                   ; 6's original LEN/CODE/VAL). Placed in
                                   ; the free gap
-                                  ; between EXITFOR_PATCH_TABLE ($8B50 +
-                                  ; 4*2=8 bytes = $8B58) and STRSYMTAB_
-                                  ; BASE ($8B60) -- every byte from $8B41
-                                  ; through $8B57 is already spoken for.
-CFN_ARGTYPE:        equ $8B59   ; COMPILE_FACTOR.fn_call's own copy of
+                                  ; between EXITFOR_PATCH_TABLE ($BA50 +
+                                  ; 4*2=8 bytes = $BA58) and STRSYMTAB_
+                                  ; BASE ($BA60) -- every byte from $BA41
+                                  ; through $BA57 is already spoken for.
+CFN_ARGTYPE:        equ $BA59   ; COMPILE_FACTOR.fn_call's own copy of
                                   ; the above, same shape as CFN_INDEX/
                                   ; CFN_ARGCOUNT/CFN_REMAINING
-CEXT_ARGTYPES:      equ $8B5A   ; R8.5 (generic typed extension args,
+CEXT_ARGTYPES:      equ $BA5A   ; R8.5 (generic typed extension args,
                                   ; printer-package ROM reconciliation)
                                   ; -- COMPILE_EXT_CALL's own copy of the
                                   ; matched extension's argtypes bitmask
@@ -363,7 +363,7 @@ CEXT_ARGTYPES:      equ $8B5A   ; R8.5 (generic typed extension args,
                                   ; extension can have several arguments
                                   ; of different types, unlike a single-
                                   ; argument built-in function)
-DIMN_SIZE_TMP:      equ $8B5B   ; R8.5 Group 6 (DIMN) -- COMPILE_DIMN's
+DIMN_SIZE_TMP:      equ $BA5B   ; R8.5 Group 6 (DIMN) -- COMPILE_DIMN's
                                   ; own copy of ARR_SIZE_TMP (ARRSYM_
                                   ; LOOKUP's own output), parked here
                                   ; before LEX_NEXT_TOKEN gets a chance
@@ -373,7 +373,7 @@ DIMN_SIZE_TMP:      equ $8B5B   ; R8.5 Group 6 (DIMN) -- COMPILE_DIMN's
                                   ; whole rewrite keeps needing).
 
 ; R8.5 Group 3 -- block IF/ELSE/ENDIF.
-IF_ELSE_SKIP_PATCH_TMP: equ $8B45  ; COMPILE_IF_BLOCK scratch (2 bytes):
+IF_ELSE_SKIP_PATCH_TMP: equ $BA45  ; COMPILE_IF_BLOCK scratch (2 bytes):
                                      ; the "skip the ELSE body" JMP's own
                                      ; patch address, same role as
                                      ; PROC_SKIP_PATCH_TMP above but for
@@ -388,16 +388,16 @@ IF_ELSE_SKIP_PATCH_TMP: equ $8B45  ; COMPILE_IF_BLOCK scratch (2 bytes):
 ; (rom/exrom_v2_vm_core.asm's ARRTAB) possible with no allocator at all,
 ; the same "resolve to a small index at compile time" philosophy this
 ; whole rewrite already uses for scalars/strings/labels.
-ARRSYM_COUNT:        equ $8B47   ; number of distinct arrays DIM'd so far
-ARRSYM_FIND_NAME_PTR: equ $8B48  ; ARRSYM_FIND_OR_CREATE/ARRSYM_LOOKUP
-ARRSYM_FIND_NAME_LEN: equ $8B4A   ; scratch (2+1 bytes) — same "must be
+ARRSYM_COUNT:        equ $BA47   ; number of distinct arrays DIM'd so far
+ARRSYM_FIND_NAME_PTR: equ $BA48  ; ARRSYM_FIND_OR_CREATE/ARRSYM_LOOKUP
+ARRSYM_FIND_NAME_LEN: equ $BA4A   ; scratch (2+1 bytes) — same "must be
                                     ; real RAM" discipline as CSYM_FIND_
                                     ; NAME_PTR/LEN above
-ARR_SIZE_TMP:        equ $8B4B   ; COMPILE_DIM's own validated size /
+ARR_SIZE_TMP:        equ $BA4B   ; COMPILE_DIM's own validated size /
                                     ; ARRSYM_LOOKUP's found-array size
                                     ; output (1 byte)
-CARR_INDEX:          equ $8B4C   ; COMPILE_ARRAY_ASSIGN/COMPILE_FACTOR's
-CARR_SIZE:           equ $8B4D    ; own array-read scratch (1 byte each):
+CARR_INDEX:          equ $BA4C   ; COMPILE_ARRAY_ASSIGN/COMPILE_FACTOR's
+CARR_SIZE:           equ $BA4D    ; own array-read scratch (1 byte each):
                                     ; the matched array's runtime index and
                                     ; declared size, saved to memory BEFORE
                                     ; compiling the index/value sub-
@@ -406,7 +406,7 @@ CARR_SIZE:           equ $8B4D    ; own array-read scratch (1 byte each):
                                     ; would otherwise clobber ARR_SIZE_TMP/
                                     ; ARRSYM_FIND_NAME_PTR — same bug class
                                     ; as ASSIGN_TARGET_INDEX's own header)
-CINPUT_INDEX_TMP:     equ $8B4E   ; COMPILE_INPUT scratch (1 byte): the
+CINPUT_INDEX_TMP:     equ $BA4E   ; COMPILE_INPUT scratch (1 byte): the
                                     ; resolved target's index, saved to
                                     ; memory before EMIT_BYTE -- a fresh
                                     ; dedicated cell rather than reusing
@@ -417,7 +417,7 @@ CINPUT_INDEX_TMP:     equ $8B4E   ; COMPILE_INPUT scratch (1 byte): the
                                     ; DECOMP_EMIT_CHAR bug this same
                                     ; milestone) — not worth the risk to
                                     ; save one equ.
-EXITFOR_COUNT:        equ $8B4F  ; R8.5 Group 5 -- number of outstanding
+EXITFOR_COUNT:        equ $BA4F  ; R8.5 Group 5 -- number of outstanding
                                     ; EXIT FOR patch addresses for the
                                     ; loop CURRENTLY being compiled, reset
                                     ; to 0 at COMPILE_FOR's own start (no
@@ -425,15 +425,15 @@ EXITFOR_COUNT:        equ $8B4F  ; R8.5 Group 5 -- number of outstanding
                                     ; active-loop scope FOR/NEXT already
                                     ; has — so this never needs to be
                                     ; saved/restored across a nested loop)
-EXITFOR_PATCH_TABLE:  equ $8B50   ; free gap between EXITFOR_COUNT and
-                                    ; STRSYMTAB_BASE ($8B60) — 4 slots *
+EXITFOR_PATCH_TABLE:  equ $BA50   ; free gap between EXITFOR_COUNT and
+                                    ; STRSYMTAB_BASE ($BA60) — 4 slots *
                                     ; 2 bytes = 8 bytes, checked directly
                                     ; against every other v2 file's own
                                     ; equ's before placing this
 EXITFOR_MAX:          equ 4
-ARRSYMTAB_BASE:       equ $8990   ; compile-time array name table (free
-                                    ; gap between CSYMTAB_BASE+16*9=$8990
-                                    ; and LABELTAB_BASE=$8A00 — checked
+ARRSYMTAB_BASE:       equ $B890   ; compile-time array name table (free
+                                    ; gap between CSYMTAB_BASE+16*9=$B890
+                                    ; and LABELTAB_BASE=$B900 — checked
                                     ; directly against every other v2 file's
                                     ; own equ's before placing this)
 ARRSYM_REC_LEN:       equ 10      ; [name_len:1][name:8][size:1]

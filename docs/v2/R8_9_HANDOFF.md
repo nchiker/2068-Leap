@@ -1,5 +1,16 @@
 # R8.9 handoff — design/dependency work complete, implementation not started
 
+## Post-checkpoint update (after `e6fa96c`)
+
+The RAM-map investigation and V2 workspace relocation have now been carried
+out. Read `docs/v2/R8_9_RAM_LEDGER.md` for the assembled sizes, selected
+layout, 14-case standalone ZEsarUX regression result, and the newly measured
+ROM integration gate. The historical state and next-step list below describe
+the earlier `e6fa96c` handoff and are superseded for completed RAM work.
+Production V2 boot, source staging, bounds enforcement, and interactive
+hardware validation are still outstanding; R8.9 is not complete and R9 has
+not begun.
+
 **This is a handoff checkpoint, not an implementation checkpoint.** No
 production code has been changed in this session. Read this file first,
 then `docs/v2/R8_9_PRODUCTION_INTEGRATION_DESIGN.md` (the design document

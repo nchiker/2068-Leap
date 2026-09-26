@@ -229,29 +229,29 @@
 ; for now); a later milestone integrating this into the real EXROM build
 ; will relocate these into include/sysvars.inc.
 ; ---------------------------------------------------------------------------
-VM_CODE_BASE:       equ $9000   ; base address bytecode JMP offsets are relative to
-VM_IP:              equ $8700   ; instruction pointer (2 bytes, absolute address)
-VM_SP:              equ $8702   ; operand-stack pointer (2 bytes, grows down)
-VM_STACK_TOP:       equ $8780   ; operand stack lives $8704-$877F (initial SP)
-VM_STACK_FLOOR:     equ $8704   ; lowest legal SP value (overflow if SP-3 < this)
-VM_TOS_TAG:         equ $8782   ; tag of the value last pushed: 0=INT, 1=FLOAT
-VM_ERROR_CODE:      equ $8783   ; 0 = no error; see header for nonzero codes
-VM_HALTED:          equ $8784   ; nonzero once HALT (or an error-halt) executes
-VM_PUSH_VAL_TMP:    equ $8785   ; VM_PUSH scratch (2 bytes)
-VM_PUSH_TAG_TMP:    equ $8787   ; VM_PUSH scratch (1 byte)
-VM_FOR_LIMIT:       equ $8788   ; FOR_INIT/FOR_NEXT: remembered loop limit (2
+VM_CODE_BASE:       equ $A455   ; base address bytecode JMP offsets are relative to
+VM_IP:              equ $B600   ; instruction pointer (2 bytes, absolute address)
+VM_SP:              equ $B602   ; operand-stack pointer (2 bytes, grows down)
+VM_STACK_TOP:       equ $B680   ; operand stack lives $B604-$B67F (initial SP)
+VM_STACK_FLOOR:     equ $B604   ; lowest legal SP value (overflow if SP-3 < this)
+VM_TOS_TAG:         equ $B682   ; tag of the value last pushed: 0=INT, 1=FLOAT
+VM_ERROR_CODE:      equ $B683   ; 0 = no error; see header for nonzero codes
+VM_HALTED:          equ $B684   ; nonzero once HALT (or an error-halt) executes
+VM_PUSH_VAL_TMP:    equ $B685   ; VM_PUSH scratch (2 bytes)
+VM_PUSH_TAG_TMP:    equ $B687   ; VM_PUSH scratch (1 byte)
+VM_FOR_LIMIT:       equ $B688   ; FOR_INIT/FOR_NEXT: remembered loop limit (2
                                 ; bytes) — single active loop, R1 scope only
-VM_FOR_NEXT_BRANCH: equ $878A  ; OP_FOR_NEXT scratch: branch target operand (2B)
-VM_FOR_NEXT_VALADDR: equ $878C ; OP_FOR_NEXT scratch: loop var's value_lo addr (2B)
-VM_FOR_NEXT_NEWVAL: equ $878E  ; OP_FOR_NEXT scratch: incremented value (2B)
-VM_CALL_PUSH_TMP:   equ $8790  ; VM_CALL_PUSH scratch (2 bytes)
-VM_CALL_SP:         equ $8792  ; VM call-stack pointer (2 bytes, grows down)
-VM_CALL_STACK_TOP:  equ $87A0  ; call stack lives $8794-$879F (6 return
+VM_FOR_NEXT_BRANCH: equ $B68A  ; OP_FOR_NEXT scratch: branch target operand (2B)
+VM_FOR_NEXT_VALADDR: equ $B68C ; OP_FOR_NEXT scratch: loop var's value_lo addr (2B)
+VM_FOR_NEXT_NEWVAL: equ $B68E  ; OP_FOR_NEXT scratch: incremented value (2B)
+VM_CALL_PUSH_TMP:   equ $B690  ; VM_CALL_PUSH scratch (2 bytes)
+VM_CALL_SP:         equ $B692  ; VM call-stack pointer (2 bytes, grows down)
+VM_CALL_STACK_TOP:  equ $B6A0  ; call stack lives $B694-$B69F (6 return
                                 ; addresses deep — R1's own fixed, bounds-
                                 ; checked depth, not the Z80 hardware stack)
-VM_CALL_STACK_FLOOR: equ $8794
+VM_CALL_STACK_FLOOR: equ $B694
 
-SYMTAB_BASE:        equ $8800   ; symbol records: [tag:1][value_lo:1][value_hi:1]
+SYMTAB_BASE:        equ $B700   ; symbol records: [tag:1][value_lo:1][value_hi:1]
 SYM_REC_LEN:        equ 3       ; 3 bytes/record (tag + 2-byte value; no name
                                 ; field at runtime at all — REWRITE_RAM_BUDGET.md's
                                 ; compiled-index design)
@@ -270,12 +270,10 @@ TAG_FLOAT:          equ 1
 ; storage -- no allocator, no per-element tag byte (a real, deliberate
 ; RAM saving over the scalar SYMTAB's own [tag][lo][hi] shape: an array
 ; element's type never varies at runtime the way a bare variable's can,
-; since DIM commits to integer once). Placed in the real free gap between
-; FLOATTAB's own real end ($8500 + (16+2)*5 = $8556) and STRTAB_BASE
-; ($8600) — checked directly against every other v2 file's own equ's
-; before placing this, same discipline as every other new table this
-; session. 4 arrays * 16 elements * 2 bytes = 128 bytes, $8560-$85E0.
-ARRTAB_BASE:        equ $8560
+; since DIM commits to integer once). The original placement used the gap
+; between FLOATTAB and STRTAB. The relocated block preserves that spacing:
+; 4 arrays * 16 elements * 2 bytes = 128 bytes, $B460-$B4DF.
+ARRTAB_BASE:        equ $B460
 ARRAY_MAX_COUNT:    equ 4        ; MUST match rom/exrom_v2_compiler.asm's
                                    ; own ARRSYMTAB_MAX_ENTRIES -- an array's
                                    ; compile-time creation order IS its
@@ -286,7 +284,7 @@ ARRAY_MAX_ELEMS:    equ 16       ; MUST match rom/exrom_v2_compiler.asm's
                                    ; slot*ARRAY_MAX_ELEMS multiply below is
                                    ; four shifts, not a real multiply
 
-STRTAB_BASE:        equ $8600   ; string records: [len:1][content:31] = 32B
+STRTAB_BASE:        equ $B500   ; string records: [len:1][content:31] = 32B
 STR_REC_LEN:        equ 32
 STRTAB_MAX_VARS:    equ 4       ; named string-variable slots (indices 0-3)
 STRTAB_TEMP_COUNT:  equ 2       ; concatenation-result temp slots (4-5),
@@ -298,19 +296,19 @@ STRTAB_TEMP_COUNT:  equ 2       ; concatenation-result temp slots (4-5),
                                  ; milestone's own scoped grammar (string
                                  ; expressions are a flat '+' chain, never
                                  ; nested independently-live sub-results)
-VM_STR_TEMP_NEXT:   equ $87A0   ; round-robin index into the temp slots (1B)
-VM_STR_LIT_LEN_TMP: equ $87A1   ; OP_PUSH_STR_LIT scratch (1 byte)
-VM_STR_LIT_TEMPIDX_TMP: equ $87A2  ; shared scratch (1 byte): the temp-slot
+VM_STR_TEMP_NEXT:   equ $B6A0   ; round-robin index into the temp slots (1B)
+VM_STR_LIT_LEN_TMP: equ $B6A1   ; OP_PUSH_STR_LIT scratch (1 byte)
+VM_STR_LIT_TEMPIDX_TMP: equ $B6A2  ; shared scratch (1 byte): the temp-slot
                                      ; index chosen for this operation,
                                      ; before it's turned into an absolute
                                      ; STRTAB index
-VM_STR_TARGET_TMP:  equ $87A3   ; OP_STORE_STR_VAR scratch (1 byte)
-VM_STR_SRC_ADDR_TMP: equ $87A4  ; shared scratch (2 bytes): a source
+VM_STR_TARGET_TMP:  equ $B6A3   ; OP_STORE_STR_VAR scratch (1 byte)
+VM_STR_SRC_ADDR_TMP: equ $B6A4  ; shared scratch (2 bytes): a source
                                   ; record's address, saved across a second
                                   ; VM_STR_ADDR call that would otherwise
                                   ; overwrite it
-VM_STR_DST_ADDR_TMP: equ $87A6  ; OP_STR_CONCAT scratch (2 bytes)
-VM_STR_RUNNING_DST_TMP: equ $87AC ; OP_STR_CONCAT scratch (2 bytes): the
+VM_STR_DST_ADDR_TMP: equ $B6A6  ; OP_STR_CONCAT scratch (2 bytes)
+VM_STR_RUNNING_DST_TMP: equ $B6AC ; OP_STR_CONCAT scratch (2 bytes): the
                                     ; running dest-content WRITE pointer,
                                     ; saved to memory across the second
                                     ; VM_STR_ADDR call (for b's record) —
@@ -327,12 +325,12 @@ VM_STR_RUNNING_DST_TMP: equ $87AC ; OP_STR_CONCAT scratch (2 bytes): the
                                     ; stepping VM_STR_ADDR's own body live
                                     ; (the seventh real register-clobber
                                     ; bug found this way across R2-R5).
-VM_STR_CONCAT_B_TMP: equ $87A8  ; OP_STR_CONCAT scratch (1 byte): the
+VM_STR_CONCAT_B_TMP: equ $B6A8  ; OP_STR_CONCAT scratch (1 byte): the
                                   ; second operand's STRTAB index
-VM_STRCMP_LENA_TMP: equ $87A9   ; VM_STR_COMPARE scratch (1 byte)
-VM_STRCMP_LENB_TMP: equ $87AA   ; VM_STR_COMPARE scratch (1 byte)
-VM_STRCMP_MINLEN_TMP: equ $87AB ; VM_STR_COMPARE scratch (1 byte)
-BFN_STR_TMP:        equ $87AE   ; R8.5 Group 6 (string-result functions)
+VM_STRCMP_LENA_TMP: equ $B6A9   ; VM_STR_COMPARE scratch (1 byte)
+VM_STRCMP_LENB_TMP: equ $B6AA   ; VM_STR_COMPARE scratch (1 byte)
+VM_STRCMP_MINLEN_TMP: equ $B6AB ; VM_STR_COMPARE scratch (1 byte)
+BFN_STR_TMP:        equ $B6AE   ; R8.5 Group 6 (string-result functions)
                                   ; scratch, 1 byte: a value that must
                                   ; survive VM_STR_ALLOC_TEMP/VM_STR_ADDR
                                   ; (both destroy AF/HL) -- same "park it
@@ -350,7 +348,7 @@ BFN_STR_TMP:        equ $87AE   ; R8.5 Group 6 (string-result functions)
 ; VM_PUSH; the actual 5 float bytes live in FLOATTAB, in the calculator's
 ; own native format (opaque to the VM — copied to/from CALC_STACK
 ; verbatim, never decoded here). ---
-FLOATTAB_BASE:      equ $8500   ; float records: 5 raw calculator-float
+FLOATTAB_BASE:      equ $B400   ; float records: 5 raw calculator-float
                                  ; bytes each, opaque to the VM
 FLOAT_REC_LEN:      equ 5
 FLOATTAB_MAX_VARS:  equ 16      ; ONE dedicated slot per possible SYMTAB
@@ -382,23 +380,23 @@ FLOATTAB_TEMP_COUNT: equ 2      ; arithmetic-result temp slots, indices
                                   ; STRTAB's own temps: a temp is only
                                   ; ever live long enough to be
                                   ; immediately stored or compared
-VM_FLOAT_TEMP_NEXT: equ $87AE   ; round-robin index into the temp slots (1B)
-VM_FLOAT_TEMPIDX_TMP: equ $87AF ; VM_FLOAT_STORE_RESULT scratch (1 byte)
-VM_FLOAT_A_TAG:     equ $87B0   ; OP_ADD/SUB/MUL/DIV scratch (1 byte each):
-VM_FLOAT_A_VAL:     equ $87B1   ; operand A's tag/value, saved to memory
-VM_FLOAT_B_TAG:     equ $87B3   ; the moment VM_POP returns them, since
-VM_FLOAT_B_VAL:     equ $87B4   ; every one of these handlers pops TWICE
+VM_FLOAT_TEMP_NEXT: equ $B6AE   ; round-robin index into the temp slots (1B)
+VM_FLOAT_TEMPIDX_TMP: equ $B6AF ; VM_FLOAT_STORE_RESULT scratch (1 byte)
+VM_FLOAT_A_TAG:     equ $B6B0   ; OP_ADD/SUB/MUL/DIV scratch (1 byte each):
+VM_FLOAT_A_VAL:     equ $B6B1   ; operand A's tag/value, saved to memory
+VM_FLOAT_B_TAG:     equ $B6B3   ; the moment VM_POP returns them, since
+VM_FLOAT_B_VAL:     equ $B6B4   ; every one of these handlers pops TWICE
                                   ; and needs both operands' tag+value
                                   ; simultaneously afterward
-VM_FLOAT_OPERAND_TAG: equ $87B6 ; VM_FLOAT_PUSH_OPERAND's own input (1 byte)
-VM_FLOAT_OPERAND_VAL: equ $87B7 ; (2 bytes)
-VM_DIV_QUOTIENT_TMP: equ $87B9  ; OP_DIV scratch (2 bytes): the fast-path
+VM_FLOAT_OPERAND_TAG: equ $B6B6 ; VM_FLOAT_PUSH_OPERAND's own input (1 byte)
+VM_FLOAT_OPERAND_VAL: equ $B6B7 ; (2 bytes)
+VM_DIV_QUOTIENT_TMP: equ $B6B9  ; OP_DIV scratch (2 bytes): the fast-path
                                   ; int quotient, saved across the
                                   ; exactness-check multiply-back before
                                   ; either using it (exact) or discarding
                                   ; it in favour of a real float divide
                                   ; (inexact)
-VM_FLOAT_SRC_ADDR_TMP: equ $87BB ; VM_FLOAT_PUSH_OPERAND's own dedicated
+VM_FLOAT_SRC_ADDR_TMP: equ $B6BB ; VM_FLOAT_PUSH_OPERAND's own dedicated
                                   ; scratch (2 bytes): parks the source
                                   ; FLOATTAB address across the
                                   ; CALC_SP_TO_NEXT_FREE_PTR call inside
@@ -417,20 +415,20 @@ VM_FLOAT_SRC_ADDR_TMP: equ $87BB ; VM_FLOAT_PUSH_OPERAND's own dedicated
                                   ; reusing B's own cell as scratch here
                                   ; would have reintroduced the exact same
                                   ; clobber bug one level up.
-VM_PLOT_X_TMP:      equ $87BD    ; R7 (OP_PLOT) scratch, 1 byte each: x/y/
-VM_PLOT_Y_TMP:      equ $87BE    ; attribute/OVER-flag, all parked in
-VM_PLOT_ATTR_TMP:   equ $87BF    ; memory across VM_COMPUTE_PRINT_ATTR/
-VM_PLOT_OVER_TMP:   equ $87C0    ; VM_CLAMP_Y191 rather than kept live in
+VM_PLOT_X_TMP:      equ $B6BD    ; R7 (OP_PLOT) scratch, 1 byte each: x/y/
+VM_PLOT_Y_TMP:      equ $B6BE    ; attribute/OVER-flag, all parked in
+VM_PLOT_ATTR_TMP:   equ $B6BF    ; memory across VM_COMPUTE_PRINT_ATTR/
+VM_PLOT_OVER_TMP:   equ $B6C0    ; VM_CLAMP_Y191 rather than kept live in
                                   ; a register across those calls — same
                                   ; standing discipline as every other
                                   ; scratch cell above, applied up front
                                   ; this time instead of found via a bug
-VM_EXT_SLOT:        equ $87C1    ; R7.5 (OP_CALL_EXT) scratch, 1 byte
-VM_EXT_GEN:         equ $87C2    ; each unless noted: the operand's own
-VM_EXT_ARGCOUNT:    equ $87C3    ; [slot_id][generation][argcount], and
-VM_EXT_REMAINING:   equ $87C4    ; a countdown used while popping args
-VM_EXT_POPVAL:      equ $87C5    ; (2 bytes): this iteration's popped value
-VM_EXT_RECPTR:      equ $87C7    ; (2 bytes): the matched registry record
+VM_EXT_SLOT:        equ $B6C1    ; R7.5 (OP_CALL_EXT) scratch, 1 byte
+VM_EXT_GEN:         equ $B6C2    ; each unless noted: the operand's own
+VM_EXT_ARGCOUNT:    equ $B6C3    ; [slot_id][generation][argcount], and
+VM_EXT_REMAINING:   equ $B6C4    ; a countdown used while popping args
+VM_EXT_POPVAL:      equ $B6C5    ; (2 bytes): this iteration's popped value
+VM_EXT_RECPTR:      equ $B6C7    ; (2 bytes): the matched registry record
 
 ; --- R8.5 addition: text I/O (PRINT/LPRINT/INPUT). BASIC_OUTPUT_ROW/COL
 ; (basic.asm) are NOT reused here -- basic.asm is V1's own language
@@ -439,17 +437,17 @@ VM_EXT_RECPTR:      equ $87C7    ; (2 bytes): the matched registry record
 ; CLS/PLOT/COMPUTE_PRINT_ATTR directly: depending on it here would just
 ; create a dependency R9 has to unwind later). A small, self-contained
 ; VM-owned equivalent instead. ---
-VM_ARR_INDEX_TMP:   equ $87D0  ; R8.5 Group 4 -- OP_ARR_LOAD/STORE scratch
-VM_ARR_SIZE_TMP:    equ $87D1   ; (1 byte each): the operand-baked array
+VM_ARR_INDEX_TMP:   equ $B6D0  ; R8.5 Group 4 -- OP_ARR_LOAD/STORE scratch
+VM_ARR_SIZE_TMP:    equ $B6D1   ; (1 byte each): the operand-baked array
                                   ; slot and declared size, saved to memory
                                   ; before VM_POP (which uses HL/DE
                                   ; internally, same "never keep a value in
                                   ; a register across a call" discipline
                                   ; this whole file already follows)
-VM_ARR_ELEM_TMP:    equ $87D2   ; the popped, bounds-checked element index
+VM_ARR_ELEM_TMP:    equ $B6D2   ; the popped, bounds-checked element index
                                   ; (2 bytes, though only the low byte is
                                   ; ever nonzero for a valid access)
-VM_ARR_VALUE_TMP:   equ $87D4   ; OP_ARR_STORE only: the popped value,
+VM_ARR_VALUE_TMP:   equ $B6D4   ; OP_ARR_STORE only: the popped value,
                                   ; saved across the second VM_POP (the
                                   ; index) that follows it (2 bytes)
 
@@ -459,29 +457,29 @@ VM_ARR_VALUE_TMP:   equ $87D4   ; OP_ARR_STORE only: the popped value,
 ; GFX_PRINT_STRING_ATTR echo path PRINT already validated -- NOT a port
 ; of rom/exrom_input.asm's own V1 mechanism (confirmed basic.asm-
 ; dependent, not reusable).
-VM_INPUT_COUNT:      equ $87D6  ; digits/chars accepted so far (1 byte)
-VM_INPUT_TARGET_TMP: equ $87D7  ; the operand-baked SYMTAB/STRTAB index,
+VM_INPUT_COUNT:      equ $B6D6  ; digits/chars accepted so far (1 byte)
+VM_INPUT_TARGET_TMP: equ $B6D7  ; the operand-baked SYMTAB/STRTAB index,
                                    ; saved to memory before IO_READ_KEY
                                    ; (1 byte)
-VM_INPUT_NEG_TMP:    equ $87D8  ; numeric INPUT only: 1 = a leading '-'
+VM_INPUT_NEG_TMP:    equ $B6D8  ; numeric INPUT only: 1 = a leading '-'
                                    ; was seen (1 byte)
-VM_INPUT_CHARBUF:    equ $87D9  ; a 2-byte [char][0] scratch buffer,
+VM_INPUT_CHARBUF:    equ $B6D9  ; a 2-byte [char][0] scratch buffer,
                                    ; reprinted via GFX_PRINT_STRING_ATTR
                                    ; once per accepted character -- the
                                    ; SAME null-terminated-text contract
                                    ; VM_PRINT_COMMON already uses, not a
                                    ; new echo primitive
-VM_INPUT_STR_PTR:    equ $87DB  ; string INPUT only: running write
+VM_INPUT_STR_PTR:    equ $B6DB  ; string INPUT only: running write
                                    ; pointer into the target STRTAB
                                    ; record's own content area (2 bytes)
-VM_INPUT_DIGITS:     equ $87DD  ; numeric INPUT only: up to 6 accepted
+VM_INPUT_DIGITS:     equ $B6DD  ; numeric INPUT only: up to 6 accepted
                                    ; digit characters (max int magnitude
                                    ; is 5 digits + sign), parsed to a
                                    ; 16-bit value once ENTER closes input
 VM_INPUT_DIGITS_MAX: equ 5      ; -32768..32767 -- 5 digits, sign tracked
                                    ; separately in VM_INPUT_NEG_TMP
 
-VM_FOR_STEP:         equ $87E2  ; R8.5 Group 5 -- FOR...STEP. Remembered
+VM_FOR_STEP:         equ $B6E2  ; R8.5 Group 5 -- FOR...STEP. Remembered
                                    ; loop step (2 bytes), same single-
                                    ; active-loop scope as VM_FOR_LIMIT
                                    ; above (no nesting support, unchanged
@@ -491,18 +489,18 @@ VM_FOR_STEP:         equ $87E2  ; R8.5 Group 5 -- FOR...STEP. Remembered
                                    ; compiler.asm's own COMPILE_FOR), so
                                    ; OP_FOR_INIT/OP_FOR_NEXT never need to
                                    ; special-case "no step" at runtime.
-VM_OUTPUT_ROW:       equ $87C9    ; current PRINT row, 0-23 (1 byte)
-VM_OUTPUT_COL:        equ $87CA    ; unused after a PRINT (V1's own real
+VM_OUTPUT_ROW:       equ $B6C9    ; current PRINT row, 0-23 (1 byte)
+VM_OUTPUT_COL:        equ $B6CA    ; unused after a PRINT (V1's own real
                                      ; PRINT always ends its own line --
                                      ; no ";"-suppressed-newline form
                                      ; exists in this dialect -- kept for
                                      ; symmetry/future AT support, always
                                      ; 0 today) (1 byte)
-VM_PRINT_TEXT_TMP:    equ $87CB    ; (2 bytes): text pointer parked
+VM_PRINT_TEXT_TMP:    equ $B6CB    ; (2 bytes): text pointer parked
                                      ; across VM_COMPUTE_PRINT_ATTR
-VM_PRINT_SIGN_TMP:    equ $87CD    ; (1 byte): nonzero if a float being
+VM_PRINT_SIGN_TMP:    equ $B6CD    ; (1 byte): nonzero if a float being
                                      ; printed was negative
-BFN_ABS_IDX_TMP:      equ $87CE    ; (2 bytes): R8.5 Group 1 -- BUILTIN_
+BFN_ABS_IDX_TMP:      equ $B6CE    ; (2 bytes): R8.5 Group 1 -- BUILTIN_
                                      ; FN_ABS's own float-index scratch,
                                      ; parked across the VM_FLOAT_ADDR/
                                      ; sign-check calls that would

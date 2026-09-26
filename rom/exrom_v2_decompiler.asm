@@ -60,10 +60,9 @@
 ; ============================================================================
 
 ; ---------------------------------------------------------------------------
-; Workspace — placed at $8C00-$8F70, immediately after
-; rom/exrom_v2_compiler.asm's own STRSYMTAB_BASE (the last thing below
-; VM_CODE_BASE $9000) and well clear of it, in space nothing else
-; claims. NOT the $8000-$8370 range an earlier draft of this file used:
+; Workspace — now placed at $BB00-$BE70, after the compiler's string
+; symbol table and above the new bytecode region. No other production
+; allocation claims it. NOT the $8000-$8370 range an earlier draft used:
 ; that range was believed empty from a grep across only
 ; rom/exrom_v2_*.asm's own `equ`s, but include/sysvars.inc's real
 ; DEFS-allocated sysvars (confirmed from a real build's own .sym file)
@@ -104,59 +103,59 @@ DECOMP_FRAG_TEXT_MAX: equ 31       ; bytes of text per fragment (matches
                                     ; own test coverage never nests
                                     ; arithmetic more than one level deep)
 DECOMP_FRAG_REC_LEN:  equ 32       ; 1 length byte + 31 text
-DECOMP_FRAG_BASE:     equ $8C00   ; 8*32 = 256 bytes, ends $8D00
-DECOMP_OUT_BUF:       equ $8D00   ; reconstructed text output (400
-                                    ; bytes, ends $8E90 — generous for
+DECOMP_FRAG_BASE:     equ $BB00   ; 8*32 = 256 bytes, ends $BC00
+DECOMP_OUT_BUF:       equ $BC00   ; reconstructed text output (400
+                                    ; bytes, ends $BD90 — generous for
                                     ; this milestone's own test program)
 ; R8 Phase 2 (strings/floats/native-calls/procedures) scratch, added
 ; below — placed in the 112-byte gap between DECOMP_OUT_BUF's own real
-; end ($8E90) and DECOMP_LABEL_TABLE ($8F00), space this file already
-; owns outright (kernel/extensions/ext_registry.asm's own EXT2_TABLE
-; sits at $8F70+, past this file's own highest address, not here).
-DECOMP_ARG_PTR0:      equ $8E90   ; up to 4 popped-argument fragment
-DECOMP_ARG_PTR1:      equ $8E92   ; pointers (2 bytes each) -- LINE's
-DECOMP_ARG_PTR2:      equ $8E94   ; own 4-argument shape is the widest
-DECOMP_ARG_PTR3:      equ $8E96   ; native-call statement this covers
-DECOMP_ARG_LEN0:      equ $8E98   ; the matching 4 lengths (1 byte each)
-DECOMP_ARG_LEN1:      equ $8E99
-DECOMP_ARG_LEN2:      equ $8E9A
-DECOMP_ARG_LEN3:      equ $8E9B
-DECOMP_EXT_SLOT:      equ $8E9C   ; OP_CALL_EXT's own slot-id operand
+; end ($BD90) and DECOMP_LABEL_TABLE ($BE00), space this file already
+; owns outright (kernel/extensions/ext_registry.asm's call scratch
+; starts at $BED8, past this file's own highest address).
+DECOMP_ARG_PTR0:      equ $BD90   ; up to 4 popped-argument fragment
+DECOMP_ARG_PTR1:      equ $BD92   ; pointers (2 bytes each) -- LINE's
+DECOMP_ARG_PTR2:      equ $BD94   ; own 4-argument shape is the widest
+DECOMP_ARG_PTR3:      equ $BD96   ; native-call statement this covers
+DECOMP_ARG_LEN0:      equ $BD98   ; the matching 4 lengths (1 byte each)
+DECOMP_ARG_LEN1:      equ $BD99
+DECOMP_ARG_LEN2:      equ $BD9A
+DECOMP_ARG_LEN3:      equ $BD9B
+DECOMP_EXT_SLOT:      equ $BD9C   ; OP_CALL_EXT's own slot-id operand
                                     ; byte, parked across the registry
                                     ; readback (1 byte)
-DECOMP_EXT_ARGCOUNT:  equ $8E9D   ; OP_CALL_EXT's own argcount operand
+DECOMP_EXT_ARGCOUNT:  equ $BD9D   ; OP_CALL_EXT's own argcount operand
                                     ; byte (1 byte)
-DECOMP_FLOAT_TOTAL:   equ $8E9E   ; PUSH_FLOAT_LIT's own total-digit-
+DECOMP_FLOAT_TOTAL:   equ $BD9E   ; PUSH_FLOAT_LIT's own total-digit-
                                     ; position count (1 byte)
-DECOMP_ENDIF_HIT:     equ $8EA1   ; R8.5 Group 3 -- DECOMP_CHECK_ENDIF_
+DECOMP_ENDIF_HIT:     equ $BDA1   ; R8.5 Group 3 -- DECOMP_CHECK_ENDIF_
                                     ; HERE's own result (1 byte): how
                                     ; many "ENDIF" markers it emitted at
                                     ; the current address (0 = none)
-DECOMP_ENDIF_SAVE_PTR: equ $8EA2  ; DECOMP_CHECK_ENDIF_HERE's own loop
+DECOMP_ENDIF_SAVE_PTR: equ $BDA2  ; DECOMP_CHECK_ENDIF_HERE's own loop
                                     ; state (slot pointer, 2 bytes),
                                     ; parked in memory (never the
                                     ; hardware stack) across its own call
                                     ; to DECOMP_EMIT_TEXT -- same real
                                     ; bug class this file's own .op_jmpz
                                     ; header already documents finding
-DECOMP_ARR_INDEX_TMP: equ $8EA5  ; R8.5 Group 4 -- .op_arr_load/.op_arr_store
+DECOMP_ARR_INDEX_TMP: equ $BDA5  ; R8.5 Group 4 -- .op_arr_load/.op_arr_store
                                     ; scratch (1 byte): the operand's own
                                     ; array index, saved to memory before
                                     ; DECOMP_FRAG_POP (which destroys
                                     ; AF/DE/HL, same discipline as every
                                     ; other handler in this file)
-DECOMP_FN_ARGCOUNT:   equ $8EA6  ; R8.5 Group 6 -- .op_call_fn's own
+DECOMP_FN_ARGCOUNT:   equ $BDA6  ; R8.5 Group 6 -- .op_call_fn's own
                                     ; DECOMP_BUILTIN_FN_NAME readback
                                     ; (1 byte): how many argument
                                     ; fragments to pop/re-render, same
                                     ; role DECOMP_EXT_ARGCOUNT plays for
                                     ; .op_call_ext
-DECOMP_FN_ARGTYPE:    equ $8EA7  ; R8.5 Group 6 (LEN/CODE/VAL) -- the
+DECOMP_FN_ARGTYPE:    equ $BDA7  ; R8.5 Group 6 (LEN/CODE/VAL) -- the
                                     ; matched function's own argtype (1
                                     ; byte): 0 = numeric, 1 = string
                                     ; (needs DECOMP_STR_OPERAND applied
                                     ; to each popped argument fragment)
-DECOMP_EXT_ARGTYPES:  equ $8EA8  ; printer-package ROM reconciliation --
+DECOMP_EXT_ARGTYPES:  equ $BDA8  ; printer-package ROM reconciliation --
                                     ; .op_call_ext's own live-registry
                                     ; readback (1 byte): the matched
                                     ; extension's argtypes bitmask (see
@@ -169,14 +168,14 @@ DECOMP_EXT_ARGTYPES:  equ $8EA8  ; printer-package ROM reconciliation --
                                     ; argtypes can change across a
                                     ; module unload/reload, unlike a
                                     ; resident built-in function's)
-DECOMP_EXT_RECPTR:    equ $8EAA  ; .op_call_ext's own matched registry
+DECOMP_EXT_RECPTR:    equ $BDAA  ; .op_call_ext's own matched registry
                                     ; record base address (2 bytes),
                                     ; parked so DECOMP_EXT_ARGTYPES can
                                     ; be fetched (record offset 13)
                                     ; after HL has already moved on to
                                     ; extract name_len/name from the
                                     ; same record
-DECOMP_LINE_CALLBACK: equ $8EAC  ; printer-package ROM reconciliation
+DECOMP_LINE_CALLBACK: equ $BDAC  ; printer-package ROM reconciliation
                                     ; (LLIST) -- (2 bytes) 0 = disabled,
                                     ; the default: DECOMPILE_PROGRAM
                                     ; accumulates the WHOLE reconstructed
@@ -195,12 +194,12 @@ DECOMP_LINE_CALLBACK: equ $8EAC  ; printer-package ROM reconciliation
                                     ; capacity at once. See DECOMP_EMIT_
                                     ; NEWLINE's own header for the full
                                     ; contract.
-DECOMP_LINE_LEN:      equ $8EAE  ; (1 byte) length of the line just
+DECOMP_LINE_LEN:      equ $BDAE  ; (1 byte) length of the line just
                                     ; written to DECOMP_OUT_BUF, valid
                                     ; only during the callback above
-DECOMP_ENDIF_SAVE_CNT: equ $8EA4  ; the matching remaining-slot-count
+DECOMP_ENDIF_SAVE_CNT: equ $BDA4  ; the matching remaining-slot-count
                                     ; (1 byte)
-DECOMP_END_ADDR:      equ $8E9F   ; (2 bytes) R8.5 addition: the real
+DECOMP_END_ADDR:      equ $BD9F   ; (2 bytes) R8.5 addition: the real
                                     ; end of the compiled program (the
                                     ; caller's own EMIT_PTR at the time
                                     ; it called COMPILE_PROGRAM -- see
@@ -217,9 +216,9 @@ DECOMP_END_ADDR:      equ $8E9F   ; (2 bytes) R8.5 addition: the real
                                     ; original "HALT always ends the
                                     ; walk" logic would have silently
                                     ; truncated from decompiled output.
-DECOMP_LABEL_TABLE:   equ $8F00   ; up to 16 distinct jump-target
+DECOMP_LABEL_TABLE:   equ $BE00   ; up to 16 distinct jump-target
                                     ; addresses, 2 bytes each (32 bytes,
-                                    ; ends $8F20) — collected by the
+                                    ; ends $BE20) — collected by the
                                     ; pre-pass below
 DECOMP_LABEL_MAX:     equ 16
 ; R8.5 Group 3 -- block IF/ELSE/ENDIF reconstruction. A pending "ENDIF"
@@ -230,38 +229,38 @@ DECOMP_LABEL_MAX:     equ 16
 ; emits "ELSE" instead, in its place, when the walk reaches it -- see
 ; DECOMP_CHECK_ENDIF_HERE/.op_jmp_else's own header for the full
 ; algorithm.
-DECOMP_ENDIF_MARKERS: equ $8F20   ; up to 8 slots, 2 bytes each (16
-                                    ; bytes, ends $8F30); an unused slot
+DECOMP_ENDIF_MARKERS: equ $BE20   ; up to 8 slots, 2 bytes each (16
+                                    ; bytes, ends $BE30); an unused slot
                                     ; holds $FFFF (never a real relative
                                     ; bytecode address)
 DECOMP_ENDIF_MAX:     equ 8
-DECOMP_LABEL_COUNT:   equ $8F30   ; 1 byte
-DECOMP_IP:            equ $8F32   ; current bytecode read pointer (2B)
-DECOMP_OUT_PTR:       equ $8F34   ; current output write pointer (2B)
-DECOMP_FRAG_SP:       equ $8F36   ; fragment stack depth, 0-8 (1 byte)
-DECOMP_ERROR_CODE:    equ $8F37   ; 0 = no error; see values below
-DECOMP_TMP_A:         equ $8F38   ; general-purpose 2-byte scratch,
+DECOMP_LABEL_COUNT:   equ $BE30   ; 1 byte
+DECOMP_IP:            equ $BE32   ; current bytecode read pointer (2B)
+DECOMP_OUT_PTR:       equ $BE34   ; current output write pointer (2B)
+DECOMP_FRAG_SP:       equ $BE36   ; fragment stack depth, 0-8 (1 byte)
+DECOMP_ERROR_CODE:    equ $BE37   ; 0 = no error; see values below
+DECOMP_TMP_A:         equ $BE38   ; general-purpose 2-byte scratch,
                                     ; reused across several routines
                                     ; below (never live across more than
                                     ; one call at a time — each routine's
                                     ; own body says exactly how it uses it)
-DECOMP_TMP_B:         equ $8F3A   ; a second general-purpose 2-byte
+DECOMP_TMP_B:         equ $BE3A   ; a second general-purpose 2-byte
                                     ; scratch, same reasoning
-DECOMP_TMP_LEN:       equ $8F3C   ; 1-byte length scratch
-DECOMP_COMBINE_BUF:   equ $8F40   ; scratch buffer for building a binary
+DECOMP_TMP_LEN:       equ $BE3C   ; 1-byte length scratch
+DECOMP_COMBINE_BUF:   equ $BE40   ; scratch buffer for building a binary
                                     ; expression's combined text ("(A+B)")
                                     ; before pushing it as one new
                                     ; fragment (32 bytes, matching a
                                     ; fragment record's own size)
-DECOMP_COMBINE_LEN:   equ $8F60   ; running length while building into
+DECOMP_COMBINE_LEN:   equ $BE60   ; running length while building into
                                     ; DECOMP_COMBINE_BUF (1 byte)
-DECOMP_NUM_VAL:       equ $8F61   ; DECOMP_EMIT_INT16 scratch (2 bytes):
+DECOMP_NUM_VAL:       equ $BE61   ; DECOMP_EMIT_INT16 scratch (2 bytes):
                                     ; the value still being converted
-DECOMP_NUM_QUOT:      equ $8F63   ; DECOMP_EMIT_INT16 scratch (2 bytes):
+DECOMP_NUM_QUOT:      equ $BE63   ; DECOMP_EMIT_INT16 scratch (2 bytes):
                                     ; this iteration's quotient
-DECOMP_NUM_DIGITS:    equ $8F65   ; up to 5 decimal digits, built least-
+DECOMP_NUM_DIGITS:    equ $BE65   ; up to 5 decimal digits, built least-
                                     ; significant first (5 bytes)
-DECOMP_NUM_DIGCOUNT:  equ $8F6A   ; how many digits are in the buffer
+DECOMP_NUM_DIGCOUNT:  equ $BE6A   ; how many digits are in the buffer
                                     ; above (1 byte)
 
 ; ---------------------------------------------------------------------------
@@ -673,10 +672,10 @@ DECOMP_INT_FRAG:
 ; B's fragment then A's (B was pushed last), builds "(A<op>B)" in the
 ; combine buffer, pushes it as one new fragment.
 ; ===========================================================================
-DECOMP_OP_PTR:  equ $8F6B
-DECOMP_OP_LEN:  equ $8F6D
-DECOMP_BLEN:    equ $8F6E
-DECOMP_LABEL_HIT: equ $8F6F  ; DECOMP_CHECK_LABEL_HERE's own result flag
+DECOMP_OP_PTR:  equ $BE6B
+DECOMP_OP_LEN:  equ $BE6D
+DECOMP_BLEN:    equ $BE6E
+DECOMP_LABEL_HIT: equ $BE6F  ; DECOMP_CHECK_LABEL_HERE's own result flag
                                ; (1 byte): 1 if it emitted "Lxxxx:" at the
                                ; current address, 0 otherwise -- lets
                                ; DECOMPILE_PROGRAM's own main loop know
