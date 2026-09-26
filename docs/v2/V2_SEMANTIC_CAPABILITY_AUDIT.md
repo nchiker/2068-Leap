@@ -36,6 +36,74 @@ Architecture B and describe an earlier "extend V1 in place" plan, not the
 current compiler+VM+decompiler architecture. They remain useful V1/planning
 history, not current V2 truth.
 
+## 0. CORRECTION (post-publication) — the R9 verdict below is superseded
+
+**This audit's original verdict, "READY FOR R9 WITH SPECIFIC
+PRECONDITIONS," was incomplete and is superseded. Do not act on §26 as
+written below without reading this correction first.**
+
+The audit as originally conducted established **V2 language-component
+completeness** (does the compiler/VM/decompiler correctly implement the
+intended BASIC language semantics — numeric model, strings, control flow,
+procedures, etc.) and, separately, **V2 standalone-test integration** (do
+`rom/test_v2_*.asm` harnesses prove those components work together,
+individually, on real hardware). It did **not** establish a third, distinct
+and necessary thing: **V2 production interactive-environment completeness**
+— whether an actual user, booting the actual shipping ROM, can use V2 as a
+real interactive multi-line BASIC environment at all.
+
+That third property does not currently hold, and this gap was found only
+after the original audit was accepted, during initial R9 dependency
+mapping — a genuine miss in the original audit's scope, recorded here
+factually rather than minimized:
+
+- `grep` for `COMPILE_PROGRAM`/`VM_RUN`/`DECOMPILE_PROGRAM`/`EDITOR_ENTER`
+  in the actual production build targets (`rom/exrom_build.asm`,
+  `rom/test_basic.asm` — the latter confirmed, independently, by two
+  separate research passes to be the real production HOME-ROM entry point
+  built by plain `make build`) returns **zero matches**. V2's compiler/VM/
+  decompiler are invoked only by standalone `rom/test_v2_*.asm` test
+  drivers. Nothing wires them into the shipping ROM's boot/command loop.
+- V1's real multi-line program editing works through
+  `basic/editor_integration.asm`'s `BASIC_HANDLE_NAV`/
+  `BASIC_LOAD_EDIT_LINE` — a position-addressed program storage and
+  navigation layer hooked into the shared editor via `EDITOR_NAV_HOOK`.
+  `grep` for any of those three symbols in `rom/exrom_v2_*.asm` returns
+  **zero matches** — V2 has no equivalent. There is no V2-native
+  multi-line program representation at all.
+- This was already a project-*known*, documented gap, missed by the audit
+  rather than newly discovered by anyone: `docs/v2/
+  ARCHITECTURE_B_IMPLEMENTATION_PLAN.md:1196-1201`, written during R8,
+  states explicitly: "Known, documented remainder: `EDITOR_ENTER`'s own
+  top-level interactive dispatch loop, and full multi-line program editing
+  (a V2-native equivalent of `basic/editor_integration.asm`'s own
+  `BASIC_HANDLE_NAV`/position-addressed program storage) — a real,
+  separate, larger design task, not attempted this pass." The same caveat
+  is repeated verbatim in `rom/test_v2_editor_integration.asm`'s own
+  header. The original semantic audit's §14 (SAVE/LOAD/editor-runtime
+  integration) confirmed the narrower claim — that V2's compiler/VM/
+  decompiler have zero V1 dependency for a single already-committed
+  line — and incorrectly treated that as equivalent to full production
+  readiness. It is not: "no hidden V1 dependency in a proven capability"
+  and "the capability is complete enough to ship" are different claims,
+  and the audit conflated them.
+
+**Consequence**: if R9 (V1 language-core removal) had proceeded on the
+original verdict, the shipping product would have had no interactive
+multi-line BASIC environment at all — not a behavioral regression, a
+complete loss of the product's core interactive capability.
+
+**Decision (approved by the user)**: a new mandatory milestone,
+**R8.9 — V2 Production Integration**, is inserted before R9. R9 does not
+begin until R8.9's own success gate (a user can boot the real production
+ROM, enter/edit/navigate a multi-line V2 program, LIST/decompile it, RUN
+it through the V2 VM, SAVE/LOAD it, and do all of this without the V1
+interpreter executing any language-level logic) is demonstrated on real
+ZEsarUX hardware. See `docs/v2/R8_9_PRODUCTION_INTEGRATION_DESIGN.md` (once
+written) for the design and completion report. **§26's verdict below is
+retained for historical record but is superseded by this correction: the
+current status is NOT READY FOR R9 — R8.9 is now a hard prerequisite.**
+
 ## 1. Executive summary
 
 Architecture B is real and substantial: 14 regression tests pass on real
@@ -661,7 +729,12 @@ marked as unestimated otherwise.
 
 ## 26. Final R9 readiness verdict
 
-**READY FOR R9 WITH SPECIFIC PRECONDITIONS.**
+**SUPERSEDED — see §0. This section is retained verbatim for the historical
+record of what the original audit pass concluded; it is not the current
+status.** The current status is **NOT READY FOR R9 — R8.9 (V2 Production
+Integration) is a hard prerequisite**, per §0's correction.
+
+**Original verdict (superseded): READY FOR R9 WITH SPECIFIC PRECONDITIONS.**
 
 Nothing found in this audit is caused by V1's continued presence, and R9
 (removing `basic/basic.asm`, `exrom_checker.asm`, `exrom_strfuncs.asm`,
