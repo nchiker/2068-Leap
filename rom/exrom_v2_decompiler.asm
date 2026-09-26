@@ -3405,6 +3405,14 @@ STR_RIGHT_FN:  db "RIGHT$"
 STR_RIGHT_FN_LEN: equ $-STR_RIGHT_FN
 STR_INKEY_FN:  db "INKEY$"
 STR_INKEY_FN_LEN: equ $-STR_INKEY_FN
+STR_SQR_FN:    db "SQR"
+STR_SQR_FN_LEN: equ $-STR_SQR_FN
+STR_PI_FN:     db "PI"
+STR_PI_FN_LEN: equ $-STR_PI_FN
+STR_RAD_FN:    db "RAD"
+STR_RAD_FN_LEN: equ $-STR_RAD_FN
+STR_DEG_FN:    db "DEG"
+STR_DEG_FN_LEN: equ $-STR_DEG_FN
 
 ; DECOMP_BUILTIN_FN_TABLE -- [text_ptr:2][len:1][argcount:1] per
 ; fn_index, same order as rom/exrom_v2_compiler.asm's own
@@ -3464,6 +3472,14 @@ DECOMP_BUILTIN_FN_TABLE:
         db STR_RIGHT_FN_LEN, 2, 1
         dw STR_INKEY_FN
         db STR_INKEY_FN_LEN, 0, 0
+        dw STR_SQR_FN
+        db STR_SQR_FN_LEN, 1, 0
+        dw STR_PI_FN
+        db STR_PI_FN_LEN, 0, 0
+        dw STR_RAD_FN
+        db STR_RAD_FN_LEN, 1, 0
+        dw STR_DEG_FN
+        db STR_DEG_FN_LEN, 1, 0
 
 STR_GOTO:      db "GOTO "
 STR_GOTO_LEN:  equ $-STR_GOTO

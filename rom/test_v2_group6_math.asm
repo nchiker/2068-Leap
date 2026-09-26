@@ -375,6 +375,13 @@ CALC_FP_TO_INT:
     ret
 CALC_SP_TO_NEXT_FREE_PTR:
     ret
+; R8.5 Group 6 -- PI/RAD/DEG's own CALC_PUSH_PI dependency (rom/
+; exrom_calc.asm, not included here for the same reason CALC_INT_TO_FP
+; etc above aren't real): this test's own program never exercises
+; SQR/PI/RAD/DEG (pure-integer statements only), same stubbing
+; discipline.
+CALC_PUSH_PI:
+    ret
 ; kernel/graphics/graphics.asm (2235 real lines) is NOT included here:
 ; this test never touches real screen bitmap content.
 GFX_CLS:

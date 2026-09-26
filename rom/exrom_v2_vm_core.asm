@@ -2531,6 +2531,20 @@ OP_CALL_EXT:
 ; Out: HL = null-terminated decimal text (PRINT_BUF). Destroys: AF, BC,
 ; DE, HL.
 ;
+; REAL BUG FOUND AND FIXED (R8.5 Group 6, SQR): the float path below
+; re-reads its own operand from VM_PRINT_TEXT_TMP rather than the HL it
+; was actually called with -- originally safe only because OP_PRINT_NUM,
+; its one real caller at the time, happened to always set that cell
+; itself first. BUILTIN_FN_STR (Group 6) calls this directly with a
+; FLOAT tag and never set it, so STR$() of a float variable silently
+; rendered whatever value some earlier PRINT had last parked there,
+; not the real argument -- never caught because STR$'s own test only
+; used an integer argument. Fixed at the root: this entry now sets
+; VM_PRINT_TEXT_TMP from its own real HL parameter unconditionally, so
+; every caller's HL is what the float path actually uses, matching
+; this header's own documented contract instead of requiring each new
+; caller to independently discover the undocumented extra step.
+;
 ; Float sign: BASIC_FLOAT_TO_STRING_EXROM's own real contract is
 ; magnitude-only (non-negative) -- confirmed from its one real V1
 ; caller, which tracks sign separately (basic/basic.asm's own
@@ -2546,6 +2560,8 @@ OP_CALL_EXT:
 ; own `$03,$38` -- see that routine's own header) as `0 - value`,
 ; rather than guessing at a separate "negate" literal's own byte value.
 VM_NUM_TO_TEXT:
+        ld (VM_PRINT_TEXT_TMP),hl   ; see this routine's own header --
+                                       ; the float path below needs this
         cp TAG_FLOAT
         jr z,.float
         ex de,hl
@@ -2608,13 +2624,11 @@ VM_NUM_TO_TEXT:
 
 OP_PRINT_NUM:
         call VM_POP                 ; HL = value, A = tag
-        ld (VM_PRINT_TEXT_TMP),hl    ; parked: VM_NUM_TO_TEXT's own float
-                                       ; path re-reads this as the
-                                       ; FLOATTAB index (A survives in
-                                       ; the call below, matching every
-                                       ; other tag-then-value handler's
-                                       ; own convention in this file)
-        call VM_NUM_TO_TEXT
+        call VM_NUM_TO_TEXT          ; VM_NUM_TO_TEXT's own entry now
+                                       ; parks HL into VM_PRINT_TEXT_TMP
+                                       ; itself (its float path's real
+                                       ; need) -- this call site no
+                                       ; longer needs to do it separately
         jp VM_PRINT_COMMON
 
 OP_PRINT_STR:
@@ -2738,6 +2752,10 @@ BUILTIN_FN_JUMP_TABLE:
         dw BUILTIN_FN_LEFT      ; fn_index 17
         dw BUILTIN_FN_RIGHT     ; fn_index 18
         dw BUILTIN_FN_INKEY     ; fn_index 19
+        dw BUILTIN_FN_SQR       ; fn_index 20
+        dw BUILTIN_FN_PI        ; fn_index 21
+        dw BUILTIN_FN_RAD       ; fn_index 22
+        dw BUILTIN_FN_DEG       ; fn_index 23
 
 ; BUILTIN_FN_ABS — ABS(x). Pops one value (either tag), pushes its
 ; magnitude. Int path: plain two's-complement negate (always safe, the
@@ -3427,6 +3445,106 @@ BUILTIN_FN_INKEY:
         ld h,0
         xor a
         jp VM_PUSH
+
+; SQR(n) -- int-only argument (VM_POP's own tag is ignored), matching
+; V1's own real SQR(n) contract (basic.asm's own BASIC_SQR_FLOAT
+; header: "HL = n (signed 16-bit int)"). RESULT is always a real
+; float, even SQR(0)=0.0 -- V1's own header documents a real bug from
+; skipping that. kernel/math's own MATH_SQRT16 gives floor(sqrt(n)) as
+; the initial guess (usually wrong -- SQR(2) genuinely is 1.4142...,
+; not 1), refined by 4 Newton-Raphson iterations in float space
+; (x_{k+1} = (x_k + n/x_k)/2) on the real calculator, reusing the
+; already-proven VM_CALC_*_STUB/VM_FLOAT_PUSH_OPERAND/VM_FLOAT_STORE_
+; RESULT infrastructure R6's own OP_ADD/SUB/MUL/DIV already established
+; -- same iteration count/error-bound reasoning as basic.asm's own
+; BASIC_SQR_FLOAT (its own header has the full exhaustive-check math).
+; Reuses the real SQR_ARG_N sysvar (include/sysvars.inc) V1's own
+; BASIC_SQR_FLOAT already owns for the identical purpose -- real,
+; permanent RAM already budgeted, not a second scratch cell.
+BUILTIN_FN_SQR:
+        call VM_POP
+        ld (SQR_ARG_N),hl
+        call MATH_SQRT16           ; HL = floor(sqrt(n)), 0 for n<=0
+        ld a,h
+        or l
+        jr z,.sqr_zero
+        xor a
+        ld (CALC_SP),a
+        call CALC_INT_TO_FP         ; push initial guess x_0
+        ld b,4                       ; 4 Newton iterations
+.sqr_loop:
+        push bc
+        rst $28
+        db $31,$38                    ; duplicate: [x_k, x_k]
+        ld hl,(SQR_ARG_N)
+        call CALC_INT_TO_FP            ; push n: [x_k, x_k, n]
+        rst $28
+        db $01,$05,$38                  ; exchange, divide -> n/x_k;
+                                           ; stack: [x_k, n/x_k]
+        rst $28
+        db $0F,$38                        ; add; stack: [sum]
+        ld hl,2
+        call CALC_INT_TO_FP                ; push 2: [sum, 2]
+        rst $28
+        db $05,$38                           ; divide -> new x_k
+        pop bc
+        djnz .sqr_loop
+        call VM_FLOAT_STORE_RESULT
+        ret
+.sqr_zero:
+        xor a
+        ld (CALC_SP),a
+        ld hl,0
+        call CALC_INT_TO_FP
+        call VM_FLOAT_STORE_RESULT
+        ret
+
+; PI() -- the constant pi, via the real calculator's own already-wired
+; CALC_PUSH_PI literal (rom/exrom_calc.asm; that file's own header
+; documents the packed constant's provenance/accuracy). No argument.
+BUILTIN_FN_PI:
+        xor a
+        ld (CALC_SP),a
+        call CALC_PUSH_PI
+        call VM_FLOAT_STORE_RESULT
+        ret
+
+; RAD(x) -- degrees to radians (x*pi/180). DEG(x) -- radians to degrees
+; (x*180/pi). Int-only argument (matching V1's own real RAD/DEG
+; contract exactly); unlike V1's own BASIC_RAD_FLOAT/DEG_FLOAT (which
+; manually extract the sign first and never reapply it to a negative
+; result, a documented V1 simplification -- basic.asm's own header),
+; CALC_INT_TO_FP already encodes a negative 16-bit int with the
+; correct sign (confirmed from its own body: byte1 = $FF for h<0), so
+; the real calculator's own multiply/divide propagate sign correctly
+; on their own -- pushing the raw signed argument directly is simpler
+; AND more correct than replicating V1's own sign-stripping, not a
+; scope increase.
+BUILTIN_FN_RAD:
+        call VM_POP
+        xor a
+        ld (CALC_SP),a
+        call CALC_INT_TO_FP      ; push x
+        call CALC_PUSH_PI          ; push pi
+        call VM_CALC_MUL_STUB        ; x*pi
+        ld hl,180
+        call CALC_INT_TO_FP            ; push 180
+        call VM_CALC_DIV_STUB            ; (x*pi)/180
+        call VM_FLOAT_STORE_RESULT
+        ret
+
+BUILTIN_FN_DEG:
+        call VM_POP
+        xor a
+        ld (CALC_SP),a
+        call CALC_INT_TO_FP      ; push x
+        ld hl,180
+        call CALC_INT_TO_FP        ; push 180
+        call VM_CALC_MUL_STUB        ; x*180
+        call CALC_PUSH_PI              ; push pi
+        call VM_CALC_DIV_STUB            ; (x*180)/pi
+        call VM_FLOAT_STORE_RESULT
+        ret
 
 ; ---------------------------------------------------------------------------
 ; Error exits — each sets VM_ERROR_CODE and VM_HALTED, then returns to the

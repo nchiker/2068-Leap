@@ -211,6 +211,8 @@ CALC_FP_TO_INT:
     ret
 CALC_SP_TO_NEXT_FREE_PTR:
     ret
+CALC_PUSH_PI:
+    ret
 ; kernel/graphics/graphics.asm (2235 real lines) is NOT included here:
 ; this flat 16K image doesn't have room for it alongside the full v2
 ; core + decompiler. GFX_SET_MODE is real, pre-existing, hardware-

@@ -312,6 +312,8 @@ CALC_FP_TO_INT:
     ret
 CALC_SP_TO_NEXT_FREE_PTR:
     ret
+CALC_PUSH_PI:
+    ret
 ; kernel/graphics/graphics.asm (2235 real lines) is NOT included here:
 ; this test never checks real screen bitmap content. R8.5 Group 5's
 ; own real ROM growth pushed this flat 16K image over budget with

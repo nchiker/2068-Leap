@@ -1896,7 +1896,7 @@ BUILTIN_FN_FIND:               ; input: TOK_NAME/TOK_LEN (current, not
         or a                       ; clear carry -- not a built-in
         ret                          ; function name
 
-BUILTIN_FN_TABLE_COUNT: equ 20
+BUILTIN_FN_TABLE_COUNT: equ 24
 
 ; fn_index 0 = ABS (rom/exrom_v2_vm_core.asm's own BUILTIN_FN_ABS).
 ; Group 6 appends the remaining ~24 functions to this same table --
@@ -1982,6 +1982,18 @@ BUILTIN_FN_TABLE:
     db 4, "LEFT", 2, 17, $81
     db 5, "RIGHT", 2, 18, $81
     db 5, "INKEY", 0, 19, $80
+
+; SQR (fn_index 20): int-only argument, RESULT is always a real float
+; (bit 7 clear -- unlike CHR$/STR$/etc above, SQR's result is numeric,
+; matching V1's own real SQR(n) contract exactly. See rom/exrom_v2_vm_
+; core.asm's own BUILTIN_FN_SQR for the real Newton-Raphson body).
+    db 3, "SQR", 1, 20, 0
+
+; PI (fn_index 21): 0 args, always a real float.
+    db 2, "PI", 0, 21, 0
+; RAD/DEG (fn_index 22-23): int-only argument, always a real float.
+    db 3, "RAD", 1, 22, 0
+    db 3, "DEG", 1, 23, 0
 
 ; BUG FOUND (real hardware, R8.5 Group 5): a literal 128-255 has TOK_VAL
 ; high byte 0, so this used to take the PUSH_I8 path below -- but
