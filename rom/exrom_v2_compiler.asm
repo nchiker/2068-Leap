@@ -1896,7 +1896,7 @@ BUILTIN_FN_FIND:               ; input: TOK_NAME/TOK_LEN (current, not
         or a                       ; clear carry -- not a built-in
         ret                          ; function name
 
-BUILTIN_FN_TABLE_COUNT: equ 24
+BUILTIN_FN_TABLE_COUNT: equ 25
 
 ; fn_index 0 = ABS (rom/exrom_v2_vm_core.asm's own BUILTIN_FN_ABS).
 ; Group 6 appends the remaining ~24 functions to this same table --
@@ -1994,6 +1994,8 @@ BUILTIN_FN_TABLE:
 ; RAD/DEG (fn_index 22-23): int-only argument, always a real float.
     db 3, "RAD", 1, 22, 0
     db 3, "DEG", 1, 23, 0
+; SIN (fn_index 24): int-only argument (degrees), always a real float.
+    db 3, "SIN", 1, 24, 0
 
 ; BUG FOUND (real hardware, R8.5 Group 5): a literal 128-255 has TOK_VAL
 ; high byte 0, so this used to take the PUSH_I8 path below -- but

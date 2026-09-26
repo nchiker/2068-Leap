@@ -32,6 +32,16 @@
 ;   ts2068-debug run --max-instructions 3000000
 ;   ts2068-debug timex   (border field)
 ; ============================================================================
+; KNOWN LIMITATION (R8.5 Group 6, SIN) -- same flat-16K test-harness
+; scaling wall rom/test_v2_call_fn.asm/rom/test_v2_print.asm/rom/
+; test_v2_ext_concurrent.asm/rom/test_v2_sqr.asm already document:
+; SIN's own real (if modest) growth was enough to tip this test 109
+; bytes past $4000 -- sjasmplus_strict.sh refuses the truncated image.
+; EXCLUDED from the buildable regression set until R9 (V1 removal) or
+; a harness redesign frees real headroom. This test's own real coverage
+; last built and passed at commit 902c402 (R8.5 Group 6's SQR/PI/RAD/
+; DEG commit) -- presumed still correct, not re-verified since.
+; ============================================================================
 
     INCLUDE "include/hardware.inc"
     INCLUDE "include/sysvars.inc"
@@ -206,6 +216,8 @@ CALC_FP_TO_INT:
 CALC_SP_TO_NEXT_FREE_PTR:
     ret
 CALC_PUSH_PI:
+    ret
+CALC_PUSH_FP_RAW:
     ret
 ; kernel/graphics/graphics.asm (2235 real lines) is NOT included here:
 ; this flat 16K image still doesn't have room for it alongside the

@@ -257,6 +257,8 @@ CALC_SP_TO_NEXT_FREE_PTR:
     ret
 CALC_PUSH_PI:
     ret
+CALC_PUSH_FP_RAW:
+    ret
 ; kernel/graphics/graphics.asm (2235 real lines) is NOT included here:
 ; this test never checks real screen bitmap content (only VM_OUTPUT_ROW,
 ; SYMTAB memory, and the decompiled text), and every real PRINT text

@@ -1,19 +1,19 @@
 ; ============================================================================
-; rom/test_v2_sqr_decomp.asm — Architecture B, R8.5 Group 6 (SQR/PI/RAD/
-; DEG) decompile-only smoke test
+; rom/test_v2_sqr_decomp.asm — Architecture B, R8.5 Group 6 (SQR/PI/
+; RAD/DEG/SIN) decompile-only smoke test
 ;
-; Compiles "A=SQR(4):B=PI():C=RAD(90):D=DEG(1)" then decompiles it
-; WITHOUT ever calling VM_RUN -- these four functions all need the real
-; calculator (rom/exrom_calc.asm, 1772 real lines) to EXECUTE, which
-; doesn't fit this flat 16K image alongside the full v2 core (see rom/
-; test_v2_sqr.asm's own header for the full reasoning and how its own
-; runtime values were validated instead, via a temporary out-of-tree
-; scratch build). Decompiling the COMPILED BYTECODE never touches the
-; calculator at all, so this narrower check fits comfortably and stays
-; in the real, buildable regression set -- covering the new BUILTIN_FN_
-; TABLE rows (fn_index 20-23) and DECOMP_BUILTIN_FN_TABLE's matching
-; entries, including PI()'s own 0-argument shape (reusing INKEY$'s own
-; already-fixed 0-arg decompile path).
+; Compiles "A=SQR(4):B=PI():C=RAD(90):D=DEG(1):E=SIN(30)" then
+; decompiles it WITHOUT ever calling VM_RUN -- these five functions all
+; need the real calculator (rom/exrom_calc.asm, 1772 real lines) to
+; EXECUTE, which doesn't fit this flat 16K image alongside the full v2
+; core (see rom/test_v2_sqr.asm's own header for the full reasoning and
+; how its own runtime values were validated instead, via a temporary
+; out-of-tree scratch build). Decompiling the COMPILED BYTECODE never
+; touches the calculator at all, so this narrower check fits comfortably
+; and stays in the real, buildable regression set -- covering the new
+; BUILTIN_FN_TABLE rows (fn_index 20-24) and DECOMP_BUILTIN_FN_TABLE's
+; matching entries, including PI()'s own 0-argument shape (reusing
+; INKEY$'s own already-fixed 0-arg decompile path).
 ;
 ; Standalone ROM image exercising rom/exrom_v2_compiler.asm's extended
 ; BUILTIN_FN_TABLE (SGN/MOD/DIV/RND rows added alongside the existing ABS)
@@ -155,16 +155,26 @@ FAIL:
     jr   $
 
 SOURCE_TEXT:
-    db "A=SQR(4):B=PI():C=RAD(90):D=DEG(1)", 0
+    db "A=SQR(4):B=PI():C=RAD(90):D=DEG(1):E=SIN(30):"
+    db "F=SIN(-30):G=SIN(20+10)", 0
 
-; Real generated names for A-D are V0-V3. PI() still needs "()" -- see
+; Real generated names for A-G are V0-V6. PI() still needs "()" -- see
 ; INKEY$()'s own established precedent (COMPILE_FACTOR.fn_call always
 ; expects an opening paren after the name, regardless of argcount).
+; F/G exercise a unary-minus argument and a nested-expression argument
+; respectively -- generic COMPILE_EXPR/decompile shapes ("(0-X)" for
+; unary minus, matching ABS's own established test; "(A+B)" for a
+; binary op), not special-cased for SIN, but rom/test_v2_sqr.asm's own
+; G-P matrix relies on both shapes applying to SIN too, so they're
+; confirmed here for real rather than assumed.
 EXPECTED_TEXT:
     db "V0 = SQR(4)", 13
     db "V1 = PI()", 13
     db "V2 = RAD(90)", 13
     db "V3 = DEG(1)", 13
+    db "V4 = SIN(30)", 13
+    db "V5 = SIN((0-30))", 13
+    db "V6 = SIN((20+10))", 13
 EXPECTED_TEXT_LEN: equ $-EXPECTED_TEXT
 
 ; ============================================================================
@@ -221,6 +231,8 @@ CALC_FP_TO_INT:
 CALC_SP_TO_NEXT_FREE_PTR:
     ret
 CALC_PUSH_PI:
+    ret
+CALC_PUSH_FP_RAW:
     ret
 ; kernel/graphics/graphics.asm (2235 real lines) is NOT included here:
 ; this test never touches real screen bitmap content.

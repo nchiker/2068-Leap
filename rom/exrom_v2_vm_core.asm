@@ -2756,6 +2756,7 @@ BUILTIN_FN_JUMP_TABLE:
         dw BUILTIN_FN_PI        ; fn_index 21
         dw BUILTIN_FN_RAD       ; fn_index 22
         dw BUILTIN_FN_DEG       ; fn_index 23
+        dw BUILTIN_FN_SIN       ; fn_index 24
 
 ; BUILTIN_FN_ABS — ABS(x). Pops one value (either tag), pushes its
 ; magnitude. Int path: plain two's-complement negate (always safe, the
@@ -3532,6 +3533,227 @@ BUILTIN_FN_RAD:
         call VM_CALC_DIV_STUB            ; (x*pi)/180
         call VM_FLOAT_STORE_RESULT
         ret
+
+; SIN_PEEK_POP -- copies the calculator's current top-of-stack (5
+; bytes) to (DE), then pops it (CALC_SP -= 1). Same real "CALC_STACK/
+; CALC_SP are plain RAM, readable/writable regardless of EXROM paging"
+; reasoning basic.asm's own CALC_PEEK_TOP_AND_POP header gives -- V2's
+; own vm_core.asm is ALREADY EXROM-resident, so it needs no "avoid an
+; EXROM round trip" wrapper at all, just this same direct manipulation.
+; In: DE = destination. Out: (DE) = popped value. Destroys: AF, BC, HL.
+SIN_PEEK_POP:
+        push de
+        ld a,(CALC_SP)
+        dec a
+        ld (CALC_SP),a          ; pop -- CALC_SP now IS the popped
+                                   ; slot's own index
+        ld l,a
+        ld h,0
+        ld b,h
+        ld c,l
+        add hl,hl                ; *2
+        add hl,hl                ; *4
+        add hl,bc                 ; *5
+        ld bc,CALC_STACK
+        add hl,bc                  ; HL -> the popped slot's address
+        pop de
+        ld bc,5
+        ldir
+        ret
+
+; SIN(degrees) -- int-only argument (matching V1's own real SIN
+; contract), a genuine 5-term (through x^9/9!) Taylor series in
+; radians, real range reduction to a [0,90]-degree reference angle
+; first -- same technique AND divisor table as basic.asm's own
+; BASIC_SIN_FLOAT (that routine's own header has the full derivation
+; of SIN_DIVISOR_TABLE's 6/20/42/72 values from the Taylor series'
+; real per-term ratios). Reuses R6's own already-proven VM_CALC_*_STUB/
+; CALC_INT_TO_FP/CALC_PUSH_PI/CALC_PUSH_FP_RAW/VM_FLOAT_STORE_RESULT
+; infrastructure throughout, plus the REAL SIN_X_RAD/SIN_X2/SIN_POWER/
+; FUNC_RESULT_FLOAT_NEGATIVE sysvars V1's own BASIC_SIN_FLOAT already
+; owns for the identical purpose (include/sysvars.inc) -- real,
+; permanent RAM already budgeted, not new scratch cells.
+;
+; Sign handling deliberately does NOT match V1's own documented
+; simplification (extract the sign before reduction, and never
+; reapply it to the final result -- basic.asm's own RAD/DEG header
+; explains why V1 accepted that gap). V2 already has real signed-float
+; negation (the same "push 0, push value, subtract" technique BUILTIN_
+; FN_ABS's own float path already uses) at essentially no extra cost,
+; so SIN(-x) correctly equals -SIN(x) here -- a real, deliberate
+; improvement over V1, not scope creep (it costs a few extra bytes at
+; the very end, not a new architecture), and required for this
+; milestone's own SIN(-x)~=-SIN(x) symmetry test to pass at all.
+BUILTIN_FN_SIN:
+        call VM_POP                  ; HL = value, A = tag
+        ; SIN's own argument grammar is a plain COMPILE_EXPR (like SQR/
+        ; RAD/DEG), which V2's unified int/float expression type allows
+        ; to evaluate to EITHER tag at runtime -- unlike those three
+        ; (which stay int-only, matching V1's own real contract exactly,
+        ; already committed/validated), SIN truncates a FLOAT argument
+        ; to its own integer degree count here instead of silently
+        ; misreading its FLOATTAB index as a raw degree value. Real
+        ; fix, not a special-case architecture: one tag check plus the
+        ; SAME VM_FLOAT_PUSH_OPERAND/CALC_FP_TO_INT primitives already
+        ; used throughout this file.
+        cp TAG_FLOAT
+        jr nz,.sin_have_int
+        ld (VM_FLOAT_OPERAND_TAG),a
+        ld (VM_FLOAT_OPERAND_VAL),hl
+        xor a
+        ld (CALC_SP),a
+        call VM_FLOAT_PUSH_OPERAND
+        call CALC_FP_TO_INT             ; HL = truncated int
+.sin_have_int:
+        ; ---- reduce to a reference angle in [0,90], track sign ----
+        ld de,360
+        call MATH_MOD16                ; HL = degrees mod 360 (signed,
+                                          ; sign of the dividend)
+        xor a
+        ld (FUNC_RESULT_FLOAT_NEGATIVE),a
+        ld a,h
+        or a
+        jp p,.sin_nonneg
+        ld a,1
+        ld (FUNC_RESULT_FLOAT_NEGATIVE),a
+        ld a,h
+        cpl
+        ld h,a
+        ld a,l
+        cpl
+        ld l,a
+        inc hl
+.sin_nonneg:
+        ; HL = |degrees mod 360| in [0,359]; fold [180,359] down via
+        ; sin(x+180) = -sin(x)
+        ld a,h
+        or a
+        jr nz,.sin_ge180
+        ld a,l
+        cp 180
+        jr c,.sin_lt180
+.sin_ge180:
+        ld de,180
+        or a
+        sbc hl,de
+        ld a,(FUNC_RESULT_FLOAT_NEGATIVE)
+        xor 1
+        ld (FUNC_RESULT_FLOAT_NEGATIVE),a
+.sin_lt180:
+        ; HL in [0,179]; fold (90,179] down: reference = x if x<=90
+        ; else 180-x
+        ld a,l
+        cp 91
+        jr c,.sin_ref_done
+        ld de,180
+        ex de,hl
+        or a
+        sbc hl,de                       ; HL = 180-x (operands swapped
+                                            ; by the ex above)
+.sin_ref_done:
+        ; a reference angle of exactly 0 has no sign either way (both
+        ; 0 and 180 fold to a 0 reference) -- force the flag off so a
+        ; fold that flipped it doesn't produce a cosmetic "-0.0000"
+        ld a,h
+        or l
+        jr nz,.sin_ref_nonzero
+        xor a
+        ld (FUNC_RESULT_FLOAT_NEGATIVE),a
+.sin_ref_nonzero:
+        ; ---- degrees -> radians: x_rad = degrees * pi / 180 ----
+        xor a
+        ld (CALC_SP),a
+        call CALC_INT_TO_FP           ; push degrees: [d]
+        call CALC_PUSH_PI               ; push pi: [d,pi]
+        call VM_CALC_MUL_STUB             ; [d*pi]
+        ld hl,180
+        call CALC_INT_TO_FP               ; push 180: [d*pi,180]
+        call VM_CALC_DIV_STUB               ; [x_rad]
+        ld de,SIN_X_RAD
+        call SIN_PEEK_POP                     ; SIN_X_RAD = x_rad;
+                                                 ; stack empty
+        ; ---- x2 = x_rad^2 ----
+        ld hl,SIN_X_RAD
+        call CALC_PUSH_FP_RAW            ; [x_rad]
+        ld hl,SIN_X_RAD
+        call CALC_PUSH_FP_RAW             ; [x_rad,x_rad]
+        call VM_CALC_MUL_STUB               ; [x2]
+        ld de,SIN_X2
+        call SIN_PEEK_POP                     ; SIN_X2 = x2; stack empty
+
+        ; ---- acc = x_rad (term_0); power = x_rad ----
+        ld hl,SIN_X_RAD
+        ld de,SIN_POWER
+        ld bc,5
+        ldir
+        ld hl,SIN_X_RAD
+        call CALC_PUSH_FP_RAW             ; [acc]
+
+        ld hl,SIN_DIVISOR_TABLE
+        ld b,4
+.sin_term_loop:
+        push bc
+        push hl                             ; save divisor-table ptr
+        ld hl,SIN_POWER
+        call CALC_PUSH_FP_RAW                 ; [acc,power]
+        ld hl,SIN_X2
+        call CALC_PUSH_FP_RAW                  ; [acc,power,x2]
+        call VM_CALC_MUL_STUB                    ; [acc,power*x2]
+        pop hl                                  ; HL = divisor-table ptr
+        ld e,(hl)
+        inc hl
+        ld d,(hl)
+        inc hl
+        push hl                                  ; save advanced ptr
+        ex de,hl                                  ; HL = this term's D_k
+        call CALC_INT_TO_FP                        ; push D_k:
+                                                       ; [acc,power*x2,D_k]
+        call VM_CALC_DIV_STUB                         ; [acc,power]
+        ld de,SIN_POWER
+        call SIN_PEEK_POP                                ; SIN_POWER =
+                                                             ; new power;
+                                                             ; [acc]
+        ld hl,SIN_POWER
+        call CALC_PUSH_FP_RAW                              ; [acc,power]
+        pop hl                                              ; advanced
+                                                               ; table ptr
+        pop bc                                                ; loop
+                                                                 ; counter
+        push hl
+        push bc
+        ld a,b
+        and 1
+        ; B is the DJNZ countdown (4,3,2,1 across passes k=1,2,3,4 --
+        ; djnz decrements at the BOTTOM, so pass k sees B's PRE-
+        ; decrement value), not k itself: B even (4,2) means k odd
+        ; (1,3) -> SUBTRACT; B odd (3,1) means k even (2,4) -> ADD.
+        jr z,.sin_term_sub
+        call VM_CALC_ADD_STUB
+        jr .sin_term_combined
+.sin_term_sub:
+        call VM_CALC_SUB_STUB
+.sin_term_combined:
+        pop bc
+        pop hl
+        djnz .sin_term_loop
+
+        ; stack: [acc] -- the reference angle's own non-negative sine
+        ld a,(FUNC_RESULT_FLOAT_NEGATIVE)
+        or a
+        jr z,.sin_done
+        ld de,SIN_POWER                    ; reuse -- no longer needed
+        call SIN_PEEK_POP                     ; SIN_POWER = acc; stack
+                                                 ; empty (CALC_SP=0)
+        ld hl,0
+        call CALC_INT_TO_FP                       ; push 0: [0]
+        ld hl,SIN_POWER
+        call CALC_PUSH_FP_RAW                       ; push acc: [0,acc]
+        call VM_CALC_SUB_STUB                         ; [0-acc] = [-acc]
+.sin_done:
+        call VM_FLOAT_STORE_RESULT
+        ret
+
+SIN_DIVISOR_TABLE: dw 6, 20, 42, 72
 
 BUILTIN_FN_DEG:
         call VM_POP

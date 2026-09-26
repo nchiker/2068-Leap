@@ -1,6 +1,6 @@
 ; ============================================================================
-; rom/test_v2_sqr.asm — Architecture B, R8.5 Group 6 (SQR/PI/RAD/DEG)
-; smoke test
+; rom/test_v2_sqr.asm — Architecture B, R8.5 Group 6 (SQR/PI/RAD/DEG/
+; SIN) smoke test
 ;
 ; Standalone ROM image exercising rom/exrom_v2_compiler.asm's extended
 ; BUILTIN_FN_TABLE (SQR row, fn_index 20) and rom/exrom_v2_vm_core.asm's
@@ -22,6 +22,11 @@
 ;   C = SQR(0)     -- the real V1 bug this milestone's own header
 ;                      documents (SQR(0) rendering as a leftover
 ;                      previous float value instead of 0.0)
+;   D = PI(), E = RAD(90), F = DEG(1)
+;   G-P = SIN's own test matrix -- see EXP_G-EXP_P's own comment below
+;         for the full case-by-case reasoning (quadrant/sign matrix,
+;         range reduction past 360, SIN(-x)=-SIN(x) symmetry, a real
+;         FLOAT argument, a nested-expression argument).
 ;
 ; Verification: each result's own real FLOATTAB value is converted back
 ; to decimal text via VM_NUM_TO_TEXT (the SAME already-proven routine
@@ -37,32 +42,32 @@
 ;   ts2068-debug run --max-instructions 3000000
 ;   ts2068-debug timex   (border field)
 ; ============================================================================
-; KNOWN LIMITATION (R8.5 Group 6, SQR) -- same flat-16K test-harness
-; scaling wall rom/test_v2_call_fn.asm/rom/test_v2_print.asm/rom/
-; test_v2_ext_concurrent.asm already document: this "minimal" test
-; still overflows $4000 by ~484 bytes with the full vm_core+compiler+
-; decompiler plus the real 1772-line rom/exrom_calc.asm SQR's own
-; Newton-Raphson body genuinely needs. EXCLUDED from the buildable
-; regression set for the same reason.
+; KNOWN LIMITATION (R8.5 Group 6, SQR/PI/RAD/DEG/SIN) -- same flat-16K
+; test-harness scaling wall rom/test_v2_call_fn.asm/rom/test_v2_print.
+; asm/rom/test_v2_ext_concurrent.asm already document: this test now
+; overflows $4000 by ~1507 bytes with the full vm_core+compiler+
+; decompiler plus the real 1772-line rom/exrom_calc.asm these five
+; functions genuinely need. EXCLUDED from the buildable regression set
+; for the same reason.
 ;
-; Despite that, every RUNTIME check in this file (A-F) HAS been real-
+; Despite that, every RUNTIME check in this file (A-P) HAS been real-
 ; ZEsarUX-validated, via a temporary local build with its own DS/
 ; SAVEBIN fill enlarged past $4000 for one-off scratch runs (discarded,
-; not committed) -- confirmed BUILTIN_FN_SQR/PI/RAD/DEG compute
-; A=2.0000, B=1.4142, C=0.0000, D=3.1415, E=1.5707, F=57.2957 exactly
-; as this file's own EXPECTED_TEXT/EXP_A-F below claim. That same
-; enlarged scratch run is also what surfaced the real VM_NUM_TO_TEXT
-; bug this milestone fixed (see its own header in rom/exrom_v2_vm_
-; core.asm) -- CHECK_FLOAT_VAR/CHECK_FLOAT_VAR2 below depend on that
-; fix. A SEPARATE scratch attempt covering all six checks in one run
-; (enlarged to $4400) crashed (PC landed at $0038, a stray RST) partway
-; into the DECOMPILE step specifically -- consistent with, not
+; not committed) -- confirmed BUILTIN_FN_SQR/PI/RAD/DEG/SIN compute
+; A=2.0000, B=1.4142, C=0.0000, D=3.1415, E=1.5707, F=57.2957, and the
+; full G-P SIN matrix (see EXP_G-EXP_P's own comment below) exactly as
+; this file's own EXPECTED_TEXT/EXP_A-P claim. That same enlarged
+; scratch run is also what surfaced the real VM_NUM_TO_TEXT bug this
+; milestone fixed (see its own header in rom/exrom_v2_vm_core.asm) --
+; CHECK_FLOAT_VAR/CHECK_FLOAT_VAR2 below depend on that fix. Every
+; scratch attempt that tried to ALSO reach DECOMPILE_PROGRAM in the
+; same enlarged run either produced corrupted decompile text or
+; crashed outright (PC landing at a stray RST) -- consistent with, not
 ; contradicting, the SAME root cause below (a larger image shifts more
-; decompiler data past the real paging boundary as more functions are
-; added); the six runtime values above were each independently
-; confirmed via SMALLER, incremental scratch runs (stopping right
-; after VM_RUN, before DECOMPILE_PROGRAM ever executes) rather than
-; from that crashing combined run.
+; decompiler data past the real paging boundary the more functions are
+; added); every runtime value above was confirmed via scratch runs
+; that stop right after VM_RUN, before DECOMPILE_PROGRAM ever executes,
+; never from a run that also reached decompile.
 ;
 ; The DECOMPILE side (this file's own DECOMPILE_PROGRAM/EXPECTED_TEXT
 ; check) could NOT be validated the same way: enlarging the image past
@@ -158,6 +163,59 @@ COLD_START:
     call CHECK_FLOAT_VAR2
     jp   c, FAIL
 
+    ; G-P: SIN's own test matrix -- see this file's own header for the
+    ; full case list (0, +/-, ~90/180/270/360, range reduction,
+    ; symmetry, float argument, nested expression).
+    ld   hl, SYMTAB_BASE + 6*3
+    ld   de, EXP_G
+    call CHECK_FLOAT_VAR2
+    jp   c, FAIL
+
+    ld   hl, SYMTAB_BASE + 7*3
+    ld   de, EXP_H
+    call CHECK_FLOAT_VAR2
+    jp   c, FAIL
+
+    ld   hl, SYMTAB_BASE + 8*3
+    ld   de, EXP_I
+    call CHECK_FLOAT_VAR2
+    jp   c, FAIL
+
+    ld   hl, SYMTAB_BASE + 9*3
+    ld   de, EXP_J
+    call CHECK_FLOAT_VAR2
+    jp   c, FAIL
+
+    ld   hl, SYMTAB_BASE + 10*3
+    ld   de, EXP_K
+    call CHECK_FLOAT_VAR2
+    jp   c, FAIL
+
+    ld   hl, SYMTAB_BASE + 11*3
+    ld   de, EXP_L
+    call CHECK_FLOAT_VAR2
+    jp   c, FAIL
+
+    ld   hl, SYMTAB_BASE + 12*3
+    ld   de, EXP_M
+    call CHECK_FLOAT_VAR2
+    jp   c, FAIL
+
+    ld   hl, SYMTAB_BASE + 13*3
+    ld   de, EXP_N
+    call CHECK_FLOAT_VAR2
+    jp   c, FAIL
+
+    ld   hl, SYMTAB_BASE + 14*3
+    ld   de, EXP_O
+    call CHECK_FLOAT_VAR2
+    jp   c, FAIL
+
+    ld   hl, SYMTAB_BASE + 15*3
+    ld   de, EXP_P
+    call CHECK_FLOAT_VAR2
+    jp   c, FAIL
+
     call DECOMPILE_PROGRAM
 
     ld   a, (DECOMP_ERROR_CODE)
@@ -218,11 +276,41 @@ CHECK_FLOAT_VAR2:
     ret
 
 SOURCE_TEXT:
-    db "A=SQR(4):B=SQR(2):C=SQR(0):D=PI():E=RAD(90):F=DEG(1)", 0
+    db "A=SQR(4):B=SQR(2):C=SQR(0):D=PI():E=RAD(90):F=DEG(1):"
+    db "G=SIN(0):H=SIN(30):I=SIN(90):J=SIN(180):K=SIN(270):"
+    db "L=SIN(-30):M=SIN(450):N=SIN(720):O=SIN(D):P=SIN(20+10)", 0
 
 EXP_D: db "3.1415", 0
 EXP_E: db "1.5707", 0
 EXP_F: db "57.2957", 0
+
+; G=SIN(0), H=SIN(30), I=SIN(90), J=SIN(180), K=SIN(270): the core
+; quadrant/sign matrix. L=SIN(-30): symmetry check against H (must be
+; H's own value negated). M=SIN(450)/N=SIN(720): range reduction
+; (450 mod 360=90, same as I; 720 mod 360=0, same as G/J). O=SIN(D):
+; float-argument path (D=PI()=3.14159..., a real FLOAT variable, not a
+; literal -- BUILTIN_FN_SIN truncates it to 3 degrees first, matching
+; the tag-aware conversion this milestone added; sin(3 deg)=0.0523,
+; confirmed below, not sin(3.14159 deg) or any other value). P=SIN
+; (20+10): nested expression argument (not a bare literal), same
+; numeric result as H.
+; Captured from a real ZEsarUX run of this exact test (a temporary
+; out-of-tree scratch build with a reliable per-check capture buffer,
+; not a guessed fixed PRINT_BUF address -- see this file's own header).
+; VM_NUM_TO_TEXT truncates rather than rounds (matching every other
+; float check in this file, e.g. RAD(90) rendering "1.5707" not
+; "1.5708"), so SIN(30)=0.4999 (not 0.5000) is real, correct, expected
+; output, not a bug.
+EXP_G: db "0.0000", 0
+EXP_H: db "0.4999", 0
+EXP_I: db "1.0000", 0
+EXP_J: db "0.0000", 0
+EXP_K: db "-1.0000", 0
+EXP_L: db "-0.4999", 0
+EXP_M: db "1.0000", 0
+EXP_N: db "0.0000", 0
+EXP_O: db "0.0523", 0
+EXP_P: db "0.4999", 0
 
 EXP_A: db "2.0000", 0
 ; Captured from a real ZEsarUX run of this exact test.
@@ -271,6 +359,16 @@ EXPECTED_TEXT:
     db "V3 = PI()",13
     db "V4 = RAD(90)",13
     db "V5 = DEG(1)",13
+    db "V6 = SIN(0)",13
+    db "V7 = SIN(30)",13
+    db "V8 = SIN(90)",13
+    db "V9 = SIN(180)",13
+    db "V10 = SIN(270)",13
+    db "V11 = SIN((0-30))",13
+    db "V12 = SIN(450)",13
+    db "V13 = SIN(720)",13
+    db "V14 = SIN(V3)",13
+    db "V15 = SIN((20+10))",13
 EXPECTED_TEXT_LEN: equ $-EXPECTED_TEXT
 
 ; Test-only stub: this test's own SOURCE_TEXT never calls LPRINT, but
