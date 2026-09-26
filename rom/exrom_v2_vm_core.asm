@@ -332,6 +332,13 @@ VM_STR_CONCAT_B_TMP: equ $87A8  ; OP_STR_CONCAT scratch (1 byte): the
 VM_STRCMP_LENA_TMP: equ $87A9   ; VM_STR_COMPARE scratch (1 byte)
 VM_STRCMP_LENB_TMP: equ $87AA   ; VM_STR_COMPARE scratch (1 byte)
 VM_STRCMP_MINLEN_TMP: equ $87AB ; VM_STR_COMPARE scratch (1 byte)
+BFN_STR_TMP:        equ $87AE   ; R8.5 Group 6 (string-result functions)
+                                  ; scratch, 1 byte: a value that must
+                                  ; survive VM_STR_ALLOC_TEMP/VM_STR_ADDR
+                                  ; (both destroy AF/HL) -- same "park it
+                                  ; in memory, not a register, across a
+                                  ; destructive call" discipline this
+                                  ; whole rewrite keeps needing
 
 ; --- R6 addition: floating point, via the REAL, existing calculator
 ; (rom/exrom_calc.asm) — reused, not reimplemented, per this whole
@@ -2724,6 +2731,13 @@ BUILTIN_FN_JUMP_TABLE:
         dw BUILTIN_FN_LEN       ; fn_index 10
         dw BUILTIN_FN_CODE      ; fn_index 11
         dw BUILTIN_FN_VAL       ; fn_index 12
+        dw BUILTIN_FN_CHR       ; fn_index 13
+        dw BUILTIN_FN_STR       ; fn_index 14
+        dw BUILTIN_FN_UPPER     ; fn_index 15
+        dw BUILTIN_FN_LOWER     ; fn_index 16
+        dw BUILTIN_FN_LEFT      ; fn_index 17
+        dw BUILTIN_FN_RIGHT     ; fn_index 18
+        dw BUILTIN_FN_INKEY     ; fn_index 19
 
 ; BUILTIN_FN_ABS — ABS(x). Pops one value (either tag), pushes its
 ; magnitude. Int path: plain two's-complement negate (always safe, the
@@ -3057,6 +3071,364 @@ BUILTIN_FN_VAL:
         jp VM_PUSH
 
 ; ---------------------------------------------------------------------------
+; R8.5 Group 6 -- CHR$/STR$/UPPER$/LOWER$/LEFT$/RIGHT$/INKEY$: the first
+; built-in functions whose RESULT is a string, not numeric. A string
+; RESULT is, per this VM's own established convention (see OP_STR_
+; CONCAT's own header), just a STRTAB index pushed as a plain TAG_INT
+; value -- OP_CALL_FN's generic dispatch/push mechanism needs no change
+; for this, only these handlers' own bodies differ from the numeric-
+; result functions above.
+;
+; Fresh, V2-native bodies (tag-aware VM_POP/VM_STR_ADDR, the shared
+; VM_STR_ALLOC_TEMP below), NOT ports of rom/exrom_strfuncs.asm's own
+; V1-era routines -- that file's actual transform ALGORITHMS were
+; checked and reused as reference (they're already proven correct), but
+; calling it directly was rejected: its STR$ path is self-contained
+; (rom/exrom_format.asm's BASIC_NUM_TO_STRING_EXROM, already part of
+; this build), but its INKEY$ path calls KTAB_IO_READ_KEY_NONBLOCK, a
+; basic.asm-resident gateway already independently confirmed NOT
+; reusable post-R9 by this milestone's own INPUT work (see docs/v2/
+; ARCHITECTURE_B_IMPLEMENTATION_PLAN.md's Group 2 status note) --
+; INKEY$ below reaches kernel/io/io.asm's own real, already-kernel-
+; resident IO_READ_KEY_NONBLOCK directly instead, matching INPUT's own
+; precedent exactly, and its own calling convention (a [length][content]
+; buffer + a byte "budget") doesn't fit this VM's tag-aware operand-
+; stack model any more cleanly than writing these directly.
+; ---------------------------------------------------------------------------
+
+; VM_STR_ALLOC_TEMP -- allocates the next round-robin STRTAB temp slot,
+; same allocation OP_STR_CONCAT's own body already performs inline (see
+; its own header for the round-robin design). Out: HL = the new record's
+; own address (content starts at HL+1 -- caller still writes byte 0,
+; the length byte, itself), A = the new record's own STRTAB index (0-5,
+; ready to push once the caller has written the record's content).
+; Destroys: AF, DE, HL (HL is an OUTPUT, not preserved as an input).
+VM_STR_ALLOC_TEMP:
+        ld a,(VM_STR_TEMP_NEXT)
+        ld (VM_STR_LIT_TEMPIDX_TMP),a
+        add a,STRTAB_MAX_VARS
+        call VM_STR_ADDR          ; HL -> dest record
+        push hl
+        ld a,(VM_STR_LIT_TEMPIDX_TMP)
+        inc a
+        cp STRTAB_TEMP_COUNT
+        jr c,.no_wrap
+        xor a
+.no_wrap:
+        ld (VM_STR_TEMP_NEXT),a
+        ld a,(VM_STR_LIT_TEMPIDX_TMP)
+        add a,STRTAB_MAX_VARS
+        pop hl
+        ret
+
+; CHR$(n) -- the 1-character string with ASCII code n. Int-only
+; argument (VM_POP's own tag is ignored), matching V1's real CHR$
+; behavior and the SGN/MOD/DIV/RND family's already-established "this
+; is a pure-integer BASIC" precedent for this class of function.
+BUILTIN_FN_CHR:
+        call VM_POP               ; HL = value, A = tag (ignored)
+        ld a,h
+        or a
+        jr nz,.chr_range_err      ; h<>0 -- outside 0-255 in either
+                                     ; direction (a negative two's-
+                                     ; complement value has h<>0 too,
+                                     ; e.g. -1 = $FFFF)
+        ld a,l
+        ld (BFN_STR_TMP),a         ; stash the character code across
+                                      ; VM_STR_ALLOC_TEMP (destroys AF)
+        call VM_STR_ALLOC_TEMP      ; HL -> dest record, A = new index
+        push af
+        ld (hl),1                  ; length byte = 1
+        inc hl
+        ld a,(BFN_STR_TMP)
+        ld (hl),a
+        pop af
+        ld l,a
+        ld h,0
+        xor a                       ; TAG_INT=0
+        jp VM_PUSH
+.chr_range_err:
+        ld a,15
+        jp VM_ERR_COMMON
+
+; STR$(n) -- n formatted as a decimal string, reusing the real VM_NUM_
+; TO_TEXT conversion PRINT/LPRINT already use (see its own header).
+BUILTIN_FN_STR:
+        call VM_POP                ; HL = value, A = tag
+        call VM_NUM_TO_TEXT         ; HL = null-terminated decimal text
+                                       ; (PRINT_BUF)
+        ld (VM_STR_SRC_ADDR_TMP),hl
+        call VM_STR_ALLOC_TEMP       ; HL -> dest record, A = new index
+        ld (VM_STR_DST_ADDR_TMP),hl
+        push af
+        ld hl,(VM_STR_SRC_ADDR_TMP)
+        ld de,(VM_STR_DST_ADDR_TMP)
+        inc de                        ; DE -> dest content -- the real
+                                         ; length byte is written once
+                                         ; known, below
+        ld b,0
+.str_loop:
+        ld a,(hl)
+        or a
+        jr z,.str_done
+        ld a,b
+        cp 31
+        jr nc,.str_done               ; clamp to the record's own 31-
+                                          ; byte cap (never actually
+                                          ; reached by any real decimal/
+                                          ; float rendering)
+        ld a,(hl)
+        ld (de),a
+        inc hl
+        inc de
+        inc b
+        jr .str_loop
+.str_done:
+        ld hl,(VM_STR_DST_ADDR_TMP)
+        ld (hl),b
+        pop af
+        ld l,a
+        ld h,0
+        xor a
+        jp VM_PUSH
+
+; UPPER$(s) -- case-convert, byte for byte. Result length always equals
+; the source length.
+BUILTIN_FN_UPPER:
+        call VM_POP                 ; HL = string index
+        ld a,l
+        call VM_STR_ADDR            ; HL -> src record
+        ld (VM_STR_SRC_ADDR_TMP),hl
+        call VM_STR_ALLOC_TEMP       ; HL -> dest record, A = new index
+        ld (VM_STR_DST_ADDR_TMP),hl
+        push af
+        ld hl,(VM_STR_SRC_ADDR_TMP)
+        ld a,(hl)                    ; source length
+        inc hl                        ; HL -> source content
+        ld de,(VM_STR_DST_ADDR_TMP)
+        ld (de),a                     ; dest length byte
+        inc de
+        ld b,a
+        or a
+        jr z,.upper_done
+.upper_loop:
+        ld a,(hl)
+        cp 'a'
+        jr c,.upper_copy
+        cp 'z'+1
+        jr nc,.upper_copy
+        sub 32
+.upper_copy:
+        ld (de),a
+        inc hl
+        inc de
+        djnz .upper_loop
+.upper_done:
+        pop af
+        ld l,a
+        ld h,0
+        xor a
+        jp VM_PUSH
+
+; LOWER$(s) -- case-convert, byte for byte. Mirrors UPPER$ exactly with
+; the fold direction reversed.
+BUILTIN_FN_LOWER:
+        call VM_POP
+        ld a,l
+        call VM_STR_ADDR
+        ld (VM_STR_SRC_ADDR_TMP),hl
+        call VM_STR_ALLOC_TEMP
+        ld (VM_STR_DST_ADDR_TMP),hl
+        push af
+        ld hl,(VM_STR_SRC_ADDR_TMP)
+        ld a,(hl)
+        inc hl
+        ld de,(VM_STR_DST_ADDR_TMP)
+        ld (de),a
+        inc de
+        ld b,a
+        or a
+        jr z,.lower_done
+.lower_loop:
+        ld a,(hl)
+        cp 'A'
+        jr c,.lower_copy
+        cp 'Z'+1
+        jr nc,.lower_copy
+        add a,32
+.lower_copy:
+        ld (de),a
+        inc hl
+        inc de
+        djnz .lower_loop
+.lower_done:
+        pop af
+        ld l,a
+        ld h,0
+        xor a
+        jp VM_PUSH
+
+; LEFT$(s,n) -- the first n characters of s (clamped to the real source
+; length; n<0 -> 0 characters). Compiled left-to-right (s then n), so
+; the operand stack has n on top (popped first).
+BUILTIN_FN_LEFT:
+        call VM_POP                 ; HL = n
+        ld a,h
+        bit 7,a
+        jr nz,.left_n_neg
+        or a
+        jr nz,.left_use_srclen       ; h<>0, n>=0 -> n>=256, definitely
+                                        ; more than any real source
+                                        ; length (max 31)
+        ld a,l
+        jr .left_have_n
+.left_n_neg:
+        xor a
+        jr .left_have_n
+.left_use_srclen:
+        ld a,255                     ; sentinel "at least the whole
+                                        ; source" -- clamped against the
+                                        ; real source length below either
+                                        ; way
+.left_have_n:
+        ld (BFN_STR_TMP),a
+        call VM_POP                  ; HL = string index (s)
+        ld a,l
+        call VM_STR_ADDR             ; HL -> src record
+        ld (VM_STR_SRC_ADDR_TMP),hl
+        ld a,(hl)                    ; source length
+        ld b,a
+        ld a,(BFN_STR_TMP)
+        cp b
+        jr c,.left_clamped
+        ld a,b
+.left_clamped:
+        ld (BFN_STR_TMP),a           ; final copy_len
+        call VM_STR_ALLOC_TEMP        ; HL -> dest record, A = new index
+        ld (VM_STR_DST_ADDR_TMP),hl
+        push af
+        ld hl,(VM_STR_SRC_ADDR_TMP)
+        inc hl                        ; HL -> src content (LEFT$ always
+                                         ; starts at the beginning)
+        ld de,(VM_STR_DST_ADDR_TMP)
+        ld a,(BFN_STR_TMP)
+        ld (de),a                     ; dest length byte
+        inc de
+        ld b,a
+        or a
+        jr z,.left_done
+.left_loop:
+        ld a,(hl)
+        ld (de),a
+        inc hl
+        inc de
+        djnz .left_loop
+.left_done:
+        pop af
+        ld l,a
+        ld h,0
+        xor a
+        jp VM_PUSH
+
+; RIGHT$(s,n) -- the last n characters of s. Same n-resolution as
+; LEFT$'s own; differs only in the source content's own start offset.
+BUILTIN_FN_RIGHT:
+        call VM_POP                  ; HL = n
+        ld a,h
+        bit 7,a
+        jr nz,.right_n_neg
+        or a
+        jr nz,.right_use_srclen
+        ld a,l
+        jr .right_have_n
+.right_n_neg:
+        xor a
+        jr .right_have_n
+.right_use_srclen:
+        ld a,255
+.right_have_n:
+        ld (BFN_STR_TMP),a
+        call VM_POP                   ; HL = string index (s)
+        ld a,l
+        call VM_STR_ADDR              ; HL -> src record
+        ld (VM_STR_SRC_ADDR_TMP),hl
+        ld a,(hl)                     ; source length
+        ld b,a
+        ld a,(BFN_STR_TMP)
+        cp b
+        jr c,.right_clamped
+        ld a,b
+.right_clamped:
+        ld (BFN_STR_TMP),a            ; final copy_len
+        call VM_STR_ALLOC_TEMP         ; HL -> dest record, A = new index
+        ld (VM_STR_DST_ADDR_TMP),hl
+        push af
+        ld hl,(VM_STR_SRC_ADDR_TMP)
+        ld a,(hl)                     ; source length again (HL not yet
+                                          ; advanced past the length byte)
+        ld b,a
+        ld a,(BFN_STR_TMP)
+        ld c,a                         ; C = copy_len
+        ld a,b
+        sub c                          ; A = start offset within content
+        inc hl                         ; HL -> src content start
+        ld e,a
+        ld d,0
+        add hl,de                      ; HL -> src content + start offset
+        ld de,(VM_STR_DST_ADDR_TMP)
+        ld a,c
+        ld (de),a                      ; dest length byte
+        inc de
+        ld b,c
+        or a
+        jr z,.right_done
+.right_loop:
+        ld a,(hl)
+        ld (de),a
+        inc hl
+        inc de
+        djnz .right_loop
+.right_done:
+        pop af
+        ld l,a
+        ld h,0
+        xor a
+        jp VM_PUSH
+
+; INKEY$() -- one keypress, as a 0- or 1-character string. Never
+; blocks: kernel/io/io.asm's own IO_READ_KEY_NONBLOCK returns 0
+; immediately if nothing is currently latched (same real ISR-latched-
+; state contract IO_READ_KEY's own blocking wait already relies on --
+; see that routine's header).
+BUILTIN_FN_INKEY:
+        call IO_READ_KEY_NONBLOCK
+        or a
+        jr z,.inkey_empty
+        ld (BFN_STR_TMP),a
+        call VM_STR_ALLOC_TEMP        ; HL -> dest record, A = new index
+        push af
+        ld (hl),1
+        inc hl
+        ld a,(BFN_STR_TMP)
+        ld (hl),a
+        pop af
+        ld l,a
+        ld h,0
+        xor a
+        jp VM_PUSH
+.inkey_empty:
+        call VM_STR_ALLOC_TEMP        ; HL -> dest record, A = new index
+                                          ; (an empty string is still a
+                                          ; real STRTAB record, same
+                                          ; convention every other empty-
+                                          ; string result already uses)
+        ld (hl),0
+        ld l,a
+        ld h,0
+        xor a
+        jp VM_PUSH
+
+; ---------------------------------------------------------------------------
 ; Error exits — each sets VM_ERROR_CODE and VM_HALTED, then returns to the
 ; caller (the driver), which inspects both.
 ; ---------------------------------------------------------------------------
@@ -3103,6 +3475,12 @@ VM_ERR_ARRAY_BOUNDS:
 VM_ERR_ARRAY_TYPE:
         ld a,11
         jp VM_ERR_COMMON
+
+; VM_ERR_CHR_RANGE -- R8.5 Group 6: CHR$'s argument was outside 0-255.
+; Reached inline via BUILTIN_FN_CHR's own "jp VM_ERR_COMMON" (no
+; separate named routine needed -- kept here as documentation of the
+; code, matching this table's own existing style).
+; Error code 15 (12-14 retired, see the note above).
 
 ; VM_ERR_INVALID_MODE/ULAPLUS/PALETTE (error codes 12-14) removed --
 ; dead code now that OP_MODE/OP_ULAPLUS/OP_PALETTE no longer exist here.

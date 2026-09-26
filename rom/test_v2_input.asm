@@ -241,6 +241,15 @@ IO_READ_KEY:
     ld   (TEST_KEY_PTR), hl
     ret
 
+; IO_READ_KEY_NONBLOCK -- R8.5 Group 6 (string-result functions):
+; INKEY$'s own dependency, not otherwise exercised by this test's own
+; INPUT-focused program. Deterministic "no key currently pressed" stub,
+; same pattern this test suite already uses for other platform
+; dependencies this file doesn't itself need to exercise.
+IO_READ_KEY_NONBLOCK:
+    xor a
+    ret
+
 KTAB_CALC_EXIT_TRAMPOLINE:
     ret
 

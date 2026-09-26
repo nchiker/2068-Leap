@@ -2752,12 +2752,50 @@ DECOMPILE_PROGRAM:
 
         ld a,(DECOMP_FN_ARGCOUNT)
         ld b,a
+        or a
+        jr z,.cfn_reset             ; R8.5 Group 6 -- INKEY$ is the first
+                                      ; 0-argument built-in function; the
+                                      ; pop loop below assumes at least
+                                      ; one argument. Real bug, found via
+                                      ; a real ZEsarUX run ("LEN(INKEY$
+                                      ; ())" corrupted DECOMP_COMBINE_BUF
+                                      ; and raised error 4, "expression
+                                      ; too long"): B=0 into the pop
+                                      ; loop's own DJNZ wraps to 255
+                                      ; (DJNZ decrements FIRST, so B=0
+                                      ; becomes B=255 and does NOT stop),
+                                      ; popping far past the real
+                                      ; fragment stack. Skipped entirely
+                                      ; for 0 args -- see .cfn_reset
+                                      ; below, and the matching skip of
+                                      ; the per-argument emit loop right
+                                      ; after "NAME(" is combined.
 .cfn_pop_loop:
         call DECOMP_FRAG_POP      ; HL = ptr, C = len; B = outer loop
                                     ; counter (DECOMP_FRAG_POP itself
                                     ; doesn't destroy B)
+        ; this argument's own 0-based index = B-1 (B is this loop's own
+        ; OUTER counter, counting DOWN from argcount via djnz -- the
+        ; SAME "B-1" formula the storage-slot switch below already uses
+        ; to map LIFO pop order back to the real argument index, since
+        ; fragments pop in the OPPOSITE order they were pushed/compiled
+        ; in). REAL BUG (found via a real ZEsarUX run: "LEN(LEFT$(A$,3))"
+        ; decompiled as "LEN(LEFT$(0,S3$))" -- A$ rendered as a bare
+        ; number and the numeric "3" wrongly string-wrapped): an earlier
+        ; version of this fix used "argcount - B" (mirroring .op_call_
+        ; ext's own arg-emit loop, which walks arguments in COMPILE
+        ; order, not POP order) -- wrong here because .op_call_fn pops
+        ; in LIFO order, exactly backwards from argcount-B's own
+        ; assumption.
+        push bc                    ; B (outer loop counter) must survive
+                                      ; this arithmetic untouched
+        ld a,b
+        dec a                        ; A = B-1 = this pop's real argument
+                                        ; index
+        ld b,a                      ; B = rotate count for the bit test
         ld a,(DECOMP_FN_ARGTYPE)
-        or a
+        call VM_TEST_ARGTYPE_BIT   ; Z = numeric, NZ = string
+        pop bc
         jr z,.cfn_pop_numeric
         push bc                    ; DECOMP_STR_OPERAND's own contract
                                      ; destroys BC entirely -- park B
@@ -2823,12 +2861,19 @@ DECOMPILE_PROGRAM:
 .cfn_pop_next:
         djnz .cfn_pop_loop
 
+.cfn_reset:
         call DECOMP_COMBINE_RESET
         ld hl,(DECOMP_OP_PTR)
         ld a,(DECOMP_OP_LEN)
         call DECOMP_COMBINE_TEXT
         ld a,'('
         call DECOMP_COMBINE_CHAR
+
+        ld a,(DECOMP_FN_ARGCOUNT)
+        or a
+        jr z,.cfn_args_done          ; 0 args -- nothing to emit before
+                                        ; the closing ')' (see this
+                                        ; routine's own 0-arg note above)
 
         xor a
         ld (DECOMP_EXT_SLOT),a         ; reused as this loop's own
@@ -3131,6 +3176,30 @@ DECOMP_STR_OPERAND:
                                         ; STR_VAR/another STR_CONCAT got
                                         ; wrongly re-wrapped as "S(...)$)"
                                         ; instead of passed through as-is
+        cp 'A'
+        jr c,.not_letter
+        cp 'Z'+1
+        jr nc,.not_letter
+        ret                            ; R8.5 Group 6 -- a string-RESULT
+                                        ; built-in function call (UPPER$/
+                                        ; LOWER$/LEFT$/RIGHT$/CHR$/STR$/
+                                        ; INKEY$) decompiles as its own
+                                        ; name text followed by "(args)"
+                                        ; (.op_call_fn's own COMBINE
+                                        ; output, see that routine), e.g.
+                                        ; "UPPER$(B$)" -- always starts
+                                        ; with a letter, never a digit or
+                                        ; '-' (PUSH_I16's own only two
+                                        ; possible first characters, the
+                                        ; ONLY other fragment shape this
+                                        ; routine ever has to reinterpret
+                                        ; -- see this routine's own header).
+                                        ; Without this check, a nested
+                                        ; call like "LOWER$(UPPER$(B$))"
+                                        ; would wrongly re-wrap the inner
+                                        ; result as "SUPPER$(B$)$"
+                                        ; instead of passing it through.
+.not_letter:
         ld (DECOMP_TMP_A),hl
         ld a,c
         ld (DECOMP_TMP_LEN),a
@@ -3322,6 +3391,20 @@ STR_CODE_FN:   db "CODE"
 STR_CODE_FN_LEN: equ $-STR_CODE_FN
 STR_VAL_FN:    db "VAL"
 STR_VAL_FN_LEN: equ $-STR_VAL_FN
+STR_CHR_FN:    db "CHR$"
+STR_CHR_FN_LEN: equ $-STR_CHR_FN
+STR_STR_FN:    db "STR$"
+STR_STR_FN_LEN: equ $-STR_STR_FN
+STR_UPPER_FN:  db "UPPER$"
+STR_UPPER_FN_LEN: equ $-STR_UPPER_FN
+STR_LOWER_FN:  db "LOWER$"
+STR_LOWER_FN_LEN: equ $-STR_LOWER_FN
+STR_LEFT_FN:   db "LEFT$"
+STR_LEFT_FN_LEN: equ $-STR_LEFT_FN
+STR_RIGHT_FN:  db "RIGHT$"
+STR_RIGHT_FN_LEN: equ $-STR_RIGHT_FN
+STR_INKEY_FN:  db "INKEY$"
+STR_INKEY_FN_LEN: equ $-STR_INKEY_FN
 
 ; DECOMP_BUILTIN_FN_TABLE -- [text_ptr:2][len:1][argcount:1] per
 ; fn_index, same order as rom/exrom_v2_compiler.asm's own
@@ -3330,11 +3413,16 @@ STR_VAL_FN_LEN: equ $-STR_VAL_FN
 ; either at build time). argcount is needed here (not just the name)
 ; because .op_call_fn must know how many fragments to pop and
 ; re-render in the right order -- see that routine's own header.
-; 5 bytes/row: [text_ptr:2][len:1][argcount:1][argtype:1]. argtype: 0 =
-; numeric argument(s) (rendered straight from DECOMP_FRAG_POP), 1 =
-; string argument (needs DECOMP_STR_OPERAND's own reinterpretation --
-; see .op_call_fn's own header for why a bare variable-reference
-; fragment needs this).
+; 5 bytes/row: [text_ptr:2][len:1][argcount:1][argtype:1]. argtype
+; generalized (this pass, alongside rom/exrom_v2_compiler.asm's own
+; identical BFN_FOUND_ARGTYPE generalization): bits 0-1 = per-position
+; argument type (bit N set = argument N needs DECOMP_STR_OPERAND's own
+; reinterpretation -- see .op_call_fn's own header), bit 7 unused here
+; (a decompiled call always renders its own real opcode/argcount
+; correctly regardless of the function's RESULT type -- the compiler-
+; side result-type bit only disambiguates which of two IDENTICALLY-
+; NAMED grammar productions a source token matches, a problem that
+; doesn't exist once compiled to a bare fn_index).
 DECOMP_BUILTIN_FN_TABLE:
         dw STR_ABS
         db STR_ABS_LEN, 1, 0
@@ -3362,6 +3450,20 @@ DECOMP_BUILTIN_FN_TABLE:
         db STR_CODE_FN_LEN, 1, 1
         dw STR_VAL_FN
         db STR_VAL_FN_LEN, 1, 1
+        dw STR_CHR_FN
+        db STR_CHR_FN_LEN, 1, 0
+        dw STR_STR_FN
+        db STR_STR_FN_LEN, 1, 0
+        dw STR_UPPER_FN
+        db STR_UPPER_FN_LEN, 1, 1
+        dw STR_LOWER_FN
+        db STR_LOWER_FN_LEN, 1, 1
+        dw STR_LEFT_FN
+        db STR_LEFT_FN_LEN, 2, 1
+        dw STR_RIGHT_FN
+        db STR_RIGHT_FN_LEN, 2, 1
+        dw STR_INKEY_FN
+        db STR_INKEY_FN_LEN, 0, 0
 
 STR_GOTO:      db "GOTO "
 STR_GOTO_LEN:  equ $-STR_GOTO

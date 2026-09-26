@@ -325,11 +325,20 @@ CFN_REMAINING:      equ $8B44   ; index/argcount, and a countdown while
                                   ; argument expressions (same shape as
                                   ; CEXT_SLOT/CEXT_GEN/CEXT_ARGCOUNT/
                                   ; CEXT_REMAINING above, deliberately)
-BFN_FOUND_ARGTYPE:  equ $8B58   ; R8.5 Group 6 (LEN/CODE/VAL) -- BUILTIN_
-                                  ; FN_FIND's own output: 0 = this
-                                  ; function's arguments are numeric
-                                  ; (COMPILE_EXPR), 1 = string (COMPILE_
-                                  ; STR_EXPR). Placed in the free gap
+BFN_FOUND_ARGTYPE:  equ $8B58   ; R8.5 Group 6 -- BUILTIN_FN_FIND's own
+                                  ; output: bits 0-1 = per-argument-
+                                  ; position type (bit N set = argument N
+                                  ; is a string expression, tested via
+                                  ; the shared VM_TEST_ARGTYPE_BIT -- LEN/
+                                  ; CODE/VAL originally used this as a
+                                  ; flat 0/1 boolean, still correct for
+                                  ; their own single argument); bit 7 =
+                                  ; SET means this function's RESULT is a
+                                  ; string (CHR$/STR$/UPPER$/LOWER$/
+                                  ; LEFT$/RIGHT$/INKEY$), clear means
+                                  ; numeric (every function through Group
+                                  ; 6's original LEN/CODE/VAL). Placed in
+                                  ; the free gap
                                   ; between EXITFOR_PATCH_TABLE ($8B50 +
                                   ; 4*2=8 bytes = $8B58) and STRSYMTAB_
                                   ; BASE ($8B60) -- every byte from $8B41
@@ -1564,7 +1573,31 @@ COMPILE_FACTOR:
         ret
 .ident:
         call BUILTIN_FN_FIND
-        jr c,.fn_call
+        jr nc,.not_builtin_fn
+        ; R8.5 Group 6 (string-result functions) -- BUILTIN_FN_FIND
+        ; matches on name TEXT alone, and a string-result function's
+        ; name text (e.g. "CHR", stored without its "$") can coincide
+        ; with a plain NUMERIC variable of the same name (TOK_IDENT
+        ; "CHR" and TOK_STR_IDENT "CHR$" are distinct, never-colliding
+        ; tokens per LEX_SCAN_IDENT's own hard '$'-suffix split -- see
+        ; its header). BFN_FOUND_ARGTYPE's bit 7 (set = this function's
+        ; RESULT is a string) disambiguates: only a bit-7-clear (numeric-
+        ; result) match is a real call here; a bit-7-set match just means
+        ; a same-named ordinary numeric identifier was typed, and falls
+        ; through to the plain-identifier path below like any other name.
+        push af                  ; A = fn_index, preserved across the
+                                    ; result-type check (BFN_FOUND_ARGTYPE
+                                    ; read below doesn't touch it, but the
+                                    ; bit test clobbers A itself)
+        ld a,(BFN_FOUND_ARGTYPE)
+        bit 7,a
+        jr z,.is_num_result
+        pop af
+        jr .not_builtin_fn
+.is_num_result:
+        pop af
+        jr .fn_call
+.not_builtin_fn:
         ; R8.5 Group 4 -- an identifier that names a DIM'd array, used as
         ; a VALUE, is an array read: "IDENT(expr)". Checked after builtin
         ; functions (a distinct, reserved namespace) but before the
@@ -1646,16 +1679,67 @@ COMPILE_FACTOR:
         jr z,.fn_rparen              ; 0-arg function (none exist yet,
                                        ; kept general for group 6)
 .fn_arg_loop:
+        ; this argument's own 0-based index = argcount - remaining (same
+        ; technique COMPILE_EXT_CALL's own arg_loop already established
+        ; for the identical need -- generalized here from LEN/CODE/VAL's
+        ; original single flat flag, now that LEFT$/RIGHT$ (Group 6)
+        ; need two ARGUMENTS of DIFFERENT types in the same call: a flat
+        ; boolean can't express "arg 0 is a string, arg 1 is numeric")
+        ld a,(CFN_ARGCOUNT)
+        ld b,a
+        ld a,(CFN_REMAINING)
+        ld c,a
+        ld a,b
+        sub c
+        ld b,a                      ; B = rotate count for the bit test
         ld a,(CFN_ARGTYPE)
-        or a
-        jr nz,.fn_arg_str
+        call VM_TEST_ARGTYPE_BIT    ; Z = numeric, NZ = string (shared
+                                       ; with COMPILE_EXT_CALL/the
+                                       ; decompiler's identical need)
+        ; R8.5 Group 6 -- a function call used AS an argument to
+        ; another function call (e.g. "LEN(UPPER$(A$))") recurses back
+        ; into THIS SAME routine through the COMPILE_EXPR/COMPILE_STR_
+        ; EXPR call below, which overwrites CFN_INDEX/CFN_ARGCOUNT/
+        ; CFN_REMAINING/CFN_ARGTYPE with the INNER call's own values --
+        ; this scratch is shared, not reentrant. Real bug, found via a
+        ; real ZEsarUX run: "LEN(UPPER$(A$))" raised compile error 30
+        ; ("expected ',' between arguments") because the outer LEN's
+        ; own CFN_REMAINING had been clobbered to the inner UPPER$
+        ; call's own final value (0) by the time control returned here,
+        ; so decrementing it produced -1 instead of the outer's real
+        ; remaining count. Fixed the same way COMPILE_FACTOR.arr_read's
+        ; own CARR_INDEX/CARR_SIZE fix already established for the
+        ; identical nested-array-read problem: park this iteration's
+        ; own state on the hardware stack across the recursive call,
+        ; not in the shared memory cells a nested call will reuse.
+        ld a,(CFN_INDEX)
+        ld d,a
+        ld a,(CFN_ARGCOUNT)
+        ld e,a
+        push de
+        ld a,(CFN_REMAINING)
+        ld d,a
+        ld a,(CFN_ARGTYPE)
+        ld e,a
+        push de
+        jr z,.fn_arg_num
+        call COMPILE_STR_EXPR         ; LEN/CODE/VAL/UPPER$/LOWER$/LEFT$/
+                                        ; RIGHT$ (Group 6): this argument
+                                        ; is a string expression
+        jr .fn_arg_restore
+.fn_arg_num:
         call COMPILE_EXPR
-        jr .fn_arg_done
-.fn_arg_str:
-        call COMPILE_STR_EXPR         ; LEN/CODE/VAL (Group 6): argument
-                                        ; is a string expression, not
-                                        ; numeric -- result is still
-                                        ; pushed as numeric either way
+.fn_arg_restore:
+        pop de
+        ld a,e
+        ld (CFN_ARGTYPE),a
+        ld a,d
+        ld (CFN_REMAINING),a
+        pop de
+        ld a,e
+        ld (CFN_ARGCOUNT),a
+        ld a,d
+        ld (CFN_INDEX),a
 .fn_arg_done:
         ld a,(COMPILE_ERROR_CODE)
         or a
@@ -1777,7 +1861,7 @@ BUILTIN_FN_FIND:               ; input: TOK_NAME/TOK_LEN (current, not
         or a                       ; clear carry -- not a built-in
         ret                          ; function name
 
-BUILTIN_FN_TABLE_COUNT: equ 13
+BUILTIN_FN_TABLE_COUNT: equ 20
 
 ; fn_index 0 = ABS (rom/exrom_v2_vm_core.asm's own BUILTIN_FN_ABS).
 ; Group 6 appends the remaining ~24 functions to this same table --
@@ -1832,6 +1916,37 @@ BUILTIN_FN_TABLE:
     db 3, "LEN", 1, 10, 1
     db 4, "CODE", 1, 11, 1
     db 3, "VAL", 1, 12, 1
+
+; CHR$/STR$/UPPER$/LOWER$/LEFT$/RIGHT$/INKEY$ (fn_index 13-19): the
+; first built-ins whose RESULT is a string, not numeric -- reached from
+; COMPILE_STR_FACTOR.ident, never COMPILE_FACTOR.ident (see both
+; routines' own headers for the full name-collision reasoning). argtype
+; byte generalized (this pass) to a real bitmask: bits 0-1 = per-
+; position argument type (bit N set = argument N is a string
+; expression), bit 7 = SET meaning this function's own RESULT is a
+; string (a plain TAG_INT-tagged STRTAB index, per this VM's established
+; string-value convention -- OP_CALL_FN's push mechanism needs no
+; change for this). Table text stored WITHOUT the trailing '$'
+; (TOK_STR_IDENT's own TOK_NAME/TOK_LEN already excludes it -- see
+; LEX_SCAN_IDENT). Names/argcounts/handler bodies confirmed against
+; rom/exrom_strfuncs.asm's real, already-proven transform algorithms
+; (CHR$/STR$/UPPER$/LOWER$/LEFT$/RIGHT$ logic) -- but rom/exrom_v2_vm_
+; core.asm's own handlers are fresh, V2-native rewrites on V2's own
+; tag-aware VM_POP/VM_STR_ADDR/STRTAB-temp-slot convention, NOT direct
+; calls into that V1 file, which has real basic.asm-resident
+; dependencies (INKEY$'s own KTAB_IO_READ_KEY_NONBLOCK gateway) already
+; confirmed NOT reusable post-R9 by this milestone's own INPUT work
+; (see docs/v2/ARCHITECTURE_B_IMPLEMENTATION_PLAN.md's Group 2 status
+; note) -- INKEY$ instead reaches kernel/io/io.asm's own real, already-
+; kernel-resident IO_READ_KEY_NONBLOCK directly, matching INPUT's own
+; precedent exactly.
+    db 3, "CHR", 1, 13, $80
+    db 3, "STR", 1, 14, $80
+    db 5, "UPPER", 1, 15, $81
+    db 5, "LOWER", 1, 16, $81
+    db 4, "LEFT", 2, 17, $81
+    db 5, "RIGHT", 2, 18, $81
+    db 5, "INKEY", 0, 19, $80
 
 ; BUG FOUND (real hardware, R8.5 Group 5): a literal 128-255 has TOK_VAL
 ; high byte 0, so this used to take the PUSH_I8 path below -- but
@@ -2394,6 +2509,35 @@ COMPILE_STR_FACTOR:
         call LEX_NEXT_TOKEN
         ret
 .ident:
+        ; R8.5 Group 6 (string-result functions) -- mirrors COMPILE_
+        ; FACTOR.ident's own identical check (see its header for the
+        ; full reasoning): BUILTIN_FN_FIND matches by name text alone,
+        ; TOK_NAME/TOK_LEN already excludes this TOK_STR_IDENT's own
+        ; trailing '$' (LEX_SCAN_IDENT's contract), so a match here is
+        ; only a REAL string-function call if BFN_FOUND_ARGTYPE's bit 7
+        ; is SET (result is a string) -- a bit-7-clear match means a
+        ; same-named ordinary STRING VARIABLE was typed (e.g. "ABS$"),
+        ; which falls through to the plain-string-identifier path below.
+        call BUILTIN_FN_FIND
+        jr nc,.plain_str_ident
+        push af                  ; A = fn_index, preserved across the
+                                    ; result-type check below
+        ld a,(BFN_FOUND_ARGTYPE)
+        bit 7,a
+        jr z,.not_str_result
+        pop af
+        jp COMPILE_FACTOR.fn_call   ; same grammar/emit COMPILE_FACTOR's
+                                       ; own numeric-context call uses --
+                                       ; OP_CALL_FN's result is always
+                                       ; pushed as a plain TAG_INT value
+                                       ; either way (a string RESULT is
+                                       ; just a STRTAB index, per this
+                                       ; VM's own established convention),
+                                       ; so no separate string-context
+                                       ; emit path is needed
+.not_str_result:
+        pop af
+.plain_str_ident:
         ld hl,(TOK_NAME)
         ld a,(TOK_LEN)
         cp 9

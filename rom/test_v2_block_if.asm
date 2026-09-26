@@ -40,6 +40,7 @@
     INCLUDE "include/hardware.inc"
     INCLUDE "include/sysvars.inc"
 
+
     DEVICE NOSLOT64K
 
     ORG $0000
@@ -294,6 +295,20 @@ GFX_CELL_ATTR_ADDR:
     scf
     ret
     INCLUDE "rom/exrom_format.asm"
+; R8.5 Group 6 -- INKEY$ needs kernel/io/io.asm's real IO_READ_KEY_
+; NONBLOCK, not included in this flat test image (same scaling limit
+; as every other v2 test); deterministic "no key currently pressed"
+; stub, same pattern this test suite already uses for other platform
+; dependencies (GFX_READ_PIXEL etc). Placed here (after the real ORG
+; $0000 code), not before it -- placing it earlier let sjasmplus
+; assemble it at whatever pre-ORG address the counter held (address
+; 0), silently aliasing RST_00's own real code; a real bug this exact
+; mistake caused elsewhere (see rom/test_v2_strfuncs.asm's own header
+; for the full incident).
+IO_READ_KEY_NONBLOCK:
+        xor a
+        ret
+
     INCLUDE "rom/exrom_v2_vm_core.asm"
     INCLUDE "rom/exrom_v2_compiler.asm"
     INCLUDE "rom/exrom_v2_decompiler.asm"

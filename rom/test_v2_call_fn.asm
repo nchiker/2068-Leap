@@ -35,10 +35,15 @@
 ;   ts2068-debug run --max-instructions 3000000
 ;   ts2068-debug timex   (border field)
 ; ============================================================================
-; KNOWN LIMITATION (R8.5 Group 5, grown further through Group 6): this
-; flat 16K standalone image overflows its own budget (~200 bytes over
-; as of Group 6's SGN/MOD/DIV/RND/POINT/ATTR/INT/PEEK/USR/LEN/CODE/VAL
-; additions) because it needs BOTH the real 1772-line rom/exrom_calc.asm
+; KNOWN LIMITATION (R8.5 Group 5, grown further through Group 6) --
+; NOW ACTUALLY OVERFLOWING (previous revisions of this note anticipated
+; this; the string-result function group (CHR$/STR$/UPPER$/LOWER$/
+; LEFT$/RIGHT$/INKEY$) is what finally tipped it over): this flat 16K
+; standalone image no longer assembles at all (296 bytes past $4000 as
+; of this addition -- sjasmplus_strict.sh refuses the truncated image).
+; This test is EXCLUDED from the buildable regression set until R9 (V1
+; removal) or a harness redesign frees real headroom -- see below. It
+; needs BOTH the real 1772-line rom/exrom_calc.asm
 ; (this test's own float coverage genuinely needs it -- no further stub
 ; is possible without gutting the calculator itself) AND the full v2
 ; core, which keeps growing with every Group 5/6 addition, none of it
@@ -46,7 +51,8 @@
 ; test-HARNESS scaling limit, not a functional regression: none of
 ; Group 5's changes (FOR...STEP, EXIT FOR, MODE/ULAPLUS/PALETTE,
 ; SPRITE) or Group 6's (SGN/MOD/DIV/RND/POINT/ATTR/INT/PEEK/USR/LEN/
-; CODE/VAL) touch any float-handling code path this test exercises
+; CODE/VAL/CHR$/STR$/UPPER$/LOWER$/LEFT$/RIGHT$/INKEY$) touch any
+; float-handling code path this test exercises
 ; (OP_PUSH_FLOAT_LIT, ABS's own float branch, VM_NUM_TO_TEXT's float
 ; path are all unchanged). This test's own real coverage last built and
 ; passed at commit acb549c (R8.5 Group 5's MODE/ULAPLUS/PALETTE commit)
@@ -58,6 +64,7 @@
 
     INCLUDE "include/hardware.inc"
     INCLUDE "include/sysvars.inc"
+
 
     DEVICE NOSLOT64K
 
@@ -278,6 +285,20 @@ EXT_CALL_ARG0: equ $8B00
 EXT_CALL_ARG4: equ $8B00
 EXT2_TABLE:    equ $8B00
     INCLUDE "rom/exrom_format.asm"
+; R8.5 Group 6 -- INKEY$ needs kernel/io/io.asm's real IO_READ_KEY_
+; NONBLOCK, not included in this flat test image (same scaling limit
+; as every other v2 test); deterministic "no key currently pressed"
+; stub, same pattern this test suite already uses for other platform
+; dependencies (GFX_READ_PIXEL etc). Placed here (after the real ORG
+; $0000 code), not before it -- placing it earlier let sjasmplus
+; assemble it at whatever pre-ORG address the counter held (address
+; 0), silently aliasing RST_00's own real code; a real bug this exact
+; mistake caused elsewhere (see rom/test_v2_strfuncs.asm's own header
+; for the full incident).
+IO_READ_KEY_NONBLOCK:
+        xor a
+        ret
+
     INCLUDE "rom/exrom_v2_vm_core.asm"
     INCLUDE "rom/exrom_v2_compiler.asm"
     INCLUDE "rom/exrom_v2_decompiler.asm"
