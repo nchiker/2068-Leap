@@ -93,6 +93,26 @@ COLD_START:
     call CHECK_ARR
     jp   c, FAIL
 
+    ; R8.5 Group 6 (DIMN) -- Y=DIMN(A)=5, Z=DIMN(B)=3. Numeric symbol
+    ; declaration order: X=0 (already checked via CHECK_ARR's own
+    ; ARRTAB read, not SYMTAB), Y=1, Z=2.
+    ld   hl, SYMTAB_BASE + 1*3 + 1
+    ld   a, (hl)
+    cp   5
+    jp   nz, FAIL
+    inc  hl
+    ld   a, (hl)
+    or   a
+    jp   nz, FAIL
+    ld   hl, SYMTAB_BASE + 2*3 + 1
+    ld   a, (hl)
+    cp   3
+    jp   nz, FAIL
+    inc  hl
+    ld   a, (hl)
+    or   a
+    jp   nz, FAIL
+
     ; VM_OUTPUT_ROW must be 5 -- one line per PRINT (0-4); the DIMs and
     ; the three array/scalar assignments don't print.
     ld   a, (VM_OUTPUT_ROW)
@@ -121,6 +141,7 @@ FAIL:
 SOURCE_TEXT:
     db "DIM A(5):DIM B(3):"
     db "A(0)=10:A(1)=20:A(4)=99:B(0)=A(1)+A(0):X=A(4):"
+    db "Y=DIMN(A):Z=DIMN(B):"
     db "PRINT A(0):PRINT A(1):PRINT A(4):PRINT B(0):PRINT X", 0
 
 ; ============================================================================
@@ -189,16 +210,23 @@ CHECK_DECOMPILED_TEXT:
 ; implicitly-declared scalar's own CSYMTAB entry) -- decompiled text
 ; starts directly at the first real statement. "A0"/"A1" are the
 ; compiler's real generated array names (A was DIM'd first -> ARRSYMTAB
-; slot 0 -> "A0"; B second -> slot 1 -> "A1"); "V0" is X's own generated
-; scalar name -- to be captured from a real ZEsarUX run, then cross-
-; checked against CHECK_ARR's own already-verified real values (same
-; two-step discipline as every other decompiler test this session).
+; slot 0 -> "A0"; B second -> slot 1 -> "A1"); "V0"/"V1"/"V2" are X/Y/Z's
+; own generated scalar names -- to be captured from a real ZEsarUX run,
+; then cross-checked against CHECK_ARR's own already-verified real
+; values (same two-step discipline as every other decompiler test this
+; session). "V1 = 5"/"V2 = 3" (not "DIMN(A0)"/"DIMN(A1)") are DIMN's own
+; documented, deliberate decompile-fidelity limitation -- see COMPILE_
+; DIMN's own header in rom/exrom_v2_compiler.asm: DIMN folds to a bare
+; PUSH_I8 literal with no runtime opcode, so the fact that this value
+; came from a DIMN() call is genuinely gone from the bytecode.
 EXPECTED_TEXT:
     db "A0(0) = 10", 13
     db "A0(1) = 20", 13
     db "A0(4) = 99", 13
     db "A1(0) = (A0(1)+A0(0))", 13
     db "V0 = A0(4)", 13
+    db "V1 = 5", 13
+    db "V2 = 3", 13
     db "PRINT A0(0)", 13
     db "PRINT A0(1)", 13
     db "PRINT A0(4)", 13

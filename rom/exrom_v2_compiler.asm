@@ -162,6 +162,9 @@
 ;   44 = expected FOR after EXIT
 ;   45 = too many EXIT FOR statements in one loop (more than
 ;        EXITFOR_MAX outstanding at once)
+;   46 = expected '(' after DIMN (R8.5 Group 6)
+;   47 = DIMN's argument is not a DIM'd array name
+;   48 = expected ')' to close DIMN
 ; ============================================================================
 
 ; ---------------------------------------------------------------------------
@@ -360,6 +363,14 @@ CEXT_ARGTYPES:      equ $8B5A   ; R8.5 (generic typed extension args,
                                   ; extension can have several arguments
                                   ; of different types, unlike a single-
                                   ; argument built-in function)
+DIMN_SIZE_TMP:      equ $8B5B   ; R8.5 Group 6 (DIMN) -- COMPILE_DIMN's
+                                  ; own copy of ARR_SIZE_TMP (ARRSYM_
+                                  ; LOOKUP's own output), parked here
+                                  ; before LEX_NEXT_TOKEN gets a chance
+                                  ; to run (same "copy a shared scratch
+                                  ; cell immediately, don't trust it to
+                                  ; survive a call" discipline this
+                                  ; whole rewrite keeps needing).
 
 ; R8.5 Group 3 -- block IF/ELSE/ENDIF.
 IF_ELSE_SKIP_PATCH_TMP: equ $8B45  ; COMPILE_IF_BLOCK scratch (2 bytes):
@@ -1572,6 +1583,30 @@ COMPILE_FACTOR:
         call LEX_NEXT_TOKEN
         ret
 .ident:
+        ; R8.5 Group 6 (DIMN) -- DIMN(name) returns an array's declared
+        ; size, a real COMPILE-TIME CONSTANT (an array's size is fully
+        ; known the moment DIM runs it through ARRSYM_FIND_OR_CREATE,
+        ; long before this reference is ever compiled). Checked here,
+        ; before BUILTIN_FN_FIND, because its own argument is a bare
+        ; ARRAY NAME, not a general expression -- BUILTIN_FN_TABLE's
+        ; grammar has no way to express that. Costs zero VM_CORE
+        ; growth: the result folds straight into a PUSH_I8, no runtime
+        ; opcode needed at all (unlike LEN/CODE/VAL etc).
+        ld a,(TOK_LEN)
+        cp 4
+        jr nz,.not_dimn
+        ld hl,(TOK_NAME)
+        ld de,DIMN_KEYWORD_TEXT
+        ld b,4
+.dimn_cmp:
+        ld a,(de)
+        cp (hl)
+        jr nz,.not_dimn
+        inc hl
+        inc de
+        djnz .dimn_cmp
+        jp COMPILE_DIMN
+.not_dimn:
         call BUILTIN_FN_FIND
         jr nc,.not_builtin_fn
         ; R8.5 Group 6 (string-result functions) -- BUILTIN_FN_FIND
@@ -2214,6 +2249,60 @@ COMPILE_ARRAY_ASSIGN:
 .err_pop:
         pop bc
         ret
+
+; COMPILE_DIMN — DIMN(name): entry point is COMPILE_FACTOR.ident's own
+; "DIMN" text check above (not a BUILTIN_FN_TABLE entry -- see that
+; check's own header for why). TOK_TYPE is TOK_IDENT holding "DIMN"
+; itself, not yet consumed.
+;
+; Decompile-fidelity note (a real, deliberate scope limitation, not an
+; oversight): because DIMN folds to a bare PUSH_I8 literal with no
+; runtime opcode at all, the fact that this value came from "DIMN(name)"
+; is genuinely gone from the bytecode -- decompiling a program that used
+; DIMN() shows the equivalent literal integer instead, not the original
+; call. The recompiled program is numerically identical and behaves
+; the same; only the reconstructed SOURCE TEXT differs, matching this
+; project's own established "valid, re-lexable, not necessarily byte-
+; identical" decompile bar, just for a larger class of input than
+; earlier examples (e.g. unary minus's own "(0-X)" rendering).
+COMPILE_DIMN:
+        call LEX_NEXT_TOKEN       ; consume DIMN
+        ld a,(TOK_TYPE)
+        cp TOK_LPAREN
+        jr z,.have_lparen
+        ld a,46                    ; expected '(' after DIMN
+        jp COMPILE_RAISE_ERROR
+.have_lparen:
+        call LEX_NEXT_TOKEN         ; consume '('
+        ld a,(TOK_TYPE)
+        cp TOK_IDENT
+        jr z,.have_ident
+        ld a,47                     ; DIMN's argument must be a DIM'd
+        jp COMPILE_RAISE_ERROR       ; array name
+.have_ident:
+        ld hl,(TOK_NAME)
+        ld a,(TOK_LEN)
+        ld b,a
+        call ARRSYM_LOOKUP
+        jr nc,.have_size
+        ld a,47                     ; not a DIM'd array (same code --
+        jp COMPILE_RAISE_ERROR       ; same real failure either way)
+.have_size:
+        ld a,(ARR_SIZE_TMP)
+        ld (DIMN_SIZE_TMP),a
+        call LEX_NEXT_TOKEN         ; consume the array name
+        ld a,(TOK_TYPE)
+        cp TOK_RPAREN
+        jr z,.have_rparen
+        ld a,48                      ; expected ')' to close DIMN
+        jp COMPILE_RAISE_ERROR
+.have_rparen:
+        call LEX_NEXT_TOKEN           ; consume ')'
+        call EMIT_BYTE_OP_PUSH_I8
+        ld a,(DIMN_SIZE_TMP)
+        jp EMIT_BYTE
+
+DIMN_KEYWORD_TEXT: db "DIMN"
 
 ; ARRSYM_ENTRY_ADDR — input: C = index. Output: HL = ARRSYMTAB_BASE +
 ; index*ARRSYM_REC_LEN(10).
