@@ -1,0 +1,654 @@
+diff --git a/rom/exrom_v2_compiler.asm b/rom/exrom_v2_compiler.asm
+index 3fe6983..b278883 100644
+--- a/rom/exrom_v2_compiler.asm
++++ b/rom/exrom_v2_compiler.asm
+@@ -165,6 +165,15 @@
+ ;   46 = expected '(' after DIMN (R8.5 Group 6)
+ ;   47 = DIMN's argument is not a DIM'd array name
+ ;   48 = expected ')' to close DIMN
++;   49 = expected FN after DEF (R8.5 Group 7)
++;   50 = expected a function name (after DEF FN, or after FN at a call
++;        site -- shared wording, both really mean the same thing)
++;   51 = expected '(' after a function name (shared: definition and
++;        call site)
++;   52 = expected a parameter name after DEF FN's own '('
++;   53 = expected ')' (shared: DEF FN's own parameter close, or a call
++;        site's own argument close)
++;   54 = expected '=' before a DEF FN's own body expression
+ ; ============================================================================
+ 
+ ; ---------------------------------------------------------------------------
+@@ -536,9 +545,12 @@ TOK_KW_EXIT:        equ 55   ; R8.5 Group 5 -- EXIT FOR (V1's own real
+                                ; BASIC_STMT_EXIT header)
+ ; TOK_KW_MODE/ULAPLUS/PALETTE (56-58) removed -- these are no longer
+ ; resident statement keywords (product decision, same principle as the
+-; earlier SPRITE-to-loadable-module move). Token values 56-58 are now
+-; unused, kept unassigned rather than renumbered (nothing else depends
+-; on token-value contiguity).
++; earlier SPRITE-to-loadable-module move). Token value 58 is unused,
++; kept unassigned rather than renumbered (nothing else depends on
++; token-value contiguity); 56-57 are reused below for DEF FN.
++TOK_KW_DEF:         equ 56   ; R8.5 Group 7 -- DEF FN's own two-keyword
++TOK_KW_FN:           equ 57    ; grammar ("DEF FN name(param) = expr" to
++                                 ; define, "FN name(arg)" to call)
+ 
+ ; ---------------------------------------------------------------------------
+ ; COMPILER_INIT — call once before COMPILE_PROGRAM.
+@@ -1055,6 +1067,8 @@ KEYWORD_TABLE:
+         ; module.asm), reached via the ordinary TOK_IDENT/extension-
+         ; registry dispatch path (COMPILE_EXT_CALL), not resident
+         ; statement keywords.
++        db 3, "DEF", TOK_KW_DEF       ; R8.5 Group 7
++        db 2, "FN", TOK_KW_FN
+ 
+ ; ===========================================================================
+ ; COMPILE-TIME SYMBOL TABLE — real name storage, real comparison (the piece
+@@ -1364,6 +1378,16 @@ EMIT_OP_JMP_ELSE:                                    ld a,47 : jp EMIT_BYTE  ; R
+                                                        ; unambiguously -- no heuristic
+                                                        ; byte-pattern guessing needed.
+ 
++; R8.5 Group 7 -- DEF FN reuses this SAME "distinct opcode number,
++; runtime-identical handler" technique three times over, for the exact
++; same reason: OP_CALL/OP_RET/OP_JMP are ALREADY used by PROC/CALL, and
++; the decompiler tells opcodes apart purely by NUMBER (not by context),
++; so DEF FN's own JMP-skip preamble, its own value-producing call site,
++; and its own closing return all need distinct numbers even though
++; every one of them runs the IDENTICAL VM code PROC/CALL already use.
++EMIT_OP_CALL_UDF:       ld a,53 : jp EMIT_BYTE
++EMIT_OP_RET_DEFFN:      ld a,54 : jp EMIT_BYTE
++
+ ; EMIT_PLACEHOLDER_16 — writes two dummy zero bytes (a forward-reference
+ ; branch target not yet known), returns the ABSOLUTE address of the first
+ ; of those two bytes in HL, for RESOLVE_ALL_FIXUPS to patch later.
+@@ -1550,6 +1574,8 @@ COMPILE_FACTOR:
+         jr z,.float_number
+         cp TOK_IDENT
+         jr z,.ident
++        cp TOK_KW_FN
++        jp z,.udf_call
+         ld a,3
+         jp COMPILE_RAISE_ERROR
+ .unary_minus:
+@@ -1807,6 +1833,73 @@ COMPILE_FACTOR:
+         call EMIT_BYTE
+         ret
+ 
++; .udf_call -- FN name(arg): a user-defined function's own call site
++; (R8.5 Group 7, COMPILE_DEF_FN's own header explains the whole design).
++; Deliberately separate from the BUILTIN .fn_call chain above (a
++; DIFFERENT keyword, a DIFFERENT resolution mechanism -- LABEL_LOOKUP/
++; FIXUP_RECORD, the SAME forward-reference machinery GOTO/CALL already
++; use, not a fixed compile-time table lookup) -- but reuses the exact
++; same STMT_IDENT_NAME_PTR/LEN/BRANCH_PATCH_TMP/LABEL_LOOKUP_RESULT
++; scratch cells COMPILE_CALL_STMT already established for the identical
++; resolve-or-fixup logic, just used here as a VALUE-producing FACTOR
++; instead of a statement.
++.udf_call:
++        call LEX_NEXT_TOKEN     ; consume FN
++        ld a,(TOK_TYPE)
++        cp TOK_IDENT
++        jr z,.udfc_have_name
++        ld a,50                  ; expected a function name
++        jp COMPILE_RAISE_ERROR
++.udfc_have_name:
++        ld hl,(TOK_NAME)
++        ld (STMT_IDENT_NAME_PTR),hl
++        ld a,(TOK_LEN)
++        ld (STMT_IDENT_NAME_LEN),a
++        call LEX_NEXT_TOKEN     ; consume the function name
++        ld a,(TOK_TYPE)
++        cp TOK_LPAREN
++        jr z,.udfc_have_lparen
++        ld a,51                  ; expected '(' after a function name
++        jp COMPILE_RAISE_ERROR
++.udfc_have_lparen:
++        call LEX_NEXT_TOKEN     ; consume '('
++        ld hl,(STMT_IDENT_NAME_PTR)
++        push hl
++        ld a,(STMT_IDENT_NAME_LEN)
++        ld c,a
++        push bc                  ; park name ptr+len across the
++                                    ; recursive COMPILE_EXPR call below,
++                                    ; which may itself compile a NESTED
++                                    ; "FN ..." call using these SAME
++                                    ; shared cells -- same nested-call
++                                    ; scratch-clobber bug class Group 6's
++                                    ; own CFN_INDEX/ARGCOUNT/REMAINING/
++                                    ; ARGTYPE fix already taught this
++                                    ; project to guard against, applied
++                                    ; here proactively rather than found
++                                    ; via a real crash first.
++        call COMPILE_EXPR       ; argument -> pushed onto the operand
++                                   ; stack for the callee's own STORE_VAR
++        pop bc
++        ld a,c
++        ld (STMT_IDENT_NAME_LEN),a
++        pop hl
++        ld (STMT_IDENT_NAME_PTR),hl
++        ld a,(COMPILE_ERROR_CODE)
++        or a
++        ret nz
++        ld a,(TOK_TYPE)
++        cp TOK_RPAREN
++        jr z,.udfc_have_rparen
++        ld a,53                  ; expected ')' after the argument
++        jp COMPILE_RAISE_ERROR
++.udfc_have_rparen:
++        call LEX_NEXT_TOKEN     ; consume ')'
++        call EMIT_OP_CALL_UDF
++        call EMIT_PLACEHOLDER_16
++        ld (BRANCH_PATCH_TMP),hl
++        jp COMPILE_RESOLVE_OR_FIXUP
++
+ ; ===========================================================================
+ ; R8.5 Group 1 -- built-in (resident) function-call grammar. Compile-
+ ; time name resolution, same "linear scan a fixed table" pattern
+@@ -3745,6 +3838,8 @@ COMPILE_STATEMENT_LIST:
+         jp z,.proc
+         cp TOK_KW_CALL
+         jp z,.call_stmt
++        cp TOK_KW_DEF
++        jp z,.def_fn
+         cp TOK_KW_CLS
+         jr z,.cls
+         cp TOK_KW_BORDER
+@@ -3937,6 +4032,9 @@ COMPILE_STATEMENT_LIST:
+         jp .after_stmt
+ .call_stmt:
+         call COMPILE_CALL_STMT
++        jp .after_stmt
++.def_fn:
++        call COMPILE_DEF_FN
+ .after_stmt:
+         ld a,(COMPILE_ERROR_CODE)
+         or a
+@@ -4007,33 +4105,41 @@ COMPILE_PROGRAM:
+ ; scalar), but is not separately tested by this milestone.
+ ; ===========================================================================
+ 
+-COMPILE_PROC:
+-        call LEX_NEXT_TOKEN     ; consume PROC
+-        ld a,(TOK_TYPE)
+-        cp TOK_IDENT
+-        jr z,.have_name
+-        ld a,17                  ; expected a procedure name
+-        jp COMPILE_RAISE_ERROR
+-.have_name:
++; COMPILE_CALLABLE_PREFIX -- shared "name(param)" prefix parsing/
++; emission for COMPILE_PROC and COMPILE_DEF_FN (bounded consolidation:
++; both routines previously duplicated this near-verbatim -- same JMP-
++; skip-emit + '(' + param-ident + CSYM_FIND_OR_CREATE + ')' shape,
++; differing only in which skip-jump opcode number to emit). In: C =
++; the skip-jump opcode to emit (6 = plain JMP for PROC, 52 = JMP_DEFFN
++; for DEF FN); TOK_TYPE/TOK_NAME/TOK_LEN = the not-yet-consumed name
++; token (caller already checked TOK_IDENT). Out: PROC_SKIP_PATCH_TMP =
++; the skip-jump's patch address, PROC_PARAM_INDEX_TMP = the parameter's
++; CSYM index, STMT_IDENT_NAME_PTR/LEN = the name, TOK_TYPE = whatever
++; follows ')' (the caller's own closing separator -- ':' for PROC, '='
++; for DEF FN -- differs and is checked by the caller). On failure,
++; COMPILE_ERROR_CODE is set; caller must check it before continuing.
++; Destroys AF, BC, DE, HL.
++COMPILE_CALLABLE_PREFIX:
+         ld hl,(TOK_NAME)
+         ld (STMT_IDENT_NAME_PTR),hl
+         ld a,(TOK_LEN)
+         ld (STMT_IDENT_NAME_LEN),a
+-        call LEX_NEXT_TOKEN     ; consume the procedure name
+-        call EMIT_OP_JMP
++        call LEX_NEXT_TOKEN     ; consume the name
++        ld a,c
++        call EMIT_BYTE
+         call EMIT_PLACEHOLDER_16   ; HL = patch address for the skip-over
+         ld (PROC_SKIP_PATCH_TMP),hl
+         ld a,(TOK_TYPE)
+         cp TOK_LPAREN
+         jr z,.have_lparen
+-        ld a,18                  ; expected '(' after procedure name
++        ld a,51                  ; expected '(' after a name
+         jp COMPILE_RAISE_ERROR
+ .have_lparen:
+         call LEX_NEXT_TOKEN     ; consume '('
+         ld a,(TOK_TYPE)
+         cp TOK_IDENT
+         jr z,.have_param
+-        ld a,19                  ; expected a parameter name
++        ld a,52                  ; expected a parameter name
+         jp COMPILE_RAISE_ERROR
+ .have_param:
+         ld hl,(TOK_NAME)
+@@ -4045,10 +4151,25 @@ COMPILE_PROC:
+         ld a,(TOK_TYPE)
+         cp TOK_RPAREN
+         jr z,.have_rparen
+-        ld a,20                  ; expected ')' after the parameter
++        ld a,53                  ; expected ')' after the parameter
+         jp COMPILE_RAISE_ERROR
+ .have_rparen:
+         call LEX_NEXT_TOKEN     ; consume ')'
++        ret
++
++COMPILE_PROC:
++        call LEX_NEXT_TOKEN     ; consume PROC
++        ld a,(TOK_TYPE)
++        cp TOK_IDENT
++        jr z,.have_name
++        ld a,17                  ; expected a procedure name
++        jp COMPILE_RAISE_ERROR
++.have_name:
++        ld c,6                   ; plain JMP skip-over opcode
++        call COMPILE_CALLABLE_PREFIX
++        ld a,(COMPILE_ERROR_CODE)
++        or a
++        ret nz
+         ld a,(TOK_TYPE)
+         cp TOK_COLON
+         jr z,.have_colon
+@@ -4092,15 +4213,140 @@ COMPILE_PROC:
+         call LEX_NEXT_TOKEN     ; consume ENDP, fetch whatever follows
+         ret
+ 
++; COMPILE_DEF_FN — DEF FN name(param) = expr (R8.5 Group 7).
++;
++; Deliberately modeled on COMPILE_PROC directly above (same JMP-skip +
++; LABEL_DEFINE-at-the-real-entry + STORE_VAR-binds-the-parameter shape
++; -- reuses PROC_SKIP_PATCH_TMP/PROC_PARAM_INDEX_TMP verbatim, no new
++; compiler scratch needed at all), not because DEF FN and PROC are the
++; same THING, but because V2's own real call/return machinery (OP_CALL/
++; OP_RET, a genuine multi-level call stack -- see rom/exrom_v2_vm_
++; core.asm's own VM_CALL_PUSH/POP) already provides exactly what a
++; user-defined, VALUE-RETURNING function needs: bind one argument,
++; evaluate a body, return with a result already sitting on the operand
++; stack for the caller's own expression to consume -- the only real
++; difference from PROC is that the "body" here is a single EXPRESSION,
++; not a statement list, and closing it leaves a VALUE behind on
++; purpose. V1's own basic.asm has a completely different, much more
++; restrictive DEF FN (a single global DEF_FN_NAME/PARAM/ARG/ACTIVE slot
++; -- ONLY ONE FN definition can exist in an entire program at once, its
++; own header says so explicitly, and its own comment documents
++; "recursive FN calls are not [supported]") -- both are real V1
++; INTERPRETER-architecture limitations (a single global slot re-parsed
++; from source text on every call), not real classic-BASIC language
++; restrictions worth preserving: V2's own compile-once bytecode model
++; and real multi-level call stack support MULTIPLE distinct FNs and
++; real recursion for free, at zero extra ROM cost, simply by NOT adding
++; the guard V1 needed to prevent it. The one REAL classic-BASIC
++; restriction kept here deliberately is the single-parameter limit --
++; matching COMPILE_PROC's own already-established single-parameter
++; scope decision (not a technical limit either, just proportionate,
++; minimal footprint), and also matching V1's own real "one... numeric
++; parameter" scope.
++;
++; Uses 3 opcode numbers (52-54) that are RUNTIME-IDENTICAL to JMP/CALL/
++; RET (see EMIT_OP_CALL_UDF/RET_DEFFN's own header; the JMP-skip itself
++; is now emitted directly by COMPILE_CALLABLE_PREFIX, shared with
++; PROC's plain JMP) purely so
++; the decompiler -- which dispatches on raw opcode NUMBER, not context
++; -- can render "DEF FN Pn(Vp) = <expr>" and "FN Pn(<arg>)" instead of
++; misreading this shape as a PROC/CALL (whose own JMP+STORE_VAR
++; preamble is otherwise byte-identical).
++COMPILE_DEF_FN:
++        call LEX_NEXT_TOKEN     ; consume DEF
++        ld a,(TOK_TYPE)
++        cp TOK_KW_FN
++        jr z,.have_fn
++        ld a,49                  ; expected FN after DEF
++        jp COMPILE_RAISE_ERROR
++.have_fn:
++        call LEX_NEXT_TOKEN     ; consume FN
++        ld a,(TOK_TYPE)
++        cp TOK_IDENT
++        jr z,.have_name
++        ld a,50                  ; expected a function name
++        jp COMPILE_RAISE_ERROR
++.have_name:
++        ld c,52                  ; JMP_DEFFN skip-over opcode
++        call COMPILE_CALLABLE_PREFIX
++        ld a,(COMPILE_ERROR_CODE)
++        or a
++        ret nz
++        ld a,(TOK_TYPE)
++        cp TOK_ASSIGN
++        jr z,.have_eq
++        ld a,54                  ; expected '=' before the function body
++        jp COMPILE_RAISE_ERROR
++.have_eq:
++        ; define the CALL-entry label HERE (STORE_VAR's own address) --
++        ; same reasoning COMPILE_PROC's own identical line gives.
++        ld hl,(STMT_IDENT_NAME_PTR)
++        ld a,(STMT_IDENT_NAME_LEN)
++        ld b,a
++        call LABEL_DEFINE
++        ld a,(COMPILE_ERROR_CODE)
++        or a
++        ret nz
++        call EMIT_BYTE_OP_STORE_VAR
++        ld a,(PROC_PARAM_INDEX_TMP)
++        call EMIT_BYTE
++        call LEX_NEXT_TOKEN     ; consume '=', prime the body's first token
++        call COMPILE_EXPR       ; the ONE body expression -- its own
++                                   ; result is left on the operand stack
++                                   ; on purpose, for OP_RET_DEFFN's own
++                                   ; caller (the FN-call factor) to
++                                   ; consume as the function's value
++        ld a,(COMPILE_ERROR_CODE)
++        or a
++        ret nz
++        call EMIT_OP_RET_DEFFN
++        ld hl,(EMIT_PTR)
++        ld de,VM_CODE_BASE
++        or a
++        sbc hl,de
++        ex de,hl
++        ld hl,(PROC_SKIP_PATCH_TMP)
++        ld (hl),e
++        inc hl
++        ld (hl),d
++        ret
++
++; COMPILE_RESOLVE_OR_FIXUP -- shared forward-reference resolve tail for
++; COMPILE_CALL_STMT and .udf_call (bounded consolidation: the two were
++; identical logic, duplicated). In: BRANCH_PATCH_TMP = the just-emitted
++; 2-byte placeholder's address; STMT_IDENT_NAME_PTR/LEN = the target
++; name. Either patches the placeholder immediately (label already
++; defined) or records a fixup for RESOLVE_ALL_FIXUPS to patch once it
++; is. Tail-called (jp, not call) by both sites -- returns to THEIR
++; caller directly. Destroys AF, BC, DE, HL.
++COMPILE_RESOLVE_OR_FIXUP:
++        ld hl,(STMT_IDENT_NAME_PTR)
++        ld a,(STMT_IDENT_NAME_LEN)
++        ld b,a
++        call LABEL_LOOKUP
++        jr c,.resolved
++        ld hl,(BRANCH_PATCH_TMP)
++        ld de,(STMT_IDENT_NAME_PTR)
++        ld a,(STMT_IDENT_NAME_LEN)
++        ld b,a
++        call FIXUP_RECORD
++        ret
++.resolved:
++        ld hl,(BRANCH_PATCH_TMP)
++        ld de,(LABEL_LOOKUP_RESULT)
++        ld (hl),e
++        inc hl
++        ld (hl),d
++        ret
++
+ ; COMPILE_CALL_STMT — CALL name(arg)
+ ;
+ ; Deliberately does NOT reuse COMPILE_BRANCH_TARGET (GOTO/IF's shared
+ ; resolver): that routine ends by consuming the label identifier token,
+ ; which here has already been consumed earlier (to reach the argument
+ ; expression and the closing ')') — reusing it verbatim would eat an extra
+-; token it shouldn't. The resolve/fixup logic itself (look up, patch
+-; immediately if found, else record a fixup) is duplicated in miniature
+-; rather than awkwardly parameterized, since it's small.
++; token it shouldn't. The resolve/fixup logic itself is shared with
++; .udf_call via COMPILE_RESOLVE_OR_FIXUP above.
+ COMPILE_CALL_STMT:
+         call LEX_NEXT_TOKEN     ; consume CALL
+         ld a,(TOK_TYPE)
+@@ -4132,24 +4378,7 @@ COMPILE_CALL_STMT:
+         call EMIT_OP_CALL
+         call EMIT_PLACEHOLDER_16   ; HL = patch address
+         ld (BRANCH_PATCH_TMP),hl
+-        ld hl,(STMT_IDENT_NAME_PTR)
+-        ld a,(STMT_IDENT_NAME_LEN)
+-        ld b,a
+-        call LABEL_LOOKUP
+-        jr c,.resolved
+-        ld hl,(BRANCH_PATCH_TMP)
+-        ld de,(STMT_IDENT_NAME_PTR)
+-        ld a,(STMT_IDENT_NAME_LEN)
+-        ld b,a
+-        call FIXUP_RECORD
+-        ret
+-.resolved:
+-        ld hl,(BRANCH_PATCH_TMP)
+-        ld de,(LABEL_LOOKUP_RESULT)
+-        ld (hl),e
+-        inc hl
+-        ld (hl),d
+-        ret
++        jp COMPILE_RESOLVE_OR_FIXUP
+ 
+ ; ===========================================================================
+ ; COMPILE_EXT_CALL — R7.5, extended for typed arguments (printer-package
+diff --git a/rom/exrom_v2_decompiler.asm b/rom/exrom_v2_decompiler.asm
+index a89d3be..ffb6a91 100644
+--- a/rom/exrom_v2_decompiler.asm
++++ b/rom/exrom_v2_decompiler.asm
+@@ -887,6 +887,8 @@ DECOMP_SKIP_OPERAND:
+         jp z,.w0
+         cp 16                     ; RET (R4)
+         jp z,.w0
++        cp 54                     ; RET_DEFFN (R8.5 Group 7)
++        jp z,.w0
+         cp 19                     ; STR_CONCAT (R5)
+         jp z,.w0
+         cp 20                     ; STR_CMP_LT (R5)
+@@ -959,6 +961,10 @@ DECOMP_SKIP_OPERAND:
+         jr z,.w2
+         cp 49                     ; ARR_STORE (R8.5 Group 4)
+         jr z,.w2
++        cp 52                     ; JMP_DEFFN (R8.5 Group 7)
++        jr z,.w2
++        cp 53                     ; CALL_UDF (R8.5 Group 7)
++        jr z,.w2
+         cp 14                     ; FOR_NEXT
+         jr z,.w3
+         cp 34                     ; CALL_EXT (R7.5)
+@@ -1104,6 +1110,20 @@ DECOMP_EMIT_UINT16:
+         call DECOMP_COMPUTE_DIGITS
+         jp DECOMP_EMIT_DIGITS
+ 
++; DECOMP_COMBINE_UINT16 — same as DECOMP_EMIT_UINT16 but into the
++; combine buffer (for a FRAG producer) -- R8.5 Group 7, .op_call_udf's
++; own need to render "Pn" as part of a composable fragment rather than
++; a direct statement-level emit. Destroys: AF, BC, DE, HL.
++DECOMP_COMBINE_UINT16:
++        ld a,h
++        or l
++        jr nz,.nonzero
++        ld a,'0'
++        jp DECOMP_COMBINE_CHAR
++.nonzero:
++        call DECOMP_COMPUTE_DIGITS
++        jp DECOMP_COMBINE_DIGITS
++
+ ; DECOMP_EMIT_LABELNAME — input: DE = bytecode address. Emits "L<addr>"
+ ; straight to the output buffer. Destroys: AF, BC, DE, HL.
+ DECOMP_EMIT_LABELNAME:
+@@ -1586,8 +1606,14 @@ DECOMPILE_PROGRAM:
+         jp z,.op_input_num
+         cp 51
+         jp z,.op_input_str
+-        ; 52-54 (OP_MODE/OP_ULAPLUS/OP_PALETTE) removed -- now a
+-        ; loadable extension package, rom/ext_mode_module.asm
++        ; 52-54 originally MODE/ULAPLUS/PALETTE (removed -- now a
++        ; loadable extension package), reused for Group 7's own DEF FN.
++        cp 52
++        jp z,.op_jmp_deffn
++        cp 53
++        jp z,.op_call_udf
++        cp 54
++        jp z,.op_ret_deffn
+         jp DECOMP_ERR_UNSUPPORTED_OPCODE
+ 
+ .op_halt:
+@@ -1851,6 +1877,115 @@ DECOMPILE_PROGRAM:
+         call DECOMP_EMIT_NEWLINE
+         jp DECOMPILE_PROGRAM.loop
+ 
++; R8.5 Group 7 -- DEF FN's own three decompile handlers. Opcodes 52-54
++; are runtime-identical to JMP/CALL/RET (rom/exrom_v2_compiler.asm's own
++; EMIT_OP_JMP_DEFFN/CALL_UDF/RET_DEFFN header explains why they still
++; need distinct NUMBERS): this decompiler dispatches purely on the raw
++; opcode byte, so a shared number would make DEF FN's own preamble
++; indistinguishable from PROC's identically-shaped "JMP skip; STORE_VAR
++; param" bytecode.
++
++; JMP_DEFFN (52) -- modeled directly on .jmp_proc_header above (PROC's
++; own "JMP skip; STORE_VAR param" preamble), but for DEF FN: emits
++; "DEF FN Pn(Vparam) = " with NO trailing newline -- the body expression
++; that immediately follows accumulates as an ordinary fragment via the
++; normal DECOMPILE_PROGRAM.loop (exactly like any other expression), and
++; .op_ret_deffn below pops that ONE fragment and appends it plus the
++; newline, completing the line this header started.
++.op_jmp_deffn:
++        ld hl,(DECOMP_IP)
++        ld e,(hl)
++        inc hl
++        ld d,(hl)
++        inc hl
++        ld (DECOMP_IP),hl           ; skip the 2-byte operand (unused,
++                                       ; same as PROC's own header)
++        ld hl,(DECOMP_IP)            ; HL = absolute entry address (the
++                                        ; STORE_VAR opcode's own position
++                                        ; -- COMPILE_DEF_FN's own LABEL_
++                                        ; DEFINE call places the CALL-
++                                        ; entry label exactly here)
++        ld de,VM_CODE_BASE
++        or a
++        sbc hl,de                    ; HL = relative entry address
++        ld (DECOMP_TMP_A),hl          ; park it -- DECOMP_EMIT_TEXT/CHAR
++                                        ; below clobber HL
++        ld hl,(DECOMP_IP)
++        inc hl                         ; skip the STORE_VAR opcode byte
++        ld a,(hl)                      ; the parameter's own symtab index
++        ld (DECOMP_ARG_LEN0),a          ; NOT DECOMP_TMP_LEN -- see .jmp_
++                                          ; proc_header's own identical
++                                          ; note above for why
++        inc hl
++        ld (DECOMP_IP),hl
++        ld hl,STR_DEF_FN
++        ld c,STR_DEF_FN_LEN
++        call DECOMP_EMIT_TEXT
++        ld a,'P'
++        call DECOMP_EMIT_CHAR
++        ld hl,(DECOMP_TMP_A)
++        call DECOMP_EMIT_UINT16
++        ld a,'('
++        call DECOMP_EMIT_CHAR
++        ld a,(DECOMP_ARG_LEN0)
++        call DECOMP_EMIT_VARNAME
++        ld hl,STR_DEFFN_EQ
++        ld c,STR_DEFFN_EQ_LEN
++        call DECOMP_EMIT_TEXT
++        jp DECOMPILE_PROGRAM.loop
++
++; CALL_UDF (53) -- FN name(arg), a user-defined function's own call
++; SITE. Modeled on .op_call below, but produces a FRAGMENT (DECOMP_
++; COMBINE_*/DECOMP_FRAG_PUSH) instead of a direct-to-buffer statement
++; line, since "FN foo(x)" can appear anywhere an ordinary expression
++; can (unlike PROC's own CALL statement).
++.op_call_udf:
++        ld hl,(DECOMP_IP)
++        ld e,(hl)
++        inc hl
++        ld d,(hl)
++        inc hl
++        ld (DECOMP_IP),hl           ; DE = relative target address
++        ld (DECOMP_TMP_B),de
++        call DECOMP_FRAG_POP         ; HL = arg text, C = length
++        ld (DECOMP_TMP_A),hl
++        ld a,c
++        ld (DECOMP_ARG_LEN0),a
++        call DECOMP_COMBINE_RESET
++        ld hl,STR_FN_CALL
++        ld c,STR_FN_CALL_LEN
++        call DECOMP_COMBINE_TEXT
++        ld a,'P'
++        call DECOMP_COMBINE_CHAR
++        ld hl,(DECOMP_TMP_B)
++        call DECOMP_COMBINE_UINT16
++        ld a,'('
++        call DECOMP_COMBINE_CHAR
++        ld hl,(DECOMP_TMP_A)
++        ld a,(DECOMP_ARG_LEN0)
++        ld c,a
++        call DECOMP_COMBINE_TEXT
++        ld a,')'
++        call DECOMP_COMBINE_CHAR
++        ld a,(DECOMP_COMBINE_LEN)
++        cp DECOMP_FRAG_TEXT_MAX+1
++        jp nc,DECOMP_ERR_EXPR_TOO_LONG
++        ld c,a
++        ld hl,DECOMP_COMBINE_BUF
++        call DECOMP_FRAG_PUSH
++        jp DECOMPILE_PROGRAM.loop
++
++; RET_DEFFN (54) -- always COMPILE_DEF_FN's own closing output: pops
++; the ONE fragment its own body expression left (the function's real
++; return value) and appends it plus a newline, completing the "DEF FN
++; Pn(Vparam) = " line .op_jmp_deffn already started directly in the
++; output buffer.
++.op_ret_deffn:
++        call DECOMP_FRAG_POP        ; HL = body expression text, C = len
++        call DECOMP_EMIT_TEXT
++        call DECOMP_EMIT_NEWLINE
++        jp DECOMPILE_PROGRAM.loop
++
+ ; JMPZ -- must match COMPILE_IF's fixed shape: the very next bytecode
+ ; byte (right after this JMPZ's own 2-byte operand) is opcode 6 (JMP),
+ ; AND this JMPZ's own target equals that JMP's OWN address + 3 (1 opcode
+@@ -3332,6 +3467,12 @@ STR_CALL:      db "CALL "
+ STR_CALL_LEN:  equ $-STR_CALL
+ STR_ENDP:      db "ENDP"
+ STR_ENDP_LEN:  equ $-STR_ENDP
++STR_DEF_FN:    db "DEF FN "
++STR_DEF_FN_LEN: equ $-STR_DEF_FN
++STR_DEFFN_EQ:  db ") = "
++STR_DEFFN_EQ_LEN: equ $-STR_DEFFN_EQ
++STR_FN_CALL:   db "FN "
++STR_FN_CALL_LEN: equ $-STR_FN_CALL
+ STR_CLS:       db "CLS"
+ STR_CLS_LEN:   equ $-STR_CLS
+ STR_BORDER:    db "BORDER "
+diff --git a/rom/exrom_v2_vm_core.asm b/rom/exrom_v2_vm_core.asm
+index 55f293e..cdaebe8 100644
+--- a/rom/exrom_v2_vm_core.asm
++++ b/rom/exrom_v2_vm_core.asm
+@@ -548,16 +548,18 @@ VM_RUN:
+         ld a,(hl)               ; fetch opcode
+         inc hl
+         ld (VM_IP),hl
+-        cp 52                   ; 52 opcodes defined (0-51, R8.5 adds
++        cp 55                   ; 55 opcodes defined (0-54, R8.5 adds
+                                  ; 35-38: PRINT_NUM/STR, LPRINT_NUM/STR;
+                                  ; 39: CALL_FN (Group 1); 40-43: CMP_LE/
+                                  ; GT/GE/NE; 44-46: AND/OR/NOT; 47:
+                                  ; JMP_ELSE (Group 3); 48-49: ARR_LOAD/
+                                  ; ARR_STORE (Group 4); 50-51: INPUT_NUM/
+                                  ; INPUT_STR (Group 2's own late close-out).
+-                                 ; 52-54 (MODE/ULAPLUS/PALETTE, Group 5)
+-                                 ; removed -- now a loadable extension
+-                                 ; package, rom/ext_mode_module.asm)
++                                 ; 52-54 originally MODE/ULAPLUS/PALETTE
++                                 ; (Group 5, removed -- now a loadable
++                                 ; extension package), reused for Group
++                                 ; 7's own JMP_DEFFN/CALL_UDF/RET_DEFFN
++                                 ; (runtime-identical to JMP/CALL/RET))
+         jp nc,VM_ERR_ILLEGAL_OPCODE
+         ld l,a
+         ld h,0
+@@ -636,7 +638,19 @@ VM_OP_TABLE:
+         dw OP_INPUT_NUM                                   ; 50 (R8.5 Group 2)
+         dw OP_INPUT_STR                                    ; 51
+         ; 52-54 (OP_MODE/OP_ULAPLUS/OP_PALETTE) removed -- now a
+-        ; loadable extension package, rom/ext_mode_module.asm
++        ; loadable extension package, rom/ext_mode_module.asm. Reused
++        ; below (R8.5 Group 7, DEF FN) for three opcodes that are
++        ; RUNTIME-IDENTICAL to JMP/CALL/RET (same "distinct number,
++        ; same handler" technique OP_JMP_ELSE/47 already established --
++        ; see rom/exrom_v2_compiler.asm's own EMIT_OP_JMP_DEFFN/
++        ; CALL_UDF/RET_DEFFN header) -- purely so the decompiler, which
++        ; dispatches on raw opcode number, can tell DEF FN's own
++        ; preamble/call-site/return apart from PROC/CALL's identically-
++        ; shaped bytecode.
++        dw OP_JMP                                           ; 52 (R8.5
++                                                               ; Group 7)
++        dw OP_CALL                                            ; 53
++        dw OP_RET                                              ; 54
+ 
+ ; ---------------------------------------------------------------------------
+ ; String-table access: index (A) -> HL = record address

@@ -42,13 +42,13 @@ concrete — it does not substitute for it.
 
 ## Continuous ROM accounting (maintained from R1 onward)
 
-| | Bytes |
-|---|---:|
-| PLATFORM ROM (unchanged throughout) | 9,925 (VERIFIED, `61bb8bb`) |
-| NEW V2 LANGUAGE CORE ROM (grows milestone by milestone) | 0 at R1 start → 4,880-6,530 at R9 |
-| TEMPORARY V1 LANGUAGE CORE ROM (shrinks as V1 statement types are cut over, removed entirely at R9) | 13,988 at R1 start → 0 after R9 |
-| FINAL PROJECTED SHIP ROM AFTER V1 REMOVAL | 9,925 + (4,880 to 6,530) = 14,805-16,455 |
-| ENGINEERING RESERVE (ship) | 8,121-9,771 |
+|                                                                                                     | Bytes                                    |
+| --------------------------------------------------------------------------------------------------- | ----------------------------------------:|
+| PLATFORM ROM (unchanged throughout)                                                                 | 9,925 (VERIFIED, `61bb8bb`)              |
+| NEW V2 LANGUAGE CORE ROM (grows milestone by milestone)                                             | 0 at R1 start → 4,880-6,530 at R9        |
+| TEMPORARY V1 LANGUAGE CORE ROM (shrinks as V1 statement types are cut over, removed entirely at R9) | 13,988 at R1 start → 0 after R9          |
+| FINAL PROJECTED SHIP ROM AFTER V1 REMOVAL                                                           | 9,925 + (4,880 to 6,530) = 14,805-16,455 |
+| ENGINEERING RESERVE (ship)                                                                          | 8,121-9,771                              |
 
 This table is re-measured (`make budget`-equivalent for whatever dev image
 exists) and re-published at the end of every milestone below, not just
@@ -206,6 +206,7 @@ to the *same* symbol index every time rather than creating duplicates.
 **Two more real bugs found and fixed via ZEsarUX runs, not by inspection**
 (bringing this project's real-hardware-caught bug count for the V2 rewrite
 to four, across Milestone 01, R1, and R2):
+
 1. `COMPILE_ASSIGN` saved the assignment target's symbol index in register
    `C` across the call to `COMPILE_EXPR` — but `COMPILE_EXPR` calls
    `CSYM_FIND_OR_CREATE` for any identifier inside the expression (e.g.
@@ -305,6 +306,7 @@ matched their hand-computed expectation exactly** (`TOTAL=15`, `COUNT=6`,
 **Four more real bugs found via ZEsarUX execution and fixed** (bringing
 this rewrite's real-hardware-caught bug total to eight across Milestone
 01/R1/R2/R3):
+
 1. The lexer's label-vs-statement-separator disambiguation (an identifier
    immediately followed by `:` with no space = label) misclassified any
    *expression-internal* identifier reference that happened to be
@@ -537,6 +539,7 @@ result: **every value matched exactly** — `A$="APPLE"`, `B$="BANANA"`,
 **Seven more real bugs found via ZEsarUX execution and fixed** (bringing
 this rewrite's real-hardware-caught bug total to fifteen across
 Milestone 01/R1-R5):
+
 1. Inserting the new `"`-literal check into `LEX_NEXT_TOKEN`'s dispatch
    broke the *fallthrough* from the digit checks into `.ident_start` —
    every letter silently fell into the string-literal scanner instead.
@@ -564,7 +567,7 @@ Milestone 01/R1-R5):
    removed: both kept a string's record address in `DE` across a call to
    `VM_POP` — which *also* uses `DE` internally to read the popped value —
    corrupting the saved address before the comparison could use it.
-7. (Two test-program naming mistakes, not compiler bugs, caught and
+6. (Two test-program naming mistakes, not compiler bugs, caught and
    corrected the same way as R4's: label names `DONE1`/`DONE2` contained
    digits, which this grammar has never supported — renamed to
    `DONEA`/`DONEB`.)
@@ -677,6 +680,7 @@ engine the interpreter itself uses, not a mock. Final hand-verified
 this rewrite's real-hardware-caught bug total to eighteen across
 Milestone 01/R1-R6) — all three the *same* underlying lesson, now proven
 a fifth time in this rewrite alone:
+
 1. `OP_STORE_VAR`'s new `.float_store` branch held the source `FLOATTAB`
    address in `DE` across a second call to `VM_FLOAT_ADDR` (to compute
    the destination address) — but `VM_FLOAT_ADDR` uses `DE` as its own
@@ -724,6 +728,7 @@ same bug class above has now recurred five times across R2/R3/R5/R6.
 Before writing R7's platform-call trampolines — which will call a lot of
 existing, register-heavy graphics/sprite/sound/input routines, exactly
 the shape of code this bug thrives in — two things were done:
+
 1. Added an explicit, prominent standing-convention block near the top of
    both `rom/exrom_v2_vm_core.asm` and `rom/exrom_v2_compiler.asm`: never
    keep a value live in a register across a `call`; save it to memory
@@ -1012,15 +1017,15 @@ this design.
 
 **Two alternatives compared, quantitatively, before choosing:**
 
-| Criterion | Alt A — runtime name-rescan (dispatch by re-matching the keyword's text against the registry on every call, V1-shaped) | Alt B — compile-time-resolved ID + runtime generation-checked table (SYMTAB/STRTAB/FLOATTAB-shaped) |
-|---|---|---|
-| ROM cost | Compiler: one name-scan at compile time (~80B, same as B). VM opcode: a string-compare loop against every registered name, every call (~60B handler) | Compiler: same one-time name-scan (~80B). VM opcode: index a fixed-stride table + one byte compare + one indirect call (~30B handler) — smaller, because there's no comparison LOOP at runtime |
-| RAM cost | A registry is still needed for the compiler's own compile-time scan (name+exec_ptr+argcount per slot) — same table either way | Identical table, same cost — B adds nothing here; the ID is just which ROW the compiler already found |
-| Runtime perf | O(registered-slot-count × name-length) string comparisons on EVERY call site execution (a statement inside a loop pays this every iteration) | O(1): one table index, one byte compare, one indirect call — no string comparison at runtime at all |
-| Compiler complexity | Identical — both need the exact same compile-time name-scan; the only difference is what gets baked into the bytecode operand afterward (name text vs. a 1-byte slot id) | Identical to A |
-| Robustness | Always correct: a mismatched/unloaded/swapped module is caught by name, every call, with no false positive possible | Slightly weaker in theory (an ID could point at a DIFFERENT module if slots get reused) — closed with a cheap generation counter: each (re)registration into a slot bumps a byte; the compiled operand carries the generation value seen at compile time; a mismatch at call time is treated exactly like "not found." This reduces the gap to "another module reusing the exact same slot AND getting the exact same generation value by coincidence," not a real practical risk for this platform |
-| Usefulness | Full, for statements. Functions (arbitrary-arity, expression-position) need a call-expression grammar V2 has never had — true for BOTH alternatives equally, not a difference between them | Same |
-| Architectural fit | Foreign to V2's own established shape — nothing else in this VM does a runtime name comparison; V1-shaped, not Architecture-B-shaped | **Exact match to the pattern already used everywhere else in V2**: `SYMTAB`/`STRTAB`/`FLOATTAB` are all "resolve a name to a small index at compile time, index a fixed-stride RAM table at runtime." This is the SAME idea, applied to extensions instead of variables/strings/floats |
+| Criterion           | Alt A — runtime name-rescan (dispatch by re-matching the keyword's text against the registry on every call, V1-shaped)                                                                     | Alt B — compile-time-resolved ID + runtime generation-checked table (SYMTAB/STRTAB/FLOATTAB-shaped)                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ROM cost            | Compiler: one name-scan at compile time (~80B, same as B). VM opcode: a string-compare loop against every registered name, every call (~60B handler)                                       | Compiler: same one-time name-scan (~80B). VM opcode: index a fixed-stride table + one byte compare + one indirect call (~30B handler) — smaller, because there's no comparison LOOP at runtime                                                                                                                                                                                                                                                                                                      |
+| RAM cost            | A registry is still needed for the compiler's own compile-time scan (name+exec_ptr+argcount per slot) — same table either way                                                              | Identical table, same cost — B adds nothing here; the ID is just which ROW the compiler already found                                                                                                                                                                                                                                                                                                                                                                                               |
+| Runtime perf        | O(registered-slot-count × name-length) string comparisons on EVERY call site execution (a statement inside a loop pays this every iteration)                                               | O(1): one table index, one byte compare, one indirect call — no string comparison at runtime at all                                                                                                                                                                                                                                                                                                                                                                                                 |
+| Compiler complexity | Identical — both need the exact same compile-time name-scan; the only difference is what gets baked into the bytecode operand afterward (name text vs. a 1-byte slot id)                   | Identical to A                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| Robustness          | Always correct: a mismatched/unloaded/swapped module is caught by name, every call, with no false positive possible                                                                        | Slightly weaker in theory (an ID could point at a DIFFERENT module if slots get reused) — closed with a cheap generation counter: each (re)registration into a slot bumps a byte; the compiled operand carries the generation value seen at compile time; a mismatch at call time is treated exactly like "not found." This reduces the gap to "another module reusing the exact same slot AND getting the exact same generation value by coincidence," not a real practical risk for this platform |
+| Usefulness          | Full, for statements. Functions (arbitrary-arity, expression-position) need a call-expression grammar V2 has never had — true for BOTH alternatives equally, not a difference between them | Same                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| Architectural fit   | Foreign to V2's own established shape — nothing else in this VM does a runtime name comparison; V1-shaped, not Architecture-B-shaped                                                       | **Exact match to the pattern already used everywhere else in V2**: `SYMTAB`/`STRTAB`/`FLOATTAB` are all "resolve a name to a small index at compile time, index a fixed-stride RAM table at runtime." This is the SAME idea, applied to extensions instead of variables/strings/floats                                                                                                                                                                                                              |
 
 Alt B dominates on ROM, runtime performance, and architectural fit,
 matches A on RAM and compiler complexity, and gives up only a
@@ -1028,6 +1033,7 @@ theoretical sliver of robustness that a one-byte generation counter
 closes back up almost entirely. **Chosen: Alt B.**
 
 **Concrete design, implemented**:
+
 - A fresh, V2-native, NEVER-`basic.asm`-resident registry (`kernel/
   extensions/ext_registry.asm`, so it needs no relocation before R9 the
   way reusing V1's own gateway would have) — 8 slots, each `[magic/
@@ -1096,6 +1102,7 @@ rebuilding... that is acceptable" direction.
 during implementation (both caught by direct memory/register
 inspection, not by inspection alone, and both before the docs below were
 finalized):
+
 1. `EXT2_NAME_LEN` returned the just-read NULL byte's own value (0)
    instead of the accumulated character count on hitting the
    terminator — every registered extension's own `name_len` came out 0
@@ -1289,46 +1296,46 @@ documented R7.5 decision, not reopened here); `RUN`/`LIST`/`EDIT`/
 scope, grouped as coherent systems per the user's own direction, not
 accumulated as unrelated keyword patches):
 
-  - **Text I/O system**: `PRINT`, `LPRINT`, `INPUT`, `END`/`STOP`
-    (V1's own `KEYWORD_HILITE_TABLE`/dispatch treat these as one
-    handler — genuinely the same statement under two spellings),
-    `REM`, and the print/display-attribute keywords that modify
-    `PRINT`'s own output (`FLASH`, `BRIGHT`, `INVERSE`, `OVER`, `AT`,
-    `TAB`) — V1's own `BASIC_STMT_MASKED_EXPR_COMMON` already treats
-    these as one shared grammar family, confirming they belong
-    together, not as five separate patches.
-  - **Relational/boolean expression grammar**: the full relop set
-    (`<=`, `>=`, `<>`, `>` — V2 currently only compiles `<` and `=`)
-    and `AND`/`OR`/`NOT` (V1's own grammar: non-short-circuit,
-    boolean values represented as plain 0/1) — needed by `IF`, and by
-    block `IF` below.
-  - **Block `IF`/`ELSEIF`/`ELSE`**: V2 currently only compiles the
-    single-line `IF...THEN GOTO` form (R3's own documented scope).
-    V1's real block form is a genuine, separate control-flow shape.
-  - **`FOR...STEP`**: V2's `FOR` is fixed `STEP 1` only (R1's own
-    documented VM-core limitation, carried forward since).
-  - **`EXIT FOR`**: loop early-exit, V1's own `BASIC_STMT_EXIT`.
-  - **`DIM`/arrays**: single-letter-named, single-dimension numeric
-    arrays (`DIM A(10)`, element access/assignment, the `DIMN()`
-    bounds function) — V1's real, current array model (not a
-    multi-dimension or string-array system; V1 doesn't have one
-    either).
-  - **`MODE`, `ULAPLUS`, `PALETTE`**: display-mode/palette statements,
-    each currently EXROM-resident real platform functionality
-    (`rom/exrom_ulaplus.asm`) V2 has no opcode reaching yet.
-  - **`SPRITE`/`GRAB`/`SHOW`/`HIDE`/`MOVE`**: the sprite subsystem's
-    own BASIC-facing statement family (`rom/exrom_sprite.asm` — real,
-    mature platform code; V2 needs opcodes reaching it, not a
-    reimplementation).
-  - **`DEF FN`**: user-defined single-expression functions.
-  - **Built-in expression functions**: `ABS`, `SGN`, `MOD`, `SQR`,
-    `DIV`, `INT`, `RND`, `POINT`, `ATTR`, `SIN`, `PEEK`, `FREE`, `USR`,
-    `PI`, `RAD`, `DEG`, `STICK`, `LEN`, `CODE`, `VAL`, `INSTR`, `DIMN`
-    (numeric), `CHR$`, `STR$`, `UPPER$`, `LOWER$`, `LEFT$`, `RIGHT$`,
-    `INKEY$` (string) — V2's compiler currently has NO function-call
-    expression grammar at all (no parenthesized-call syntax exists for
-    any identifier); this is the single largest structural gap, since
-    every one of the ~25 functions above needs it.
+- **Text I/O system**: `PRINT`, `LPRINT`, `INPUT`, `END`/`STOP`
+  (V1's own `KEYWORD_HILITE_TABLE`/dispatch treat these as one
+  handler — genuinely the same statement under two spellings),
+  `REM`, and the print/display-attribute keywords that modify
+  `PRINT`'s own output (`FLASH`, `BRIGHT`, `INVERSE`, `OVER`, `AT`,
+  `TAB`) — V1's own `BASIC_STMT_MASKED_EXPR_COMMON` already treats
+  these as one shared grammar family, confirming they belong
+  together, not as five separate patches.
+- **Relational/boolean expression grammar**: the full relop set
+  (`<=`, `>=`, `<>`, `>` — V2 currently only compiles `<` and `=`)
+  and `AND`/`OR`/`NOT` (V1's own grammar: non-short-circuit,
+  boolean values represented as plain 0/1) — needed by `IF`, and by
+  block `IF` below.
+- **Block `IF`/`ELSEIF`/`ELSE`**: V2 currently only compiles the
+  single-line `IF...THEN GOTO` form (R3's own documented scope).
+  V1's real block form is a genuine, separate control-flow shape.
+- **`FOR...STEP`**: V2's `FOR` is fixed `STEP 1` only (R1's own
+  documented VM-core limitation, carried forward since).
+- **`EXIT FOR`**: loop early-exit, V1's own `BASIC_STMT_EXIT`.
+- **`DIM`/arrays**: single-letter-named, single-dimension numeric
+  arrays (`DIM A(10)`, element access/assignment, the `DIMN()`
+  bounds function) — V1's real, current array model (not a
+  multi-dimension or string-array system; V1 doesn't have one
+  either).
+- **`MODE`, `ULAPLUS`, `PALETTE`**: display-mode/palette statements,
+  each currently EXROM-resident real platform functionality
+  (`rom/exrom_ulaplus.asm`) V2 has no opcode reaching yet.
+- **`SPRITE`/`GRAB`/`SHOW`/`HIDE`/`MOVE`**: the sprite subsystem's
+  own BASIC-facing statement family (`rom/exrom_sprite.asm` — real,
+  mature platform code; V2 needs opcodes reaching it, not a
+  reimplementation).
+- **`DEF FN`**: user-defined single-expression functions.
+- **Built-in expression functions**: `ABS`, `SGN`, `MOD`, `SQR`,
+  `DIV`, `INT`, `RND`, `POINT`, `ATTR`, `SIN`, `PEEK`, `FREE`, `USR`,
+  `PI`, `RAD`, `DEG`, `STICK`, `LEN`, `CODE`, `VAL`, `INSTR`, `DIMN`
+  (numeric), `CHR$`, `STR$`, `UPPER$`, `LOWER$`, `LEFT$`, `RIGHT$`,
+  `INKEY$` (string) — V2's compiler currently has NO function-call
+  expression grammar at all (no parenthesized-call syntax exists for
+  any identifier); this is the single largest structural gap, since
+  every one of the ~25 functions above needs it.
 
 **4. Intentionally obsolete/redundant under V2, safe to omit**: V1's
 own register-passed extension-argument ABI and runtime keyword
@@ -1423,6 +1430,33 @@ guarding against).
   the 24KB shipping ROM without sacrificing significant user-visible
   capability, stop and report the real ROM math rather than silently
   cutting scope.
+
+**R8.5 Group 6 status: COMPLETE, real-hardware-validated** (commit
+`b46d34b`). CHR$/STR$/UPPER$/LOWER$/LEFT$/RIGHT$/INKEY$, DIMN, SQR/PI/RAD/
+DEG, SIN — all measured, tested via real ZEsarUX, committed. Precise
+(`ACTUAL_END_MARKER` marker technique, not the earlier "highest labeled
+symbol" heuristic which was found to undercount trailing unlabeled bytes)
+ROM baseline at this commit: V2-own code 15,865 bytes; total product ROM
+24,294 / 24,576 bytes used; **282 bytes free**.
+
+**R8.5 Group 7 (`DEF FN`) status: DESIGNED AND IMPLEMENTED, DEFERRED UNTIL
+AFTER R9.** DEF FN remains a required V2 language feature, not cancelled.
+A complete design/implementation was built experimentally on top of
+`b46d34b` and measured precisely: **489 bytes** total (compiler + vm_core +
+decompiler), against the 282-byte reserve above — a **207-byte shortfall**.
+Rather than force a bad fit, weaken DEF FN's semantics, or begin R10-class
+shrink work early, the implementation was backed out of the working tree
+and preserved at `docs/v2/deffn_design/` (full design rationale, syntax,
+bytecode representation, byte-cost breakdown, tests exercised, and a
+directly reapplicable git patch). **Reintegrate immediately after R9**, once
+V1 removal has freed real headroom: re-measure, reapply/reconcile the
+preserved patch, write a proper regression test, validate on real ZEsarUX,
+and commit separately. Two general-purpose compiler consolidations
+discovered during the experiment (`COMPILE_CALLABLE_PREFIX`,
+`COMPILE_RESOLVE_OR_FIXUP`) were found to cost *more* than they save with
+only one caller each (DEF FN absent) and were reverted along with the rest
+— they belong in the DEF FN patch, not standalone; see the preserved doc's
+own measurement of this.
 
 ### R9 — Replacement (V1 language-core removal)
 
