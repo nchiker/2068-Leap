@@ -227,15 +227,54 @@ BUILTIN function dispatch chain — resolved by naming the new handler
   table entries; three new handlers; `DECOMP_COMBINE_UINT16`; four new
   `STR_*` constants.
 
+## Known design defect found during the V2 semantic/capability audit (pre-R9)
+
+**Real self-referential recursion is not actually correct as designed,
+despite this document's earlier claim that it "works... for free."**
+
+The parameter is bound via the same shared, single global `CSYMTAB` slot
+`COMPILE_PROC` already uses (`CSYM_FIND_OR_CREATE`) — a plain numeric
+variable, not a per-call stack slot. Only the return address is pushed/
+popped across a call (`VM_CALL_PUSH`/`VM_CALL_POP`); the parameter's
+*value* is not saved/restored. So a genuinely recursive `FN` body that
+reads its own parameter **after** making a recursive self-call — e.g.
+`DEF FN F(n) = FN F(n-1) + n` — will silently see the inner call's
+already-overwritten value of `n`, not the outer call's own, producing a
+wrong result with no error. This was never hardware-tested during the
+original experiment (see "Tests developed" above, which explicitly flags
+real recursion as untested) — it was a plausible-sounding but unverified
+claim, not a confirmed one.
+
+**Decision (explicit product decision, 2026-09-26 semantic audit
+session): fix this before reintegration**, not ship with it as a
+documented limitation. The fix: park the parameter's value on the stack
+(hardware stack or a small dedicated save area) around a `CALL_UDF` call
+site, symmetrically with how `.udf_call`'s existing nested-call fix
+already parks `STMT_IDENT_NAME_PTR`/`LEN` across a recursive
+`COMPILE_EXPR` call at *compile* time — this is the same lesson applied
+to the *runtime* parameter binding instead. Concretely: emit a save of
+the parameter's current value immediately before the argument-evaluation
+`CALL_UDF` sequence and a restore immediately after it returns, OR give
+each call frame its own parameter slot on `VM_CALL_STACK` itself (more
+invasive, more correct, more expensive) — evaluate both against real
+ROM cost during reintegration; the save/restore-around-the-call-site
+approach is the minimal one and should be tried first.
+
 ## Reintegration checklist (do this after R9)
 
 1. Re-measure the ROM baseline precisely (`ACTUAL_END_MARKER` technique).
 2. Apply `deffn_experiment_full.patch` (or reconcile by hand against R9's
    changes using this document).
-3. Write/extend a proper `test_v2_deffn.asm` regression test covering the
-   full list under "Tests developed" above, plus real recursion end to end.
-4. Test malformed definitions/calls and error paths (49-54) explicitly.
-5. Run the complete buildable regression suite via real ZEsarUX, guarding
+3. **Fix the recursion defect above** (save/restore the parameter's value
+   around a `CALL_UDF` site) before considering DEF FN complete — this is
+   a required correctness fix, not optional polish.
+4. Write/extend a proper `test_v2_deffn.asm` regression test covering the
+   full list under "Tests developed" above, plus real recursion end to
+   end (specifically: a recursive function that reads its own parameter
+   *after* the recursive call, e.g. a naive factorial or Fibonacci —
+   the exact shape the defect above breaks).
+5. Test malformed definitions/calls and error paths (49-54) explicitly.
+6. Run the complete buildable regression suite via real ZEsarUX, guarding
    against stale binaries/emulator processes.
-6. Measure the exact ROM delta and final free space.
-7. Commit DEF FN separately from any R9 changes.
+7. Measure the exact ROM delta and final free space.
+8. Commit DEF FN separately from any R9 changes.
