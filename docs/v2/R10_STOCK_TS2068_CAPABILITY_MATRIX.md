@@ -40,7 +40,8 @@ applicable to this replacement ROM's own target).
 | `DATA`/`READ`/`RESTORE` | ABSENT | No tokens in `KEYWORD_TABLE`. No V2 equivalent of stock's inline-data-with-read-cursor mechanism. |
 | `DEF FN` | PRESENT | Reintegrated post-R9 (this milestone's predecessor). One parameter (matching stock's own single-parameter `DEF FN f(x)=...` exactly), real recursion support (post-R9 fix) that stock BASIC's own single global parameter slot never had to worry about (stock has no real call stack either). |
 | `PLOT`/`DRAW`/`CIRCLE` | PARTIAL | `PLOT` and `LINE` present (opcode-assigned). No `DRAW` (stock's arc/relative-line drawing) or `CIRCLE` token found in `KEYWORD_TABLE` — ABSENT. |
-| `BORDER`/`INK`/`PAPER` | PRESENT | Resident opcodes. Stock also has `BRIGHT`/`FLASH`/`OVER`/`INVERSE` as PRINT-item control codes embedded in the print stream (not separate statements in stock either) — not confirmed present in V2's `PRINT` grammar; flagged uncertain rather than asserted absent. |
+| `BORDER`/`INK`/`PAPER` | PRESENT | Resident opcodes. |
+| `BRIGHT`/`FLASH`/`OVER`/`INVERSE` (PRINT-item control codes) | ABSENT | **Correction (verified 2026-09-27 against current source, flagged by the project owner):** an earlier pass in this document marked these "uncertain." Direct grep of `rom/exrom_v2_compiler.asm`'s real `KEYWORD_TABLE` confirms no `"BRIGHT"`/`"FLASH"`/`"OVER"`/`"INVERSE"` token exists anywhere in it — genuinely absent, not just unconfirmed. `CURRENT_INVERSE`/`CURRENT_FLASH` do exist as shared-memory state cells (`rom/exrom_v2_vm_core.asm`), consumed by `BUILTIN_FN_ATTR`'s attribute-byte computation and initialized to 0 at cold boot, but there is no BASIC-level statement or `PRINT`-embedded control code that lets a running program actually set them — the state exists, the language surface to reach it does not. |
 | `BEEP`/`SOUND` | PRESENT | Both resident. Stock Spectrum-family BASIC has only `BEEP` (pitch/duration via the single-channel beeper); `SOUND` is not a stock Spectrum keyword at all — if TS2068-specific (AY chip), V2 having it is a genuine V2-native addition beyond the common Spectrum baseline, not confirmed against real stock TS2068 ROM documentation in this pass. |
 | `POKE` | PRESENT | Statement-side, with R10's FLOAT-tag fix applied. |
 | `PAUSE` | PRESENT | |
@@ -80,6 +81,7 @@ applicable to this replacement ROM's own target).
 | `TAB`/`AT` (as PRINT-position control) | UNCERTAIN | Not confirmed present or absent in V2's simplified single-argument `PRINT` grammar in this pass — flagged for follow-up rather than asserted either way. |
 | `DEG`/`RAD` | PRESENT (V2 addition) | Degree/radian conversion helpers not part of stock Spectrum-family BASIC's own function set — genuine V2-native additions. |
 | `MOD`/`DIV` | PRESENT (V2 addition) | Stock Spectrum-family BASIC has no `MOD`/`DIV` operators/functions at all (integer division/modulo must be hand-rolled); V2 provides both natively. |
+| `FREE` (free-memory query) | ABSENT | **Added 2026-09-27** — not previously covered in this document, flagged by the project owner. No `"FREE"` token found anywhere in the compiler's real `KEYWORD_TABLE` or `BUILTIN_FN_TABLE`. Genuinely absent. |
 
 ## Numeric model
 
@@ -142,7 +144,8 @@ arrays replaced by fixed single-dimension ones; arbitrary-length strings
 replaced by a fixed 4-variable/31-byte model) alongside a smaller number
 of built-in functions that appear to be simply not yet implemented
 rather than deliberately excluded (COS/TAN/ATN/EXP/LN, MID$, VAL$,
-SCREEN$, DATA/READ/RESTORE, CIRCLE/DRAW, VERIFY/MERGE/CLEAR/IN/OUT) and
+SCREEN$, DATA/READ/RESTORE, CIRCLE/DRAW, VERIFY/MERGE/CLEAR/IN/OUT,
+FLASH/BRIGHT/OVER/INVERSE as PRINT-item control codes, FREE) and
 a handful of genuine V2-native additions with no stock counterpart
 (UPPER$/LOWER$, DEG/RAD, MOD/DIV, block IF/ELSE/ENDIF). This document
 is a factual inventory for R11 planning, not a recommendation list —
