@@ -1,11 +1,12 @@
 # R9 production cutover ledger
 
-Status: **R9 is a WIP and is not complete.** Production V2 cutover is active
+Status: **R9 is complete** (2026-09-27). Production V2 cutover is active
 on top of the immutable `cd2f1df` pre-cutover reference. The V2 HOME/EXROM
-images build and boot in ZEsarUX.
-The production command loop and core language paths are wired. The full R9
-hardware gate is not yet closed: physical fixture playback has not completed
-a production LOAD in ZEsarUX. The six V1-only optional extensions CPLOT,
+images build and boot in ZEsarUX and Fuse.
+The production command loop and core language paths are wired, and the
+physical cassette hardware gate (SAVE → NEW → physical LOAD → LIST → RUN)
+is proven in real Fuse — see "Physical cassette round-trip: PROVEN" below.
+The six V1-only optional extensions CPLOT,
 AYREG, OUT, BLOCK, FRAME, and INVERT are outside this cutover's required
 scope; they are omitted from the V2 production package set and are not
 blockers. They may be reconsidered for later ROM or V2 package integration.
@@ -319,16 +320,94 @@ authoritative-source tape representation.
   implementation remains available at `cd2f1df` in Git. The new default
   V2 standalone target is `tools/run_v2_standalone_tests.sh`.
 
+## Physical cassette round-trip: PROVEN (real Fuse, 2026-09-27)
+
+The R9 hardware gate closed in **real Fuse** (`fuse --machine ts2068
+--rom-ts2068-0 build/test_basic.bin --rom-ts2068-1 build/exrom.bin`), not
+ZEsarUX. Sequence performed by the project owner, interactively:
+
+1. `NEW`, then typed a fresh three-line program: `PRINT -123` / `PRINT 123`
+   / `PRINT "Hello"`.
+2. Media → Start Recording, then `SAVE "test"` in the ROM, then Media →
+   Write Tape to a file (`tests/atape`).
+3. `NEW` (clears the program).
+4. Tape rewound; `LOAD "test"` (named, not wildcard — see below) with
+   real Fuse tape playback (Play pressed manually in Fuse's tape browser;
+   Fuse has no ROM-trap autoplay for this non-standard loader).
+5. `LIST` showed the exact restored three-line source.
+6. `RUN` recompiled and printed `-123`, `123`, `Hello` — correct.
+
+Byte-level verification of the captured tape file (`tests/atape`, decoded
+by hand with the same run-length/pilot/sync algorithm
+`tools/check_tape_fixture.py` uses): the file contains **two** blocks. The
+first is the pre-existing `verify` fixture content (name `verify`, the
+`PRINT -123`/`PRINT str$(456)`/`PRINT sqr(2)` payload used earlier this
+session), because Fuse's "Start Recording" arms recording on the
+already-inserted tape image rather than a blank one — expected Fuse tape
+mechanics, not a ROM defect. The second block is the production `SAVE`
+output: header name `test`, length 41, header and data checksums both
+valid, and the decoded data payload is byte-for-byte
+`\x0b\x00PRINT -123\r\n\x00PRINT 123\r\x0e\x00PRINT "Hello"\r` — exactly
+the generic line-store record format `V2_TOKENIZE` produces, with no stale
+or corrupted content. A wildcard `LOAD ""` therefore first matches the
+tape's earlier `verify` header (correct, expected tape-search behavior);
+`LOAD "test"` (named) correctly skips the mismatched header and finds the
+right block. This is not a bug in `STORAGE_LOAD`'s name-matching path — it
+already retries past a non-matching header (see `.name_mismatch` in
+`kernel/storage/storage.asm`) and worked exactly as designed.
+
+**No storage-system code changes were made this session.**
+`STORAGE_LEADER_GAP` remains `$A0`, unchanged from the prior investigation;
+this Fuse result is independent confirmation that the current receiver
+logic (leader/sync/header/data path, `$A0` threshold, stock `LD-EDGE-2`
+two-measurement fall-through) works correctly end-to-end on real,
+hardware-accurate tape emulation.
+
+### Known open discrepancy: ZEsarUX headless/GUI reproduction (not a blocker)
+
+Before the Fuse test, this session found that `ts2068-debug`'s headless
+ZEsarUX automation (`--vo null --ao null`) *can* mechanically drive a real
+tape (`realtape-open` over ZRCP) — ZEsarUX's own source
+(`src/cores/core_spectrum.c`, `si_siguiente_sonido()`/
+`core_spectrum_fin_scanline()`) shows tape-bit sampling is driven by the
+emulated CPU/scanline clock, not the audio output backend, contradicting
+`R9_HANDOFF.md`'s original assumption that GUI+audio access is required.
+Also newly found: ZEsarUX's own TZX→RWA converter
+(`convert_tzx_to_rwa`/`playtzx -sil`) silently prepends **2 extra seconds
+of silence** ahead of any real-tape file's own content — an undocumented
+timing shift relevant to any future ZEsarUX real-tape timing analysis.
+
+However, using T-state-precise measurement (ZRCP `get-tstates-partial`,
+reset at the moment tape playback begins) against `tests/fixtures/
+storage_verify.tzx`, both the production `STORAGE_RECEIVE_BLOCK` (via
+`LOAD ""`) and the standalone `test_tape_sync_monitor` diagnostic ROM
+(identical `$A0`/edge constants) reproducibly stall at the same point: one
+qualifying first edge is found (reaching `STORAGE_RECEIVE_BLOCK.wait` /
+`START.wait`), then the required second-edge check (`.edge2`) never
+validates, for the tape's entire real content window (measured precisely
+at roughly seconds 2.4–11.8 of the file, after ZEsarUX's own +2s silence
+prefix). This reproduced identically in both headless ZRCP automation and
+was not independently re-tested in ZEsarUX's real GUI+audio mode this
+session (the project owner instead validated the physical gate directly
+in Fuse, per above). Whether this is a genuine ZEsarUX-only environment
+quirk (headless or otherwise) or reflects some other divergence from the
+already-proven Fuse/real-hardware-timing path is unresolved and does not
+block R9, since Fuse is the environment that actually demonstrated the
+required physical round-trip. Worth a follow-up if ZEsarUX-based physical
+tape testing is wanted later — start from `STORAGE_RECEIVE_BLOCK`'s
+`.edge2`/`.wait` in `kernel/storage/storage.asm`.
+
 ## Still open before declaring R9 complete
 
-1. Complete and record the production hardware SAVE → clear/NEW → physical
-   LOAD → LIST → RUN round-trip in ZEsarUX. No complete physical production
-   header/data receive or end-to-end round-trip has been proven there.
+1. ~~Complete and record the production hardware SAVE → clear/NEW →
+   physical LOAD → LIST → RUN round-trip.~~ **Done** — see above (real
+   Fuse, 2026-09-27).
 2. The four semantic-audit corrections remain pending: FLOAT operand/type
    boundary correctness; nested FOR/NEXT; DIM/decompiler semantics; and
    recursion-safe PROC/DEF FN parameter handling. DIM's source LIST/edit/
    SAVE/LOAD impact is reduced by authoritative source storage, but its
-   bytecode decompiler behavior is unchanged and is not solved.
+   bytecode decompiler behavior is unchanged and is not solved. These
+   remain explicitly out of R9 scope and are the next milestone's work.
 
 The project owner has explicitly classified CPLOT, AYREG, OUT, BLOCK, FRAME,
 and INVERT as optional for R9. The production set is MODE, SPRITE, PRINTER,

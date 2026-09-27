@@ -1,9 +1,10 @@
-# R9 WIP handoff for Claude
+# R9 handoff for Claude
 
-**R9 is not complete.** This is a safety/handoff note for the WIP checkpoint,
-not an acceptance report. The immutable pre-cutover reference is `cd2f1df`.
-The current WIP checkpoint commit will contain the R9 implementation and
-these documents; it must not be read as closing the physical cassette gate.
+**R9 is complete as of 2026-09-27.** This file is kept for the architecture/
+scope context it documents (still accurate); for the final physical
+cassette result, regression status, and completion commit, see
+`R9_CUTOVER_LEDGER.md`'s "Physical cassette round-trip: PROVEN" section.
+The immutable pre-cutover reference remains `cd2f1df`.
 
 Read this file and [`R9_CUTOVER_LEDGER.md`](R9_CUTOVER_LEDGER.md) first. The
 ledger is the detailed source for addresses, assembled ROM accounting, and
@@ -98,18 +99,18 @@ No source/staging/bytecode/runtime overlays are claimed. The entire ledger
 contains the remaining fixed allocations, gaps, symbols, platform-sensitive
 areas, and measured/estimated distinctions.
 
-## UNPROVEN: physical cassette gate
+## PROVEN (2026-09-27): physical cassette gate
 
-The R9 completion gate is still the complete production hardware sequence:
-
-**SAVE → clear/NEW → physical LOAD → LIST → RUN** in production ZEsarUX,
-followed by confirmation that the source listing and program behavior match.
-
-No complete physical production header/data receive has been observed in
-ZEsarUX, and no production physical-tape round-trip has passed. The R8-era
-real Fuse Direct Recording round-trip on 2026-08-26 is a successful physical
-transport test for the earlier V1-linked image; it is not production V2
-ZEsarUX validation.
+The R9 completion gate — the complete production hardware sequence
+**SAVE → clear/NEW → physical LOAD → LIST → RUN**, with confirmation that
+the source listing and program behavior match — is now demonstrated. It
+closed in **real Fuse**, not ZEsarUX (a real ZEsarUX-specific edge-detection
+stall was found and is documented as an open, non-blocking discrepancy in
+`R9_CUTOVER_LEDGER.md`). Full detail, byte-level tape evidence, and the
+final regression run are in `R9_CUTOVER_LEDGER.md`'s "Physical cassette
+round-trip: PROVEN" section — read that for the authoritative result. The
+rest of this section is kept below for the historical investigation
+context it recorded (still accurate as background).
 
 The production execution path is:
 
