@@ -1,5 +1,11 @@
 # What's New in 2068-Leap Release 1 Beta
 
+> **Historical V1 change log:** this document describes the earlier V1
+> production build. Current production is the R9 Architecture B V2 system,
+> with MODE, SPRITE, PRINTER, and SHAPES packages. The optional V1 package
+> list below is historical; see [`v2/R9_CUTOVER_LEDGER.md`](v2/R9_CUTOVER_LEDGER.md)
+> for current behavior and measured status.
+
 Release 1 Beta builds on Public Preview 1 without changing the project's core
 idea: an instant-on, line-number-free BASIC environment designed for the Timex
 Sinclair 2068. The beta concentrates on room for real programs, expansion,

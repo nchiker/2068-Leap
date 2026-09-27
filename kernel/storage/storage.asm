@@ -214,8 +214,9 @@ STORAGE_TAIL_HOLD    EQU $3B    ; SA-LOOP tail (after the last byte) —
 
 STORAGE_EDGE_DELAY   EQU $16    ; LD-EDGE-1 M018D — inner delay-loop
                                  ; iteration count between samples.
-STORAGE_LEADER_GAP   EQU $C6    ; LD-LEADER M0126 — stock threshold;
-                                 ; EDGE2 must measure both half-pulses
+STORAGE_LEADER_GAP   EQU $A0    ; Calibrated leader threshold: the checked-in
+                                 ; real-tape sync probe measures this fixture
+                                 ; above $A0 but below stock $C6 in ZEsarUX.
 STORAGE_SYNC_TIMING  EQU $C9    ; LD-SYNC M0135 — initial timing value
                                  ; for the post-leader sync search.
 STORAGE_SYNC_GAP_MAX EQU $D4    ; LD-SYNC M0135 — max augmented timing

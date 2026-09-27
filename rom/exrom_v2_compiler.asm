@@ -588,6 +588,8 @@ LEX_NEXT_TOKEN:
         jr z,.eof
         cp ':'
         jr z,.single1
+        cp $0D
+        jr z,.single1
         cp '='
         jr z,.single2
         cp '+'
@@ -1296,6 +1298,28 @@ STRSYM_ENTRY_ADDR:
 ; BYTECODE EMITTER
 ; ===========================================================================
 EMIT_BYTE:
+        IFDEF V2_PRODUCTION
+        ; Stop at the first byte beyond the reserved bytecode region.
+        ; Once full, keep EMIT_PTR stationary so later emit attempts
+        ; cannot corrupt resident VM state while the parser unwinds.
+        push af
+        push de
+        ld hl,(EMIT_PTR)
+        ld de,V2_CODE_LIMIT
+        or a
+        sbc hl,de
+        jr c,.space
+        pop de
+        pop af
+        push af
+        ld a,55              ; production bytecode capacity exceeded
+        ld (COMPILE_ERROR_CODE),a
+        pop af
+        ret
+.space:
+        pop de
+        pop af
+        ENDIF
         ld hl,(EMIT_PTR)
         ld (hl),a
         inc hl
@@ -3715,6 +3739,8 @@ COMPILE_NEXT:
 COMPILE_STATEMENT_LIST:
 .loop:
         ld a,(TOK_TYPE)
+        cp TOK_COLON
+        jp z,.skip_separator
         cp TOK_EOF
         jp z,.done
         cp TOK_KW_ENDP
@@ -3790,6 +3816,9 @@ COMPILE_STATEMENT_LIST:
         jp .done                  ; anything else ends compilation cleanly
                                    ; in this scope (no error-recovery exists
                                    ; yet — a later milestone's job)
+.skip_separator:
+        call LEX_NEXT_TOKEN
+        jp .loop
 .cls:
         call COMPILE_CLS
         jp .after_stmt
@@ -3849,7 +3878,7 @@ COMPILE_STATEMENT_LIST:
         ld a,(hl)
         or a
         jr z,.rem_done
-        cp ':'
+        cp $0D
         jr z,.rem_done
         inc hl
         jr .rem_scan

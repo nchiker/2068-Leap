@@ -1,5 +1,10 @@
 # 2068-Leap — Release 1 Beta
 
+> **Current source status:** R9 is cutting over the production ROM to the
+> Architecture B V2 editor, whole-program compiler, and VM. This beta release
+> note describes the earlier V1 build. See `docs/v2/R9_CUTOVER_LEDGER.md` for
+> current production ROM/RAM measurements, validation, and open hardware work.
+
 2068-Leap Release 1 Beta is the first public beta of the redesigned Timex Sinclair 2068
 ROM. It concentrates on a practical full-screen BASIC environment, ROM
 headroom, subsystem correctness, and regression coverage rather than cartridge

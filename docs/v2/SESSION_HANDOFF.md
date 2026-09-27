@@ -1,5 +1,24 @@
 # Session handoff — read this first
 
+## Current status — R9 production cutover
+
+This section supersedes the historical status below. R8.9 is complete at
+`cd2f1df`; R9 production cutover is a WIP and is not complete. The next agent
+should start with [`R9_HANDOFF.md`](R9_HANDOFF.md), then use
+[`R9_CUTOVER_LEDGER.md`](R9_CUTOVER_LEDGER.md) for detailed implementation,
+assembled ROM/RAM accounting, proven tests, and unresolved gates. The
+production Makefile builds `rom/v2_home.asm` plus `rom/v2_exrom.asm`; it no
+longer builds the V1 interpreter. The immutable V1 pre-cutover implementation
+remains available at `cd2f1df`.
+
+The 14 currently buildable standalone V2 fixtures pass in real ZEsarUX.
+Production interaction, runtime, graphics, and deterministic storage/package
+paths have been exercised there. Physical tape LOAD has not completed through
+the production V2 loader in ZEsarUX and remains the outstanding hardware gate.
+The project owner has classified CPLOT, AYREG, OUT, BLOCK, FRAME, and INVERT
+as optional and outside R9 scope; their omission is not a blocker. Do not
+restart R8.9 or begin R10 or R11.
+
 Concise checkpoint for a fresh session resuming this project after `/clear`.
 Deeper detail lives in the docs this file points to; this file exists so you
 don't have to reconstruct current state from commit history and conversation

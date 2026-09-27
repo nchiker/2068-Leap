@@ -1,13 +1,14 @@
-.PHONY: all build check smoke-build test budget audit-basic manual clean cplot-extension block-extension frame-extension invert-extension ayreg-extension out-extension sprite-extension shapes-extension release-assets
+.PHONY: all build check smoke-build test budget audit-basic manual clean cplot-extension block-extension frame-extension invert-extension ayreg-extension out-extension sprite-extension shapes-extension v2-packages v2-standalone-test release-assets
 
 all: check build
 
 build:
 	mkdir -p build
-	tools/sjasmplus_strict.sh --sym=build/test_basic.sym --lst=build/test_basic.lst rom/test_basic.asm
-	cp test_basic.bin build/test_basic.bin
-	tools/sjasmplus_strict.sh --sym=build/exrom.sym --lst=build/exrom.lst rom/exrom_build.asm
-	cp exrom.bin build/exrom.bin
+	tools/sjasmplus_strict.sh --sym=build/test_basic.sym --lst=build/test_basic.lst rom/v2_home.asm
+	python3 tools/write_v2_crossbank.py build/test_basic.sym build/v2_crossbank.inc
+	cp v2_home.bin build/test_basic.bin
+	tools/sjasmplus_strict.sh --sym=build/exrom.sym --lst=build/exrom.lst rom/v2_exrom.asm
+	cp v2_exrom.bin build/exrom.bin
 	tools/make_eightyone_dck.sh build/exrom.bin build/exrom.dck
 	tools/sjasmplus_strict.sh rom/zesarux_combined.asm
 
@@ -46,11 +47,25 @@ test: all
 	tools/run_storage_named_load_test.sh autorun_zero
 	tools/run_storage_named_load_test.sh autorun_trailing
 	tools/run_storage_named_load_test.sh autorun_out_of_range
-	tools/run_all_tests.sh
+	tools/run_v2_standalone_tests.sh
+
+v2-standalone-test: build
+	tools/run_v2_standalone_tests.sh
 
 budget: build
 	python3 tools/report_budget.py build/test_basic.lst build/exrom.lst build/test_basic.sym
 	python3 tools/report_rom_map.py build/test_basic.lst build/exrom.lst
+
+v2-packages: build
+	mkdir -p build/extensions
+	tools/sjasmplus_strict.sh rom/v2_package_mode.asm
+	tools/sjasmplus_strict.sh rom/v2_package_sprite.asm
+	tools/sjasmplus_strict.sh rom/v2_package_printer.asm
+	tools/sjasmplus_strict.sh rom/v2_package_shapes.asm
+	python3 tools/make_extension_tzx.py build/extensions/v2_mode.tzx MODE build/v2_package_mode.bin
+	python3 tools/make_extension_tzx.py build/extensions/v2_sprite.tzx SPRITE build/v2_package_sprite.bin
+	python3 tools/make_extension_tzx.py build/extensions/v2_printer.tzx PRINTER build/v2_package_printer.bin
+	python3 tools/make_extension_tzx.py build/extensions/v2_shapes.tzx SHAPES build/v2_package_shapes.bin
 
 cplot-extension: build
 	mkdir -p build/extensions
@@ -124,10 +139,10 @@ shapes-extension: build
 	tools/sjasmplus_strict.sh rom/test_extension_clear_inject.asm --sym=rom/test_extension_clear_inject.sym
 	tools/sjasmplus_strict.sh rom/extensions/shapes_clear_test.asm
 
-release-assets: build cplot-extension block-extension frame-extension invert-extension ayreg-extension out-extension sprite-extension shapes-extension manual
+release-assets: build v2-packages manual
 	mkdir -p build/release/roms build/release/extensions build/release/docs build/release/demos build/release/patches
 	cp build/test_basic.bin build/exrom.bin build/exrom.dck build/ts2068rom_zesarux.bin build/release/roms/
-	cp build/extensions/cplot.tzx build/extensions/block.tzx build/extensions/frame.tzx build/extensions/invert.tzx build/extensions/ayreg.tzx build/extensions/out.tzx build/extensions/sprite.tzx build/release/extensions/
+	cp build/extensions/v2_mode.tzx build/extensions/v2_sprite.tzx build/extensions/v2_printer.tzx build/extensions/v2_shapes.tzx build/release/extensions/
 	cp README.md RELEASE_NOTES.md ANNOUNCEMENT_RELEASE_1_BETA.md LICENSE build/release/
 	cp docs/emulator_setup.md docs/whats_new_release_1_beta.md docs/2068-Leap_Whats_New_Release_1_Beta.docx docs/user_manual.md docs/2068_Leap_Users_Manual.docx build/release/docs/
 	cp demos/showcase.txt demos/smoketest.txt build/release/demos/

@@ -303,6 +303,26 @@ PRT_LPRINT_STR_EXEC:
 ; ---------------------------------------------------------------------------
 PRT_LLIST_NAME: db "LLIST",0
 PRT_LLIST_EXEC:
+        IFDEF V2_PRODUCTION
+        ; The production editor and SAVE/LOAD retain authoritative source.
+        ; Print its records directly, one line at a time, with no bytecode
+        ; reconstruction or 400-byte decompiler output limit.
+        call MEM_LINE_FIRST
+.source_line:
+        ld a,h
+        or l
+        ret z
+        push hl
+        ld c,(hl)
+        dec c                      ; record length includes its CR
+        ld b,0
+        inc hl
+        inc hl                     ; skip two-byte record length
+        call PRINTER_SEND_TEXT
+        pop hl
+        call MEM_LINE_NEXT
+        jr .source_line
+        ELSE
         ld hl,PRT_LINE_HOOK
         ld (DECOMP_LINE_CALLBACK),hl
         call DECOMPILE_PROGRAM
@@ -336,6 +356,7 @@ PRT_LINE_HOOK:
         ld b,0
         ld hl,DECOMP_OUT_BUF
         jp PRINTER_SEND_TEXT
+        ENDIF
 
 ; ---------------------------------------------------------------------------
 ; PRT_INSTALL — registers all 3 operations (LPRINT's 2 internal slots +

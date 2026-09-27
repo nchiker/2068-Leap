@@ -59,16 +59,23 @@ not guaranteed by standard framing alone; trap recognition may also depend
 on stock ROM identity or execution addresses. Cycle-level tape operation
 remains the correctness baseline.
 
-The receiver retains the stock `$C6` leader and `$CB` data thresholds.
-Its `EDGE2` path must measure two consecutive half-pulses by falling
-through into `EDGE1` after the first call, exactly as the stock routine
-does. Returning after the first edge halves the measurement and can make
-an all-zero header appear checksum-valid.
+The receiver uses the calibrated `$A0` leader threshold and retains the
+stock `$CB` data-bit boundary. A real ZEsarUX timing probe measured the
+checked-in fixture's leader at `$BE`: stock `$C6` rejects that pulse, while
+`$A0` accepts it. The committed sync probe also uses `$A0`. Its `EDGE2`
+path must measure two consecutive half-pulses by falling through into
+`EDGE1` after the first call, exactly as the stock routine does. Returning
+after the first edge halves the measurement and can make an all-zero header
+appear checksum-valid.
 
 Status-bar progress is deliberately milestone-based because rendering
 during a tape block would corrupt SAVE timing or make LOAD miss edges.
-The safe updates are 0% at entry, 10% between the header and data blocks,
-and 100% after the data block has completed.
+The storage service calls `STORAGE_PROGRESS_HOOK` for safe updates at 0% at
+entry, 10% between the header and data blocks, and 100% after the data block
+has completed. The V1 caller installs its status-bar hook. The current V2
+production shell does not install `STORAGE_PROGRESS_HOOK`, so production V2
+does not currently draw the in-flight SAVING/LOADING status bar; do not use
+that text as evidence that V2 entered or failed to enter the tape receiver.
 
 ## Confirmed result
 
@@ -80,6 +87,13 @@ Named loading additionally requires its padded comparison name to remain
 outside redraw scratch and its HL pointer to survive the maximum-length
 calculation before entering `STORAGE_LOAD`; both invariants are guarded by
 `tools/check_storage_contract.py`.
+
+The R9 production shell's LOAD path has also passed deterministic storage
+transport tests in real ZEsarUX. A physical Direct Recording playback has
+not yet completed a full production header/data receive there; the receiver
+was observed progressing into edge sampling, but did not yet populate its
+header buffer. The Fuse round-trip above remains the complete physical
+transport result.
 
 The confirmed Direct Recording TZX is retained as
 `tests/fixtures/storage_verify.tzx`.

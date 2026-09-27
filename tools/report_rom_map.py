@@ -11,7 +11,7 @@ INCLUDE_RE = re.compile(
     re.I,
 )
 PAD_RE = re.compile(
-    r"^\s*\d+\s+([0-9A-F]+).*?DS\s+\$[0-9A-F]+\s*-\s*\$", re.I
+    r"^\s*\d+\s+([0-9A-F]+).*?DS\s+.*-\s*\$", re.I
 )
 
 
@@ -54,10 +54,10 @@ def main() -> int:
         print("usage: report_rom_map.py HOME.lst EXROM.lst", file=sys.stderr)
         return 2
     home, home_end, home_free = listing_map(
-        Path(sys.argv[1]), 0x0000, 0x4000, ("basic/", "kernel/")
+        Path(sys.argv[1]), 0x0000, 0x4000, ("basic/", "kernel/", "rom/")
     )
     exrom, exrom_end, exrom_free = listing_map(
-        Path(sys.argv[2]), 0xC000, 0xE000, ("rom/exrom_",)
+        Path(sys.argv[2]), 0xC000, 0xE000, ("kernel/", "rom/")
     )
     print("# Generated ROM space map\n")
     print("Generated from sjasmplus listing addresses; module sizes include code and data.\n")

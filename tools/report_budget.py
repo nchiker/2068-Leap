@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Report current Home ROM, EXROM, and dynamic-program-area budgets."""
+"""Report current ROM and integrated R9 source/code/workspace budgets."""
 
 import re
 import sys
@@ -8,7 +8,10 @@ from pathlib import Path
 
 def end_before_padding(path: Path, limit: int) -> int:
     text = path.read_text()
-    pattern = re.compile(r"^\s*\d+\s+([0-9A-F]+).*?DS\s+\$[0-9A-F]+\s*-\s*\$", re.M | re.I)
+    # The final padding expression may use a symbolic end address (the
+    # integrated V2 images do); capture its assembled start address instead
+    # of requiring a literal `$HEX` expression.
+    pattern = re.compile(r"^\s*\d+\s+([0-9A-F]+).*?DS\s+.*-\s*\$", re.M | re.I)
     matches = [int(m.group(1), 16) for m in pattern.finditer(text)]
     if not matches:
         raise SystemExit(f"could not find final padding directive in {path}")
@@ -35,10 +38,23 @@ def main() -> int:
     exrom_end = end_before_padding(Path(sys.argv[2]), 0xE000)
     syms = symbols(Path(sys.argv[3]))
     program_start = syms["PROG_AREA_START"]
-    program_end = syms["PROG_AREA_MAX"]
+    source_end = syms["V2_SOURCE_END"]
+    stage_start = syms["V2_SOURCE_STAGE"]
+    code_start = syms["VM_CODE_BASE"]
+    code_end = syms["V2_CODE_LIMIT"]
+    fixed_end = syms["PROG_AREA_MAX"]
     print(f"Home ROM: {home_end:#06x}/0x4000 used, {0x4000-home_end} bytes free")
     print(f"EXROM:    {exrom_end:#06x}/0xe000 end, {0xE000-exrom_end} bytes free")
-    print(f"RAM pool: {program_start:#06x}-{program_end-1:#06x}, {program_end-program_start} bytes")
+    print(
+        f"Source:   {program_start:#06x}-{source_end-1:#06x}, "
+        f"{source_end-program_start} bytes"
+    )
+    print(
+        f"Staging:  {stage_start:#06x}-{stage_start+(source_end-program_start)-1:#06x}, "
+        f"{source_end-program_start} bytes"
+    )
+    print(f"Bytecode: {code_start:#06x}-{code_end-1:#06x}, {code_end-code_start} bytes")
+    print(f"Fixed V2: {code_end:#06x}-{fixed_end-1:#06x}, {fixed_end-code_end} bytes")
     return 0
 
 

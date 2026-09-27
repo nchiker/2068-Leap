@@ -219,6 +219,8 @@
 ;   [value_lo][value_hi][tag]   -- SP points at the lowest (most recent) record
 ; ============================================================================
 
+    INCLUDE "include/v2_layout.inc"
+
 ; R8.5 Group 2 (closed out late) -- OP_INPUT_NUM/STR's own KEY_ENTER
 ; check needs this. Include-guarded (IFNDEF KEYS_INC), so safe even for
 ; a test file that also includes it separately.
@@ -229,7 +231,7 @@
 ; for now); a later milestone integrating this into the real EXROM build
 ; will relocate these into include/sysvars.inc.
 ; ---------------------------------------------------------------------------
-VM_CODE_BASE:       equ $A455   ; base address bytecode JMP offsets are relative to
+VM_CODE_BASE:       equ V2_CODE_BASE ; base address bytecode JMP offsets are relative to
 VM_IP:              equ $B600   ; instruction pointer (2 bytes, absolute address)
 VM_SP:              equ $B602   ; operand-stack pointer (2 bytes, grows down)
 VM_STACK_TOP:       equ $B680   ; operand stack lives $B604-$B67F (initial SP)
@@ -348,7 +350,7 @@ BFN_STR_TMP:        equ $B6AE   ; R8.5 Group 6 (string-result functions)
 ; VM_PUSH; the actual 5 float bytes live in FLOATTAB, in the calculator's
 ; own native format (opaque to the VM — copied to/from CALC_STACK
 ; verbatim, never decoded here). ---
-FLOATTAB_BASE:      equ $B400   ; float records: 5 raw calculator-float
+FLOATTAB_BASE:      equ V2_FLOATTAB_BASE ; 5-byte calculator-float records
                                  ; bytes each, opaque to the VM
 FLOAT_REC_LEN:      equ 5
 FLOATTAB_MAX_VARS:  equ 16      ; ONE dedicated slot per possible SYMTAB
@@ -429,6 +431,8 @@ VM_EXT_ARGCOUNT:    equ $B6C3    ; [slot_id][generation][argcount], and
 VM_EXT_REMAINING:   equ $B6C4    ; a countdown used while popping args
 VM_EXT_POPVAL:      equ $B6C5    ; (2 bytes): this iteration's popped value
 VM_EXT_RECPTR:      equ $B6C7    ; (2 bytes): the matched registry record
+VM_EXT_EXEC_PTR:    equ $BA5C    ; (2 bytes): preserve package target while
+                                  ; paging chunk 6 back to Home for execution
 
 ; --- R8.5 addition: text I/O (PRINT/LPRINT/INPUT). BASIC_OUTPUT_ROW/COL
 ; (basic.asm) are NOT reused here -- basic.asm is V1's own language
@@ -515,6 +519,18 @@ BFN_ABS_IDX_TMP:      equ $B6CE    ; (2 bytes): R8.5 Group 1 -- BUILTIN_
 ; VM_INIT — call once before VM_RUN. Resets both stacks, error/halt flags.
 ; ---------------------------------------------------------------------------
 VM_INIT:
+        IFDEF V2_PRODUCTION
+        ; RUN starts with fresh runtime values while retaining the source
+        ; and compiler symbol names. This range covers FLOATTAB, ARRTAB,
+        ; STRTAB and their deliberate alignment gaps, but no extension
+        ; registry or bytecode bytes.
+        ld hl,FLOATTAB_BASE
+        ld bc,$1C0
+        call MEM_FILL_ZERO
+        ld hl,SYMTAB_BASE
+        ld bc,16*3
+        call MEM_FILL_ZERO
+        ENDIF
         ld hl,VM_STACK_TOP
         ld (VM_SP),hl
         ld hl,VM_CALL_STACK_TOP
@@ -2507,7 +2523,20 @@ OP_CALL_EXT:
         ld e,(hl)
         inc hl
         ld d,(hl)                    ; DE = exec_ptr
+        ; V2 extensions execute from the package window at $F400. Return
+        ; chunk 6 to Home while they run so RAM scratch at $C000-$DFFF
+        ; (notably the 6KB flood-fill visited bitmap) is visible. Package
+        ; RAM at $F400 and fixed V2 tables remain mapped in either state.
+        ld (VM_EXT_EXEC_PTR),de
+        IFDEF V2_PRODUCTION
+        call BANK_PAGE_EXROM_OUT
+        ENDIF
+        ld hl,(VM_EXT_EXEC_PTR)
+        ex de,hl
         call VM_CALL_INDIRECT
+        IFDEF V2_PRODUCTION
+        call BANK_PAGE_EXROM_IN
+        ENDIF
         jp VM_RUN.loop
 
 ; ===========================================================================

@@ -41,7 +41,7 @@ def main() -> int:
         "STORAGE_HEADER_PAYLOAD_LEN": 17,
         "STORAGE_TYPE_HEADER": 0x00,
         "STORAGE_TYPE_DATA": 0xFF,
-        "STORAGE_LEADER_GAP": 0xC6,
+        "STORAGE_LEADER_GAP": 0xA0,
         "STORAGE_BIT_COMPARE": 0xCB,
     }
     for name, value in expected.items():

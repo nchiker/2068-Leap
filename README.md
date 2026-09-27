@@ -10,6 +10,13 @@ graphics, built as documented kernel modules instead of the tangled
 monolith of the original ROM — while still fitting a stock 48K machine and
 staying instant-on.
 
+**Current production builds use the Architecture B V2 BASIC environment.**
+Programs are numbered, editable source lines stored in the generic line store;
+`RUN` compiles the whole program to bytecode and executes it in the V2 VM.
+The Release 1 Beta manual and change log remain historical references while
+the V2 manual update is underway. See the [R9 cutover ledger](docs/v2/R9_CUTOVER_LEDGER.md)
+for the current boot path, capacities, test status, and known limits.
+
 See the sibling project [2068-Leap-Forth](https://github.com/nchiker/2068-Leap-Forth)
 for a from-scratch Forth built on the same hardware kernel.
 
@@ -25,33 +32,25 @@ usable on a stock 48K machine.
 
 Highlights:
 
-- **No line numbers.** Programs are edited in place; `GOTO`/`GOSUB` targets
-  are case-insensitive labels instead.
-- **A real full-screen editor** — insert/delete lines, UP/DOWN navigation,
-  automatic scrolling, live keyword bolding, and a status bar, not a
-  line-by-line REPL.
-- **A whole-program static check pass before every `RUN`** — broken lines are
-  red-highlighted immediately, with `SYMBOL SHIFT+A`/`SYMBOL SHIFT+S` to jump
-  directly between them, and a program with errors never half-runs.
-- **Structured control flow**: block and single-line `IF`/`ELSEIF`/`ELSE`,
-  `FOR`/`NEXT`, `GOSUB`/`CALL`/`RETURN`, and colon-separated statements on one
-  line.
-- **Real runtime error handling** — a message plus the failing statement's
-  text, then a clean stop, instead of silent failure or a hang.
-- **A real floating-point calculator engine** (`RST $28`, EXROM-resident,
-  reworked from the original Spectrum ROM's) behind `SQR`/`SIN`/`COS` and
-  friends, alongside a fast all-integer arithmetic core for everyday
-  expressions.
-- **Graphics built for the TS2068**: `PLOT`/`LINE`/`CIRCLE`/`FILL`, an
-  eight-slot sprite system with collision detection, `MODE 1` (Extended
-  Color), and full `ULAPLUS`/`PALETTE` support.
-- **AY-3-8912 sound** — `BEEP` and register-level `SOUND`.
-- **TS2068-framed tape `SAVE`/`LOAD`**, plus six loadable BASIC extensions
-  (`CPLOT`, `BLOCK`, `FRAME`, `INVERT`, `AYREG`, `OUT`) that load from tape on
-  demand rather than costing ROM space in every build.
+- **An in-place full-screen line editor** with numbered source lines,
+  insert/replace/delete, navigation, and LIST.
+- **Whole-program compilation on RUN** — the editor keeps plain-text source;
+  the V2 compiler emits bytecode for the V2 VM.
+- **Structured control flow and runtime errors**, including `IF`, `FOR`,
+  labels, procedures, and clean recovery to the editor.
+- **Integer and floating-point expressions**, strings, arrays, and the
+  TS2068 calculator services.
+- **TS2068 graphics and sound**: `PLOT`, `LINE`, `BEEP`, `SOUND`, sprites,
+  plus loadable MODE/ULAPLUS/PALETTE and CIRCLE/FILL packages.
+- **Editable plain-text BASIC programs** in the generic line store. `RUN`
+  compiles the complete program to V2 bytecode and executes it; tape SAVE/LOAD
+  persists source and regenerates bytecode on the next RUN.
+- **Four loadable V2 packages**: MODE/ULAplus, sprites, printer (`LPRINT` and
+  source-based `LLIST`), and CIRCLE/FILL. One package occupies the 1KB package
+  window at a time.
 - **EXROM banking** — a second 8K ROM bank for sprites and the calculator
-  engine, keeping the hot editor/interpreter path in the always-visible 16K
-  Home ROM.
+  engine and interactive shell, while the V2 compiler and VM run from the
+  always-visible 16K Home ROM.
 
 See [`docs/technical_overview.md`](docs/technical_overview.md) for the full
 architectural writeup, or jump straight to "Try it" below for a hands-on
@@ -59,49 +58,29 @@ tour.
 
 ## Try it
 
-**Fastest path: [nchiker.github.io/TSRun/?rom=leap](https://nchiker.github.io/TSRun/?rom=leap)**
-— runs the full product directly in your browser via
-[TSRun](https://github.com/josef-jelinek/TSRun), no download, build, or
-emulator install needed.
-
-For a local emulator instead, grab a built ROM from the latest release (see
-"Download" below), or build it yourself (see "Building from source"). Try,
-across separate ENTER presses:
+For a local emulator, grab a built ROM from the latest release (see
+"Download" below), or build it yourself (see "Building from source"). Enter
+these numbered lines, pressing ENTER after each one:
 
 ```
-x = 5
-PRINT x
+10 X=5
+20 PRINT X
 RUN
 ```
 
-Typing a recognized keyword in lowercase flips it to bold uppercase as you
-type it. Try labels and `GOTO`:
+To try CIRCLE and FILL, load the SHAPES package first with `LOAD "SHAPES"
+EXT`, then enter:
 
 ```
-x = 1
-loop:
-PRINT x
-x = x + 1
-IF x > 5 THEN
-END
-END IF
-GOTO loop
+10 CIRCLE 100,100,30
+20 FILL 100,100
 RUN
-```
-
-Try graphics and sprites:
-
-```
-CIRCLE 100,100,30
-INK 2
-FILL 100,100
 ```
 
 See [`docs/user_manual.md`](docs/user_manual.md) for a complete,
-example-driven tour of the language, and
-[`demos/showcase.txt`](demos/showcase.txt) for a longer program exercising
-`DEF FN`, structured flow, graphics, ULAplus, arrays, sprites, AY sound, and
-strings — run it interactively with `tools/run_demo.sh showcase`.
+example-driven tour of the language. The older V1 demo programs are retained
+as historical examples and are not all compatible with the V2 production
+language.
 
 ## Running it locally
 
@@ -137,19 +116,24 @@ Select the TS2068 machine, use `test_basic.bin` as the ROM file, and use
 [`docs/eightyone_setup.md`](docs/eightyone_setup.md) for the exact
 configuration steps.
 
-Full per-emulator setup, including how to load the six tape-based BASIC
-extensions, is in [`docs/emulator_setup.md`](docs/emulator_setup.md).
+Full per-emulator setup, including how to load the four V2 packages, is in
+[`docs/emulator_setup.md`](docs/emulator_setup.md).
 
 ## Status
 
-**Release 1 Beta candidate.** The integrated ROM provides a full-screen
-editor, structured BASIC, graphics, sound, EXROM banking, and TS2068-framed
-SAVE/LOAD. `make test` runs the 102-fixture integrated language suite under
-Fuse on every build. See
+**R9 V2 production cutover in progress.** The production ROM boots the V2
+editor, whole-program compiler, and VM. Four V2 packages are built separately;
+the six optional V1 packages are omitted from this cutover. `make test` runs
+the current checks and 14 buildable standalone V2 fixtures in real ZEsarUX.
+Physical production cassette LOAD remains unproven in ZEsarUX. See the
+[R9 cutover ledger](docs/v2/R9_CUTOVER_LEDGER.md) for measured details. See
 [`docs/whats_new_release_1_beta.md`](docs/whats_new_release_1_beta.md) for
 what's changed since Public Preview 1, or
 [`docs/development_log.md`](docs/development_log.md) for the full,
 module-by-module build history and every bug found and fixed along the way.
+
+The 102 legacy V1 source fixtures remain under `tests/` for static checking
+and historical reference; they are not the production V2 runtime test suite.
 
 This is beta software — keep backups of programs saved with beta builds,
 since the native program payload may still evolve before the final
@@ -176,8 +160,7 @@ The zip contains, per [`docs/emulator_setup.md`](docs/emulator_setup.md):
 - `roms/exrom.dck` — the EXROM wrapped as a Timex ROM Cartridge, for
   EightyOne 1.41.
 - `roms/ts2068rom_zesarux.bin` — Home ROM + EXROM concatenated, for ZEsarUX.
-- `extensions/*.tzx` — the six loadable BASIC extensions
-  (`CPLOT`/`BLOCK`/`FRAME`/`INVERT`/`AYREG`/`OUT`).
+- `extensions/*.tzx` — MODE, SPRITE, PRINTER, and SHAPES V2 packages.
 - `docs/`, `patches/`, `SHA256SUMS.txt` — manuals (Markdown + DOCX), the two
   emulator patches above, and a checksum manifest.
 
@@ -191,8 +174,8 @@ or a compatible newer release.
 
 ```sh
 make check    # build + static checks + smoke ROMs
-make budget   # report exact Home ROM / EXROM / RAM margins
-make test     # full 102-fixture regression suite (ts2068-debug/ZEsarUX)
+make budget   # report exact Home ROM / EXROM / integrated V2 RAM regions
+make test     # full regression gate, including 14 V2 ZEsarUX fixtures
 ```
 
 The production images are written to `build/test_basic.bin` (Home ROM),
@@ -213,7 +196,7 @@ kernel/     hardware-facing modules, reusable by other assembly software
   io/       keyboard and joystick primitives
   memory/   line storage, program iterator, labels, and allocator
   interrupt/interrupt handling
-basic/      the BASIC interpreter — calls kernel/ APIs only, never hardware
+  basic/      retained V1 language-core source; not linked into production
 graphics/   TS2068 graphics modes, built on kernel/io primitives
 sound/      AY-3-8912 driver and music/sound-effect layer
 include/    shared symbolic constants and the kernel API contract

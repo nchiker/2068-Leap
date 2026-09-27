@@ -2,6 +2,14 @@
 
 **Release 1 Beta**
 
+> **Production transition note (R9):** the current production build boots the
+> Architecture B V2 compiler/VM. This manual's Release 1-era command tables
+> and extension list are historical and are being reconciled with V2. The
+> current production packages are MODE, SPRITE, PRINTER, and SHAPES; V1-only
+> CPLOT, BLOCK, FRAME, INVERT, AYREG, and OUT packages are not linked into the
+> V2 system. See [`R9_CUTOVER_LEDGER.md`](v2/R9_CUTOVER_LEDGER.md) for current
+> production behavior and known limits.
+
 2068-Leap is a redesigned Timex Sinclair 2068 ROM: a structured BASIC
 (no line numbers — labels and `GOTO` instead),
 a full-screen editor, AY-3-8912 sound, and TS2068-specific graphics, built
@@ -723,19 +731,15 @@ coarser 32×24 character view of the same physical screen.
 |---|---|
 | `PLOT x,y` | Set one pixel. `x` is 0-255, `y` is 0-191 (out-of-range `y` clamps to the last valid row) |
 | `LINE x0,y0 TO x1,y1` | Draw a straight line between two **absolute** points (not classic BASIC's relative-from-last-`PLOT` `DRAW`) |
-| `BLOCK x0,y0 TO x1,y1` | Available only when the BLOCK extension is loaded; save/load modules with `SAVE "name" EXT` and `LOAD "name" EXT` |
-| `FRAME x0,y0 TO x1,y1` | Draw a rectangle outline when the FRAME extension is loaded; reversed corners and current print/OVER attributes are supported |
-| `INVERT x0,y0 TO x1,y1` | Invert every pixel in a rectangle when the INVERT extension is loaded; applying it twice restores the original bitmap |
-| `CIRCLE x,y,r` | Draw a circle outline centered at `x,y` with radius `r`; a circle that would extend past the edge is simply clipped there |
-| `FILL x,y` | Flood-fill the connected region starting at that pixel |
+| `CIRCLE x,y,r` | Available when the SHAPES package is loaded; draws a clipped circle outline |
+| `FILL x,y` | Available when the SHAPES package is loaded; flood-fills the connected region from that pixel |
 | `POINT(x,y)` | Function — `1` if that pixel is currently set, `0` if not |
 | `ATTR(row,col)` | Function — normal-screen attribute byte at character row 0-23, column 0-31; returns `0` outside that grid |
-| `CPLOT cx,cy` | Optional loadable extension: coarse 2×2-per-cell block graphics; unavailable until its RAM module is installed |
-| `MODE n` | `0` = Normal, `1` = High Resolution Graphics (same 256×191 bitmap, finer per-scanline color). Anything else raises `INVALID MODE` |
-| `ULAPLUS n` | Enable (`1`) or disable (`0`) the ULAplus extended palette. Other values raise `INVALID ARGUMENT` |
-| `PALETTE index,value` | Program ULAplus register `index` (0-63) with an 8-bit `GGGRRRBB` color value (0-255). Out-of-range arguments raise `INVALID ARGUMENT` |
+| `MODE n`, `ULAPLUS n`, `PALETTE index,value` | Available when the MODE package is loaded |
+| `SPRITE ...` | Sprite commands are available when the SPRITE package is loaded |
+| `LPRINT value`, `LLIST` | Printer output and source listing are available when the PRINTER package is loaded |
 
-`PLOT`/`LINE`/`CIRCLE` and the loadable `BLOCK`/`CPLOT` extensions color using the *current*
+`PLOT`/`LINE` and the loadable SHAPES package color using the *current*
 `INK`/`PAPER`/`FLASH`/`INVERSE` state, same as `PRINT` — and, unlike
 `PRINT`, they genuinely respect `OVER`: with `OVER 0` (the default) a
 pixel is set outright; with `OVER 1` it's **XOR-toggled** instead
@@ -1102,112 +1106,38 @@ the border color. OUT is intentionally unrestricted. Writes whose low byte is
 A BASIC error cannot undo a hardware write, so only run OUT examples whose port
 use you understand.
 
-## 14. Loadable BASIC extensions
+## 14. Loadable V2 packages
 
-Loadable BASIC extensions are one of 2068-Leap's defining features. A normal
-ROM is frozen once programmed, and both Release 1 ROM banks are essentially
-full. The extension system gives BASIC a controlled way to learn a new
-statement at run time: a module supplies its keyword and implementation, while
-the ROM supplies parsing, validation, graphics services, and tape storage.
+The current V2 ROM loads one package at a time into a 1KB RAM window. Each
+package registers its supported keywords with the V2 compiler and VM. Loading
+a package replaces the active package; `NEW` clears the package registry.
 
-Release 1 Beta supports one optional statement extension at a time. Each module
-lives in a fixed 512-byte RAM window. Loading a new module replaces the
-previous one, so optional tools consume RAM only when needed and consume no
-additional Home ROM or EXROM space.
+| Package | Registered features |
+|---|---|
+| MODE | `MODE`, `ULAPLUS`, and `PALETTE` |
+| SPRITE | Sprite capture, display, movement, hiding, and collision operations |
+| PRINTER | `LPRINT` and `LLIST`; `LLIST` prints authoritative stored source |
+| SHAPES | `CIRCLE` and `FILL` |
 
-An installed keyword participates in the language rather than behaving like a
-raw `USR` call. It is recognized by the editor, checked before `RUN`, receives
-parsed arguments in a documented form, and reports errors through BASIC's
-normal status system.
-
-| Extension | Syntax | Purpose |
-|---|---|---|
-| CPLOT | `CPLOT cx,cy` | Draw a coarse 2×2-pixel block at cell coordinates 0-63,0-47 |
-| BLOCK | `BLOCK x0,y0 TO x1,y1` | Draw a filled rectangle, accepting corners in either order |
-| FRAME | `FRAME x0,y0 TO x1,y1` | Draw a rectangular outline, accepting corners in either order |
-| INVERT | `INVERT x0,y0 TO x1,y1` | XOR-invert an inclusive rectangle; run twice to restore it |
-| AYREG | `AYREG register,data` | Write native AY register 0-15 with byte data 0-255 |
-| OUT | `OUT port,data` | Write byte data 0-255 to a complete 16-bit Z80 port address |
-
-The graphics modules show how one interface can support several drawing ideas.
-CPLOT uses coarse block coordinates, BLOCK fills a rectangle, FRAME draws only
-its edges, and INVERT changes an existing region reversibly. AYREG and OUT
-provide isolated hardware-oriented commands.
-
-### Loading and saving an extension
-
-Load a module from tape with an explicit name:
+Load or save a named package with the `EXT` qualifier:
 
 ```basic
-LOAD "FRAME" EXT
+LOAD "SHAPES" EXT
+SAVE "SHAPES" EXT
 ```
 
-In an emulator, attach `frame.tzx` through its tape controls first. Enter the
-command above, start tape playback if required, and wait for the load-complete
-status. The new statement is then part of BASIC:
+The package type and ABI version are checked before installation. A package
+must fit the 1KB window. Only one package can be active at once because every
+package uses the same RAM window.
 
-```basic
-INK 6
-OVER 1
-FRAME 20,20 TO 180,120
-OVER 0
-```
+The V2 program line store remains authoritative. `LIST`, editing, and ordinary
+program SAVE/LOAD use source text; bytecode is compiled again on each `RUN`.
+Packages are persisted separately and are not embedded in program files.
 
-The name is mandatory; `LOAD "" EXT` is deliberately rejected. After loading,
-use the new statement normally in a program. Save the currently loaded module
-to another tape with:
-
-```basic
-SAVE "MYFRAME" EXT
-```
-
-Extension recordings use normal TS2068 tape framing but have their own module
-type, checksum, fixed-size, and ABI-version checks. A damaged, wrong-sized, or
-incompatible module is rejected before it can register a keyword.
-
-### Program and extension loading order
-
-`NEW` unregisters the current extension. Loading an ordinary BASIC program also
-unregisters it before searching the tape, so load the program first and its
-required extension second. A program may contain an extension statement while
-its module is absent, but the whole-program check reports a syntax error until
-the matching module is loaded.
-
-For a program that uses FRAME, the reliable sequence is:
-
-1. `LOAD "PROGRAM"` to load the BASIC program.
-2. Attach the FRAME extension tape.
-3. `LOAD "FRAME" EXT` to install its keyword.
-4. Enter `RUN`.
-
-This prevents a module used by an earlier program from silently remaining
-active for an unrelated one.
-
-### Saving and sharing modules
-
-`SAVE "name" EXT` records the currently installed module. This lets a module
-loaded from one tape be copied to another without exposing a general-purpose
-CODE loader. The header records the extension type and ABI version, so an
-incompatible future module can be rejected instead of called with the wrong
-service contract.
-
-### Safety and compatibility
-
-CPLOT, BLOCK, FRAME, and INVERT use published graphics services and respect the
-current drawing attributes, including `OVER`. AYREG and OUT access hardware
-directly. In particular, OUT can change display, sound, tape, or memory-paging
-hardware depending on the selected port; only run OUT programs whose port use
-you understand.
-
-The supplied modules are position-independent and use the Release 1 extension
-ABI. Extension tape operation has automated emulator coverage; physical
-cassette reliability still depends on recorder, cable, medium, and signal
-level.
-
-The Release 1 ABI deliberately supports statement extensions rather than
-arbitrary replacement of the interpreter. That boundary is what makes a tape
-module safe to recognize while editing and practical to validate before it is
-executed.
+The earlier V1-only CPLOT, BLOCK, FRAME, INVERT, AYREG, and OUT packages are
+not available in the V2 production ROM. The V1 pre-cutover source is preserved
+at the `cd2f1df` Git checkpoint. See the R9 ledger linked in the transition
+note for test status and remaining migration work.
 
 ## 15. Immediate commands
 

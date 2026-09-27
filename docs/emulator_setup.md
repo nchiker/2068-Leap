@@ -1,7 +1,10 @@
-# Emulator setup for 2068-Leap Release 1 Beta
+# Emulator setup for 2068-Leap R9 V2 production
 
-The beta release supports three tested emulator configurations. Use the files
-listed for your emulator; similarly named files are not interchangeable.
+The current production build uses the V2 editor, compiler, and VM. Use the
+files listed for your emulator; similarly named files are not interchangeable.
+Fuse and ZEsarUX paths have been exercised during development. EightyOne's
+cartridge wrapper is still built, but the R9 V2 production path has not been
+hardware-validated there.
 
 ## Release files
 
@@ -11,7 +14,7 @@ listed for your emulator; similarly named files are not interchangeable.
 | `exrom.bin` | 8,192 bytes | EXROM slot 6 for Fuse |
 | `exrom.dck` | 8,201 bytes | Timex ROM cartridge for EightyOne 1.41 |
 | `ts2068rom_zesarux.bin` | 24,576 bytes | Combined Home ROM + EXROM image for ZEsarUX |
-| `cplot.tzx`, `block.tzx`, `frame.tzx`, `invert.tzx`, `ayreg.tzx`, `out.tzx` | varies | Loadable BASIC extensions through the emulator's tape interface |
+| `v2_mode.tzx`, `v2_sprite.tzx`, `v2_printer.tzx`, `v2_shapes.tzx` | varies | Loadable V2 packages through the emulator's tape interface |
 
 Verify downloads with `SHA256SUMS.txt` before diagnosing an emulator problem.
 Do not rename `exrom.bin` to `.dck`: the EightyOne file contains a required
@@ -35,18 +38,17 @@ project patch at
 patch targets the compatible Fuse source revision stated in the main README;
 ordinary Fuse users can simply leave ULAplus disabled.
 
-To load a BASIC extension, open one of the `.tzx` files in Fuse's tape browser,
-enter `LOAD "CPLOT" EXT` (substitute its recorded name), press Play in the tape
-browser, and wait for the completion status. Fuse does not automatically start
-this custom loader's tape playback.
+To load a V2 package, open its `.tzx` file in Fuse's tape browser, enter
+`LOAD "MODE" EXT` (substitute `SPRITE`, `PRINTER`, or `SHAPES`), press Play in
+the tape browser, and wait for the completion status. Fuse does not
+automatically start this custom loader's tape playback.
 
 ## ZEsarUX
 
 **A stock, unpatched ZEsarUX 13.0 download cannot run this ROM correctly —
-it shows a blank screen on boot.** This project's production editor lives
-entirely in EXROM chunk 6 (`$C000-$DFFF`), and every interactive session
-pages it in immediately (`EDITOR_INIT` runs on the very first
-`BASIC_COMMAND_LOOP` iteration). Real TS2068/TC2068 hardware mirrors the
+it shows a blank screen on boot.** The production V2 shell and editor services
+live in EXROM chunk 6 (`$C000-$DFFF`), and cold boot pages that chunk in before
+entering `V2_COMMAND_LOOP`. Real TS2068/TC2068 hardware mirrors the
 physical EXROM chip across all eight 8K memory chunks, since the chip's
 upper address lines aren't decoded; stock ZEsarUX 13.0 only mirrors chunk 0
 into chunk 1, so chunk 6 contains unmirrored garbage under stock ZEsarUX and
@@ -77,8 +79,9 @@ services. `--enableulaplus` is recommended for the palette examples, although
 ordinary editor, BASIC, graphics, sprite, and sound operation does not require
 ULAplus.
 
-Load extension `.tzx` files through ZEsarUX's tape controls, then enter the
-matching `LOAD "name" EXT` command in 2068-Leap.
+Load package `.tzx` files through ZEsarUX's tape controls, then enter the
+matching `LOAD "name" EXT` command in 2068-Leap. Production package names are
+MODE, SPRITE, PRINTER, and SHAPES.
 
 ## EightyOne 1.41
 
@@ -101,17 +104,18 @@ compatibility setting.
 
 ## Loadable-extension behavior
 
-Only one extension can be installed at a time. The recorded names are CPLOT,
-BLOCK, FRAME, INVERT, AYREG, and OUT. Use:
+Only one V2 package can be installed at a time. The recorded names are MODE,
+SPRITE, PRINTER, and SHAPES. Use:
 
 ```basic
 LOAD "FRAME" EXT
 ```
 
-`NEW` and an ordinary program `LOAD` unregister the module. Therefore, load a
-saved BASIC program first and its required extension second. The `.tzx` files
-are Direct Recording images because the custom program/extension transport
-uses live TS2068 pulse framing rather than a stock-ROM tape trap.
+`NEW` and an ordinary program `LOAD` unregister the package. Therefore, load a
+saved program first and its required package second. The `.tzx` files are
+Direct Recording images because the custom program/package transport uses
+live TS2068 pulse framing rather than a stock-ROM tape trap. A production
+cassette LOAD has not yet completed in ZEsarUX; see the R9 cutover ledger.
 
 ## Reporting emulator problems
 
