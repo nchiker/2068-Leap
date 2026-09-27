@@ -197,6 +197,15 @@ DECOMP_LINE_CALLBACK: equ $BDAC  ; printer-package ROM reconciliation
 DECOMP_LINE_LEN:      equ $BDAE  ; (1 byte) length of the line just
                                     ; written to DECOMP_OUT_BUF, valid
                                     ; only during the callback above
+DECOMP_ARR_SIZE:      equ $BDAF  ; post-R9 DIM/decompiler correction
+                                    ; (docs/v2/V2_SEMANTIC_CAPABILITY_
+                                    ; AUDIT.md S14): ARRAY_MAX_COUNT (4)
+                                    ; bytes, one per array index, 0 =
+                                    ; never referenced by any OP_ARR_
+                                    ; LOAD/STORE in this program.
+                                    ; Populated by DECOMP_COLLECT_ARRAY_
+                                    ; SIZES, consumed by DECOMP_EMIT_
+                                    ; ARRAY_DIMS -- both below.
 DECOMP_ENDIF_SAVE_CNT: equ $BDA4  ; the matching remaining-slot-count
                                     ; (1 byte)
 DECOMP_END_ADDR:      equ $BD9F   ; (2 bytes) R8.5 addition: the real
@@ -886,6 +895,8 @@ DECOMP_SKIP_OPERAND:
         jp z,.w0
         cp 16                     ; RET (R4)
         jp z,.w0
+        cp 54                     ; RET_DEFFN (post-R9 DEF FN reintegration)
+        jp z,.w0
         cp 19                     ; STR_CONCAT (R5)
         jp z,.w0
         cp 20                     ; STR_CMP_LT (R5)
@@ -952,6 +963,16 @@ DECOMP_SKIP_OPERAND:
         jr z,.w2
         cp 15                     ; CALL (R4)
         jr z,.w2
+        cp 52                     ; JMP_DEFFN (post-R9 DEF FN reintegration)
+        jr z,.w2                    ; -- unlike plain JMP (6), this never
+                                      ; gets a spurious "Lxx:" label in
+                                      ; DECOMP_COLLECT_LABELS's own first
+                                      ; pass (that pass only special-cases
+                                      ; opcodes 6/12), by design: this
+                                      ; opcode is structurally never a
+                                      ; real GOTO
+        cp 53                     ; CALL_UDF
+        jr z,.w2
         cp 47                     ; JMP_ELSE (R8.5 Group 3)
         jr z,.w2
         cp 48                     ; ARR_LOAD (R8.5 Group 4)
@@ -966,6 +987,12 @@ DECOMP_SKIP_OPERAND:
         jr z,.w4
         cp 17                     ; PUSH_STR_LIT (R5) -- variable width
         jr z,.wstr
+        cp 55                     ; FOR_POP (post-R9 nested FOR/NEXT)
+        jp z,.w0
+        cp 56                     ; PARAM_BIND (post-R9 PROC/DEF FN
+        jr z,.w1                    ; recursion safety)
+        cp 57                     ; PARAM_UNBIND
+        jr z,.w1
         jp DECOMP_ERR_UNSUPPORTED_OPCODE
 .w0:
         ret
@@ -1088,6 +1115,120 @@ DECOMP_COLLECT_LABELS:
         jr .loop
 
 ; ===========================================================================
+; DECOMP_COLLECT_ARRAY_SIZES — post-R9 DIM/decompiler correction (docs/v2/
+; V2_SEMANTIC_CAPABILITY_AUDIT.md S14/S7). DIM itself emits zero bytecode
+; (resolved entirely at compile time into the compiler's own ARRSYMTAB),
+; but every OP_ARR_LOAD/OP_ARR_STORE instruction already bakes in its own
+; array's declared size as a second operand byte (needed there for the
+; runtime bounds check -- rom/exrom_v2_compiler.asm's COMPILE_FACTOR.
+; arr_load/COMPILE_ARRAY_ASSIGN). This one-pass prescan, the same shape
+; as DECOMP_COLLECT_LABELS above, recovers each array's own declared size
+; directly from bytecode alone -- no compiler-time state needed -- from
+; the FIRST instruction anywhere in the program that references it.
+;
+; Genuine residual limitation, not a decompiler omission: an array that
+; is DIM'd but never subsequently read or written has no OP_ARR_LOAD/
+; STORE instruction anywhere to recover its size from -- DIM truly
+; leaves no other trace in bytecode. Such an array's own DECOMP_ARR_SIZE
+; slot stays 0 and no DIM line is synthesized for it; a decompiled
+; program that later accesses it (which could only happen if the
+; original program did too, since compiling that access is exactly
+; what would have produced the operand this pass reads) will therefore
+; always find one. Output: DECOMP_ARR_SIZE[0..ARRAY_MAX_COUNT-1].
+; ===========================================================================
+DECOMP_COLLECT_ARRAY_SIZES:
+        xor a
+        ld hl,DECOMP_ARR_SIZE
+        ld b,ARRAY_MAX_COUNT
+.clear:
+        ld (hl),a
+        inc hl
+        djnz .clear
+        ld hl,VM_CODE_BASE
+        ld (DECOMP_IP),hl
+.loop:
+        ld a,(DECOMP_ERROR_CODE)
+        or a
+        ret nz
+        ld hl,(DECOMP_IP)
+        ld a,(hl)
+        inc hl
+        ld (DECOMP_IP),hl
+        cp 0                      ; HALT -- same end-of-program cutoff
+        jr nz,.not_halt            ; DECOMP_COLLECT_LABELS already uses
+        ld hl,(DECOMP_IP)
+        ld de,(DECOMP_END_ADDR)
+        or a
+        sbc hl,de
+        ret z
+        jr .loop
+.not_halt:
+        cp 48                      ; ARR_LOAD
+        jr z,.arr
+        cp 49                      ; ARR_STORE
+        jr z,.arr
+        call DECOMP_SKIP_OPERAND
+        jr .loop
+.arr:
+        ld hl,(DECOMP_IP)
+        ld a,(hl)                  ; A = array index
+        inc hl
+        ld c,(hl)                  ; C = declared size
+        inc hl
+        ld (DECOMP_IP),hl
+        ld hl,DECOMP_ARR_SIZE
+        ld e,a
+        ld d,0
+        add hl,de                  ; HL -> this array's own slot
+        ld (hl),c
+        jr .loop
+
+; DECOMP_EMIT_ARRAY_DIMS — emits "DIM A<idx>(<size>)" (one per line) for
+; every array index DECOMP_COLLECT_ARRAY_SIZES found referenced, in index
+; order, at the very start of the reconstructed program -- bytecode
+; carries no position for the original DIM statement(s) at all, so this
+; is the only structurally possible placement; still valid, re-parseable
+; V2 source (same "semantically identical, not byte-identical to the
+; original" acceptance this file's label-renumbering behavior already
+; established). Destroys: AF, BC, DE, HL.
+DECOMP_EMIT_ARRAY_DIMS:
+        ld b,0
+.next:
+        ld a,b
+        cp ARRAY_MAX_COUNT
+        ret z
+        push bc
+        ld hl,DECOMP_ARR_SIZE
+        ld e,b
+        ld d,0
+        add hl,de
+        ld a,(hl)
+        or a
+        jr z,.skip
+        ld (DECOMP_TMP_LEN),a       ; park the size across DECOMP_EMIT_TEXT
+        ld hl,STR_DIM
+        ld c,STR_DIM_LEN
+        call DECOMP_EMIT_TEXT
+        ld a,b
+        add a,'0'
+        call DECOMP_EMIT_CHAR
+        ld a,'('
+        call DECOMP_EMIT_CHAR
+        ld a,(DECOMP_TMP_LEN)
+        ld l,a
+        ld h,0
+        call DECOMP_EMIT_UINT16
+        ld a,')'
+        call DECOMP_EMIT_CHAR
+        call DECOMP_EMIT_NEWLINE
+.skip:
+        pop bc
+        ld a,b
+        inc a
+        ld b,a
+        jr .next
+
+; ===========================================================================
 ; DECOMP_EMIT_UINT16 — input: HL = UNSIGNED 16-bit value. Emits decimal
 ; ASCII straight to the output buffer — used for bytecode addresses
 ; (always positive, and can exceed 32767, so DECOMP_EMIT_INT16's signed
@@ -1102,6 +1243,22 @@ DECOMP_EMIT_UINT16:
 .nonzero:
         call DECOMP_COMPUTE_DIGITS
         jp DECOMP_EMIT_DIGITS
+
+; DECOMP_COMBINE_UINT16 — same as DECOMP_EMIT_UINT16 but into the combine
+; buffer (for a FRAG producer) -- post-R9 DEF FN reintegration, needed
+; because FN's own call site (.op_call_udf below) renders "FN P<n>(...)"
+; as an expression fragment, not direct output (unlike CALL's own
+; statement-level rendering, .op_call above). Input: HL = UNSIGNED
+; 16-bit value. Destroys: AF, BC, DE, HL.
+DECOMP_COMBINE_UINT16:
+        ld a,h
+        or l
+        jr nz,.nonzero
+        ld a,'0'
+        jp DECOMP_COMBINE_CHAR
+.nonzero:
+        call DECOMP_COMPUTE_DIGITS
+        jp DECOMP_COMBINE_DIGITS
 
 ; DECOMP_EMIT_LABELNAME — input: DE = bytecode address. Emits "L<addr>"
 ; straight to the output buffer. Destroys: AF, BC, DE, HL.
@@ -1428,11 +1585,16 @@ DECOMPILE_PROGRAM:
         ld a,(DECOMP_ERROR_CODE)
         or a
         ret nz
+        call DECOMP_COLLECT_ARRAY_SIZES  ; post-R9 DIM/decompiler correction
+        ld a,(DECOMP_ERROR_CODE)
+        or a
+        ret nz
         xor a
         ld (DECOMP_ERROR_CODE),a
         ld (DECOMP_FRAG_SP),a
         ld hl,DECOMP_OUT_BUF
         ld (DECOMP_OUT_PTR),hl
+        call DECOMP_EMIT_ARRAY_DIMS       ; post-R9 DIM/decompiler correction
         ld hl,VM_CODE_BASE
         ld (DECOMP_IP),hl
         ; R8.5 Group 3 -- every DECOMP_ENDIF_MARKERS slot starts $FFFF
@@ -1585,8 +1747,22 @@ DECOMPILE_PROGRAM:
         jp z,.op_input_num
         cp 51
         jp z,.op_input_str
-        ; 52-54 (OP_MODE/OP_ULAPLUS/OP_PALETTE) removed -- now a
-        ; loadable extension package, rom/ext_mode_module.asm
+        ; 52-54 (formerly OP_MODE/OP_ULAPLUS/OP_PALETTE, removed to a
+        ; loadable extension package) are now JMP_DEFFN/CALL_UDF/
+        ; RET_DEFFN (post-R9 DEF FN reintegration).
+        cp 52
+        jp z,.op_jmp_deffn
+        cp 53
+        jp z,.op_call_udf
+        cp 54
+        jp z,.op_ret_deffn
+        cp 55
+        jp z,.op_for_pop           ; post-R9 nested FOR/NEXT
+        cp 57
+        jp z,.op_param_unbind      ; post-R9 PROC/DEF FN recursion safety
+                                     ; (56/PARAM_BIND is always consumed by
+                                     ; .op_jmp's own PROC-header peek below,
+                                     ; never reached here directly)
         jp DECOMP_ERR_UNSUPPORTED_OPCODE
 
 .op_halt:
@@ -1686,15 +1862,19 @@ DECOMPILE_PROGRAM:
 ; Bare JMP -- either COMPILE_GOTO's own output (a JMPZ-paired JMP is
 ; already consumed whole by .op_jmpz below, and never falls through to
 ; here), OR COMPILE_PROC's own skip-jump (R4 addition): PROC compiles to
-; "JMP skip / STORE_VAR paramidx / <body> / RET / skip:" -- the skip-JMP
-; immediately followed by a STORE_VAR is that shape's own unambiguous
-; signature (STORE_VAR never otherwise directly follows a JMP's operand
-; in this compiler's real output), the same "peek the next opcode"
-; technique .op_jmpz already uses for IF...THEN GOTO. Emits "PROC
-; P<entry>(V<paramidx>)" and consumes the STORE_VAR as part of the
-; header (COMPILE_PROC's own compiler auto-emits it the same way,
-; outside the user's own PROC(...) text) -- body statements then
-; decompile normally until RET (.op_ret below) closes it with "ENDP".
+; "JMP skip / PARAM_BIND paramidx / <body> / PARAM_UNBIND / RET / skip:"
+; (post-R9: PARAM_BIND/UNBIND replace the plain STORE_VAR/bare-RET this
+; shape used before the recursion-safety correction -- docs/v2/
+; V2_SEMANTIC_CAPABILITY_AUDIT.md S11) -- the skip-JMP immediately
+; followed by a PARAM_BIND is that shape's own unambiguous signature
+; (PARAM_BIND never otherwise directly follows a JMP's operand in this
+; compiler's real output), the same "peek the next opcode" technique
+; .op_jmpz already uses for IF...THEN GOTO. Emits "PROC P<entry>
+; (V<paramidx>)" and consumes the PARAM_BIND as part of the header
+; (COMPILE_PROC's own compiler auto-emits it the same way, outside the
+; user's own PROC(...) text) -- body statements then decompile normally
+; until PARAM_UNBIND (invisible, see its own handler below) then RET
+; (.op_ret below) closes it with "ENDP".
 .op_jmp:
         ld hl,(DECOMP_IP)
         ld e,(hl)
@@ -1703,9 +1883,9 @@ DECOMPILE_PROGRAM:
         inc hl
         ld (DECOMP_IP),hl          ; DE = target (relative bytecode offset,
                                      ; unused in the PROC case); HL -> the
-                                     ; candidate STORE_VAR opcode byte
+                                     ; candidate PARAM_BIND opcode byte
         ld a,(hl)
-        cp 4                        ; STORE_VAR
+        cp 56                       ; PARAM_BIND
         jr z,.jmp_proc_header
         ld hl,STR_GOTO
         ld c,STR_GOTO_LEN
@@ -1715,7 +1895,7 @@ DECOMPILE_PROGRAM:
         jp DECOMPILE_PROGRAM.loop
 .jmp_proc_header:
         ld hl,(DECOMP_IP)           ; HL = absolute entry address (the
-                                      ; STORE_VAR opcode's own position --
+                                      ; PARAM_BIND opcode's own position --
                                       ; COMPILE_PROC's own LABEL_DEFINE
                                       ; call places the CALL-entry label
                                       ; exactly here, not at the JMP)
@@ -1725,7 +1905,7 @@ DECOMPILE_PROGRAM:
         ld (DECOMP_TMP_A),hl         ; park it -- DECOMP_EMIT_TEXT/CHAR
                                        ; below clobber HL
         ld hl,(DECOMP_IP)
-        inc hl                        ; skip the STORE_VAR opcode byte itself
+        inc hl                        ; skip the PARAM_BIND opcode byte itself
         ld a,(hl)                     ; the parameter's own symtab index
         ld (DECOMP_ARG_LEN0),a        ; NOT DECOMP_TMP_LEN -- EMIT_CHAR
                                         ; uses THAT cell as its own internal
@@ -1756,6 +1936,50 @@ DECOMPILE_PROGRAM:
         call DECOMP_EMIT_CHAR
         call DECOMP_EMIT_NEWLINE
         jp DECOMPILE_PROGRAM.loop
+
+; JMP_DEFFN (opcode 52) -- post-R9 DEF FN reintegration (docs/v2/
+; deffn_design/README.md). Unlike plain JMP's own PROC-header peek
+; above, this opcode UNAMBIGUOUSLY means "DEF FN's own skip-jump" --
+; no peeking needed. The header line is left OPEN (no trailing newline):
+; the body is a bare expression, decompiled normally by the ordinary
+; walk that follows (accumulating exactly one pending fragment, never
+; flushed anywhere else), and RET_DEFFN below pops that fragment and
+; appends it to finish this same line.
+.op_jmp_deffn:
+        ld hl,(DECOMP_IP)
+        ld e,(hl)
+        inc hl
+        ld d,(hl)
+        inc hl
+        ld (DECOMP_IP),hl          ; DE = skip target (unused); HL -> the
+                                     ; PARAM_BIND opcode byte (the real
+                                     ; entry position, same convention as
+                                     ; COMPILE_DEF_FN's own LABEL_DEFINE)
+        ld hl,(DECOMP_IP)
+        ld de,VM_CODE_BASE
+        or a
+        sbc hl,de                    ; HL = relative entry address
+        ld (DECOMP_TMP_A),hl
+        ld hl,(DECOMP_IP)
+        inc hl                        ; skip the PARAM_BIND opcode byte
+        ld a,(hl)                     ; the parameter's own symtab index
+        ld (DECOMP_ARG_LEN0),a
+        inc hl                         ; consume its 1-byte operand too
+        ld (DECOMP_IP),hl
+        ld hl,STR_DEF_FN
+        ld c,STR_DEF_FN_LEN
+        call DECOMP_EMIT_TEXT
+        ld hl,(DECOMP_TMP_A)
+        call DECOMP_EMIT_UINT16
+        ld a,'('
+        call DECOMP_EMIT_CHAR
+        ld a,(DECOMP_ARG_LEN0)
+        call DECOMP_EMIT_VARNAME
+        ld hl,STR_DEFFN_EQ
+        ld c,STR_DEFFN_EQ_LEN
+        call DECOMP_EMIT_TEXT
+        jp DECOMPILE_PROGRAM.loop     ; no newline -- .op_ret_deffn below
+                                        ; completes this line
 
 ; JMP_ELSE -- R8.5 Group 3. Always COMPILE_IF_BLOCK's own else-skip
 ; jump (a bare user GOTO always compiles to plain JMP, opcode 6, never
@@ -1838,6 +2062,44 @@ DECOMPILE_PROGRAM:
         call DECOMP_EMIT_NEWLINE
         jp DECOMPILE_PROGRAM.loop
 
+; CALL_UDF (opcode 53) -- post-R9 DEF FN reintegration. Unlike CALL's
+; own statement-level rendering above, FN's call site is an EXPRESSION
+; FACTOR: pops the already-decompiled argument fragment, wraps it as
+; "FN P<target>(<arg>)", and pushes the result back as a new fragment
+; (same shape as .op_arr_load's own "A<idx>(<expr>)" producer).
+.op_call_udf:
+        ld hl,(DECOMP_IP)
+        ld e,(hl)
+        inc hl
+        ld d,(hl)
+        inc hl
+        ld (DECOMP_IP),hl           ; DE = relative target address
+        ld (DECOMP_TMP_B),de
+        call DECOMP_FRAG_POP        ; HL = arg text, C = length
+        ld (DECOMP_TMP_A),hl
+        ld a,c
+        ld (DECOMP_TMP_LEN),a
+        call DECOMP_COMBINE_RESET
+        ld hl,STR_FN_CALL
+        ld a,STR_FN_CALL_LEN
+        call DECOMP_COMBINE_TEXT
+        ld hl,(DECOMP_TMP_B)
+        call DECOMP_COMBINE_UINT16
+        ld a,'('
+        call DECOMP_COMBINE_CHAR
+        ld hl,(DECOMP_TMP_A)
+        ld a,(DECOMP_TMP_LEN)
+        call DECOMP_COMBINE_TEXT
+        ld a,')'
+        call DECOMP_COMBINE_CHAR
+        ld a,(DECOMP_COMBINE_LEN)
+        cp DECOMP_FRAG_TEXT_MAX+1
+        jp nc,DECOMP_ERR_EXPR_TOO_LONG
+        ld c,a
+        ld hl,DECOMP_COMBINE_BUF
+        call DECOMP_FRAG_PUSH
+        jp DECOMPILE_PROGRAM.loop
+
 ; RET -- always COMPILE_PROC's own ENDP output (the only RET producer in
 ; this compiler). Emits "ENDP"; the next opcode processed is naturally
 ; the position right after RET, which equals the enclosing PROC's own
@@ -1846,6 +2108,24 @@ DECOMPILE_PROGRAM:
 .op_ret:
         ld hl,STR_ENDP
         ld c,STR_ENDP_LEN
+        call DECOMP_EMIT_TEXT
+        call DECOMP_EMIT_NEWLINE
+        jp DECOMPILE_PROGRAM.loop
+
+; RET_DEFFN (opcode 54) -- post-R9 DEF FN reintegration. Pops the ONE
+; pending fragment the body expression left behind (never flushed
+; anywhere else, since DEF FN's own body is a bare COMPILE_EXPR, not a
+; statement list) and appends it directly to the output buffer,
+; completing the "DEF FN P<n>(V<p>) = " line JMP_DEFFN opened above with
+; no trailing newline -- then closes it with one here.
+.op_ret_deffn:
+        call DECOMP_FRAG_POP        ; HL = body expr text, C = length
+        ld (DECOMP_TMP_A),hl
+        ld a,c
+        ld (DECOMP_TMP_LEN),a
+        ld hl,(DECOMP_TMP_A)
+        ld a,(DECOMP_TMP_LEN)
+        ld c,a
         call DECOMP_EMIT_TEXT
         call DECOMP_EMIT_NEWLINE
         jp DECOMPILE_PROGRAM.loop
@@ -2040,6 +2320,27 @@ DECOMPILE_PROGRAM:
         pop af
         call DECOMP_EMIT_VARNAME
         call DECOMP_EMIT_NEWLINE
+        jp DECOMPILE_PROGRAM.loop
+
+; OP_FOR_POP (opcode 55, post-R9 nested FOR/NEXT) -- pure VM loop-frame
+; bookkeeping, no operand, no visible BASIC surface of its own: the
+; compiler always emits it immediately after a NEXT's own bytes (and any
+; EXIT FOR inside that loop targets the same address), so the "NEXT V<idx>"
+; text .op_for_next already emitted fully accounts for it. Nothing to emit
+; here; just continue the walk.
+.op_for_pop:
+        jp DECOMPILE_PROGRAM.loop
+
+; OP_PARAM_UNBIND (opcode 57, post-R9 PROC/DEF FN recursion safety) --
+; pure VM parameter-save bookkeeping (1-byte symbol-index operand, only
+; ever needed at runtime), no visible BASIC surface of its own: the
+; compiler always emits it immediately before a PROC's own closing RET
+; (.op_ret below renders "ENDP" for that RET exactly as before). Skips
+; its own operand byte and continues the walk; nothing to emit.
+.op_param_unbind:
+        ld hl,(DECOMP_IP)
+        inc hl
+        ld (DECOMP_IP),hl
         jp DECOMPILE_PROGRAM.loop
 
 ; ===========================================================================
@@ -3331,6 +3632,12 @@ STR_CALL:      db "CALL "
 STR_CALL_LEN:  equ $-STR_CALL
 STR_ENDP:      db "ENDP"
 STR_ENDP_LEN:  equ $-STR_ENDP
+STR_DEF_FN:    db "DEF FN P"   ; post-R9 DEF FN reintegration
+STR_DEF_FN_LEN: equ $-STR_DEF_FN
+STR_FN_CALL:   db "FN P"
+STR_FN_CALL_LEN: equ $-STR_FN_CALL
+STR_DEFFN_EQ:  db ") = "
+STR_DEFFN_EQ_LEN: equ $-STR_DEFFN_EQ
 STR_CLS:       db "CLS"
 STR_CLS_LEN:   equ $-STR_CLS
 STR_BORDER:    db "BORDER "
@@ -3504,3 +3811,5 @@ STR_STEP:      db " STEP "
 STR_STEP_LEN:  equ $-STR_STEP
 STR_NEXT:      db "NEXT "
 STR_NEXT_LEN:  equ $-STR_NEXT
+STR_DIM:       db "DIM A"          ; post-R9 DIM/decompiler correction
+STR_DIM_LEN:   equ $-STR_DIM

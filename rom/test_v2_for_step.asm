@@ -182,8 +182,8 @@ CHECK_DECOMPILED_TEXT:
 ; session). "V0"=C, "V1"=I, "V2"=D, "V3"=J, "V4"=E, "V5"=K -- compiler-
 ; generated names, first-use order.
 ;
-; "IF (V5>3) THEN GOTO L80" (not a block "IF...THEN / GOTO / ENDIF"),
-; plus a harmless unreferenced "L72:" label right after it -- a real,
+; "IF (V5>3) THEN GOTO L82" (not a block "IF...THEN / GOTO / ENDIF"),
+; plus a harmless unreferenced "L74:" label right after it -- a real,
 ; pre-existing decompiler ambiguity, not a new bug: this block IF's own
 ; THEN-body is exactly one JMP-producing statement (EXIT FOR itself)
 ; with no ELSE, which makes its bytecode shape (JMPZ, then a bare JMP
@@ -191,8 +191,15 @@ CHECK_DECOMPILED_TEXT:
 ; OLD single-line "IF...THEN GOTO" shape the decompiler already
 ; disambiguates by pattern, not full semantic tracking (see rom/
 ; exrom_v2_decompiler.asm's own .op_jmpz header). Still valid, re-
-; parseable, semantically identical V2 source -- the "L72:" label is
+; parseable, semantically identical V2 source -- the "L74:" label is
 ; simply never referenced by anything, which is ordinary legal syntax.
+; Label numbers L74/L82 (previously L72/L80) shifted by +2 as of the
+; post-R9 nested FOR/NEXT correction: OP_FOR_POP (opcode 55, 1 byte, no
+; operand) is now emitted once after each of this program's two closed
+; single-level loops (NEXT V1, NEXT V3), each shifting every later
+; bytecode offset by 1 -- a real, expected, re-captured-and-verified
+; label renumbering, not a semantic change (docs/v2/
+; V2_SEMANTIC_CAPABILITY_AUDIT.md S9).
 EXPECTED_TEXT:
     db "V0 = 0", 13
     db "FOR V1 = 1 TO 10 STEP 2", 13
@@ -204,11 +211,11 @@ EXPECTED_TEXT:
     db "NEXT V3", 13
     db "V4 = 0", 13
     db "FOR V5 = 1 TO 100 STEP 1", 13
-    db "IF (V5>3) THEN GOTO L80", 13
-    db "L72:", 13
+    db "IF (V5>3) THEN GOTO L82", 13
+    db "L74:", 13
     db "V4 = V5", 13
     db "NEXT V5", 13
-    db "L80:", 13
+    db "L82:", 13
     db "PRINT V0", 13
     db "PRINT V2", 13
     db "PRINT V4", 13
@@ -243,7 +250,56 @@ EXT2_TABLE:    equ $8B00
 KTAB_CALC_EXIT_TRAMPOLINE:
     ret
 
-    INCLUDE "kernel/math/math.asm"
+; Test-only stubs (post-R9 PROC/DEF-FN recursion-safety correction pushed
+; this flat 16K image's own real product-code content 12 bytes over
+; budget): this file's own test program (SOURCE_TEXT above) never calls
+; SGN/MOD/DIV/RND/SQR, only STEP-based FOR/NEXT (needs real MATH_
+; COMPARE16, genuinely exercised by OP_FOR_NEXT/OP_CMP_GT) and plain
+; addition (OP_ADD is a native Z80 `add hl,de`, no kernel dependency at
+; all). Rather than pull in the whole ~700-line kernel/math/math.asm
+; just for label resolution (the calculator/graphics stubbing precedent
+; already established elsewhere in this file), MATH_COMPARE16's own real
+; body is reproduced verbatim (kernel/math/math.asm, unchanged there)
+; and every other MATH_* symbol is a dead-code stub.
+MATH_COMPARE16:
+    or   a
+    sbc  hl, de
+    jr   z, .equal
+    jp   po, .no_overflow
+    jp   m, .greater
+    jr   .less
+.no_overflow:
+    jp   m, .less
+    jr   .greater
+.equal:
+    xor  a
+    ret
+.less:
+    ld   a, $FF
+    ret
+.greater:
+    ld   a, 1
+    ret
+MATH_ADD16:
+    ret
+MATH_SUB16:
+    ret
+MATH_MULTIPLY16:
+    ret
+MATH_UMUL16:
+    ret
+MATH_DIVIDE16:
+    ret
+MATH_MOD16:
+    ret
+MATH_SGN16:
+    ret
+MATH_SQRT16:
+    ret
+MATH_RND16:
+    ret
+MATH_RND_SEED:
+    ret
 ; rom/exrom_calc.asm (1772 real lines) is NOT included here: this
 ; test's own program is pure integer arithmetic -- no PUSH_FLOAT_LIT,
 ; no float PRINT -- so none of the float paths that reach the

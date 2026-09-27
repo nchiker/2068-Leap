@@ -256,6 +256,47 @@ VM_CALL_STACK_FLOOR: equ $B694
 SYMTAB_BASE:        equ $B700   ; symbol records: [tag:1][value_lo:1][value_hi:1]
 SYM_REC_LEN:        equ 3       ; 3 bytes/record (tag + 2-byte value; no name
                                 ; field at runtime at all — REWRITE_RAM_BUDGET.md's
+
+; ---------------------------------------------------------------------------
+; Post-R9 PROC/DEF-FN recursion-safety correction (docs/v2/
+; V2_SEMANTIC_CAPABILITY_AUDIT.md S11): PROC's parameter was bound through
+; a plain STORE_VAR into the SAME shared SYMTAB slot every other use of
+; that name resolves to -- only the return address was saved/restored
+; across a call (VM_CALL_PUSH/POP above), not the parameter's own value,
+; so a recursive call silently clobbered an outer invocation's own
+; parameter. OP_PARAM_BIND/OP_PARAM_UNBIND (opcodes 56/57) below replace
+; the plain STORE_VAR/RET pair at a PROC's own entry/exit with one that
+; also saves/restores the parameter symbol's ENTIRE value across the
+; call -- both its SYMTAB record (3 bytes: works for a plain INT
+; parameter) AND its own dedicated FLOATTAB slot's real 5 bytes (a FLOAT
+; parameter's SYMTAB record only ever holds that fixed per-variable
+; FLOATTAB index -- see OP_STORE_VAR's own .float_store note below -- so
+; restoring the index alone would not undo an inner call's own
+; overwrite of the actual float data at that same fixed slot). This is
+; the smallest shared reentrant mechanism the milestone asked for: DEF
+; FN's own reintegration reuses these same two opcodes at its own
+; JMP_DEFFN entry/RET_DEFFN exit, unchanged.
+; Placed in the 208-byte gap between SYMTAB_BASE+16*3=$B730 and
+; CSYMTAB_BASE=$B800 (checked directly against every other v2 file's own
+; equ's before placing this).
+; ---------------------------------------------------------------------------
+VM_PARAM_NEST_MAX:      equ 6      ; matches VM_CALL_STACK's own existing
+                                     ; 6-deep PROC/CALL nesting cap -- a
+                                     ; recursive call always consumes one
+                                     ; VM_CALL_STACK slot too, so this can
+                                     ; never need to be deeper
+VM_PARAM_SAVE_REC_LEN:  equ 8       ; [tag:1][value_lo:1][value_hi:1]
+                                     ; [floattab_raw:5]
+VM_PARAM_SAVE_SP:       equ $B730   ; grows down, mirrors VM_CALL_SP (2 bytes)
+VM_PARAM_SAVE_STACK_FLOOR: equ $B732
+VM_PARAM_SAVE_STACK_TOP: equ $B732 + VM_PARAM_NEST_MAX*VM_PARAM_SAVE_REC_LEN ; $B762
+VM_PARAM_SYM_ADDR_TMP:  equ $B762   ; OP_PARAM_BIND/UNBIND scratch (2 bytes):
+                                     ; the parameter's own SYMTAB record
+                                     ; address, parked before a call
+VM_PARAM_FLOAT_ADDR_TMP: equ $B764  ; (2 bytes): the parameter's own
+                                     ; dedicated FLOATTAB record address
+VM_PARAM_BIND_INDEX_TMP: equ $B766  ; (1 byte): the symbol index this
+                                     ; instruction's own operand names
                                 ; compiled-index design)
 
 TAG_INT:            equ 0
@@ -484,15 +525,56 @@ VM_INPUT_DIGITS_MAX: equ 5      ; -32768..32767 -- 5 digits, sign tracked
                                    ; separately in VM_INPUT_NEG_TMP
 
 VM_FOR_STEP:         equ $B6E2  ; R8.5 Group 5 -- FOR...STEP. Remembered
-                                   ; loop step (2 bytes), same single-
-                                   ; active-loop scope as VM_FOR_LIMIT
-                                   ; above (no nesting support, unchanged
-                                   ; from R1/R3's own documented limit).
-                                   ; A STEP-less FOR compiles a literal
-                                   ; PUSH_I8 1 here (rom/exrom_v2_
-                                   ; compiler.asm's own COMPILE_FOR), so
-                                   ; OP_FOR_INIT/OP_FOR_NEXT never need to
-                                   ; special-case "no step" at runtime.
+                                   ; loop step (2 bytes) for the INNERMOST
+                                   ; currently-running loop -- a cached
+                                   ; top-of-VM_FOR_STACK copy, kept as a
+                                   ; plain cell because OP_FOR_NEXT already
+                                   ; reads it this way; OP_FOR_INIT/
+                                   ; OP_FOR_POP keep it synchronized with
+                                   ; VM_FOR_STACK on every push/pop (see
+                                   ; VM_FOR_STACK_BASE below). A STEP-less
+                                   ; FOR compiles a literal PUSH_I8 1 here
+                                   ; (rom/exrom_v2_compiler.asm's own
+                                   ; COMPILE_FOR), so OP_FOR_INIT/
+                                   ; OP_FOR_NEXT never need to special-case
+                                   ; "no step" at runtime. Post-R9: real
+                                   ; nesting up to VM_FOR_NEST_MAX deep is now
+                                   ; supported (was a KNOWN, DOCUMENTED
+                                   ; single-active-loop limitation before
+                                   ; this milestone; docs/v2/
+                                   ; V2_SEMANTIC_CAPABILITY_AUDIT.md S9).
+
+; ---------------------------------------------------------------------------
+; Post-R9 nested FOR/NEXT correction: VM_FOR_LIMIT/VM_FOR_STEP above are a
+; single active loop's cached values; nesting needs the ENCLOSING loop's
+; own values preserved somewhere while an inner loop runs. VM_FOR_STACK
+; holds exactly that: OP_FOR_INIT pushes the current (about-to-be-
+; enclosing) VM_FOR_LIMIT/STEP onto it before overwriting them with the
+; new inner loop's values; OP_FOR_POP (opcode 55, emitted once by the
+; compiler right after every compiled NEXT -- both a loop's normal fall-
+; through-past-limit exit and EXIT FOR's own patched JMP land there, see
+; rom/exrom_v2_compiler.asm's COMPILE_NEXT) pops them back. VM_FOR_NEST_MAX=4
+; matches the compiler's own identical, explicit nesting-depth limit
+; (rom/exrom_v2_compiler.asm) -- bytecode from this compiler can never
+; exceed it, so no runtime bound check is needed here. Placed in the free
+; gap between STRTAB_BASE+6*32=$B5C0 and VM_IP=$B600 (64 bytes; checked
+; directly against every other v2 file's own equ's before placing this).
+; ---------------------------------------------------------------------------
+VM_FOR_NEST_MAX:        equ 4
+VM_FOR_STACK_DEPTH:  equ $B5C0  ; number of currently-open FOR loops (1 byte)
+VM_FOR_STACK_BASE:   equ $B5C1  ; frames: [limit:2][step:2] = 4 bytes each,
+                                  ; VM_FOR_NEST_MAX*4 = 16 bytes, $B5C1-$B5D0
+
+; VM_FOR_STACK_FRAME_ADDR — A = depth index (0-based) -> HL = that frame's
+; address (VM_FOR_STACK_BASE + depth*4). Destroys: DE.
+VM_FOR_STACK_FRAME_ADDR:
+        ld l,a
+        ld h,0
+        add hl,hl               ; *2
+        add hl,hl               ; *4
+        ld de,VM_FOR_STACK_BASE
+        add hl,de
+        ret
 VM_OUTPUT_ROW:       equ $B6C9    ; current PRINT row, 0-23 (1 byte)
 VM_OUTPUT_COL:        equ $B6CA    ; unused after a PRINT (V1's own real
                                      ; PRINT always ends its own line --
@@ -535,12 +617,17 @@ VM_INIT:
         ld (VM_SP),hl
         ld hl,VM_CALL_STACK_TOP
         ld (VM_CALL_SP),hl
+        ld hl,VM_PARAM_SAVE_STACK_TOP  ; post-R9 PROC/DEF-FN recursion
+        ld (VM_PARAM_SAVE_SP),hl        ; safety correction
         xor a
         ld (VM_ERROR_CODE),a
         ld (VM_HALTED),a
         ld (VM_TOS_TAG),a
         ld (VM_STR_TEMP_NEXT),a
         ld (VM_FLOAT_TEMP_NEXT),a
+        ld (VM_FOR_STACK_DEPTH),a  ; post-R9 nested FOR/NEXT -- a stale
+                                     ; depth from a previous RUN must not
+                                     ; survive into this one
         ld (VM_OUTPUT_ROW),a    ; R8.5 -- PRINT/LPRINT's own output cursor;
         ld (VM_OUTPUT_COL),a     ; uninitialized RAM here previously
                                    ; produced a garbage starting row (caught
@@ -562,16 +649,29 @@ VM_RUN:
         ld a,(hl)               ; fetch opcode
         inc hl
         ld (VM_IP),hl
-        cp 52                   ; 52 opcodes defined (0-51, R8.5 adds
+        cp 58                   ; 58 opcodes defined (0-57, R8.5 adds
                                  ; 35-38: PRINT_NUM/STR, LPRINT_NUM/STR;
                                  ; 39: CALL_FN (Group 1); 40-43: CMP_LE/
                                  ; GT/GE/NE; 44-46: AND/OR/NOT; 47:
                                  ; JMP_ELSE (Group 3); 48-49: ARR_LOAD/
                                  ; ARR_STORE (Group 4); 50-51: INPUT_NUM/
                                  ; INPUT_STR (Group 2's own late close-out).
-                                 ; 52-54 (MODE/ULAPLUS/PALETTE, Group 5)
-                                 ; removed -- now a loadable extension
-                                 ; package, rom/ext_mode_module.asm)
+                                 ; 52-54 (formerly MODE/ULAPLUS/PALETTE,
+                                 ; removed to a loadable extension package)
+                                 ; are now JMP_DEFFN/CALL_UDF/RET_DEFFN
+                                 ; (post-R9 DEF FN reintegration, docs/v2/
+                                 ; deffn_design/README.md) -- runtime-
+                                 ; IDENTICAL aliases of JMP/CALL/RET, a
+                                 ; compile-time/decompile-time
+                                 ; disambiguation only. 55: OP_FOR_POP (post-R9
+                                 ; nested FOR/NEXT correction) -- pops the
+                                 ; innermost FOR_STACK frame; both a loop's
+                                 ; normal fall-through-past-limit exit and
+                                 ; EXIT FOR's own patched JMP land on this
+                                 ; opcode, so both paths pop exactly once.
+                                 ; 56-57: OP_PARAM_BIND/OP_PARAM_UNBIND
+                                 ; (post-R9 PROC/DEF-FN recursion-safety
+                                 ; correction).
         jp nc,VM_ERR_ILLEGAL_OPCODE
         ld l,a
         ld h,0
@@ -649,6 +749,21 @@ VM_OP_TABLE:
         dw OP_ARR_STORE                                  ; 49
         dw OP_INPUT_NUM                                   ; 50 (R8.5 Group 2)
         dw OP_INPUT_STR                                    ; 51
+        dw OP_JMP                                           ; 52 JMP_DEFFN --
+                                                              ; post-R9 DEF FN
+        dw OP_CALL                                          ; 53 CALL_UDF --
+                                                              ; runtime-
+        dw OP_RET                                           ; 54 RET_DEFFN --
+                                                              ; IDENTICAL to
+                                                              ; JMP/CALL/RET
+                                                              ; (compile-time/
+                                                              ; decompile-time
+                                                              ; disambiguation
+                                                              ; only, same as
+                                                              ; OP_JMP_ELSE)
+        dw OP_FOR_POP                                       ; 55 (nested FOR/NEXT)
+        dw OP_PARAM_BIND                                    ; 56 (PROC/DEF FN
+        dw OP_PARAM_UNBIND                                  ; 57  recursion safety)
         ; 52-54 (OP_MODE/OP_ULAPLUS/OP_PALETTE) removed -- now a
         ; loadable extension package, rom/ext_mode_module.asm
 
@@ -779,6 +894,90 @@ VM_CALL_POP:                   ; output: HL = bytecode return address
         ret
 
 ; ---------------------------------------------------------------------------
+; Parameter-save stack (post-R9 PROC/DEF-FN recursion-safety correction,
+; see VM_PARAM_SAVE_SP's own header above). Reuses the identical
+; overflow/underflow error exits VM_CALL_PUSH/POP already use above --
+; both stacks share the same nesting-depth policy, not a coincidence.
+; ---------------------------------------------------------------------------
+
+; VM_PARAM_SAVE_PUSH -- input: HL = source SYMTAB record address (3
+; bytes), DE = source dedicated FLOATTAB record address (5 bytes).
+; Copies both onto a fresh frame. Destroys: AF, BC, DE, HL.
+VM_PARAM_SAVE_PUSH:
+        ld (VM_PARAM_SYM_ADDR_TMP),hl
+        ld (VM_PARAM_FLOAT_ADDR_TMP),de
+        ld hl,(VM_PARAM_SAVE_SP)
+        ld de,-VM_PARAM_SAVE_REC_LEN
+        add hl,de
+        ld de,VM_PARAM_SAVE_STACK_FLOOR
+        or a
+        sbc hl,de
+        jp c,VM_ERR_CALL_STACK_OVERFLOW
+        ld hl,(VM_PARAM_SAVE_SP)
+        ld de,-VM_PARAM_SAVE_REC_LEN
+        add hl,de
+        ld (VM_PARAM_SAVE_SP),hl   ; commit; HL = this new frame's address
+        ld de,(VM_PARAM_SYM_ADDR_TMP)
+        ld a,(de)
+        ld (hl),a
+        inc hl
+        inc de
+        ld a,(de)
+        ld (hl),a
+        inc hl
+        inc de
+        ld a,(de)
+        ld (hl),a
+        inc hl                      ; HL -> frame+3 (float area)
+        ld de,(VM_PARAM_FLOAT_ADDR_TMP)
+        ld b,FLOAT_REC_LEN
+.copy_float:
+        ld a,(de)
+        ld (hl),a
+        inc hl
+        inc de
+        djnz .copy_float
+        ret
+
+; VM_PARAM_SAVE_POP -- input: HL = destination SYMTAB record address (3
+; bytes), DE = destination dedicated FLOATTAB record address (5 bytes).
+; Restores both from the top frame. Destroys: AF, BC, DE, HL.
+VM_PARAM_SAVE_POP:
+        ld (VM_PARAM_SYM_ADDR_TMP),hl
+        ld (VM_PARAM_FLOAT_ADDR_TMP),de
+        ld hl,(VM_PARAM_SAVE_SP)
+        ld de,VM_PARAM_SAVE_STACK_TOP
+        or a
+        sbc hl,de
+        jp z,VM_ERR_CALL_STACK_UNDERFLOW
+        ld hl,(VM_PARAM_SAVE_SP)
+        ld de,(VM_PARAM_SYM_ADDR_TMP)
+        ld a,(hl)
+        ld (de),a
+        inc hl
+        inc de
+        ld a,(hl)
+        ld (de),a
+        inc hl
+        inc de
+        ld a,(hl)
+        ld (de),a
+        inc hl                       ; HL -> saved frame+3 (float area)
+        ld de,(VM_PARAM_FLOAT_ADDR_TMP)
+        ld b,FLOAT_REC_LEN
+.copy_float:
+        ld a,(hl)
+        ld (de),a
+        inc hl
+        inc de
+        djnz .copy_float
+        ld hl,(VM_PARAM_SAVE_SP)
+        ld de,VM_PARAM_SAVE_REC_LEN
+        add hl,de
+        ld (VM_PARAM_SAVE_SP),hl
+        ret
+
+; ---------------------------------------------------------------------------
 ; Opcode handlers
 ; ---------------------------------------------------------------------------
 OP_HALT:
@@ -845,6 +1044,17 @@ OP_STORE_VAR:
         ld a,(hl)               ; symbol index operand
         inc hl
         ld (VM_IP),hl
+        jp VM_STORE_VAR_BY_INDEX
+
+; VM_STORE_VAR_BY_INDEX -- input: A = symbol index. Pops one operand-
+; stack value and stores it into that symbol, tag-aware (float values
+; get a real copy into their own dedicated FLOATTAB slot, see below).
+; Factored out of OP_STORE_VAR (post-R9 PROC/DEF-FN recursion-safety
+; correction) so OP_PARAM_BIND below can reuse the identical store logic
+; after first saving the parameter's OLD value -- the two opcodes differ
+; only in what happens BEFORE the store, never in the store itself.
+; Falls through to VM_RUN.loop exactly like the original inline body did.
+VM_STORE_VAR_BY_INDEX:
         ld c,a                  ; save index
         call VM_POP             ; HL = value, A = tag
         ld (VM_FLOAT_A_TAG),a
@@ -902,6 +1112,59 @@ OP_STORE_VAR:
                                    ; borrowed temp reference
         inc hl
         ld (hl),0
+        jp VM_RUN.loop
+
+; ---------------------------------------------------------------------------
+; OP_PARAM_BIND / OP_PARAM_UNBIND (opcodes 56/57) -- post-R9 PROC/DEF-FN
+; recursion-safety correction (docs/v2/V2_SEMANTIC_CAPABILITY_AUDIT.md
+; S11). COMPILE_PROC emits OP_PARAM_BIND where it used to emit a plain
+; OP_STORE_VAR at a procedure's own entry (right after its skip-JMP), and
+; OP_PARAM_UNBIND right before OP_RET at its own exit. Both share the
+; identical 1-byte [symbol_index] operand OP_STORE_VAR already used here.
+; ---------------------------------------------------------------------------
+
+; OP_PARAM_BIND -- saves the parameter symbol's CURRENT value (its
+; SYMTAB record and its own dedicated FLOATTAB slot's real bytes) onto
+; VM_PARAM_SAVE_SP, THEN stores the caller's just-pushed argument into it
+; via the exact same VM_STORE_VAR_BY_INDEX logic OP_STORE_VAR uses.
+OP_PARAM_BIND:
+        ld hl,(VM_IP)
+        ld a,(hl)
+        inc hl
+        ld (VM_IP),hl
+        ld (VM_PARAM_BIND_INDEX_TMP),a
+        call VM_SYM_ADDR              ; HL -> this symbol's own record
+        ld (VM_PARAM_SYM_ADDR_TMP),hl
+        ld a,(VM_PARAM_BIND_INDEX_TMP)
+        call VM_FLOAT_ADDR             ; HL -> this symbol's own dedicated
+                                         ; FLOATTAB record (1:1 mapping,
+                                         ; same as OP_STORE_VAR's own
+                                         ; .float_store above)
+        ex de,hl                        ; DE = floattab addr
+        ld hl,(VM_PARAM_SYM_ADDR_TMP)   ; HL = sym addr
+        call VM_PARAM_SAVE_PUSH
+        ld a,(VM_PARAM_BIND_INDEX_TMP)
+        jp VM_STORE_VAR_BY_INDEX        ; pops the argument, stores it,
+                                          ; falls through to VM_RUN.loop
+
+; OP_PARAM_UNBIND -- restores the parameter symbol's OLD value (both
+; its SYMTAB record and its own dedicated FLOATTAB slot's real bytes),
+; undoing exactly what the matching OP_PARAM_BIND changed -- symmetric
+; with VM_CALL_PUSH/POP's own return-address save/restore, one layer
+; deeper (the parameter's VALUE, not just where to resume).
+OP_PARAM_UNBIND:
+        ld hl,(VM_IP)
+        ld a,(hl)
+        inc hl
+        ld (VM_IP),hl
+        ld (VM_PARAM_BIND_INDEX_TMP),a
+        call VM_SYM_ADDR
+        ld (VM_PARAM_SYM_ADDR_TMP),hl
+        ld a,(VM_PARAM_BIND_INDEX_TMP)
+        call VM_FLOAT_ADDR
+        ex de,hl                        ; DE = floattab addr
+        ld hl,(VM_PARAM_SYM_ADDR_TMP)   ; HL = sym addr
+        call VM_PARAM_SAVE_POP
         jp VM_RUN.loop
 
 ; ---------------------------------------------------------------------------
@@ -1626,6 +1889,23 @@ OP_FOR_INIT:
                                   ; by COMPILE_FOR, so popped first; a
                                   ; STEP-less FOR's own literal PUSH_I8 1
                                   ; lands here exactly the same way)
+        push hl                  ; park the new step across the frame-push
+                                  ; below (post-R9 nesting)
+        ld a,(VM_FOR_STACK_DEPTH)
+        call VM_FOR_STACK_FRAME_ADDR  ; HL = new frame for depth A
+        ld de,(VM_FOR_LIMIT)
+        ld (hl),e
+        inc hl
+        ld (hl),d                ; frame+0,+1 = enclosing loop's limit
+        inc hl
+        ld de,(VM_FOR_STEP)
+        ld (hl),e
+        inc hl
+        ld (hl),d                ; frame+2,+3 = enclosing loop's step
+        ld a,(VM_FOR_STACK_DEPTH)
+        inc a
+        ld (VM_FOR_STACK_DEPTH),a  ; commit the push
+        pop hl                   ; HL = step (restored)
         ld (VM_FOR_STEP),hl
         call VM_POP             ; HL = limit
         ld (VM_FOR_LIMIT),hl
@@ -1688,6 +1968,31 @@ OP_FOR_NEXT:
         ld (VM_IP),hl
         jp VM_RUN.loop
 .past_limit:
+        jp VM_RUN.loop
+
+; OP_FOR_POP (opcode 55) -- post-R9 nested FOR/NEXT correction. Pops this
+; loop's own VM_FOR_STACK frame, restoring the enclosing loop's VM_FOR_
+; LIMIT/STEP (or harmless stale values if this was the outermost loop --
+; no consumer reads them again before a fresh OP_FOR_INIT overwrites them).
+; The compiler emits this opcode exactly once, right after every compiled
+; NEXT; both the loop's own normal fall-through-past-limit exit and any
+; EXIT FOR inside it land on this same bytecode address (rom/exrom_v2_
+; compiler.asm's COMPILE_NEXT), so the frame is popped exactly once
+; regardless of which path exits the loop.
+OP_FOR_POP:
+        ld a,(VM_FOR_STACK_DEPTH)
+        dec a
+        ld (VM_FOR_STACK_DEPTH),a
+        call VM_FOR_STACK_FRAME_ADDR  ; HL = the frame being popped
+        ld e,(hl)
+        inc hl
+        ld d,(hl)
+        ld (VM_FOR_LIMIT),de
+        inc hl
+        ld e,(hl)
+        inc hl
+        ld d,(hl)
+        ld (VM_FOR_STEP),de
         jp VM_RUN.loop
 
 OP_CALL:
@@ -2133,6 +2438,35 @@ VM_CALC_DIV_STUB:
         db $05,$38              ; divide, end-calc
         ret
 
+; ---------------------------------------------------------------------------
+; VM_POP_COERCE_INT -- shared FLOAT/INT type-boundary mechanism (post-R9
+; semantic-completion milestone, docs/v2/V2_SEMANTIC_CAPABILITY_AUDIT.md
+; S4/S13). Pops one operand exactly like VM_POP, but if it is FLOAT-
+; tagged (a FLOATTAB index, NOT the number, if used raw), truncates it
+; to a plain 16-bit int via the real calculator -- the SAME technique
+; BUILTIN_FN_SIN's own FLOAT fix below already uses and hardware-
+; validates (VM_FLOAT_OPERAND_TAG/VAL + VM_FLOAT_PUSH_OPERAND +
+; CALC_FP_TO_INT). An INT-tagged operand returns unchanged. Every site
+; that wants "a plain integer, converting a FLOAT argument the same way
+; INT() does" calls this instead of raw VM_POP, closing the FLOAT-
+; operand-misinterpretation bug class with one shared routine instead of
+; per-site patches.
+; Output: HL = plain 16-bit int (truncated toward zero if the input was
+; FLOAT). Destroys: AF, BC, DE (same as VM_FLOAT_PUSH_OPERAND/
+; CALC_FP_TO_INT already do) -- callers that need a register to survive
+; already park it on the hardware stack, matching every other call in
+; this file.
+VM_POP_COERCE_INT:
+        call VM_POP             ; HL = value, A = tag
+        cp TAG_FLOAT
+        ret nz
+        ld (VM_FLOAT_OPERAND_TAG),a
+        ld (VM_FLOAT_OPERAND_VAL),hl
+        xor a
+        ld (CALC_SP),a
+        call VM_FLOAT_PUSH_OPERAND
+        jp CALC_FP_TO_INT        ; HL = truncated int
+
 ; OP_PUSH_FLOAT_LIT — operand: 2-byte int value (the literal's digits,
 ; decimal point removed) + 2-byte divisor (10^number-of-fractional-
 ; digits, computed by the compiler). Computes value/divisor as a real
@@ -2255,14 +2589,14 @@ OP_BORDER:
 ; renumbering of anything else was needed).
 
 OP_INK:
-        call VM_POP
+        call VM_POP_COERCE_INT
         ld a,l
         and $07
         ld (CURRENT_INK),a
         jp VM_RUN.loop
 
 OP_PAPER:
-        call VM_POP
+        call VM_POP_COERCE_INT
         ld a,l
         and $07
         ld (CURRENT_PAPER),a
@@ -2276,11 +2610,11 @@ OP_PAPER:
 ; convention (see this file's header) is never to trust a register
 ; across one.
 OP_PLOT:
-        call VM_POP             ; HL = y, A = tag_y (ignored)
+        call VM_POP_COERCE_INT   ; HL = y (FLOAT truncated)
         ld a,l
         call VM_CLAMP_Y191       ; A = clamped y
         ld (VM_PLOT_Y_TMP),a
-        call VM_POP             ; HL = x, A = tag_x (ignored)
+        call VM_POP_COERCE_INT   ; HL = x (FLOAT truncated)
         ld a,l
         ld (VM_PLOT_X_TMP),a
         call VM_COMPUTE_PRINT_ATTR
@@ -2320,18 +2654,18 @@ OP_PLOT:
 ; immediately, before the NEXT VM_POP/call, so nothing is ever held in a
 ; register across a call here.
 OP_LINE:
-        call VM_POP             ; HL = y1
+        call VM_POP_COERCE_INT  ; HL = y1 (FLOAT truncated)
         ld a,l
         call VM_CLAMP_Y191
         ld (GFX_LINE_Y1),a
-        call VM_POP             ; HL = x1
+        call VM_POP_COERCE_INT  ; HL = x1
         ld a,l
         ld (GFX_LINE_X1),a
-        call VM_POP             ; HL = y0
+        call VM_POP_COERCE_INT  ; HL = y0
         ld a,l
         call VM_CLAMP_Y191
         ld (GFX_LINE_Y0),a
-        call VM_POP             ; HL = x0
+        call VM_POP_COERCE_INT  ; HL = x0
         ld a,l
         ld (GFX_LINE_X0),a
         ld a,(CURRENT_OVER)
@@ -2347,9 +2681,9 @@ OP_LINE:
 ; the same safe, already-established technique OP_FOR_INIT's own `push
 ; hl / call ... / pop de` uses, not a bare register held across a call.
 OP_BEEP:
-        call VM_POP             ; HL = pitch
+        call VM_POP_COERCE_INT  ; HL = pitch (FLOAT truncated)
         push hl
-        call VM_POP             ; HL = duration
+        call VM_POP_COERCE_INT  ; HL = duration
         pop bc                   ; BC = pitch (SOUND_BEEP's own register)
         ex de,hl                  ; DE = duration (SOUND_BEEP's own
                                     ; register); HL now holds whatever
@@ -2367,9 +2701,9 @@ OP_BEEP:
 ; directly. An out-of-range register (SOUND_EXROM's own real 1-16 check)
 ; is a real, caught VM error, not silently ignored.
 OP_SOUND:
-        call VM_POP             ; HL = data
+        call VM_POP_COERCE_INT  ; HL = data (FLOAT truncated)
         push hl
-        call VM_POP             ; HL = register
+        call VM_POP_COERCE_INT  ; HL = register
         ld a,l
         ld b,a                    ; B = register
         pop hl                    ; HL = data (restored)
@@ -2382,9 +2716,9 @@ OP_SOUND:
 ; OP_POKE — pops value then address (compiler pushes address,value,
 ; matching "POKE address,value"'s real V1 argument order).
 OP_POKE:
-        call VM_POP             ; HL = value
+        call VM_POP_COERCE_INT  ; HL = value (FLOAT truncated)
         push hl
-        call VM_POP             ; HL = address
+        call VM_POP_COERCE_INT  ; HL = address
         pop de                    ; DE = value (restored)
         ld a,e                    ; low byte of value — matches V1's own
                                     ; BASIC_STMT_POKE (`ld a,e / ld (hl),a`)
@@ -2425,7 +2759,7 @@ OP_PAUSE:
 ; MATH_RND_SEED (kernel/math). No register survives past this one call
 ; (HL is MATH_RND_SEED's own input register, consumed immediately).
 OP_RANDOMISE:
-        call VM_POP             ; HL = n
+        call VM_POP_COERCE_INT  ; HL = n (FLOAT truncated)
         call MATH_RND_SEED
         jp VM_RUN.loop
 
@@ -2857,7 +3191,7 @@ BUILTIN_FN_ABS:
 
 ; SGN(x) -- pops one int, pushes -1/0/1. MATH_SGN16: HL in, HL out.
 BUILTIN_FN_SGN:
-        call VM_POP             ; HL = value, A = tag (ignored -- int-only)
+        call VM_POP_COERCE_INT  ; HL = value (FLOAT truncated)
         call MATH_SGN16
         xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
         jp VM_PUSH
@@ -2866,17 +3200,13 @@ BUILTIN_FN_SGN:
 ; operand stack has divisor on top (pushed last, popped first).
 ; MATH_MOD16: HL=dividend, DE=divisor -> HL=remainder.
 BUILTIN_FN_MOD:
-        call VM_POP             ; HL = divisor
-        push hl                 ; VM_POP's own body uses DE internally
-                                 ; (ld de,VM_STACK_TOP) -- parking the
-                                 ; divisor in DE across the second
-                                 ; VM_POP call clobbered it (real bug,
-                                 ; found via this milestone's own
-                                 ; ZEsarUX regression run: D came back
-                                 ; as the untouched dividend). Hardware
-                                 ; stack instead, same fix pattern this
-                                 ; session has repeatedly needed.
-        call VM_POP             ; HL = dividend
+        call VM_POP_COERCE_INT  ; HL = divisor (FLOAT truncated). Hardware
+                                 ; stack parks it across the second call,
+                                 ; same fix pattern this session has
+                                 ; repeatedly needed (VM_POP/VM_POP_COERCE_
+                                 ; INT's own body uses DE internally).
+        push hl
+        call VM_POP_COERCE_INT  ; HL = dividend
         pop de                  ; DE = divisor
         call MATH_MOD16
         xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
@@ -2885,10 +3215,10 @@ BUILTIN_FN_MOD:
 ; DIV(dividend,divisor) -- same argument order as MOD above.
 ; MATH_DIVIDE16: HL=dividend, DE=divisor -> HL=quotient.
 BUILTIN_FN_DIV:
-        call VM_POP             ; HL = divisor
+        call VM_POP_COERCE_INT  ; HL = divisor (FLOAT truncated)
         push hl                 ; same VM_POP-destroys-DE fix as
                                  ; BUILTIN_FN_MOD above
-        call VM_POP             ; HL = dividend
+        call VM_POP_COERCE_INT  ; HL = dividend
         pop de                  ; DE = divisor
         call MATH_DIVIDE16
         xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
@@ -2897,7 +3227,7 @@ BUILTIN_FN_DIV:
 ; RND(x) -- pops one int (the upper bound), pushes a random value.
 ; MATH_RND16: HL in, HL out.
 BUILTIN_FN_RND:
-        call VM_POP
+        call VM_POP_COERCE_INT  ; HL = value (FLOAT truncated)
         call MATH_RND16
         xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
         jp VM_PUSH
@@ -2909,10 +3239,9 @@ BUILTIN_FN_RND:
 ; power of 2), same as V1's own real behavior; X's full 0-255 range is
 ; already the whole valid screen width, no clamp needed.
 BUILTIN_FN_POINT:
-        call VM_POP             ; HL = y
-        push hl                 ; VM_POP destroys DE -- same fix as
-                                 ; BUILTIN_FN_MOD/DIV above
-        call VM_POP             ; HL = x
+        call VM_POP_COERCE_INT  ; HL = y (FLOAT truncated)
+        push hl                 ; same fix as BUILTIN_FN_MOD/DIV above
+        call VM_POP_COERCE_INT  ; HL = x
         pop de                  ; DE = y
         ld b,l                  ; B = x (low byte)
         ld a,e
@@ -2934,9 +3263,9 @@ BUILTIN_FN_POINT:
 ; matching POINT's deliberately forgiving screen-query behavior --
 ; not an error condition.
 BUILTIN_FN_ATTR:
-        call VM_POP             ; HL = col
+        call VM_POP_COERCE_INT  ; HL = col (FLOAT truncated)
         push hl
-        call VM_POP             ; HL = row
+        call VM_POP_COERCE_INT  ; HL = row
         pop de                  ; DE = col
         ld a,h
         or d
@@ -2955,12 +3284,16 @@ BUILTIN_FN_ATTR:
         xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
         jp VM_PUSH
 
-; INT(x) -- true no-op: this is a pure-integer BASIC, so every value is
-; already its own INT() (V1's own .call_int comment, verbatim reasoning).
-; Kept as its own table entry/dispatch case for SuperBASIC-syntax
-; compatibility, not because it computes anything.
+; INT(x) -- under V2's hybrid INT/FLOAT numeric model this is no longer
+; V1's true no-op (V1 was pure-integer, so every value already was its
+; own INT()): a FLOAT argument must genuinely truncate toward zero and
+; come back INT-tagged. VM_POP_COERCE_INT is exactly the INT() operation
+; already, so this is now literally that shared routine plus a fresh
+; INT tag -- closing the "INT(3.7) still yields 3.7" bug (docs/v2/
+; V2_SEMANTIC_CAPABILITY_AUDIT.md S4).
 BUILTIN_FN_INT:
-        call VM_POP
+        call VM_POP_COERCE_INT  ; HL = value (FLOAT truncated toward zero)
+        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
         jp VM_PUSH
 
 ; PEEK(addr) -- confirmed via basic.asm's own .call_peek: reads raw
@@ -2974,7 +3307,7 @@ BUILTIN_FN_INT:
 ; here: V2 compiles ahead of time and never evaluates an expression
 ; during compilation, so no equivalent guard is needed.
 BUILTIN_FN_PEEK:
-        call VM_POP             ; HL = address
+        call VM_POP_COERCE_INT  ; HL = address (FLOAT truncated)
         ld a,(hl)
         ld l,a
         ld h,0
@@ -2991,7 +3324,7 @@ BUILTIN_FN_PEEK:
 ; otherwise jump to this ROM's own RST_00 reset vector). That hazard
 ; does not exist here for the same reason PEEK's header above gives.
 BUILTIN_FN_USR:
-        call VM_POP             ; HL = address
+        call VM_POP_COERCE_INT  ; HL = address (FLOAT truncated)
         call VM_CALL_USR_TRAMPOLINE
         xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
         jp VM_PUSH
@@ -3490,7 +3823,7 @@ BUILTIN_FN_INKEY:
 ; BASIC_SQR_FLOAT already owns for the identical purpose -- real,
 ; permanent RAM already budgeted, not a second scratch cell.
 BUILTIN_FN_SQR:
-        call VM_POP
+        call VM_POP_COERCE_INT   ; HL = n (FLOAT truncated)
         ld (SQR_ARG_N),hl
         call MATH_SQRT16           ; HL = floor(sqrt(n)), 0 for n<=0
         ld a,h
@@ -3549,7 +3882,7 @@ BUILTIN_FN_PI:
 ; AND more correct than replicating V1's own sign-stripping, not a
 ; scope increase.
 BUILTIN_FN_RAD:
-        call VM_POP
+        call VM_POP_COERCE_INT   ; HL = x (FLOAT truncated)
         xor a
         ld (CALC_SP),a
         call CALC_INT_TO_FP      ; push x
@@ -3783,7 +4116,7 @@ BUILTIN_FN_SIN:
 SIN_DIVISOR_TABLE: dw 6, 20, 42, 72
 
 BUILTIN_FN_DEG:
-        call VM_POP
+        call VM_POP_COERCE_INT   ; HL = x (FLOAT truncated)
         xor a
         ld (CALC_SP),a
         call CALC_INT_TO_FP      ; push x

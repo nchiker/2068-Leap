@@ -182,8 +182,29 @@ BASIC_STMT_LPRINT_EXROM:
 KTAB_CALC_EXIT_TRAMPOLINE:
     ret
 
+; Test-only stubs (post-R9 nested FOR/NEXT correction pushed this flat 16K
+; image's own real product-code content over budget by 232 bytes): this
+; file's own test program never produces a FLOAT value (its own comment
+; above already established that even the real exrom_calc.asm was only
+; ever included here for label resolution, never genuine float coverage
+; — no test in this file exercised it). Same stubbing discipline
+; rom/test_v2_for_step.asm's own header already established: the real
+; ~1900-line calculator is dropped entirely, recovering far more than the
+; 232 bytes needed.
+CALC_EXROM_ENTRY:
+    ret
+CALC_INT_TO_FP:
+    ret
+CALC_FP_TO_INT:
+    ret
+CALC_SP_TO_NEXT_FREE_PTR:
+    ret
+CALC_PUSH_PI:
+    ret
+CALC_PUSH_FP_RAW:
+    ret
+
     INCLUDE "kernel/math/math.asm"
-    INCLUDE "rom/exrom_calc.asm"
     INCLUDE "kernel/graphics/graphics.asm"
     INCLUDE "kernel/sound/sound.asm"
     INCLUDE "rom/exrom_sound.asm"

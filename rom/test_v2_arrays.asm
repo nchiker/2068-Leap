@@ -206,20 +206,28 @@ CHECK_DECOMPILED_TEXT:
     scf
     ret
 
-; DIM emits no bytecode at all (a pure compile-time declaration, like an
-; implicitly-declared scalar's own CSYMTAB entry) -- decompiled text
-; starts directly at the first real statement. "A0"/"A1" are the
-; compiler's real generated array names (A was DIM'd first -> ARRSYMTAB
-; slot 0 -> "A0"; B second -> slot 1 -> "A1"); "V0"/"V1"/"V2" are X/Y/Z's
-; own generated scalar names -- to be captured from a real ZEsarUX run,
-; then cross-checked against CHECK_ARR's own already-verified real
-; values (same two-step discipline as every other decompiler test this
-; session). "V1 = 5"/"V2 = 3" (not "DIMN(A0)"/"DIMN(A1)") are DIMN's own
-; documented, deliberate decompile-fidelity limitation -- see COMPILE_
-; DIMN's own header in rom/exrom_v2_compiler.asm: DIMN folds to a bare
-; PUSH_I8 literal with no runtime opcode, so the fact that this value
-; came from a DIMN() call is genuinely gone from the bytecode.
+; DIM itself still emits no bytecode at all (a pure compile-time
+; declaration, like an implicitly-declared scalar's own CSYMTAB entry).
+; Post-R9 DIM/decompiler correction (docs/v2/V2_SEMANTIC_CAPABILITY_
+; AUDIT.md S14): the decompiler now recovers each array's own declared
+; size from the first OP_ARR_LOAD/STORE instruction that references it
+; (every such instruction already bakes its own array's size in as a
+; bounds-check operand) and synthesizes "DIM A<idx>(<size>)" lines up
+; front, since bytecode carries no position for the original DIM
+; statement(s). "A0"/"A1" are the compiler's real generated array names
+; (A was DIM'd first -> ARRSYMTAB slot 0 -> "A0"; B second -> slot 1 ->
+; "A1"); "V0"/"V1"/"V2" are X/Y/Z's own generated scalar names -- to be
+; captured from a real ZEsarUX run, then cross-checked against CHECK_
+; ARR's own already-verified real values (same two-step discipline as
+; every other decompiler test this session). "V1 = 5"/"V2 = 3" (not
+; "DIMN(A0)"/"DIMN(A1)") are DIMN's own documented, deliberate decompile-
+; fidelity limitation -- see COMPILE_DIMN's own header in rom/
+; exrom_v2_compiler.asm: DIMN folds to a bare PUSH_I8 literal with no
+; runtime opcode, so the fact that this value came from a DIMN() call is
+; genuinely gone from the bytecode.
 EXPECTED_TEXT:
+    db "DIM A0(5)", 13
+    db "DIM A1(3)", 13
     db "A0(0) = 10", 13
     db "A0(1) = 20", 13
     db "A0(4) = 99", 13

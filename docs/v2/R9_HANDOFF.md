@@ -176,19 +176,27 @@ evidence that the autoload call did/did not reach tape reception. The owner
 had seen a loading screen in an earlier session, but its source was not
 identified here; preserve that as an unattributed observation.
 
-## Four semantic corrections remain pending
+## Four semantic corrections: COMPLETE (2026-09-27)
 
-Do not start these as part of this handoff:
+**All four are now resolved.** See
+[`POST_R9_SEMANTIC_MILESTONE.md`](POST_R9_SEMANTIC_MILESTONE.md) for the
+full completion report (mechanisms, costs, tests, and the editor audit).
+Summary:
 
-1. FLOAT operand/type-boundary correctness.
-2. Nested FOR/NEXT handling and matching the NEXT variable to the active FOR.
-3. DIM/decompiler semantics. Authoritative-source LIST/edit/save/load removes
-   source DIM loss from normal production behavior; bytecode decompilation
-   remains unchanged, so the original defect is not solved.
-4. Recursion-safe PROC/DEF FN parameter handling.
+1. FLOAT operand/type-boundary correctness — fixed via one shared
+   `VM_POP_COERCE_INT` mechanism (23 bytes).
+2. Nested FOR/NEXT — a real bounded loop-frame stack, 4 levels deep,
+   both compile-time and runtime (240 bytes); NEXT-variable verification
+   added as a new compile-time check.
+3. DIM/decompiler semantics — implemented (decompiler-only, 0 production
+   bytes): array sizes are now recovered from bytecode's own bounds-check
+   operands.
+4. Recursion-safe PROC/DEF FN parameter handling — a shared
+   `OP_PARAM_BIND`/`OP_PARAM_UNBIND` mechanism (222 bytes), and DEF FN
+   was reintegrated using it (363 bytes) — no longer deferred.
 
-Do not implement DEF FN, start R10/R11, restore optional V1 packages, or make
-unrelated architecture changes.
+Do not restore optional V1 packages or make unrelated architecture
+changes. R10/R11 have not started.
 
 ## Recommended first action
 

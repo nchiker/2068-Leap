@@ -239,21 +239,87 @@ LABEL_FIND_NAME_LEN: equ $BA19  ; (1 byte) — same "must be RAM, not
 LABEL_LOOKUP_RESULT: equ $BA1A  ; LABEL_LOOKUP output (2 bytes): resolved
                                   ; offset if found
 FOR_LOOP_TOP_OFFSET: equ $BA1C  ; COMPILE_FOR/COMPILE_NEXT scratch (2 bytes):
-                                  ; the loop body's starting bytecode offset.
-                                  ; SINGLE ACTIVE LOOP ONLY — matches R1's VM
-                                  ; core's own single VM_FOR_LIMIT slot
-                                  ; (rom/exrom_v2_vm_core.asm's header
-                                  ; comment). Nested FOR/NEXT is a KNOWN,
-                                  ; DOCUMENTED limitation of this milestone,
-                                  ; not silently unsupported — a future
-                                  ; refinement would need both this compiler
-                                  ; and the VM's loop-limit storage to become
-                                  ; a real stack, not a single scalar. R3's
-                                  ; own worked examples (REWRITE_RAM_BUDGET.md's
-                                  ; SMALL/TYPICAL programs) do not require
-                                  ; nested loops, so this scope cut does not
-                                  ; block R3's actual success gate.
-FOR_LOOP_VAR_INDEX: equ $BA1E    ; COMPILE_FOR/COMPILE_NEXT scratch (1 byte)
+                                  ; the INNERMOST currently-open loop's own
+                                  ; body-starting bytecode offset — i.e. the
+                                  ; top-of-FOR_STACK's own cached copy, kept
+                                  ; as a plain cell (not re-read from the
+                                  ; stack on every use) purely because
+                                  ; COMPILE_NEXT/COMPILE_EXIT_FOR already
+                                  ; read it this way; COMPILE_FOR/COMPILE_NEXT
+                                  ; keep it synchronized with FOR_STACK on
+                                  ; every push/pop (see CFOR_STACK_BASE below).
+                                  ; Post-R9 nested-FOR/NEXT correction: real
+                                  ; nesting up to FOR_NEST_MAX deep is now
+                                  ; supported (was a KNOWN, DOCUMENTED single-
+                                  ; active-loop limitation before this
+                                  ; milestone; see docs/v2/
+                                  ; V2_SEMANTIC_CAPABILITY_AUDIT.md S9).
+FOR_LOOP_VAR_INDEX: equ $BA1E    ; COMPILE_FOR/COMPILE_NEXT scratch (1 byte):
+                                  ; same "innermost loop's own cached copy"
+                                  ; role as FOR_LOOP_TOP_OFFSET above.
+
+; ---------------------------------------------------------------------------
+; Post-R9 nested FOR/NEXT correction (docs/v2/V2_SEMANTIC_CAPABILITY_AUDIT.md
+; S9): a real, bounded loop-frame stack, plausibly similar in spirit to the
+; already-proven VM_CALL_STACK mechanism the audit itself suggested. Each
+; frame remembers one nesting level's own loop variable index, loop-body
+; offset, and the enclosing level's own EXITFOR_COUNT (so "EXIT FOR" inside
+; an inner loop cannot corrupt an outer loop's own pending exit-patch count).
+; FOR_NEST_MAX=4 is an explicit, documented nesting-depth limit (matching
+; this compiler's other small bounded tables — LABELTAB/FIXUPTAB/ARRSYMTAB
+; are all 4-8 deep — not a technical ceiling). Placed in the free gap
+; between FIXUPTAB_BASE+11*8=$B9B8 and SRC_PTR=$BA00 (72 bytes; checked
+; directly against every other v2 file's own equ's before placing this).
+; ---------------------------------------------------------------------------
+FOR_NEST_MAX:         equ 4
+CFOR_STACK_DEPTH:      equ $B9B8  ; number of currently-open FOR loops (1 byte)
+CFOR_STACK_REC_LEN:    equ 4      ; [var_index:1][top_offset:2][saved_exitfor_count:1]
+CFOR_STACK_BASE:       equ $B9B9  ; FOR_NEST_MAX*CFOR_STACK_REC_LEN = 16 bytes,
+                                   ; $B9B9-$B9C8
+EXITFOR_PATCH_TABLE:  equ $B9C9  ; now ONE 8-byte (EXITFOR_MAX*2) region PER
+                                   ; nesting level, not a single shared
+                                   ; table — an inner loop's own EXIT FOR
+                                   ; patches must never overwrite an outer
+                                   ; loop's still-pending ones. Indexed as
+                                   ; EXITFOR_PATCH_TABLE + depth*EXITFOR_MAX*2,
+                                   ; where depth is CFOR_STACK_DEPTH-1 (the
+                                   ; loop currently being compiled). Total
+                                   ; FOR_NEST_MAX*EXITFOR_MAX*2 = 32 bytes,
+                                   ; $B9C9-$B9E8.
+FOR_FRAME_ADDR_TMP:   equ $B9E9  ; COMPILE_FOR/COMPILE_NEXT scratch (2 bytes):
+                                   ; a just-computed frame/table address,
+                                   ; parked before a call that would
+                                   ; otherwise clobber it
+NEXT_VAR_INDEX_TMP:   equ $B9EB  ; COMPILE_NEXT scratch (1 byte): this
+                                   ; NEXT's own referenced variable index,
+                                   ; saved before comparing it against the
+                                   ; innermost open FOR's own recorded index
+                                   ; (still within the same 72-byte gap —
+                                   ; 20 bytes left spare, $B9EC-$B9FF)
+
+; CFOR_STACK_FRAME_ADDR — A = depth index (0-based) -> HL = that frame's
+; address (CFOR_STACK_BASE + depth*CFOR_STACK_REC_LEN). Destroys: DE.
+CFOR_STACK_FRAME_ADDR:
+        ld l,a
+        ld h,0
+        add hl,hl               ; *2
+        add hl,hl               ; *4 (CFOR_STACK_REC_LEN)
+        ld de,CFOR_STACK_BASE
+        add hl,de
+        ret
+
+; EXITFOR_TABLE_ADDR — A = depth index (0-based) -> HL = that nesting
+; level's own EXIT-FOR patch table (EXITFOR_PATCH_TABLE + depth*
+; EXITFOR_MAX*2). Destroys: DE.
+EXITFOR_TABLE_ADDR:
+        ld l,a
+        ld h,0
+        add hl,hl               ; *2
+        add hl,hl               ; *4
+        add hl,hl               ; *8 (EXITFOR_MAX*2)
+        ld de,EXITFOR_PATCH_TABLE
+        add hl,de
+        ret
 BRANCH_PATCH_TMP:   equ $BA1F   ; COMPILE_BRANCH_TARGET scratch (2 bytes)
 FIXUP_PATCH_TMP:    equ $BA21   ; FIXUP_RECORD scratch (2 bytes)
 FIXUP_NAME_PTR_TMP: equ $BA23   ; FIXUP_RECORD scratch (2 bytes)
@@ -419,18 +485,17 @@ CINPUT_INDEX_TMP:     equ $BA4E   ; COMPILE_INPUT scratch (1 byte): the
                                     ; save one equ.
 EXITFOR_COUNT:        equ $BA4F  ; R8.5 Group 5 -- number of outstanding
                                     ; EXIT FOR patch addresses for the
-                                    ; loop CURRENTLY being compiled, reset
-                                    ; to 0 at COMPILE_FOR's own start (no
-                                    ; nesting support — same single-
-                                    ; active-loop scope FOR/NEXT already
-                                    ; has — so this never needs to be
-                                    ; saved/restored across a nested loop)
-EXITFOR_PATCH_TABLE:  equ $BA50   ; free gap between EXITFOR_COUNT and
-                                    ; STRSYMTAB_BASE ($BA60) — 4 slots *
-                                    ; 2 bytes = 8 bytes, checked directly
-                                    ; against every other v2 file's own
-                                    ; equ's before placing this
-EXITFOR_MAX:          equ 4
+                                    ; loop CURRENTLY being compiled. Post-
+                                    ; R9 nested-FOR/NEXT correction: this
+                                    ; remains a SINGLE cell (only one loop
+                                    ; is ever "currently compiling" at a
+                                    ; time in this single-pass compiler),
+                                    ; but its value is now saved into the
+                                    ; new FOR_STACK frame on entry to a
+                                    ; nested FOR and restored from there
+                                    ; once that nested loop's own NEXT
+                                    ; closes — see CFOR_STACK_BASE below.
+EXITFOR_MAX:          equ 4        ; per nesting level (unchanged limit)
 ARRSYMTAB_BASE:       equ $B890   ; compile-time array name table (free
                                     ; gap between CSYMTAB_BASE+16*9=$B890
                                     ; and LABELTAB_BASE=$B900 — checked
@@ -536,9 +601,11 @@ TOK_KW_EXIT:        equ 55   ; R8.5 Group 5 -- EXIT FOR (V1's own real
                                ; BASIC_STMT_EXIT header)
 ; TOK_KW_MODE/ULAPLUS/PALETTE (56-58) removed -- these are no longer
 ; resident statement keywords (product decision, same principle as the
-; earlier SPRITE-to-loadable-module move). Token values 56-58 are now
-; unused, kept unassigned rather than renumbered (nothing else depends
-; on token-value contiguity).
+; earlier SPRITE-to-loadable-module move). Token value 58 stays
+; unassigned; 56-57 are reused below by DEF FN reintegration (post-R9,
+; docs/v2/deffn_design/README.md) -- confirmed free by this same removal.
+TOK_KW_DEF:         equ 56   ; DEF FN name(param) = expr
+TOK_KW_FN:          equ 57   ; FN name(arg), as an expression factor
 
 ; ---------------------------------------------------------------------------
 ; COMPILER_INIT — call once before COMPILE_PROGRAM.
@@ -551,6 +618,10 @@ COMPILER_INIT:
         ld (FIXUP_COUNT),a       ; routine never zeroed these two, so a
         ld (STRSYM_COUNT),a      ; R5 addition — same bug, same fix,
         ld (ARRSYM_COUNT),a      ; R8.5 Group 4 addition — same bug class,
+        ld (CFOR_STACK_DEPTH),a  ; post-R9 nested FOR/NEXT — same bug
+                                  ; class again: a stale nesting depth
+                                  ; from a prior compile in the same
+                                  ; session must not carry into this one
                                   ; found again: a second compile within
                                   ; the same ZEsarUX session (RAM is NOT
                                   ; cleared by `reset`, only CPU registers
@@ -1006,7 +1077,7 @@ LEX_CLASSIFY_KEYWORD:
         jr nz,.loop
         ret                       ; no match — TOK_TYPE stays TOK_IDENT
 
-KEYWORD_TABLE_COUNT: equ 34
+KEYWORD_TABLE_COUNT: equ 36  ; post-R9 DEF FN reintegration adds DEF/FN
 
 ; Each row is [len:1][text:len][token:1], variable-stride (bounded ROM
 ; consolidation pass -- converted from a fixed-11-byte padded layout
@@ -1057,6 +1128,8 @@ KEYWORD_TABLE:
         ; module.asm), reached via the ordinary TOK_IDENT/extension-
         ; registry dispatch path (COMPILE_EXT_CALL), not resident
         ; statement keywords.
+        db 3, "DEF", TOK_KW_DEF       ; post-R9 DEF FN reintegration
+        db 2, "FN", TOK_KW_FN
 
 ; ===========================================================================
 ; COMPILE-TIME SYMBOL TABLE — real name storage, real comparison (the piece
@@ -1368,6 +1441,20 @@ EMIT_OP_ARR_LOAD:                           ld a,48 : jp EMIT_BYTE  ; R8.5 Group
 EMIT_OP_ARR_STORE:                          ld a,49 : jp EMIT_BYTE  ; R8.5 Group 4
 EMIT_OP_INPUT_NUM:                          ld a,50 : jp EMIT_BYTE  ; R8.5 Group 2
 EMIT_OP_INPUT_STR:                          ld a,51 : jp EMIT_BYTE  ; R8.5 Group 2
+EMIT_OP_FOR_POP:                            ld a,55 : jp EMIT_BYTE  ; post-R9
+                                             ; nested FOR/NEXT (52-54 stay
+                                             ; reserved for DEF FN)
+EMIT_OP_PARAM_BIND:                         ld a,56 : jp EMIT_BYTE  ; post-R9
+                                             ; PROC/DEF FN recursion safety
+EMIT_OP_PARAM_UNBIND:                       ld a,57 : jp EMIT_BYTE
+; DEF FN reintegration (post-R9, docs/v2/deffn_design/README.md):
+; opcodes 52/53/54 are runtime-IDENTICAL to JMP/CALL/RET (literally the
+; same VM_OP_TABLE handler at those slots) -- purely a compile-time/
+; decompile-time disambiguation, the same precedent OP_JMP_ELSE (47)
+; already established.
+EMIT_OP_JMP_DEFFN:                          ld a,52 : jp EMIT_BYTE
+EMIT_OP_CALL_UDF:                           ld a,53 : jp EMIT_BYTE
+EMIT_OP_RET_DEFFN:                          ld a,54 : jp EMIT_BYTE
 EMIT_OP_CMP_LE:                              ld a,40 : jp EMIT_BYTE  ; R8.5 Group 3
 EMIT_OP_CMP_GT:                               ld a,41 : jp EMIT_BYTE
 EMIT_OP_CMP_GE:                                ld a,42 : jp EMIT_BYTE
@@ -1574,6 +1661,8 @@ COMPILE_FACTOR:
         jr z,.float_number
         cp TOK_IDENT
         jr z,.ident
+        cp TOK_KW_FN
+        jp z,.udf_call           ; post-R9 DEF FN reintegration
         ld a,3
         jp COMPILE_RAISE_ERROR
 .unary_minus:
@@ -1829,6 +1918,86 @@ COMPILE_FACTOR:
         call EMIT_OP_CALL_FN
         ld a,(CFN_INDEX)
         call EMIT_BYTE
+        ret
+
+; .udf_call — FN name(arg), as an expression factor (post-R9 DEF FN
+; reintegration, docs/v2/deffn_design/README.md). Resolved via the SAME
+; LABEL_LOOKUP/FIXUP_RECORD forward-reference machinery GOTO/CALL
+; already use (not a new mechanism) -- mirrors COMPILE_CALL_STMT's own
+; resolve/fixup logic almost verbatim, differing only in what opcode it
+; emits and that it's an expression factor, not a statement.
+.udf_call:
+        call LEX_NEXT_TOKEN     ; consume FN
+        ld a,(TOK_TYPE)
+        cp TOK_IDENT
+        jr z,.udf_have_name
+        ld a,50                  ; expected a function name (shared with
+        jp COMPILE_RAISE_ERROR    ; DEF FN's own identical error)
+.udf_have_name:
+        ld hl,(TOK_NAME)
+        ld (STMT_IDENT_NAME_PTR),hl
+        ld a,(TOK_LEN)
+        ld (STMT_IDENT_NAME_LEN),a
+        call LEX_NEXT_TOKEN     ; consume the function name
+        ld a,(TOK_TYPE)
+        cp TOK_LPAREN
+        jr z,.udf_have_lparen
+        ld a,51                  ; expected '(' after a name
+        jp COMPILE_RAISE_ERROR
+.udf_have_lparen:
+        call LEX_NEXT_TOKEN     ; consume '('
+        ; Because compiling the argument expression can itself
+        ; recursively compile a NESTED "FN othername(...)" call using the
+        ; SAME shared STMT_IDENT_NAME_PTR/LEN scratch cells, park this
+        ; call's own name pointer+length on the hardware stack first --
+        ; the exact nested-call scratch-clobber lesson Group 6's CFN_
+        ; INDEX/ARGCOUNT/REMAINING/ARGTYPE fix (.fn_call above) and
+        ; COMPILE_FACTOR.arr_read's CARR_INDEX/SIZE fix already taught
+        ; this project, applied here proactively before any bug
+        ; manifested (docs/v2/deffn_design/README.md's own documented
+        ; precaution from the original experiment).
+        ld hl,(STMT_IDENT_NAME_PTR)
+        push hl
+        ld a,(STMT_IDENT_NAME_LEN)
+        ld c,a
+        ld b,0
+        push bc
+        call COMPILE_EXPR       ; argument -> VM operand stack
+        pop bc
+        ld a,c
+        ld (STMT_IDENT_NAME_LEN),a
+        pop hl
+        ld (STMT_IDENT_NAME_PTR),hl
+        ld a,(COMPILE_ERROR_CODE)
+        or a
+        ret nz
+        ld a,(TOK_TYPE)
+        cp TOK_RPAREN
+        jr z,.udf_have_rparen
+        ld a,53                  ; expected ')'
+        jp COMPILE_RAISE_ERROR
+.udf_have_rparen:
+        call LEX_NEXT_TOKEN     ; consume ')'
+        call EMIT_OP_CALL_UDF
+        call EMIT_PLACEHOLDER_16   ; HL = patch address
+        ld (BRANCH_PATCH_TMP),hl
+        ld hl,(STMT_IDENT_NAME_PTR)
+        ld a,(STMT_IDENT_NAME_LEN)
+        ld b,a
+        call LABEL_LOOKUP
+        jr c,.udf_resolved
+        ld hl,(BRANCH_PATCH_TMP)
+        ld de,(STMT_IDENT_NAME_PTR)
+        ld a,(STMT_IDENT_NAME_LEN)
+        ld b,a
+        call FIXUP_RECORD
+        ret
+.udf_resolved:
+        ld hl,(BRANCH_PATCH_TMP)
+        ld de,(LABEL_LOOKUP_RESULT)
+        ld (hl),e
+        inc hl
+        ld (hl),d
         ret
 
 ; ===========================================================================
@@ -3530,25 +3699,40 @@ COMPILE_IF_BLOCK:
 ; ===========================================================================
 ; LOOP STATEMENT COMPILERS (R3 addition: FOR/NEXT)
 ;
-; SINGLE ACTIVE LOOP ONLY — matches R1's VM core's own single VM_FOR_LIMIT
-; slot (rom/exrom_v2_vm_core.asm's own header comment on OP_FOR_INIT).
-; Nested FOR/NEXT is a known, documented limitation, not a silent gap: a
-; future refinement would need both this compiler's FOR_LOOP_TOP_OFFSET/
-; FOR_LOOP_VAR_INDEX and the VM's VM_FOR_LIMIT to become real stacks. R3's
-; own success gate (a real nontrivial program compiling and running,
-; testing the compiled-branch/GOTO-catastrophe-fix claim at scale) does not
-; require nested loops.
+; Post-R9 nested-FOR/NEXT correction (docs/v2/V2_SEMANTIC_CAPABILITY_AUDIT.md
+; S9): real nesting up to FOR_NEST_MAX deep, via the FOR_STACK frame table
+; declared above. Each open loop's own body-offset/var-index/EXITFOR state
+; is pushed on COMPILE_FOR and popped on its matching COMPILE_NEXT, so an
+; inner loop's own compilation can never corrupt an outer loop's state —
+; the single-scratch-cell design this replaced silently compiled wrong
+; bytecode for any ordinarily-nested FOR (was a KNOWN, DOCUMENTED
+; limitation, not a silent gap, before this milestone).
 ; ===========================================================================
 
-; COMPILE_FOR — FOR <ident> = <expr> TO <expr>  (fixed STEP=1; explicit
-; STEP is also deferred, matching R1's VM core's own FOR_NEXT opcode, which
-; only supports STEP=1)
+; COMPILE_FOR — FOR <ident> = <expr> TO <expr>  (explicit STEP optional,
+; defaults to a literal 1)
 COMPILE_FOR:
+        ld a,(CFOR_STACK_DEPTH)
+        cp FOR_NEST_MAX
+        jr nz,.depth_ok
+        ld a,55                  ; FOR nesting exceeds FOR_NEST_MAX
+        jp COMPILE_RAISE_ERROR
+.depth_ok:
+        call CFOR_STACK_FRAME_ADDR  ; HL = this new frame (A = current
+                                     ; depth, unchanged by the cp above)
+        ld (FOR_FRAME_ADDR_TMP),hl
+        inc hl
+        inc hl
+        inc hl                     ; HL -> frame+3 (saved_exitfor_count)
+        ld a,(EXITFOR_COUNT)
+        ld (hl),a                  ; save the enclosing loop's own count
+                                     ; (harmless/unused if this is the
+                                     ; outermost loop)
         xor a
-        ld (EXITFOR_COUNT),a     ; R8.5 Group 5 -- reset for THIS loop; no
-                                   ; nesting support (see FOR/NEXT's own
-                                   ; single-active-loop scope), so this
-                                   ; never needs saving/restoring
+        ld (EXITFOR_COUNT),a       ; reset for THIS loop's own use
+        ld a,(CFOR_STACK_DEPTH)
+        inc a
+        ld (CFOR_STACK_DEPTH),a     ; commit the push
         call LEX_NEXT_TOKEN     ; consume FOR
         ld a,(TOK_TYPE)
         cp TOK_IDENT
@@ -3561,6 +3745,8 @@ COMPILE_FOR:
         ld b,a
         call CSYM_FIND_OR_CREATE
         ld (FOR_LOOP_VAR_INDEX),a
+        ld hl,(FOR_FRAME_ADDR_TMP)
+        ld (hl),a                  ; frame+0 = var_index
         call LEX_NEXT_TOKEN     ; consume the identifier
         ld a,(TOK_TYPE)
         cp TOK_ASSIGN
@@ -3597,14 +3783,19 @@ COMPILE_FOR:
         or a
         sbc hl,de                ; HL = loop body's start, relative offset
         ld (FOR_LOOP_TOP_OFFSET),hl
+        ex de,hl                  ; DE = top offset
+        ld hl,(FOR_FRAME_ADDR_TMP)
+        inc hl                     ; -> frame+1 (top_offset lo)
+        ld (hl),e
+        inc hl
+        ld (hl),d                  ; frame+1,+2 = top_offset
         ret
 
 ; COMPILE_EXIT_FOR — EXIT FOR. Compiles to a plain JMP whose target is
 ; patched once COMPILE_NEXT knows the loop's real exit address (the same
 ; "record a patch address now, resolve it later" shape GOTO's own
-; FIXUPTAB already uses, but scoped to the SINGLE currently-compiling
-; loop rather than a named label — no nesting support, matching FOR/
-; NEXT's own existing scope).
+; FIXUPTAB already uses). Post-R9: scoped to the innermost open loop's
+; own per-depth exit-patch table, not a single shared one.
 COMPILE_EXIT_FOR:
         call LEX_NEXT_TOKEN     ; consume EXIT
         ld a,(TOK_TYPE)
@@ -3622,12 +3813,14 @@ COMPILE_EXIT_FOR:
         call EMIT_OP_JMP
         call EMIT_PLACEHOLDER_16
         ld (BRANCH_PATCH_TMP),hl   ; this JMP's own operand address
+        ld a,(CFOR_STACK_DEPTH)
+        dec a                       ; index of the innermost open loop
+        call EXITFOR_TABLE_ADDR     ; HL = this loop's own exit-patch table
         ld a,(EXITFOR_COUNT)
-        ld hl,EXITFOR_PATCH_TABLE
         ld c,a
         ld b,0
         add hl,bc
-        add hl,bc                  ; HL = EXITFOR_PATCH_TABLE + index*2
+        add hl,bc                  ; HL = table + index*2
         ld de,(BRANCH_PATCH_TMP)
         ld (hl),e
         inc hl
@@ -3650,14 +3843,29 @@ COMPILE_NEXT:
         ld hl,(TOK_NAME)
         ld a,(TOK_LEN)
         ld b,a
-        call CSYM_FIND_OR_CREATE   ; resolves to the SAME index as the
-                                    ; matching FOR by construction (a real
-                                    ; name lookup, not a separate mechanism)
-                                    ; — this R3 scope does not separately
-                                    ; verify the name matches the innermost
-                                    ; open FOR, since only one loop can be
-                                    ; active at a time anyway (see this
-                                    ; section's header note)
+        call CSYM_FIND_OR_CREATE   ; A = this NEXT's own referenced var index
+        ld (NEXT_VAR_INDEX_TMP),a
+        ; post-R9: verify this NEXT's variable matches the innermost open
+        ; FOR (docs/v2/V2_SEMANTIC_CAPABILITY_AUDIT.md S9 -- previously
+        ; unchecked entirely: "this R3 scope does not verify the name
+        ; matches the innermost open FOR").
+        ld a,(CFOR_STACK_DEPTH)
+        or a
+        jr z,.mismatch              ; NEXT with no FOR open at all
+        dec a
+        call CFOR_STACK_FRAME_ADDR   ; HL = innermost open frame
+        ld a,(hl)                   ; A = that loop's own var_index
+        ld b,a
+        ld a,(NEXT_VAR_INDEX_TMP)
+        cp b
+        jr nz,.mismatch
+        jr .verified
+.mismatch:
+        ld a,56                     ; NEXT variable doesn't match the
+                                      ; innermost open FOR
+        jp COMPILE_RAISE_ERROR
+.verified:
+        ld a,(NEXT_VAR_INDEX_TMP)
         ld (FOR_LOOP_VAR_INDEX),a
         call LEX_NEXT_TOKEN     ; consume the identifier
         call EMIT_OP_FOR_NEXT
@@ -3689,19 +3897,25 @@ COMPILE_NEXT:
         call EMIT_BYTE
         ; R8.5 Group 5 -- resolve every pending EXIT FOR from this loop's
         ; own body now: the loop's real exit point is exactly here, the
-        ; first bytecode position past NEXT's own operand (the same
-        ; position OP_FOR_NEXT's own .past_limit falls through to at
-        ; runtime).
+        ; first bytecode position past NEXT's own operand -- the SAME
+        ; position both OP_FOR_NEXT's own .past_limit fall-through AND
+        ; (post-R9) the OP_FOR_POP opcode emitted just below land on, so
+        ; the loop's own FOR_STACK frame is popped exactly once regardless
+        ; of which path exits the loop.
         ld hl,(EMIT_PTR)
         ld de,VM_CODE_BASE
         or a
         sbc hl,de                 ; HL = relative exit offset
         ld (RESOLVE_PATCH_TMP),hl
+        ld a,(CFOR_STACK_DEPTH)
+        dec a                       ; index of the loop being closed
+        call EXITFOR_TABLE_ADDR     ; HL = this loop's own exit-patch table
+        ld (FOR_FRAME_ADDR_TMP),hl
         ld a,(EXITFOR_COUNT)
         or a
-        ret z
+        jr z,.no_exits
         ld b,a
-        ld hl,EXITFOR_PATCH_TABLE
+        ld hl,(FOR_FRAME_ADDR_TMP)
 .patch_loop:
         push bc
         push hl
@@ -3718,6 +3932,34 @@ COMPILE_NEXT:
         inc hl
         inc hl
         djnz .patch_loop
+.no_exits:
+        call EMIT_OP_FOR_POP
+        ; Pop this loop's own FOR_STACK frame: restore the enclosing
+        ; loop's own EXITFOR_COUNT, then (if a loop is still open) reload
+        ; the now-innermost frame's own cached top-offset/var-index so a
+        ; later EXIT FOR/NEXT for THAT loop reads the right values.
+        ld a,(CFOR_STACK_DEPTH)
+        dec a
+        call CFOR_STACK_FRAME_ADDR   ; HL = the frame being closed
+        inc hl
+        inc hl
+        inc hl                       ; HL -> frame+3 (saved_exitfor_count)
+        ld a,(hl)
+        ld (EXITFOR_COUNT),a
+        ld a,(CFOR_STACK_DEPTH)
+        dec a
+        ld (CFOR_STACK_DEPTH),a
+        or a
+        ret z                        ; no enclosing loop left
+        dec a
+        call CFOR_STACK_FRAME_ADDR    ; HL = the now-innermost frame
+        ld a,(hl)
+        ld (FOR_LOOP_VAR_INDEX),a
+        inc hl
+        ld e,(hl)
+        inc hl
+        ld d,(hl)
+        ld (FOR_LOOP_TOP_OFFSET),de
         ret
 
 ; ===========================================================================
@@ -3771,6 +4013,8 @@ COMPILE_STATEMENT_LIST:
         jp z,.proc
         cp TOK_KW_CALL
         jp z,.call_stmt
+        cp TOK_KW_DEF
+        jp z,.def_fn
         cp TOK_KW_CLS
         jr z,.cls
         cp TOK_KW_BORDER
@@ -3966,6 +4210,9 @@ COMPILE_STATEMENT_LIST:
         jp .after_stmt
 .call_stmt:
         call COMPILE_CALL_STMT
+        jp .after_stmt
+.def_fn:
+        call COMPILE_DEF_FN
 .after_stmt:
         ld a,(COMPILE_ERROR_CODE)
         or a
@@ -4094,7 +4341,13 @@ COMPILE_PROC:
         ld a,(COMPILE_ERROR_CODE)
         or a
         ret nz
-        call EMIT_BYTE_OP_STORE_VAR
+        ; post-R9 PROC/DEF-FN recursion-safety correction (docs/v2/
+        ; V2_SEMANTIC_CAPABILITY_AUDIT.md S11): OP_PARAM_BIND replaces
+        ; the plain OP_STORE_VAR that used to bind the parameter here --
+        ; it also saves the parameter's OLD value so a recursive call
+        ; can't silently clobber an outer invocation's own copy. The
+        ; matching OP_PARAM_UNBIND (below, right before RET) restores it.
+        call EMIT_OP_PARAM_BIND
         ld a,(PROC_PARAM_INDEX_TMP)
         call EMIT_BYTE
         call LEX_NEXT_TOKEN     ; consume ':', prime the body's first token
@@ -4108,6 +4361,9 @@ COMPILE_PROC:
         ld a,16                  ; unterminated PROC (hit EOF, not ENDP)
         jp COMPILE_RAISE_ERROR
 .have_endp:
+        call EMIT_OP_PARAM_UNBIND
+        ld a,(PROC_PARAM_INDEX_TMP)
+        call EMIT_BYTE
         call EMIT_OP_RET
         ld hl,(EMIT_PTR)
         ld de,VM_CODE_BASE
@@ -4175,6 +4431,109 @@ COMPILE_CALL_STMT:
 .resolved:
         ld hl,(BRANCH_PATCH_TMP)
         ld de,(LABEL_LOOKUP_RESULT)
+        ld (hl),e
+        inc hl
+        ld (hl),d
+        ret
+
+; ===========================================================================
+; COMPILE_DEF_FN — DEF FN name(param) = expr (post-R9 reintegration,
+; docs/v2/deffn_design/README.md). Reuses PROC's own compile-once
+; JMP-skip + LABEL_DEFINE-at-the-real-entry-position + PARAM_BIND/
+; PARAM_UNBIND shape almost verbatim (PROC_SKIP_PATCH_TMP/PROC_PARAM_
+; INDEX_TMP scratch, same reentrant parameter mechanism -- see rom/
+; exrom_v2_vm_core.asm's own header on VM_PARAM_SAVE_SP). The one real
+; difference: the body is a single EXPR, not a statement list, and its
+; result is left on the VM operand stack across RET_DEFFN on purpose --
+; exactly what FN's own call-site factor needs (see .udf_call in
+; COMPILE_FACTOR below).
+; ===========================================================================
+COMPILE_DEF_FN:
+        call LEX_NEXT_TOKEN     ; consume DEF
+        ld a,(TOK_TYPE)
+        cp TOK_KW_FN
+        jr z,.have_fn
+        ld a,49                  ; expected FN after DEF
+        jp COMPILE_RAISE_ERROR
+.have_fn:
+        call LEX_NEXT_TOKEN     ; consume FN
+        ld a,(TOK_TYPE)
+        cp TOK_IDENT
+        jr z,.have_name
+        ld a,50                  ; expected a function name
+        jp COMPILE_RAISE_ERROR
+.have_name:
+        ld hl,(TOK_NAME)
+        ld (STMT_IDENT_NAME_PTR),hl
+        ld a,(TOK_LEN)
+        ld (STMT_IDENT_NAME_LEN),a
+        call LEX_NEXT_TOKEN     ; consume the function name
+        call EMIT_OP_JMP_DEFFN
+        call EMIT_PLACEHOLDER_16   ; HL = patch address for the skip-over
+        ld (PROC_SKIP_PATCH_TMP),hl
+        ld a,(TOK_TYPE)
+        cp TOK_LPAREN
+        jr z,.have_lparen
+        ld a,51                  ; expected '(' after a name
+        jp COMPILE_RAISE_ERROR
+.have_lparen:
+        call LEX_NEXT_TOKEN     ; consume '('
+        ld a,(TOK_TYPE)
+        cp TOK_IDENT
+        jr z,.have_param
+        ld a,52                  ; expected a parameter name
+        jp COMPILE_RAISE_ERROR
+.have_param:
+        ld hl,(TOK_NAME)
+        ld a,(TOK_LEN)
+        ld b,a
+        call CSYM_FIND_OR_CREATE
+        ld (PROC_PARAM_INDEX_TMP),a
+        call LEX_NEXT_TOKEN     ; consume the parameter name
+        ld a,(TOK_TYPE)
+        cp TOK_RPAREN
+        jr z,.have_rparen
+        ld a,53                  ; expected ')'
+        jp COMPILE_RAISE_ERROR
+.have_rparen:
+        call LEX_NEXT_TOKEN     ; consume ')'
+        ld a,(TOK_TYPE)
+        cp TOK_ASSIGN
+        jr z,.have_assign
+        ld a,54                  ; expected '=' before body
+        jp COMPILE_RAISE_ERROR
+.have_assign:
+        ; define the CALL-entry label HERE -- at the PARAM_BIND position,
+        ; the real call target -- same convention COMPILE_PROC's own
+        ; identical comment already established.
+        ld hl,(STMT_IDENT_NAME_PTR)
+        ld a,(STMT_IDENT_NAME_LEN)
+        ld b,a
+        call LABEL_DEFINE
+        ld a,(COMPILE_ERROR_CODE)
+        or a
+        ret nz
+        call EMIT_OP_PARAM_BIND
+        ld a,(PROC_PARAM_INDEX_TMP)
+        call EMIT_BYTE
+        call LEX_NEXT_TOKEN     ; consume '=', prime the body expr's own
+                                  ; first token
+        call COMPILE_EXPR       ; body -> result left on the VM operand
+                                  ; stack, on purpose (RET_DEFFN pops
+                                  ; nothing else)
+        ld a,(COMPILE_ERROR_CODE)
+        or a
+        ret nz
+        call EMIT_OP_PARAM_UNBIND
+        ld a,(PROC_PARAM_INDEX_TMP)
+        call EMIT_BYTE
+        call EMIT_OP_RET_DEFFN
+        ld hl,(EMIT_PTR)
+        ld de,VM_CODE_BASE
+        or a
+        sbc hl,de                 ; HL = relative offset (current position)
+        ex de,hl                  ; DE = relative offset
+        ld hl,(PROC_SKIP_PATCH_TMP)
         ld (hl),e
         inc hl
         ld (hl),d
