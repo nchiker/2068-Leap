@@ -18,11 +18,12 @@ cd "$(dirname "$0")/.."
 # v2_exrom.asm HOME+EXROM split and the real BANK_PAGE_EXROM_IN/OUT paging
 # primitives, instead of one flat bank -- giving ~24K combined capacity
 # instead of 16K. Each test's own HOME file supplies TEST_CHECK_RESULT (or
-# TEST_V2_CUSTOM_CHECKS + TEST_CUSTOM_MAIN) and is concatenated with the one
-# shared test_v2_harness_exrom.bin built below (all 14 tests only need
-# TEST_V2_NEEDS_DECOMPILE, so one shared EXROM build covers every one of
-# them -- confirmed by grep, no test in this list defines
-# TEST_V2_NEEDS_CALC).
+# TEST_V2_CUSTOM_CHECKS + TEST_CUSTOM_MAIN) and is concatenated with one of
+# the two shared EXROM builds below, chosen by whether the test also defines
+# TEST_V2_NEEDS_CALC (originally none of the 14 did -- all needed only
+# TEST_V2_NEEDS_DECOMPILE, one shared EXROM build sufficed. R10 added the
+# first CALC-needing member of this migrated set, r10_numeric, so there are
+# now two shared EXROM variants instead of one).
 #
 # This is TEST scaffolding only -- it does not change BASIC semantics, and
 # it is separate from rom/exrom_build.asm/rom/v2_exrom.asm, the real
@@ -34,6 +35,13 @@ migrated_names=(
     arrays block_if decompiler for_nested for_step group6_math input
     mode_module printer_module proc_recursion relational save_load
     sqr_decomp strfuncs
+)
+
+# Migrated tests that also need the real calculator (TEST_V2_NEEDS_CALC),
+# paired with a separate shared EXROM build below instead of the plain
+# TEST_V2_NEEDS_DECOMPILE-only one every other migrated test uses.
+calc_migrated_names=(
+    r10_numeric
 )
 
 # ---------------------------------------------------------------------------
@@ -49,10 +57,15 @@ legacy_names=(
 out_dir=build/smoke/v2-standalone
 mkdir -p "$out_dir"
 
-# One shared EXROM build for every migrated test (all 14 need only
-# TEST_V2_NEEDS_DECOMPILE -- see header above).
+# One shared EXROM build for every plain migrated test (needs only
+# TEST_V2_NEEDS_DECOMPILE -- see header above), plus a second shared EXROM
+# build for the calc_migrated_names subset (needs TEST_V2_NEEDS_CALC too).
 sjasmplus -DTEST_V2_NEEDS_DECOMPILE rom/test_v2_harness_exrom.asm >/dev/null
 mv test_v2_harness_exrom.bin "$out_dir/test_v2_harness_exrom.bin"
+
+sjasmplus -DTEST_V2_NEEDS_DECOMPILE -DTEST_V2_NEEDS_CALC \
+    rom/test_v2_harness_exrom.asm >/dev/null
+mv test_v2_harness_exrom.bin "$out_dir/test_v2_harness_exrom_calc.bin"
 
 for name in "${migrated_names[@]}"; do
     tools/sjasmplus_strict.sh \
@@ -60,6 +73,15 @@ for name in "${migrated_names[@]}"; do
         "rom/test_v2_${name}.asm"
     mv "test_v2_harness_home.bin" "$out_dir/test_v2_${name}_home.bin"
     cat "$out_dir/test_v2_${name}_home.bin" "$out_dir/test_v2_harness_exrom.bin" \
+        > "$out_dir/test_v2_${name}_zesarux.bin"
+done
+
+for name in "${calc_migrated_names[@]}"; do
+    tools/sjasmplus_strict.sh \
+        --sym="$out_dir/test_v2_${name}.sym" \
+        "rom/test_v2_${name}.asm"
+    mv "test_v2_harness_home.bin" "$out_dir/test_v2_${name}_home.bin"
+    cat "$out_dir/test_v2_${name}_home.bin" "$out_dir/test_v2_harness_exrom_calc.bin" \
         > "$out_dir/test_v2_${name}_zesarux.bin"
 done
 
@@ -72,7 +94,7 @@ for name in "${legacy_names[@]}"; do
         > "$out_dir/test_v2_${name}_zesarux.bin"
 done
 
-names=("${migrated_names[@]}" "${legacy_names[@]}")
+names=("${migrated_names[@]}" "${calc_migrated_names[@]}" "${legacy_names[@]}")
 
 state_dir="$(mktemp -d)"
 export TS2068_DEBUG_STATE_DIR="$state_dir"

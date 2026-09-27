@@ -1077,6 +1077,21 @@ LEX_CLASSIFY_KEYWORD:
         jr nz,.loop
         ret                       ; no match — TOK_TYPE stays TOK_IDENT
 
+; V2_GET_KEYWORD_TABLE -- R10 keyword-bolding prototype. Exposed via
+; KTAB_GET_KEYWORD_TABLE (include/v2_ktab.inc) so EXROM-resident redraw
+; code can locate the real KEYWORD_TABLE data below without duplicating
+; it: HOME occupies a disjoint, always-visible address range from
+; EXROM's own $C000-$DFFF chunk (kernel/bank/bank.asm's own header:
+; "Every other chunk stays Home"), so EXROM code can read HOME ROM data
+; directly once it knows the real address -- this one tiny stub is the
+; only thing that needs to live in HOME; the actual scan/match logic
+; lives in EXROM (rom/exrom_v2_shell.asm's V2_KW_DETECT_SPANS).
+; Out: HL = KEYWORD_TABLE address, A = KEYWORD_TABLE_COUNT.
+V2_GET_KEYWORD_TABLE:
+        ld hl,KEYWORD_TABLE
+        ld a,KEYWORD_TABLE_COUNT
+        ret
+
 KEYWORD_TABLE_COUNT: equ 36  ; post-R9 DEF FN reintegration adds DEF/FN
 
 ; Each row is [len:1][text:len][token:1], variable-stride (bounded ROM

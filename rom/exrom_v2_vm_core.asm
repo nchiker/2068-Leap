@@ -1647,21 +1647,15 @@ OP_DIV:
         call VM_FLOAT_STORE_RESULT
         jp VM_RUN.loop
 .float_path:
+        ; R10 correction (V2_SEMANTIC_CAPABILITY_AUDIT.md matrix row 7):
+        ; a FLOAT-tagged zero divisor is now caught here too, via the
+        ; shared VM_FLOAT_TEST_ZERO helper (same packed-float sign/zero
+        ; encoding VM_NUM_TO_TEXT's own float-sign code already reads),
+        ; closing the previously documented, deliberately deferred gap.
         ld a,(VM_FLOAT_B_TAG)
-        cp TAG_INT
-        jr nz,.skip_zero_check   ; B is FLOAT-tagged: skip the cheap
-                                   ; int-zero check — a documented,
-                                   ; deferred edge case (a FLOAT-tagged
-                                   ; zero divisor is not caught by this
-                                   ; milestone; NUMERIC_DESIGN.md already
-                                   ; flags the calculator's own raw divide
-                                   ; as having no error-reporting path of
-                                   ; its own for this case)
         ld hl,(VM_FLOAT_B_VAL)
-        ld a,h
-        or l
+        call VM_FLOAT_TEST_ZERO
         jp z,VM_ERR_DIVIDE_BY_ZERO
-.skip_zero_check:
         xor a
         ld (CALC_SP),a
         ld a,(VM_FLOAT_A_TAG)
@@ -1679,14 +1673,7 @@ OP_DIV:
         jp VM_RUN.loop
 
 OP_CMP_LT:
-        call VM_POP             ; HL = b, A = tag_b
-        ld c,a
-        push hl
-        call VM_POP             ; HL = a, A = tag_a
-        or c
-        jp nz,VM_ERR_FLOAT_NOT_IMPLEMENTED
-        pop de                  ; DE = b
-        call MATH_COMPARE16     ; A = 0 if a=b, 1 if a>b, $FF if a<b
+        call VM_CMP_DISPATCH     ; A = 0 if a=b, 1 if a>b, $FF if a<b
         ld hl,0
         cp $FF
         jr nz,.not_less
@@ -1697,14 +1684,7 @@ OP_CMP_LT:
         jp VM_RUN.loop
 
 OP_CMP_EQ:
-        call VM_POP             ; HL = b, A = tag_b
-        ld c,a
-        push hl
-        call VM_POP             ; HL = a, A = tag_a
-        or c
-        jp nz,VM_ERR_FLOAT_NOT_IMPLEMENTED
-        pop de                  ; DE = b
-        call MATH_COMPARE16     ; A = 0 if a=b
+        call VM_CMP_DISPATCH     ; A = 0 if a=b
         ld hl,0
         or a
         jr nz,.not_equal
@@ -1716,21 +1696,14 @@ OP_CMP_EQ:
 
 ; ===========================================================================
 ; R8.5 Group 3 -- the remaining relops (<=, >, >=, <>) OP_CMP_LT/EQ never
-; needed, plus AND/OR/NOT. Same int-only restriction OP_CMP_LT/EQ already
-; had (MATH_COMPARE16 is a 16-bit integer compare; float relational/
-; boolean support is not this group's scope, matching the plan's own
-; "full relop set + AND/OR/NOT" wording -- not "float relop support",
-; a separate, unscoped feature).
+; needed, plus AND/OR/NOT. R10 correction: all six relops now route
+; through VM_CMP_DISPATCH, which adds real FLOAT-operand support (see
+; that routine's own header) -- AND/OR/NOT keep their original int-only
+; restriction unchanged (boolean-operand FLOAT semantics were not part
+; of the audit's finding and are a separate, unscoped question).
 ; ===========================================================================
 OP_CMP_LE:
-        call VM_POP             ; HL = b, A = tag_b
-        ld c,a
-        push hl
-        call VM_POP             ; HL = a, A = tag_a
-        or c
-        jp nz,VM_ERR_FLOAT_NOT_IMPLEMENTED
-        pop de                  ; DE = b
-        call MATH_COMPARE16     ; A = 0 if a=b, 1 if a>b, $FF if a<b
+        call VM_CMP_DISPATCH     ; A = 0 if a=b, 1 if a>b, $FF if a<b
         ld hl,0
         cp 1
         jr z,.not_le            ; true unless a>b
@@ -1741,14 +1714,7 @@ OP_CMP_LE:
         jp VM_RUN.loop
 
 OP_CMP_GT:
-        call VM_POP
-        ld c,a
-        push hl
-        call VM_POP
-        or c
-        jp nz,VM_ERR_FLOAT_NOT_IMPLEMENTED
-        pop de
-        call MATH_COMPARE16
+        call VM_CMP_DISPATCH
         ld hl,0
         cp 1
         jr nz,.not_gt
@@ -1759,14 +1725,7 @@ OP_CMP_GT:
         jp VM_RUN.loop
 
 OP_CMP_GE:
-        call VM_POP
-        ld c,a
-        push hl
-        call VM_POP
-        or c
-        jp nz,VM_ERR_FLOAT_NOT_IMPLEMENTED
-        pop de
-        call MATH_COMPARE16
+        call VM_CMP_DISPATCH
         ld hl,0
         cp $FF
         jr z,.not_ge             ; true unless a<b
@@ -1777,14 +1736,7 @@ OP_CMP_GE:
         jp VM_RUN.loop
 
 OP_CMP_NE:
-        call VM_POP
-        ld c,a
-        push hl
-        call VM_POP
-        or c
-        jp nz,VM_ERR_FLOAT_NOT_IMPLEMENTED
-        pop de
-        call MATH_COMPARE16
+        call VM_CMP_DISPATCH
         ld hl,0
         or a
         jr z,.not_ne
@@ -2436,6 +2388,110 @@ VM_CALC_DIV_STUB:
         ld b,0
         rst $28
         db $05,$38              ; divide, end-calc
+        ret
+
+; VM_FLOAT_TEST_ZERO -- input: A = tag, HL = value (as VM_POP delivers).
+; TAG_INT tests HL directly. TAG_FLOAT treats HL as a FLOATTAB index and
+; reads the real 5-byte packed record: byte0=0 is the small-int fast
+; form (byte1 = sign $00/$FF, bytes2-3 = the 16-bit magnitude -- zero
+; only when byte1/2/3 are all zero, confirmed from CALC_INT_TO_FP's own
+; body); byte0!=0 is the general form, which this calculator never uses
+; to represent exactly zero (CALC_INT_TO_FP/VM_CALC_SUB_STUB's own
+; results always normalize 0 to the small-int form), so it is always
+; nonzero. Same packed-format reading VM_NUM_TO_TEXT's own float-sign
+; code already uses (see that routine's header).
+; Out: Z set if the value is exactly zero. Destroys: AF, HL.
+VM_FLOAT_TEST_ZERO:
+        cp TAG_FLOAT
+        jr z,.float
+        ld a,h
+        or l
+        ret
+.float:
+        ld a,l
+        call VM_FLOAT_ADDR       ; HL -> the real 5 packed bytes
+        ld a,(hl)                ; byte0
+        or a
+        ret nz                   ; general form -> never exactly zero
+        inc hl
+        ld a,(hl)                ; byte1 (sign, small-int form)
+        or a
+        ret nz
+        inc hl
+        ld a,(hl)                ; byte2
+        inc hl
+        or (hl)                  ; A = byte2 | byte3
+        ret
+
+; VM_CMP_DISPATCH -- shared int/float relational-compare backend for
+; OP_CMP_LT/LE/GT/GE/EQ/NE. Pops its own two operands via the same
+; VM_FLOAT_A/B_TAG/VAL convention OP_DIV already established (never
+; concurrently live with an arithmetic opcode's own use of those cells,
+; since opcodes execute one at a time). Two INT-tagged operands take the
+; unchanged MATH_COMPARE16 fast path; either FLOAT-tagged operand takes
+; a real calculator subtract (a-b) and classifies the packed result's
+; own sign/zero encoding (same layout VM_FLOAT_TEST_ZERO above already
+; reads) -- closing the "any FLOAT operand -> VM_ERR_FLOAT_NOT_
+; IMPLEMENTED" gap (R10 correction, V2_SEMANTIC_CAPABILITY_AUDIT.md
+; matrix row 8).
+; Out: A = 0 if a=b, 1 if a>b, $FF if a<b -- the exact MATH_COMPARE16
+; contract, so every caller's existing post-compare branch (cp $FF /
+; cp 1 / or a) needs no change. Destroys: AF, BC, DE, HL.
+VM_CMP_DISPATCH:
+        call VM_POP              ; HL = b, A = tag_b
+        ld (VM_FLOAT_B_TAG),a
+        ld (VM_FLOAT_B_VAL),hl
+        call VM_POP              ; HL = a, A = tag_a
+        ld (VM_FLOAT_A_TAG),a
+        ld (VM_FLOAT_A_VAL),hl
+        ld c,a
+        ld a,(VM_FLOAT_B_TAG)
+        or c
+        jr nz,.float_path
+        ld hl,(VM_FLOAT_A_VAL)
+        ld de,(VM_FLOAT_B_VAL)
+        jp MATH_COMPARE16
+.float_path:
+        xor a
+        ld (CALC_SP),a
+        ld a,(VM_FLOAT_A_TAG)
+        ld (VM_FLOAT_OPERAND_TAG),a
+        ld hl,(VM_FLOAT_A_VAL)
+        ld (VM_FLOAT_OPERAND_VAL),hl
+        call VM_FLOAT_PUSH_OPERAND
+        ld a,(VM_FLOAT_B_TAG)
+        ld (VM_FLOAT_OPERAND_TAG),a
+        ld hl,(VM_FLOAT_B_VAL)
+        ld (VM_FLOAT_OPERAND_VAL),hl
+        call VM_FLOAT_PUSH_OPERAND
+        call VM_CALC_SUB_STUB     ; CALC_STACK[0] = a-b
+        ld hl,CALC_STACK
+        ld a,(hl)
+        or a
+        jr nz,.general
+        inc hl                    ; -> byte1 (sign, small-int form)
+        ld a,(hl)
+        or a
+        jr nz,.neg
+        inc hl                    ; -> byte2
+        ld a,(hl)
+        inc hl                    ; -> byte3
+        or (hl)
+        jr z,.zero
+        jr .pos
+.general:
+        inc hl                    ; -> byte1 (sign bit, general form)
+        ld a,(hl)
+        and $80
+        jr nz,.neg
+.pos:
+        ld a,1
+        ret
+.neg:
+        ld a,$FF
+        ret
+.zero:
+        xor a
         ret
 
 ; ---------------------------------------------------------------------------
@@ -3388,6 +3444,17 @@ BUILTIN_FN_CODE:
 ; accepted as the very first character, and digits beyond
 ; VM_INPUT_DIGITS_MAX are discarded (matching, not inventing, that
 ; scanner's own existing overflow behavior).
+; R10 correction (V2_SEMANTIC_CAPABILITY_AUDIT.md matrix row 6): VAL()
+; now recognizes an optional '.' the same way the compiler's own
+; LEX_SCAN_NUMBER does (digits before and after the dot accumulate into
+; one running value; a separate counter tracks how many fractional
+; digits were seen). VM_VAL_SEEN_DOT/VM_VAL_FRAC_COUNT reuse
+; VM_INPUT_TARGET_TMP/VM_INPUT_CHARBUF -- BUILTIN_FN_VAL and OP_INPUT_*
+; are different opcodes, never concurrently executing, so this costs no
+; new RAM (same reuse convention VM_PARSE_INPUT_INT's own
+; VM_ARR_VALUE_TMP borrow already established).
+VM_VAL_SEEN_DOT:   equ VM_INPUT_TARGET_TMP
+VM_VAL_FRAC_COUNT: equ VM_INPUT_CHARBUF
 BUILTIN_FN_VAL:
         call VM_POP
         ld a,l
@@ -3398,6 +3465,8 @@ BUILTIN_FN_VAL:
         xor a
         ld (VM_INPUT_COUNT),a
         ld (VM_INPUT_NEG_TMP),a
+        ld (VM_VAL_SEEN_DOT),a
+        ld (VM_VAL_FRAC_COUNT),a
 .val_loop:
         ld a,c
         or a
@@ -3406,12 +3475,21 @@ BUILTIN_FN_VAL:
         ld a,(hl)
         inc hl
         cp '-'
-        jr nz,.val_check_digit
+        jr nz,.val_check_dot
         ld a,(VM_INPUT_COUNT)
         or a
         jr nz,.val_loop          ; '-' only accepted as the very first char
         ld a,1
         ld (VM_INPUT_NEG_TMP),a
+        jr .val_loop
+.val_check_dot:
+        cp '.'
+        jr nz,.val_check_digit
+        ld a,1
+        ld (VM_VAL_SEEN_DOT),a   ; a second '.' just re-sets the same
+                                  ; flag, harmless -- only the first one
+                                  ; matters (same tolerant-scan spirit
+                                  ; as this routine's other char rules)
         jr .val_loop
 .val_check_digit:
         cp '0'
@@ -3443,9 +3521,44 @@ BUILTIN_FN_VAL:
         ld a,(VM_INPUT_COUNT)
         inc a
         ld (VM_INPUT_COUNT),a
+        ld a,(VM_VAL_SEEN_DOT)
+        or a
+        jr z,.val_loop
+        ld a,(VM_VAL_FRAC_COUNT)
+        inc a
+        ld (VM_VAL_FRAC_COUNT),a
         jr .val_loop
 .val_done:
-        call VM_PARSE_INPUT_INT ; HL = parsed value
+        call VM_PARSE_INPUT_INT ; HL = parsed value (digits w/o the '.',
+                                  ; sign already applied)
+        ld a,(VM_VAL_FRAC_COUNT)
+        or a
+        jr z,.val_int_result
+        ld (VM_FLOAT_A_VAL),hl
+        ld b,a                    ; B = fractional-digit count
+        ld de,1
+.val_pow10_loop:
+        ld h,d
+        ld l,e
+        add hl,hl
+        add hl,hl
+        add hl,de
+        add hl,hl                ; HL = DE*10
+        ex de,hl
+        djnz .val_pow10_loop     ; DE = 10^frac_count (same value/
+                                  ; divisor shape OP_PUSH_FLOAT_LIT's
+                                  ; compiler-side literal already uses)
+        ld (VM_FLOAT_B_VAL),de
+        xor a
+        ld (CALC_SP),a
+        ld hl,(VM_FLOAT_A_VAL)
+        call CALC_INT_TO_FP
+        ld hl,(VM_FLOAT_B_VAL)
+        call CALC_INT_TO_FP
+        call VM_CALC_DIV_STUB
+        call VM_FLOAT_STORE_RESULT
+        jp VM_RUN.loop
+.val_int_result:
         xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
         jp VM_PUSH
 
