@@ -961,6 +961,27 @@ DECOMP_SKIP_OPERAND:
         jr z,.w1
         cp 2                      ; PUSH_I16
         jr z,.w2
+        cp 6                      ; JMP -- fixes a real bug found while
+        jr z,.w2                    ; building the production-shaped
+                                      ; test harness (docs/v2/
+                                      ; POST_R9_TEST_INFRASTRUCTURE.md):
+                                      ; DECOMP_COLLECT_ARRAY_SIZES (post-R9
+                                      ; DIM/decompiler correction) calls
+                                      ; this routine for every opcode
+                                      ; except 48/49, but plain JMP/JMPZ
+                                      ; were never given a width entry
+                                      ; here (DECOMP_COLLECT_LABELS's own
+                                      ; separate prescan special-cases
+                                      ; both BEFORE ever reaching this
+                                      ; routine, so the gap was invisible
+                                      ; there) -- any program containing
+                                      ; an IF, block-IF, or EXIT FOR
+                                      ; (all compile to JMP/JMPZ) hit
+                                      ; DECOMP_ERR_UNSUPPORTED_OPCODE the
+                                      ; moment DECOMP_COLLECT_ARRAY_SIZES
+                                      ; ran, independent of arrays.
+        cp 12                     ; JMPZ -- same gap, same fix
+        jr z,.w2
         cp 15                     ; CALL (R4)
         jr z,.w2
         cp 52                     ; JMP_DEFFN (post-R9 DEF FN reintegration)
@@ -1205,7 +1226,18 @@ DECOMP_EMIT_ARRAY_DIMS:
         ld a,(hl)
         or a
         jr z,.skip
-        ld (DECOMP_TMP_LEN),a       ; park the size across DECOMP_EMIT_TEXT
+        ; BUG FOUND (real hardware, post-R9 test-infrastructure fix):
+        ; DECOMP_TMP_LEN is NOT safe to park a value across a DECOMP_
+        ; EMIT_CHAR call -- that routine reuses it as its own internal
+        ; 1-byte scratch buffer (the exact same hazard this file's own
+        ; .jmp_proc_header already documented and avoided by using
+        ; DECOMP_ARG_LEN0 instead). The array-index digit emitted just
+        ; below calls DECOMP_EMIT_CHAR, silently clobbering the parked
+        ; size before it was ever read back -- caught via a real
+        ; ZEsarUX run: every array rendered as "DIM A0(40)"/"DIM A1(40)"
+        ; instead of its own real declared size. DECOMP_ARG_LEN0 is a
+        ; cell neither EMIT_CHAR nor EMIT_UINT16 ever touches.
+        ld (DECOMP_ARG_LEN0),a      ; park the size across DECOMP_EMIT_TEXT
         ld hl,STR_DIM
         ld c,STR_DIM_LEN
         call DECOMP_EMIT_TEXT
@@ -1214,7 +1246,7 @@ DECOMP_EMIT_ARRAY_DIMS:
         call DECOMP_EMIT_CHAR
         ld a,'('
         call DECOMP_EMIT_CHAR
-        ld a,(DECOMP_TMP_LEN)
+        ld a,(DECOMP_ARG_LEN0)
         ld l,a
         ld h,0
         call DECOMP_EMIT_UINT16

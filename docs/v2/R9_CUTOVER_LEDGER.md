@@ -274,7 +274,12 @@ storage/package/autorun cases through `tools/run_storage_named_load_test.sh`;
 the separate V2 standalone set has 14 passing tests. Earlier real-ZEsarUX
 production interaction also exercised SAVE/NEW/LOAD/LIST/RUN and package
 calls with deterministic transport. These results prove the non-physical
-storage and production control paths only. The legacy `rom/test_v2_save_load.asm`
+storage and production control paths only. `tools/run_storage_named_load_test.sh`
+itself is a V1-derived component test (it boots `basic/basic.asm`'s command
+loop against a V1-derived EXROM built from `rom/exrom_build.asm`) that proves
+`kernel/storage/storage.asm`'s generic transport works, not that the V2
+production ROM boots or works -- see docs/v2/POST_R9_TEST_INFRASTRUCTURE.md.
+The legacy `rom/test_v2_save_load.asm`
 is a standalone bytecode-persistence experiment and is not proof of the R9
 authoritative-source tape representation.
 

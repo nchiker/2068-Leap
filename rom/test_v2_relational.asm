@@ -6,7 +6,11 @@
 ; AND/OR/NOT boolean grammar (COMPILE_EXPR/COMPILE_BOOL_AND/COMPILE_
 ; BOOL_NOT/COMPILE_RELATIONAL), plus rom/exrom_v2_vm_core.asm's new
 ; OP_CMP_LE/GT/GE/NE/AND/OR/NOT opcodes. NOT wired into the production
-; BASIC dispatch or the shipping EXROM build.
+; BASIC dispatch or the shipping EXROM build. Built on the shared
+; production-shaped test harness (rom/test_v2_harness_home_head.inc/
+; _tail.inc + rom/test_v2_harness_exrom.asm) -- see that harness's own
+; header for why (post-semantic-milestone test-infrastructure fix,
+; docs/v2/POST_R9_TEST_INFRASTRUCTURE.md).
 ;
 ; Source program compiled and executed (A=5, B=3 throughout):
 ;
@@ -26,90 +30,38 @@
 ; is correct, not just that SOME opcode ran (a relop bug that always
 ; returns "true" or always "false" would otherwise pass a test that
 ; only checked truthy results).
-;
-; Build:
-;   tools/sjasmplus_strict.sh --sym=build/test_v2_relational.sym \
-;       rom/test_v2_relational.asm
-; Run (PASS=green/FAIL=red border):
-;   ts2068-debug start --rom build/smoke/test_v2_relational_zesarux.bin
-;   ts2068-debug run --max-instructions 3000000
-;   ts2068-debug timex   (border field)
 ; ============================================================================
 
-    INCLUDE "include/hardware.inc"
-    INCLUDE "include/sysvars.inc"
-
-
-    DEVICE NOSLOT64K
-
-    ORG $0000
-RST_00:
-    di
-    jp   COLD_START
-    DS   $0100 - $, $FF
-
-COLD_START:
-    ld   sp, $FF00
-
-    call COMPILER_INIT
-    ld   hl, SOURCE_TEXT
-    ld   (SRC_PTR), hl
-    ld   hl, VM_CODE_BASE
-    ld   (EMIT_PTR), hl
-    call COMPILE_PROGRAM
-
-    ld   a, (COMPILE_ERROR_CODE)
-    or   a
-    jp   nz, FAIL
-
-    ld   hl, (EMIT_PTR)
-    ld   (DECOMP_END_ADDR), hl
-
-    call VM_INIT
-    ld   hl, VM_CODE_BASE
-    ld   (VM_IP), hl
-    call VM_RUN
-
-    ld   a, (VM_ERROR_CODE)
-    or   a
-    jp   nz, FAIL
-
-    ; VM_OUTPUT_ROW must be 9 -- one line per PRINT (0-8); A=5/B=3
-    ; themselves don't print.
-    ld   a, (VM_OUTPUT_ROW)
-    cp   9
-    jp   nz, FAIL
-
-    call DECOMPILE_PROGRAM
-
-    ld   a, (DECOMP_ERROR_CODE)
-    or   a
-    jp   nz, FAIL
-
-    call CHECK_DECOMPILED_TEXT
-    jp   c, FAIL
-
-PASS:
-    ld   a, 4                ; green
-    out  (PORT_ULA), a
-    jr   $
-
-FAIL:
-    ld   a, 2                ; red
-    out  (PORT_ULA), a
-    jr   $
+    DEFINE TEST_V2_NEEDS_DECOMPILE
+    DEFINE TEST_V2_CHECK_DECOMPILED_TEXT
+    INCLUDE "rom/test_v2_harness_home_head.inc"
 
 SOURCE_TEXT:
     db "A=5:B=3:"
     db "PRINT A>B:PRINT A<B:PRINT A>=5:PRINT A<=3:PRINT A<>B:PRINT A=5:"
     db "PRINT (A>B) AND (B<A):PRINT (A<B) OR (A>B):PRINT NOT (A<B)", 0
 
+; TEST_CHECK_RESULT — VM_OUTPUT_ROW must be 9 -- one line per PRINT
+; (0-8); A=5/B=3 themselves don't print.
+TEST_CHECK_RESULT:
+    ld   a, (VM_OUTPUT_ROW)
+    cp   9
+    jr   nz, .fail
+    ret
+.fail:
+    scf
+    ret
+
 ; ============================================================================
-; CHECK_DECOMPILED_TEXT — byte-for-byte against a real captured-then-
-; verified rendering (same discipline as every other decompiler test
-; this session).
+; TEST_CHECK_DECOMPILED — byte-for-byte against a real captured-then-
+; verified rendering, independently cross-checked against a direct read
+; of each PRINT's own real screen text (1,0,1,0,1,1,1,1,1 -- see this
+; file's own header) before being captured, so this confirms both the
+; decompiled SHAPE and the real computed VALUES were correct, not just
+; that some opcode ran. "V0"/"V1" are the compiler's real generated
+; names for A/B.
 ; ============================================================================
-CHECK_DECOMPILED_TEXT:
+TEST_CHECK_DECOMPILED:
     ld   hl, (DECOMP_OUT_PTR)
     ld   de, DECOMP_OUT_BUF
     or   a
@@ -136,14 +88,6 @@ CHECK_DECOMPILED_TEXT:
     scf
     ret
 
-; Captured from a real ZEsarUX run of this exact test, independently
-; cross-checked against a direct read of each PRINT's own real screen
-; text (1,0,1,0,1,1,1,1,1 -- see this file's own header) before being
-; captured here, so this confirms both the decompiled SHAPE and the
-; real computed VALUES were correct, not just that some opcode ran.
-; "V0"/"V1" are the compiler's real generated names for A/B (identifiers
-; are not preserved through compile, matching every other decompiler
-; test this session).
 EXPECTED_TEXT:
     db "V0 = 5", 13
     db "V1 = 3", 13
@@ -159,9 +103,7 @@ EXPECTED_TEXT:
 EXPECTED_TEXT_LEN: equ $-EXPECTED_TEXT
 
 ; Test-only stubs: this file's own test program never exercises LPRINT/
-; BEEP/SOUND/PAUSE, and never registers or calls a loadable extension --
-; same stubbing discipline (and same real contracts) already established
-; for the other R8.5 v2 tests this session.
+; BEEP/SOUND/PAUSE, and never registers or calls a loadable extension.
 BASIC_STMT_LPRINT_EXROM:
     ret
 SOUND_BEEP:
@@ -184,32 +126,6 @@ EXT_CALL_ARG0: equ $8B00
 EXT_CALL_ARG4: equ $8B00
 EXT2_TABLE:    equ $8B00
 
-KTAB_CALC_EXIT_TRAMPOLINE:
-    ret
-
-    INCLUDE "kernel/math/math.asm"
-; rom/exrom_calc.asm (1772 real lines) is NOT included here: this test's
-; own program is pure integer relational/boolean arithmetic -- no
-; PUSH_FLOAT_LIT, no float PRINT -- so none of the float paths that
-; reach the calculator are ever exercised. R8.5 Group 4's own real ROM
-; growth pushed this flat 16K image over budget with the real
-; calculator included; same stubbing discipline rom/test_v2_save_load.
-; asm's own header already established for this exact tradeoff.
-CALC_INT_TO_FP:
-    ret
-CALC_FP_TO_INT:
-    ret
-CALC_SP_TO_NEXT_FREE_PTR:
-    ret
-CALC_PUSH_PI:
-    ret
-CALC_PUSH_FP_RAW:
-    ret
-; kernel/graphics/graphics.asm (2235 real lines) is NOT included here:
-; this test never checks real screen bitmap content. R8.5 Group 5's own
-; real ROM growth (SPRITE GRAB/SHOW/HIDE/MOVE) pushed this flat 16K
-; image over budget with graphics.asm included; same stubbing
-; discipline as rom/test_v2_call_fn.asm's own identical fix.
 GFX_CLS:
     ret
 GFX_PAINT_ATTR:
@@ -232,41 +148,15 @@ GFX_SPRITE_CAPTURE:
 GFX_SPRITE_DRAW:
     or a
     ret
-; R8.5 Group 6 -- POINT/ATTR need real GFX_* contracts; this
-; test never exercises real pixel/attribute content, so a plain
-; deterministic stub (same discipline as every other GFX_*
-; stub in this file) satisfies the reference without a real
-; bitmap.
 GFX_READ_PIXEL:
     xor a
     ret
 GFX_CELL_ATTR_ADDR:
     scf
     ret
-; kernel/memory/memory.asm is NOT included here -- this test never
-; touches the editor (unlike rom/test_v2_editor_integration.asm, memory.
-; asm's own real dependent), and neither rom/exrom_v2_vm_core.asm/
-; compiler.asm/decompiler.asm reference any MEM_*/PROG_END/PROG_AREA_
-; START/ARRAYS_END/VARS_START symbol.
     INCLUDE "rom/exrom_format.asm"
-; R8.5 Group 6 -- INKEY$ needs kernel/io/io.asm's real IO_READ_KEY_
-; NONBLOCK, not included in this flat test image (same scaling limit
-; as every other v2 test); deterministic "no key currently pressed"
-; stub, same pattern this test suite already uses for other platform
-; dependencies (GFX_READ_PIXEL etc). Placed here (after the real ORG
-; $0000 code), not before it -- placing it earlier let sjasmplus
-; assemble it at whatever pre-ORG address the counter held (address
-; 0), silently aliasing RST_00's own real code; a real bug this exact
-; mistake caused elsewhere (see rom/test_v2_strfuncs.asm's own header
-; for the full incident).
 IO_READ_KEY_NONBLOCK:
         xor a
         ret
 
-    INCLUDE "rom/exrom_v2_vm_core.asm"
-    INCLUDE "rom/exrom_v2_compiler.asm"
-    INCLUDE "rom/exrom_v2_decompiler.asm"
-
-    DS   $4000 - $, $FF
-
-    SAVEBIN "test_v2_relational.bin", $0000, $4000
+    INCLUDE "rom/test_v2_harness_home_tail.inc"

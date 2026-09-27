@@ -22,6 +22,27 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# The six test_calc_smoke_* images below are a genuinely pre-V2 component
+# test: they use RST $28 -> CALC_ENTRY_TRAMPOLINE and include/
+# exrom_jumptable.inc's OLD KTAB_BASE/KTAB_LIST/KTAB_MAGIC table (not
+# include/v2_ktab.inc's V2_KTAB_*), matching only an EXROM built from
+# `sjasmplus rom/exrom_build.asm` with NO defines (see each test_calc_
+# smoke_*.asm's own header, which documents exactly this build/run pair)
+# -- NOT the real V2 production EXROM (build/exrom.bin uses the
+# V2_KTAB_* table and a V2_KTAB_MAGIC guard these images never satisfy;
+# pairing them with it was tried during the post-R9 test-infrastructure
+# audit and confirmed to trap harmlessly in EXROM's own V2_VERIFY_KTAB
+# guard, not a false pass -- see docs/v2/POST_R9_TEST_INFRASTRUCTURE.md).
+# test_memory/test_math/test_editor_ops never touch EXROM at all (pure
+# Home-side kernel unit tests); any EXROM image just pads them out to
+# ZEsarUX's expected combined size.
+#
+# A root-level exrom.bin is not produced by any Makefile target -- a
+# real, pre-existing gap (flagged for R10 cleanup) -- so rebuild it here
+# deterministically instead of relying on a stale leftover file.
+sjasmplus rom/exrom_build.asm >/dev/null
+cp -f exrom.bin build/smoke/exrom_calc_smoke.bin
+
 tests=(
     test_memory
     test_math
@@ -46,9 +67,9 @@ for name in "${tests[@]}"; do
     fi
 
     # ZEsarUX --romfile wants one concatenated Home+EXROM image (see ts2068-debug's
-    # own README/docs/zesarux-analysis.md); each smoke ROM is a standalone 16K Home
-    # image that pages into the real production EXROM, same as the ordinary build.
-    cat "$rom_path" exrom.bin > "$combined"
+    # own README/docs/zesarux-analysis.md) -- see the header comment above for
+    # which exact EXROM image this is and why.
+    cat "$rom_path" build/smoke/exrom_calc_smoke.bin > "$combined"
 
     ts2068-debug --json stop >/dev/null 2>&1 || true
     ts2068-debug --json start --rom "$combined" --port "$PORT" >/dev/null

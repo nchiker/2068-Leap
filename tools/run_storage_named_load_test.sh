@@ -1,4 +1,16 @@
 #!/usr/bin/env bash
+# COMPONENT TEST, NOT a V2 production-integration test: every home_source
+# here (rom/test_storage_named_load.asm, rom/test_storage_extension_
+# roundtrip.asm, rom/test_storage_autorun_roundtrip.asm) includes basic/
+# basic.asm and boots the OLD V1 command loop, paired with a V1-derived
+# EXROM built from rom/exrom_build.asm. This is a legitimate, real
+# regression test of kernel/storage/storage.asm's generic STORAGE_SAVE/
+# STORAGE_LOAD transport (a shared, still-used primitive -- V2's own
+# rom/test_v2_save_load.asm reuses this same transport), but its PASS
+# does NOT prove rom/v2_home.asm/rom/v2_exrom.asm (the real V2
+# production ROM) boots or works -- see docs/v2/
+# POST_R9_TEST_INFRASTRUCTURE.md for the full test-target
+# classification.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

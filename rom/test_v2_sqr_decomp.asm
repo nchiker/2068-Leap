@@ -2,120 +2,38 @@
 ; rom/test_v2_sqr_decomp.asm — Architecture B, R8.5 Group 6 (SQR/PI/
 ; RAD/DEG/SIN) decompile-only smoke test
 ;
-; Compiles "A=SQR(4):B=PI():C=RAD(90):D=DEG(1):E=SIN(30)" then
-; decompiles it WITHOUT ever calling VM_RUN -- these five functions all
-; need the real calculator (rom/exrom_calc.asm, 1772 real lines) to
-; EXECUTE, which doesn't fit this flat 16K image alongside the full v2
-; core (see rom/test_v2_sqr.asm's own header for the full reasoning and
-; how its own runtime values were validated instead, via a temporary
-; out-of-tree scratch build). Decompiling the COMPILED BYTECODE never
-; touches the calculator at all, so this narrower check fits comfortably
-; and stays in the real, buildable regression set -- covering the new
-; BUILTIN_FN_TABLE rows (fn_index 20-24) and DECOMP_BUILTIN_FN_TABLE's
+; Compiles "A=SQR(4):B=PI():C=RAD(90):D=DEG(1):E=SIN(30)..." then
+; decompiles it WITHOUT ever calling VM_RUN, covering the BUILTIN_FN_
+; TABLE rows for SQR/PI/RAD/DEG/SIN and DECOMP_BUILTIN_FN_TABLE's
 ; matching entries, including PI()'s own 0-argument shape (reusing
-; INKEY$'s own already-fixed 0-arg decompile path).
+; INKEY$'s own already-fixed 0-arg decompile path). NOT wired into the
+; production BASIC dispatch or the shipping EXROM build. Built on the
+; shared production-shaped test harness (rom/test_v2_harness_home_head.
+; inc/_tail.inc + rom/test_v2_harness_exrom.asm) -- see that harness's
+; own header for why (post-semantic-milestone test-infrastructure fix,
+; docs/v2/POST_R9_TEST_INFRASTRUCTURE.md). This harness now has real
+; TEST_V2_NEEDS_CALC support (unlike the old flat-16K image this test
+; predates), so a future milestone could extend this into a genuine
+; runtime SQR/SIN value check; not attempted here, to keep this
+; migration behavior-preserving.
 ;
-; Standalone ROM image exercising rom/exrom_v2_compiler.asm's extended
-; BUILTIN_FN_TABLE (SGN/MOD/DIV/RND rows added alongside the existing ABS)
-; and rom/exrom_v2_vm_core.asm's new BUILTIN_FN_SGN/MOD/DIV/RND handlers --
-; confirmed via this milestone's own reuse audit to be thin integer-only
-; wrappers over real, unmodified kernel/math/math.asm primitives
-; (MATH_SGN16/MATH_MOD16/MATH_DIVIDE16/MATH_RND16), matching V1's own
-; documented "pure-integer BASIC" behavior for this function family
-; exactly. NOT wired into the production BASIC dispatch or the shipping
-; EXROM build. Reuses the SAME CALL_FN mechanism R8.5 Group 1 (ABS)
-; established -- BUILTIN_FN_TABLE grows, BUILTIN_FN_FIND/COMPILE_FACTOR's
-; own grammar do not change.
+; Source program compiled (bytecode only -- this test never VM_RUNs it):
 ;
-; Source program compiled and executed:
+;   A=SQR(4):B=PI():C=RAD(90):D=DEG(1):E=SIN(30):F=SIN(-30):G=SIN(20+10)
 ;
-;   A = SGN(-5)
-;   B = SGN(0)
-;   C = SGN(5)
-;   D = MOD(17,5)
-;   E = DIV(17,5)
-;   F = RND(10)
-;   G = POINT(5,10)
-;   H = ATTR(2,3)
-;   I = INT(7)
-;   J = PEEK(0)
-;   K = USR(4)
-;   Z$ = "HI"
-;   L = LEN(Z$)
-;   M = CODE(Z$)
-;   N = VAL("123")
-;
-; PEEK(0) reads this very ROM image's own RST_00 byte (DI = $F3 = 243).
-; USR(4) calls USR_TEST_ROUTINE, placed at the fixed address $0004
-; right after RST_00's own "di:jp COLD_START" (4 bytes), which loads
-; HL=4321 and returns -- the real CALL/USR convention basic.asm's own
-; BASIC_CALL_USR documents (tail-jump via `jp (hl)`, reached through a
-; `call` so the user routine's own RET returns control to the caller).
-;
-; L/M/N exercise the first built-ins whose argument is a STRING
-; expression, not numeric (rom/exrom_v2_compiler.asm's own BUILTIN_FN_
-; TABLE argtype column routes their argument through COMPILE_STR_EXPR
-; instead of COMPILE_EXPR) -- L/M read back a real string VARIABLE
-; (proving the decompiler's own DECOMP_STR_OPERAND reinterpretation
-; fires correctly for a built-in function argument, not just PRINT/
-; assignment), N reads back a string LITERAL directly.
-;
-; Verification: A-E, G-N are checked directly against their real, hand-
-; computable expected values by reading their SYMTAB_BASE record (real
-; runtime variable storage, not just decompiled source text -- this
-; milestone's own math is worth checking for real, since decompiled text
-; only proves the right opcode/argument-count compiled, not that the
-; underlying kernel/math/math.asm/kernel/graphics/graphics.asm call
-; actually computed the right answer). F (RND) is only range-checked
-; (0 <= F <= 10) since its real value is nondeterministic by design --
-; same bar rom/test_v2_call_fn.asm's own header already applies to
-; unverifiable real hardware behavior.
-;
-; GFX_READ_PIXEL/GFX_CELL_ATTR_ADDR are stubbed below with small
-; deterministic substitutes (real kernel/graphics/graphics.asm doesn't
-; fit alongside the full v2 core in this flat 16K image, same scaling
-; limit as every other v2 test) -- this test's real job is proving
-; BUILTIN_FN_POINT/ATTR correctly marshal B/C into whatever GFX_*
-; contract those real routines already have and correctly read back
-; the result, not re-proving GFX_READ_PIXEL's own real pixel math
-; (unmodified, out of scope here). The stub GFX_CELL_ATTR_ADDR keeps
-; the real address-formula/bounds-check shape (row*32+col, carry set
-; if out of range) against a private ATTR_TEST_BUF instead of the real
-; ATTR_ADDR screen memory, pre-seeded with a known byte at (row=2,col=3)
-; before VM_RUN so H's real value round-trips through a real memory
-; read, not a hand-picked constant.
-;
-; Symbol declaration order (CSYM_FIND_OR_CREATE, first appearance):
-;   0=A 1=B 2=C 3=D 4=E 5=F 6=G 7=H 8=I 9=J 10=K 11=L 12=M 13=N.
-;   String symbols (STRSYMTAB, separate namespace): 0=Z$.
-;
-; Build:
-;   tools/sjasmplus_strict.sh --sym=build/test_v2_group6_math.sym \
-;       rom/test_v2_group6_math.asm
-; Run (PASS=green/FAIL=red border):
-;   ts2068-debug start --rom build/smoke/test_v2_group6_math_zesarux.bin
-;   ts2068-debug run --max-instructions 500000
-;   ts2068-debug timex   (border field)
+; Real generated names for A-G are V0-V6. PI() still needs "()" -- see
+; INKEY$()'s own established precedent (COMPILE_FACTOR.fn_call always
+; expects an opening paren after the name, regardless of argcount). F/G
+; exercise a unary-minus argument and a nested-expression argument
+; respectively -- generic COMPILE_EXPR/decompile shapes ("(0-X)" for
+; unary minus, "(A+B)" for a binary op), not special-cased for SIN.
 ; ============================================================================
 
-    INCLUDE "include/hardware.inc"
-    INCLUDE "include/sysvars.inc"
+    DEFINE TEST_V2_CUSTOM_CHECKS
+    DEFINE TEST_V2_NEEDS_DECOMPILE
+    INCLUDE "rom/test_v2_harness_home_head.inc"
 
-
-    DEVICE NOSLOT64K
-
-    ORG $0000
-RST_00:
-    di
-    jp   COLD_START
-USR_TEST_ROUTINE:              ; fixed address $0004 -- real CALL/USR
-    ld   hl, 4321                ; convention: ends in its own RET,
-    ret                           ; result left in HL
-    DS   $0100 - $, $FF
-
-COLD_START:
-    ld   sp, $FF00
-
+TEST_CUSTOM_MAIN:
     call COMPILER_INIT
     ld   hl, SOURCE_TEXT
     ld   (SRC_PTR), hl
@@ -125,48 +43,30 @@ COLD_START:
 
     ld   a, (COMPILE_ERROR_CODE)
     or   a
-    jp   nz, FAIL
+    jp   nz, TEST_FAIL
 
     ld   hl, (EMIT_PTR)
     ld   (DECOMP_END_ADDR), hl
 
-    ; Decompile-only check: SQR's own runtime body needs the real
-    ; calculator (not included in this flat image, same reasoning
-    ; every other v2 test's own header gives), but decompiling the
-    ; COMPILED BYTECODE never touches it -- skip VM_RUN entirely and
-    ; verify DECOMPILE_PROGRAM's own new SQR table row directly.
+    ; Decompile-only check: SQR/SIN's own runtime body needs the real
+    ; calculator, but decompiling the COMPILED BYTECODE never touches
+    ; it -- skip VM_RUN entirely and verify DECOMPILE_PROGRAM's own
+    ; table rows directly.
     call DECOMPILE_PROGRAM
 
     ld   a, (DECOMP_ERROR_CODE)
     or   a
-    jp   nz, FAIL
+    jp   nz, TEST_FAIL
 
     call CHECK_DECOMPILED_TEXT
-    jp   c, FAIL
+    jp   c, TEST_FAIL
 
-PASS:
-    ld   a, 4                ; green
-    out  (PORT_ULA), a
-    jr   $
-
-FAIL:
-    ld   a, 2                ; red
-    out  (PORT_ULA), a
-    jr   $
+    jp   TEST_PASS
 
 SOURCE_TEXT:
     db "A=SQR(4):B=PI():C=RAD(90):D=DEG(1):E=SIN(30):"
     db "F=SIN(-30):G=SIN(20+10)", 0
 
-; Real generated names for A-G are V0-V6. PI() still needs "()" -- see
-; INKEY$()'s own established precedent (COMPILE_FACTOR.fn_call always
-; expects an opening paren after the name, regardless of argcount).
-; F/G exercise a unary-minus argument and a nested-expression argument
-; respectively -- generic COMPILE_EXPR/decompile shapes ("(0-X)" for
-; unary minus, matching ABS's own established test; "(A+B)" for a
-; binary op), not special-cased for SIN, but rom/test_v2_sqr.asm's own
-; G-P matrix relies on both shapes applying to SIN too, so they're
-; confirmed here for real rather than assumed.
 EXPECTED_TEXT:
     db "V0 = SQR(4)", 13
     db "V1 = PI()", 13
@@ -179,8 +79,7 @@ EXPECTED_TEXT_LEN: equ $-EXPECTED_TEXT
 
 ; ============================================================================
 ; CHECK_DECOMPILED_TEXT — byte-for-byte against a real captured-then-
-; verified rendering (same discipline as every other decompiler test
-; this session).
+; verified rendering.
 ; ============================================================================
 CHECK_DECOMPILED_TEXT:
     ld   hl, (DECOMP_OUT_PTR)
@@ -211,31 +110,10 @@ CHECK_DECOMPILED_TEXT:
 
 ; Test-only stub: this test's own SOURCE_TEXT never calls LPRINT, but
 ; rom/exrom_v2_vm_core.asm's own OP_LPRINT_NUM/STR still reference the
-; symbol unconditionally -- same stubbing discipline as every other v2
-; test.
+; symbol unconditionally.
 BASIC_STMT_LPRINT_EXROM:
     ret
 
-KTAB_CALC_EXIT_TRAMPOLINE:
-    ret
-
-    INCLUDE "kernel/math/math.asm"
-; rom/exrom_calc.asm (1772 real lines) is NOT included here: this test's
-; own program is pure integer arithmetic -- no float path is ever
-; exercised (SGN/MOD/DIV/RND are deliberately integer-only, matching
-; V1's own "pure-integer BASIC" comment for this function family).
-CALC_INT_TO_FP:
-    ret
-CALC_FP_TO_INT:
-    ret
-CALC_SP_TO_NEXT_FREE_PTR:
-    ret
-CALC_PUSH_PI:
-    ret
-CALC_PUSH_FP_RAW:
-    ret
-; kernel/graphics/graphics.asm (2235 real lines) is NOT included here:
-; this test never touches real screen bitmap content.
 GFX_CLS:
     ret
 GFX_PAINT_ATTR:
@@ -258,55 +136,14 @@ GFX_SPRITE_CAPTURE:
 GFX_SPRITE_DRAW:
     or a
     ret
-; Deterministic substitutes for BUILTIN_FN_POINT/ATTR's own two real
-; GFX_* dependencies (real kernel/graphics/graphics.asm doesn't fit
-; here -- see this file's own header). GFX_READ_PIXEL: real contract is
-; B=x/C=y -> A=0/1; this stub returns (x+y)&1, exercising the real
-; contract shape without needing a real bitmap. GFX_CELL_ATTR_ADDR:
-; real contract is B=row/C=col -> carry clear+HL=address or carry set
-; if row>=24/col>=32; this stub keeps the identical row*32+col formula
-; and bounds check, just against ATTR_TEST_BUF instead of real screen
-; attribute memory.
 GFX_READ_PIXEL:
-    ld a,b
-    add a,c
-    and 1
+    xor a
     ret
-ATTR_TEST_BUF: equ $9800   ; real RAM, well past VM_CODE_BASE ($9000) --
-                            ; this test's own tiny compiled program never
-                            ; reaches anywhere near here. NOT placed
-                            ; inline in this ROM image's own code stream:
-                            ; addresses 0-16383 are real, write-
-                            ; protected ROM on this hardware/emulator
-                            ; (the exact bug class rom/test_v2_input.asm's
-                            ; own TEST_KEY_PTR fix already documents).
 GFX_CELL_ATTR_ADDR:
-    ld a,b
-    cp 24
-    jr nc,.oor
-    ld a,c
-    cp 32
-    jr nc,.oor
-    ld h,0
-    ld l,b
-    add hl,hl
-    add hl,hl
-    add hl,hl
-    add hl,hl
-    add hl,hl
-    ld de,ATTR_TEST_BUF
-    add hl,de
-    ld d,0
-    ld e,c
-    add hl,de
-    or a
-    ret
-.oor:
     scf
     ret
 ; Test-only stubs: this file's own test program never exercises BEEP/
-; SOUND/PAUSE/INPUT, and never registers or calls a loadable extension --
-; same stubbing discipline as every other R8.5 v2 test this session.
+; SOUND/PAUSE/INPUT, and never registers or calls a loadable extension.
 SOUND_BEEP:
     ret
 SOUND_EXROM:
@@ -326,29 +163,9 @@ EXT2_SLOT_ADDR:
 EXT_CALL_ARG0: equ $8B00
 EXT_CALL_ARG4: equ $8B00
 EXT2_TABLE:    equ $8B00
-; kernel/memory/memory.asm is NOT included here -- checked directly:
-; neither rom/exrom_v2_vm_core.asm/compiler.asm/decompiler.asm reference
-; any MEM_*/PROG_END/PROG_AREA_START/ARRAYS_END/VARS_START symbol, and
-; this test never touches the real editor engine.
     INCLUDE "rom/exrom_format.asm"
-; R8.5 Group 6 -- INKEY$ needs kernel/io/io.asm's real IO_READ_KEY_
-; NONBLOCK, not included in this flat test image (same scaling limit
-; as every other v2 test); deterministic "no key currently pressed"
-; stub, same pattern this test suite already uses for other platform
-; dependencies (GFX_READ_PIXEL etc). Placed here (after the real ORG
-; $0000 code), not before it -- placing it earlier let sjasmplus
-; assemble it at whatever pre-ORG address the counter held (address
-; 0), silently aliasing RST_00's own real code; a real bug this exact
-; mistake caused elsewhere (see rom/test_v2_strfuncs.asm's own header
-; for the full incident).
 IO_READ_KEY_NONBLOCK:
         xor a
         ret
 
-    INCLUDE "rom/exrom_v2_vm_core.asm"
-    INCLUDE "rom/exrom_v2_compiler.asm"
-    INCLUDE "rom/exrom_v2_decompiler.asm"
-
-    DS   $4000 - $, $FF
-
-    SAVEBIN "test_v2_sqr_decomp.bin", $0000, $4000
+    INCLUDE "rom/test_v2_harness_home_tail.inc"

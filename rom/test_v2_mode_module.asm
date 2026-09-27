@@ -5,9 +5,12 @@
 ; Standalone ROM image exercising rom/ext_mode_module.asm's MODE/
 ; ULAPLUS/PALETTE, registered through the EXISTING R7.5 mechanism
 ; (kernel/extensions/ext_registry.asm) exactly like rom/ext_sprite_
-; module.asm already established -- see that module's own header for
-; the shared architecture. NOT wired into the production BASIC dispatch
-; or the shipping EXROM build.
+; module.asm already established. NOT wired into the production BASIC
+; dispatch or the shipping EXROM build. Built on the shared production-
+; shaped test harness (rom/test_v2_harness_home_head.inc/_tail.inc + rom/
+; test_v2_harness_exrom.asm) -- see that harness's own header for why
+; (post-semantic-milestone test-infrastructure fix, docs/v2/
+; POST_R9_TEST_INFRASTRUCTURE.md).
 ;
 ; Source program compiled and executed (AFTER MODE_INSTALL has already
 ; registered all 3 operations):
@@ -16,52 +19,27 @@
 ;   ULAPLUS 1
 ;   PALETTE 5,200
 ;
-; Same real program, same real port-write mechanism, as rom/test_v2_
-; mode_ulaplus.asm's own former resident-opcode test (removed -- see
-; git history) -- proves the loadable version is a faithful,
-; capability-preserving replacement, not a weaker one. Verification:
-; VM_ERROR_CODE=0 plus the decompiled text confirms the right
-; extensions compiled and ran without error -- MODE's real effect
+; Verification: VM_ERROR_CODE=0 plus the decompiled text confirms the
+; right extensions compiled and ran without error -- MODE's real effect
 ; (GFX_SET_MODE) is stubbed below like every other v2 test that doesn't
 ; check real screen bitmap content; ULAPLUS/PALETTE are pure `out
 ; (c),a` port writes with no readable-back state on this hardware/
-; emulator combination, same as the former resident test's own
-; documented bar.
+; emulator combination.
 ;
 ; A second, separate check calls MODE_MODE_EXEC directly with an
 ; out-of-range value (EXT_CALL_ARG0=2) to prove the real, raised error
-; path (code 12) still fires -- not assumed to always succeed, same
-; discipline rom/test_v2_sprite_module.asm's own SPR_INSTALL carry
-; check already established.
-;
-; Build:
-;   tools/sjasmplus_strict.sh --sym=build/test_v2_mode_module.sym \
-;       rom/test_v2_mode_module.asm
-; Run (PASS=green/FAIL=red border):
-;   ts2068-debug start --rom build/smoke/test_v2_mode_module_zesarux.bin
-;   ts2068-debug run --max-instructions 3000000
-;   ts2068-debug timex   (border field)
+; path (code 12) still fires -- not assumed to always succeed.
 ; ============================================================================
 
-    INCLUDE "include/hardware.inc"
-    INCLUDE "include/sysvars.inc"
+    DEFINE TEST_V2_CUSTOM_CHECKS
+    DEFINE TEST_V2_NEEDS_DECOMPILE
+    INCLUDE "rom/test_v2_harness_home_head.inc"
 
-
-    DEVICE NOSLOT64K
-
-    ORG $0000
-RST_00:
-    di
-    jp   COLD_START
-    DS   $0100 - $, $FF
-
-COLD_START:
-    ld   sp, $FF00
-
+TEST_CUSTOM_MAIN:
     call EXT2_CLEAR_ALL       ; real cold-init, mirroring V1's own
                                 ; EXTENSION_MAGIC reset
     call MODE_INSTALL
-    jp   c, FAIL              ; a real, checked registration failure
+    jp   c, TEST_FAIL         ; a real, checked registration failure
                               ; path, not assumed to always succeed
 
     call COMPILER_INIT
@@ -73,7 +51,7 @@ COLD_START:
 
     ld   a, (COMPILE_ERROR_CODE)
     or   a
-    jp   nz, FAIL
+    jp   nz, TEST_FAIL
 
     ld   hl, (EMIT_PTR)
     ld   (DECOMP_END_ADDR), hl
@@ -85,29 +63,21 @@ COLD_START:
 
     ld   a, (VM_ERROR_CODE)
     or   a
-    jp   nz, FAIL
+    jp   nz, TEST_FAIL
 
     call DECOMPILE_PROGRAM
 
     ld   a, (DECOMP_ERROR_CODE)
     or   a
-    jp   nz, FAIL
+    jp   nz, TEST_FAIL
 
     call CHECK_DECOMPILED_TEXT
-    jp   c, FAIL
+    jp   c, TEST_FAIL
 
     call CHECK_MODE_ERROR_PATH
-    jp   c, FAIL
+    jp   c, TEST_FAIL
 
-PASS:
-    ld   a, 4                ; green
-    out  (PORT_ULA), a
-    jr   $
-
-FAIL:
-    ld   a, 2                ; red
-    out  (PORT_ULA), a
-    jr   $
+    jp   TEST_PASS
 
 SOURCE_TEXT:
     db "MODE 1:ULAPLUS 1:PALETTE 5,200", 0
@@ -155,10 +125,7 @@ EXPECTED_TEXT_LEN: equ $-EXPECTED_TEXT
 ; ============================================================================
 ; CHECK_MODE_ERROR_PATH — direct call to MODE_MODE_EXEC with an out-of-
 ; range value (2; valid MODE values are 0-1), bypassing the compile/run
-; cycle entirely (a halted VM can't usefully keep decompiling afterward,
-; so this is checked as a standalone unit call, same as this module's
-; own real runtime contract: EXT_CALL_ARG0 in, VM_ERROR_CODE/VM_HALTED
-; as the observable result).
+; cycle entirely.
 ; ============================================================================
 CHECK_MODE_ERROR_PATH:
     xor  a
@@ -173,17 +140,15 @@ CHECK_MODE_ERROR_PATH:
     ld   a, (VM_HALTED)
     or   a
     jr   z, .fail
-    xor  a                    ; reset for PASS's own border write below,
-    ld   (VM_HALTED), a         ; tidy but not load-bearing (COLD_START
-                                ; never re-checks VM_HALTED after this)
+    xor  a                    ; reset for TEST_PASS's own border write
+    ld   (VM_HALTED), a         ; below, tidy but not load-bearing
     ret
 .fail:
     scf
     ret
 
 ; Test-only stubs: this file's own test program never exercises PRINT/
-; LPRINT/BEEP/SOUND/PAUSE/INPUT -- same stubbing discipline as every
-; other R8.5 v2 test this session.
+; LPRINT/BEEP/SOUND/PAUSE/INPUT.
 BASIC_STMT_LPRINT_EXROM:
     ret
 SOUND_BEEP:
@@ -198,32 +163,6 @@ INT_GET_FRAMES:
     ld hl,0
     ret
 
-KTAB_CALC_EXIT_TRAMPOLINE:
-    ret
-
-    INCLUDE "kernel/math/math.asm"
-; rom/exrom_calc.asm (1772 real lines) is NOT included here: this
-; test's own program is pure integer arithmetic -- no float paths are
-; ever exercised.
-CALC_INT_TO_FP:
-    ret
-CALC_FP_TO_INT:
-    ret
-CALC_SP_TO_NEXT_FREE_PTR:
-    ret
-CALC_PUSH_PI:
-    ret
-CALC_PUSH_FP_RAW:
-    ret
-; kernel/graphics/graphics.asm (2235 real lines) is NOT included here:
-; this flat 16K image doesn't have room for it alongside the full v2
-; core + decompiler. GFX_SET_MODE is real, pre-existing, hardware-
-; validated V1 code this milestone does not modify -- trusting it here,
-; same trust-boundary reasoning as every other stubbed dependency this
-; session. What DOES need verifying -- this module's own register
-; marshalling, port writes, and the registry's own generic dispatch/
-; decompile -- is covered by CHECK_DECOMPILED_TEXT/CHECK_MODE_ERROR_
-; PATH above regardless.
 GFX_CLS:
     ret
 GFX_PAINT_ATTR:
@@ -238,6 +177,13 @@ GFX_PRINT_STRING_ATTR:
     ret
 GFX_SCROLL_OUTPUT_UP:
     ret
+; MODE's real effect (GFX_SET_MODE) is stubbed here like every other v2
+; test that doesn't check real screen bitmap content -- GFX_SET_MODE is
+; real, pre-existing, hardware-validated V1 code this milestone does not
+; modify. What DOES need verifying -- this module's own register
+; marshalling, port writes, and the registry's own generic dispatch/
+; decompile -- is covered by CHECK_DECOMPILED_TEXT/CHECK_MODE_ERROR_
+; PATH above regardless.
 GFX_SET_MODE:
     ret
 GFX_SPRITE_CAPTURE:
@@ -271,25 +217,9 @@ MEM_FILL_ZERO:
     ret
     INCLUDE "kernel/extensions/ext_registry.asm"
     INCLUDE "rom/exrom_format.asm"
-; R8.5 Group 6 -- INKEY$ needs kernel/io/io.asm's real IO_READ_KEY_
-; NONBLOCK, not included in this flat test image (same scaling limit
-; as every other v2 test); deterministic "no key currently pressed"
-; stub, same pattern this test suite already uses for other platform
-; dependencies (GFX_READ_PIXEL etc). Placed here (after the real ORG
-; $0000 code), not before it -- placing it earlier let sjasmplus
-; assemble it at whatever pre-ORG address the counter held (address
-; 0), silently aliasing RST_00's own real code; a real bug this exact
-; mistake caused elsewhere (see rom/test_v2_strfuncs.asm's own header
-; for the full incident).
 IO_READ_KEY_NONBLOCK:
         xor a
         ret
-
-    INCLUDE "rom/exrom_v2_vm_core.asm"
-    INCLUDE "rom/exrom_v2_compiler.asm"
-    INCLUDE "rom/exrom_v2_decompiler.asm"
     INCLUDE "rom/ext_mode_module.asm"
 
-    DS   $4000 - $, $FF
-
-    SAVEBIN "test_v2_mode_module.bin", $0000, $4000
+    INCLUDE "rom/test_v2_harness_home_tail.inc"

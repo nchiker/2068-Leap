@@ -7,7 +7,10 @@
 ; rom/exrom_v2_vm_core.asm's new OP_ARR_LOAD/OP_ARR_STORE (the runtime
 ; element-address opcode pair, backed by the fixed-stride ARRTAB pool).
 ; NOT wired into the production BASIC dispatch or the shipping EXROM
-; build.
+; build. Built on the shared production-shaped test harness (rom/
+; test_v2_harness_home_head.inc/_tail.inc + rom/test_v2_harness_exrom.
+; asm) -- see that harness's own header for why (post-semantic-milestone
+; test-infrastructure fix, docs/v2/POST_R9_TEST_INFRASTRUCTURE.md).
 ;
 ; Source program compiled and executed:
 ;
@@ -34,109 +37,17 @@
 ; array element read used inside a scalar assignment (X=A(4)), and each
 ; array read again as a bare PRINT argument.
 ;
-; Verification technique: reads ARRTAB directly via CHECK_ARR (same
-; "verify real computed values via direct memory reads BEFORE trusting
-; decompiled text" two-step discipline rom/test_v2_relational.asm's own
-; header established) -- confirms the actual bytes landed at the real
-; ARRTAB_BASE + (array_index*ARRAY_MAX_ELEMS + elem_index)*2 address, not
-; just that VM_RUN completed without error.
-;
-; Build:
-;   tools/sjasmplus_strict.sh --sym=build/test_v2_arrays.sym \
-;       rom/test_v2_arrays.asm
-; Run (PASS=green/FAIL=red border):
-;   ts2068-debug start --rom build/smoke/test_v2_arrays_zesarux.bin
-;   ts2068-debug run --max-instructions 3000000
-;   ts2068-debug timex   (border field)
+; Verification technique: reads ARRTAB directly (same "verify real
+; computed values via direct memory reads BEFORE trusting decompiled
+; text" two-step discipline rom/test_v2_relational.asm's own header
+; established) -- confirms the actual bytes landed at the real ARRTAB_
+; BASE + (array_index*ARRAY_MAX_ELEMS + elem_index)*2 address, not just
+; that VM_RUN completed without error.
 ; ============================================================================
 
-    INCLUDE "include/hardware.inc"
-    INCLUDE "include/sysvars.inc"
-
-
-    DEVICE NOSLOT64K
-
-    ORG $0000
-RST_00:
-    di
-    jp   COLD_START
-    DS   $0100 - $, $FF
-
-COLD_START:
-    ld   sp, $FF00
-
-    call COMPILER_INIT
-    ld   hl, SOURCE_TEXT
-    ld   (SRC_PTR), hl
-    ld   hl, VM_CODE_BASE
-    ld   (EMIT_PTR), hl
-    call COMPILE_PROGRAM
-
-    ld   a, (COMPILE_ERROR_CODE)
-    or   a
-    jp   nz, FAIL
-
-    ld   hl, (EMIT_PTR)
-    ld   (DECOMP_END_ADDR), hl
-
-    call VM_INIT
-    ld   hl, VM_CODE_BASE
-    ld   (VM_IP), hl
-    call VM_RUN
-
-    ld   a, (VM_ERROR_CODE)
-    or   a
-    jp   nz, FAIL
-
-    ; Real-memory verification BEFORE decompiling -- confirms actual
-    ; ARRTAB bytes, not just decompiled text shape.
-    call CHECK_ARR
-    jp   c, FAIL
-
-    ; R8.5 Group 6 (DIMN) -- Y=DIMN(A)=5, Z=DIMN(B)=3. Numeric symbol
-    ; declaration order: X=0 (already checked via CHECK_ARR's own
-    ; ARRTAB read, not SYMTAB), Y=1, Z=2.
-    ld   hl, SYMTAB_BASE + 1*3 + 1
-    ld   a, (hl)
-    cp   5
-    jp   nz, FAIL
-    inc  hl
-    ld   a, (hl)
-    or   a
-    jp   nz, FAIL
-    ld   hl, SYMTAB_BASE + 2*3 + 1
-    ld   a, (hl)
-    cp   3
-    jp   nz, FAIL
-    inc  hl
-    ld   a, (hl)
-    or   a
-    jp   nz, FAIL
-
-    ; VM_OUTPUT_ROW must be 5 -- one line per PRINT (0-4); the DIMs and
-    ; the three array/scalar assignments don't print.
-    ld   a, (VM_OUTPUT_ROW)
-    cp   5
-    jp   nz, FAIL
-
-    call DECOMPILE_PROGRAM
-
-    ld   a, (DECOMP_ERROR_CODE)
-    or   a
-    jp   nz, FAIL
-
-    call CHECK_DECOMPILED_TEXT
-    jp   c, FAIL
-
-PASS:
-    ld   a, 4                ; green
-    out  (PORT_ULA), a
-    jr   $
-
-FAIL:
-    ld   a, 2                ; red
-    out  (PORT_ULA), a
-    jr   $
+    DEFINE TEST_V2_NEEDS_DECOMPILE
+    DEFINE TEST_V2_CHECK_DECOMPILED_TEXT
+    INCLUDE "rom/test_v2_harness_home_head.inc"
 
 SOURCE_TEXT:
     db "DIM A(5):DIM B(3):"
@@ -145,10 +56,14 @@ SOURCE_TEXT:
     db "PRINT A(0):PRINT A(1):PRINT A(4):PRINT B(0):PRINT X", 0
 
 ; ============================================================================
-; CHECK_ARR — direct ARRTAB memory reads. Array A is ARRSYMTAB slot 0
-; (declared first), array B is slot 1. ARRTAB_BASE + (slot*16 + elem)*2.
+; TEST_CHECK_RESULT — direct ARRTAB memory reads (array A is ARRSYMTAB
+; slot 0, array B is slot 1; ARRTAB_BASE + (slot*16 + elem)*2), then
+; DIMN's own SYMTAB values (Y=DIMN(A)=5, Z=DIMN(B)=3 -- numeric symbol
+; declaration order: X=0, Y=1, Z=2), then VM_OUTPUT_ROW (must be 5 --
+; one line per PRINT (0-4); the DIMs and the three array/scalar
+; assignments don't print).
 ; ============================================================================
-CHECK_ARR:
+TEST_CHECK_RESULT:
     ld   hl, (ARRTAB_BASE + (0*16 + 0)*2)
     ld   de, 10
     or   a
@@ -169,17 +84,51 @@ CHECK_ARR:
     or   a
     sbc  hl, de
     jr   nz, .fail
+    ld   hl, SYMTAB_BASE + 1*3 + 1
+    ld   a, (hl)
+    cp   5
+    jr   nz, .fail
+    inc  hl
+    ld   a, (hl)
+    or   a
+    jr   nz, .fail
+    ld   hl, SYMTAB_BASE + 2*3 + 1
+    ld   a, (hl)
+    cp   3
+    jr   nz, .fail
+    inc  hl
+    ld   a, (hl)
+    or   a
+    jr   nz, .fail
+    ld   a, (VM_OUTPUT_ROW)
+    cp   5
+    jr   nz, .fail
     ret
 .fail:
     scf
     ret
 
 ; ============================================================================
-; CHECK_DECOMPILED_TEXT — byte-for-byte against a real captured-then-
-; verified rendering (same discipline as every other decompiler test
-; this session).
+; TEST_CHECK_DECOMPILED — byte-for-byte against a real captured-then-
+; verified rendering (same discipline as every other decompiler test).
+; DIM itself still emits no bytecode at all (a pure compile-time
+; declaration, like an implicitly-declared scalar's own CSYMTAB entry).
+; Post-R9 DIM/decompiler correction (docs/v2/V2_SEMANTIC_CAPABILITY_
+; AUDIT.md S14): the decompiler recovers each array's own declared size
+; from the first OP_ARR_LOAD/STORE instruction that references it (every
+; such instruction already bakes its own array's size in as a bounds-
+; check operand) and synthesizes "DIM A<idx>(<size>)" lines up front,
+; since bytecode carries no position for the original DIM statement(s).
+; "A0"/"A1" are the compiler's real generated array names (A was DIM'd
+; first -> ARRSYMTAB slot 0 -> "A0"; B second -> slot 1 -> "A1"); "V0"/
+; "V1"/"V2" are X/Y/Z's own generated scalar names. "V1 = 5"/"V2 = 3"
+; (not "DIMN(A0)"/"DIMN(A1)") are DIMN's own documented, deliberate
+; decompile-fidelity limitation -- see COMPILE_DIMN's own header in rom/
+; exrom_v2_compiler.asm: DIMN folds to a bare PUSH_I8 literal with no
+; runtime opcode, so the fact that this value came from a DIMN() call is
+; genuinely gone from the bytecode.
 ; ============================================================================
-CHECK_DECOMPILED_TEXT:
+TEST_CHECK_DECOMPILED:
     ld   hl, (DECOMP_OUT_PTR)
     ld   de, DECOMP_OUT_BUF
     or   a
@@ -206,25 +155,6 @@ CHECK_DECOMPILED_TEXT:
     scf
     ret
 
-; DIM itself still emits no bytecode at all (a pure compile-time
-; declaration, like an implicitly-declared scalar's own CSYMTAB entry).
-; Post-R9 DIM/decompiler correction (docs/v2/V2_SEMANTIC_CAPABILITY_
-; AUDIT.md S14): the decompiler now recovers each array's own declared
-; size from the first OP_ARR_LOAD/STORE instruction that references it
-; (every such instruction already bakes its own array's size in as a
-; bounds-check operand) and synthesizes "DIM A<idx>(<size>)" lines up
-; front, since bytecode carries no position for the original DIM
-; statement(s). "A0"/"A1" are the compiler's real generated array names
-; (A was DIM'd first -> ARRSYMTAB slot 0 -> "A0"; B second -> slot 1 ->
-; "A1"); "V0"/"V1"/"V2" are X/Y/Z's own generated scalar names -- to be
-; captured from a real ZEsarUX run, then cross-checked against CHECK_
-; ARR's own already-verified real values (same two-step discipline as
-; every other decompiler test this session). "V1 = 5"/"V2 = 3" (not
-; "DIMN(A0)"/"DIMN(A1)") are DIMN's own documented, deliberate decompile-
-; fidelity limitation -- see COMPILE_DIMN's own header in rom/
-; exrom_v2_compiler.asm: DIMN folds to a bare PUSH_I8 literal with no
-; runtime opcode, so the fact that this value came from a DIMN() call is
-; genuinely gone from the bytecode.
 EXPECTED_TEXT:
     db "DIM A0(5)", 13
     db "DIM A1(3)", 13
@@ -243,9 +173,7 @@ EXPECTED_TEXT:
 EXPECTED_TEXT_LEN: equ $-EXPECTED_TEXT
 
 ; Test-only stubs: this file's own test program never exercises LPRINT/
-; BEEP/SOUND/PAUSE, and never registers or calls a loadable extension --
-; same stubbing discipline (and same real contracts) already established
-; for the other R8.5 v2 tests this session.
+; BEEP/SOUND/PAUSE, and never registers or calls a loadable extension.
 BASIC_STMT_LPRINT_EXROM:
     ret
 SOUND_BEEP:
@@ -268,33 +196,8 @@ EXT_CALL_ARG0: equ $8B00
 EXT_CALL_ARG4: equ $8B00
 EXT2_TABLE:    equ $8B00
 
-KTAB_CALC_EXIT_TRAMPOLINE:
-    ret
-
-    INCLUDE "kernel/math/math.asm"
-; rom/exrom_calc.asm (1772 lines -- the real calculator engine) is NOT
-; included here: this test's own program (SOURCE_TEXT above) is pure
-; integer arithmetic -- no PUSH_FLOAT_LIT, no mixed int/float ADD/SUB, no
-; PRINT of a float, and arrays are integer-only in this milestone -- so
-; none of the float paths that reach the calculator are ever exercised
-; at runtime. Same stubbing discipline as rom/test_v2_save_load.asm's own
-; header for this exact tradeoff (the 1772 real lines pushed this flat
-; 16K image over budget for zero real coverage).
-CALC_INT_TO_FP:
-    ret
-CALC_FP_TO_INT:
-    ret
-CALC_SP_TO_NEXT_FREE_PTR:
-    ret
-CALC_PUSH_PI:
-    ret
-CALC_PUSH_FP_RAW:
-    ret
 ; kernel/graphics/graphics.asm (2235 real lines) is NOT included here:
-; this test never checks real screen bitmap content. R8.5 Group 5's own
-; real ROM growth (SPRITE GRAB/SHOW/HIDE/MOVE) pushed this flat 16K
-; image over budget with graphics.asm included; same stubbing
-; discipline as rom/test_v2_call_fn.asm's own identical fix.
+; this test never checks real screen bitmap content.
 GFX_CLS:
     ret
 GFX_PAINT_ATTR:
@@ -317,40 +220,15 @@ GFX_SPRITE_CAPTURE:
 GFX_SPRITE_DRAW:
     or a
     ret
-; R8.5 Group 6 -- POINT/ATTR need real GFX_* contracts; this
-; test never exercises real pixel/attribute content, so a plain
-; deterministic stub (same discipline as every other GFX_*
-; stub in this file) satisfies the reference without a real
-; bitmap.
 GFX_READ_PIXEL:
     xor a
     ret
 GFX_CELL_ATTR_ADDR:
     scf
     ret
-; kernel/memory/memory.asm is NOT included here -- this test never
-; touches the editor, and neither rom/exrom_v2_vm_core.asm/compiler.asm/
-; decompiler.asm reference any MEM_*/PROG_END/PROG_AREA_START/ARRAYS_
-; END/VARS_START symbol.
     INCLUDE "rom/exrom_format.asm"
-; R8.5 Group 6 -- INKEY$ needs kernel/io/io.asm's real IO_READ_KEY_
-; NONBLOCK, not included in this flat test image (same scaling limit
-; as every other v2 test); deterministic "no key currently pressed"
-; stub, same pattern this test suite already uses for other platform
-; dependencies (GFX_READ_PIXEL etc). Placed here (after the real ORG
-; $0000 code), not before it -- placing it earlier let sjasmplus
-; assemble it at whatever pre-ORG address the counter held (address
-; 0), silently aliasing RST_00's own real code; a real bug this exact
-; mistake caused elsewhere (see rom/test_v2_strfuncs.asm's own header
-; for the full incident).
 IO_READ_KEY_NONBLOCK:
         xor a
         ret
 
-    INCLUDE "rom/exrom_v2_vm_core.asm"
-    INCLUDE "rom/exrom_v2_compiler.asm"
-    INCLUDE "rom/exrom_v2_decompiler.asm"
-
-    DS   $4000 - $, $FF
-
-    SAVEBIN "test_v2_arrays.bin", $0000, $4000
+    INCLUDE "rom/test_v2_harness_home_tail.inc"

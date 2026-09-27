@@ -6,7 +6,10 @@
 ; CFOR_STACK-based COMPILE_FOR/COMPILE_NEXT/COMPILE_EXIT_FOR and rom/
 ; exrom_v2_vm_core.asm's new VM_FOR_STACK-based OP_FOR_INIT/OP_FOR_POP.
 ; NOT wired into the production BASIC dispatch or the shipping EXROM
-; build.
+; build. Built on the shared production-shaped test harness (rom/
+; test_v2_harness_home_head.inc/_tail.inc + rom/test_v2_harness_exrom.
+; asm) -- see that harness's own header for why (post-semantic-milestone
+; test-infrastructure fix, docs/v2/POST_R9_TEST_INFRASTRUCTURE.md).
 ;
 ; Part 1 — real 2-level nesting, arithmetic correctness:
 ;
@@ -30,39 +33,29 @@
 ; (1+1)+3 = 2+1 + 2+2 + 2+3 = 12).
 ;
 ; Build:
+;   tools/sjasmplus_strict.sh -DTEST_V2_NEEDS_DECOMPILE \
+;       rom/test_v2_harness_exrom.asm
 ;   tools/sjasmplus_strict.sh --sym=build/test_v2_for_nested.sym \
 ;       rom/test_v2_for_nested.asm
-; Run (PASS=green/FAIL=red border):
-;   ts2068-debug start --rom build/smoke/test_v2_for_nested_zesarux.bin
-;   ts2068-debug run --max-instructions 3000000
-;   ts2068-debug timex   (border field)
+; Run (PASS=green/FAIL=red border): concatenate the two output binaries
+; (HOME then EXROM) and boot via ts2068-debug/Fuse, same as any other
+; production-shaped combined image.
 ; ============================================================================
 
-    INCLUDE "include/hardware.inc"
-    INCLUDE "include/sysvars.inc"
+    DEFINE TEST_V2_CUSTOM_CHECKS
+    DEFINE TEST_V2_NEEDS_DECOMPILE
+    INCLUDE "rom/test_v2_harness_home_head.inc"
 
-
-    DEVICE NOSLOT64K
-
-    ORG $0000
-RST_00:
-    di
-    jp   COLD_START
-    DS   $0100 - $, $FF
-
-COLD_START:
-    ld   sp, $FF00
-
+TEST_CUSTOM_MAIN:
     call COMPILER_INIT
     ld   hl, SOURCE_TEXT
     ld   (SRC_PTR), hl
     ld   hl, VM_CODE_BASE
     ld   (EMIT_PTR), hl
     call COMPILE_PROGRAM
-
     ld   a, (COMPILE_ERROR_CODE)
     or   a
-    jp   nz, FAIL
+    jp   nz, TEST_FAIL
 
     ld   hl, (EMIT_PTR)
     ld   (DECOMP_END_ADDR), hl
@@ -74,25 +67,25 @@ COLD_START:
 
     ld   a, (VM_ERROR_CODE)
     or   a
-    jp   nz, FAIL
+    jp   nz, TEST_FAIL
 
     ; both FOR_STACK depths must be back to 0 once every loop has closed
     ; normally -- if either leaked, a later real program's own FOR_NEST_MAX
     ; check would wrongly refuse further nesting.
     ld   a, (CFOR_STACK_DEPTH)
     or   a
-    jp   nz, FAIL
+    jp   nz, TEST_FAIL
     ld   a, (VM_FOR_STACK_DEPTH)
     or   a
-    jp   nz, FAIL
+    jp   nz, TEST_FAIL
 
     call CHECK_RESULT
-    jp   c, FAIL
+    jp   c, TEST_FAIL
 
     call DECOMPILE_PROGRAM
     ld   a, (DECOMP_ERROR_CODE)
     or   a
-    jp   nz, FAIL
+    jp   nz, TEST_FAIL
 
     ; ------------------------------------------------------------------
     ; Negative check 1: NEXT variable that doesn't match the innermost
@@ -110,7 +103,7 @@ COLD_START:
     call COMPILE_PROGRAM
     ld   a, (COMPILE_ERROR_CODE)
     cp   56
-    jp   nz, FAIL
+    jp   nz, TEST_FAIL
 
     ; ------------------------------------------------------------------
     ; Negative check 2: nesting past VM_FOR_NEST_MAX/CFOR_STACK's own
@@ -125,17 +118,9 @@ COLD_START:
     call COMPILE_PROGRAM
     ld   a, (COMPILE_ERROR_CODE)
     cp   55
-    jp   nz, FAIL
+    jp   nz, TEST_FAIL
 
-PASS:
-    ld   a, 4                ; green
-    out  (PORT_ULA), a
-    jr   $
-
-FAIL:
-    ld   a, 2                ; red
-    out  (PORT_ULA), a
-    jr   $
+    jp   TEST_PASS
 
 SOURCE_TEXT:
     db "S=0:FOR I=1 TO 3:FOR J=1 TO 3:S=S+1:NEXT J:NEXT I:"
@@ -204,35 +189,6 @@ EXT_CALL_ARG0: equ $8B00
 EXT_CALL_ARG4: equ $8B00
 EXT2_TABLE:    equ $8B00
 
-KTAB_CALC_EXIT_TRAMPOLINE:
-    ret
-
-; kernel/math/math.asm is included FOR REAL below, entirely unstubbed.
-; This file's own DECOMPILE_PROGRAM call needs real MATH_DIVIDE16/
-; MULTIPLY16 for ANY multi-digit label/offset it renders (DECOMP_
-; COMPUTE_DIGITS's own real body divides by 10 to extract each decimal
-; digit) -- stubbing those to save space, tried and reverted here,
-; silently infinite-loops the decompiler instead of failing loudly
-; (each "digit" computes as a bogus 0 forever, since a bare `ret` leaves
-; the dividend unchanged). math.asm's own routines are not independently
-; include-able, so "stub the rest, keep DIVIDE/MULTIPLY real" isn't
-; possible either without hand-duplicating everything DIVIDE16's own
-; real call chain (SIGN_PREP/UDIV16/APPLY_SIGN) needs -- not attempted;
-; the whole file is small enough to include as-is.
-    INCLUDE "kernel/math/math.asm"
-; rom/exrom_calc.asm (1772 real lines) is NOT included here: this test's
-; own program is pure integer arithmetic -- same stubbing discipline as
-; rom/test_v2_for_step.asm's own identical header note.
-CALC_INT_TO_FP:
-    ret
-CALC_FP_TO_INT:
-    ret
-CALC_SP_TO_NEXT_FREE_PTR:
-    ret
-CALC_PUSH_PI:
-    ret
-CALC_PUSH_FP_RAW:
-    ret
 ; kernel/graphics/graphics.asm (2235 real lines) is NOT included here:
 ; this test never checks real screen bitmap content or calls PRINT.
 GFX_CLS:
@@ -272,10 +228,4 @@ IO_READ_KEY_NONBLOCK:
         xor a
         ret
 
-    INCLUDE "rom/exrom_v2_vm_core.asm"
-    INCLUDE "rom/exrom_v2_compiler.asm"
-    INCLUDE "rom/exrom_v2_decompiler.asm"
-
-    DS   $4000 - $, $FF
-
-    SAVEBIN "test_v2_for_nested.bin", $0000, $4000
+    INCLUDE "rom/test_v2_harness_home_tail.inc"

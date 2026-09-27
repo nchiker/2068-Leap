@@ -1,5 +1,15 @@
 #!/usr/bin/env bash
-# Run the production Home<->EXROM editor boundary regression.
+# COMPONENT TEST, NOT a V2 production-integration test: this boots the
+# OLD V1 command loop (rom/test_editor_auto.asm includes basic/basic.asm
+# and calls BASIC_COMMAND_LOOP directly) against a V1-derived EXROM
+# (rom/exrom_build.asm -DEDITOR_TEST_EXROM -> exrom_editor_test.bin).
+# It is a legitimate regression test of the shared, still-used generic
+# editor engine, but its PASS does NOT prove rom/v2_home.asm/rom/
+# v2_exrom.asm (the real V2 production ROM) boots or works -- see
+# docs/v2/POST_R9_TEST_INFRASTRUCTURE.md for the full test-target
+# classification. This is also the test that visibly shows the OLD V1
+# editor in a real Fuse window, which is expected here (it IS a V1
+# harness), not a bug.
 set -e
 cd "$(dirname "$0")/.."
 
