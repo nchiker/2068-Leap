@@ -226,7 +226,7 @@ V2_SET_EDIT_FROM_INDEX:
     ld hl,$FFFF
 .found:
     ld (CUR_EDIT_POS),hl
-    jp V2_LOAD_EDIT
+    jr V2_LOAD_EDIT
 
 V2_LOAD_EDIT:
     ld hl,(CUR_EDIT_POS)

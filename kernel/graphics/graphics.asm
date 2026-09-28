@@ -2204,7 +2204,7 @@ GFX_SPRITE_CAPTURE:
     ret  c
     xor  a
     ld   (SPRITE_XFER_DIR), a           ; 0 = capture
-    jp   GFX_SPRITE_TRANSFER
+    jr   GFX_SPRITE_TRANSFER
 
 ; ============================================================================
 ; GFX_SPRITE_DRAW
@@ -2232,4 +2232,4 @@ GFX_SPRITE_DRAW:
     ret  c
     ld   a, 1
     ld   (SPRITE_XFER_DIR), a           ; nonzero = draw
-    jp   GFX_SPRITE_TRANSFER
+    jr   GFX_SPRITE_TRANSFER

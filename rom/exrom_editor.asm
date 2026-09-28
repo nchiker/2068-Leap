@@ -137,7 +137,7 @@ EDITOR_LOOP:
                                    ; it rather than insert a NUL
     call EDITOR_INSERT_CHAR
     call EDITOR_REDRAW_SCREEN
-    jp   EDITOR_LOOP
+    jr   EDITOR_LOOP
 
 ; EDITOR_NAV_HOOK contract (see that sysvar's comment in sysvars.inc):
 ; called with A = EDIR_UP, EDIR_DOWN, EDIR_DELETE_LINE,
@@ -175,7 +175,7 @@ EDITOR_LOOP:
     add  a, b
     ld   b, a                           ; B=new physical row
     call KTAB_GFX_INVERT_ATTR
-    jp   EDITOR_LOOP
+    jr   EDITOR_LOOP
 
 ; Restores a cursor cell to the active editor line's known base attribute.
 ; BASIC_REDRAW_PROGRAM clears active-line rows through GFX_CLEAR_ROW before

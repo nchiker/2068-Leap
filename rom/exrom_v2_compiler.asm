@@ -776,7 +776,7 @@ LEX_NEXT_TOKEN:
         ld a,TOK_COMMA
         jp .advance1
 .number:
-        jp LEX_SCAN_NUMBER
+        jr LEX_SCAN_NUMBER
 .unknown:
         ld a,TOK_UNKNOWN
         jp .advance1
@@ -1414,29 +1414,29 @@ EMIT_BYTE:
         ld (EMIT_PTR),hl
         ret
 
-EMIT_BYTE_OP_PUSH_I8:      ld a,1  : jp EMIT_BYTE
-EMIT_BYTE_OP_PUSH_I16:     ld a,2  : jp EMIT_BYTE
-EMIT_BYTE_OP_LOAD_VAR:     ld a,3  : jp EMIT_BYTE
-EMIT_BYTE_OP_STORE_VAR:    ld a,4  : jp EMIT_BYTE
-EMIT_OP_ADD:               ld a,5  : jp EMIT_BYTE
-EMIT_OP_SUB:               ld a,7  : jp EMIT_BYTE
-EMIT_OP_MUL:               ld a,8  : jp EMIT_BYTE
-EMIT_OP_DIV:               ld a,9  : jp EMIT_BYTE
-EMIT_OP_HALT:              xor a   : jp EMIT_BYTE
-EMIT_OP_JMP:               ld a,6  : jp EMIT_BYTE
-EMIT_OP_JMPZ:              ld a,12 : jp EMIT_BYTE
-EMIT_OP_FOR_INIT:          ld a,13 : jp EMIT_BYTE
-EMIT_OP_FOR_NEXT:          ld a,14 : jp EMIT_BYTE
-EMIT_OP_CMP_LT:            ld a,10 : jp EMIT_BYTE
-EMIT_OP_CMP_EQ:            ld a,11 : jp EMIT_BYTE
-EMIT_OP_CALL:              ld a,15 : jp EMIT_BYTE
-EMIT_OP_RET:               ld a,16 : jp EMIT_BYTE
-EMIT_BYTE_OP_PUSH_STR_LIT: ld a,17 : jp EMIT_BYTE
-EMIT_OP_STORE_STR_VAR:     ld a,18 : jp EMIT_BYTE
-EMIT_OP_STR_CONCAT:        ld a,19 : jp EMIT_BYTE
-EMIT_OP_STR_CMP_LT:        ld a,20 : jp EMIT_BYTE
-EMIT_OP_STR_CMP_EQ:        ld a,21 : jp EMIT_BYTE
-EMIT_BYTE_OP_PUSH_FLOAT_LIT: ld a,22 : jp EMIT_BYTE
+EMIT_BYTE_OP_PUSH_I8:      ld a,1  : jr EMIT_BYTE
+EMIT_BYTE_OP_PUSH_I16:     ld a,2  : jr EMIT_BYTE
+EMIT_BYTE_OP_LOAD_VAR:     ld a,3  : jr EMIT_BYTE
+EMIT_BYTE_OP_STORE_VAR:    ld a,4  : jr EMIT_BYTE
+EMIT_OP_ADD:               ld a,5  : jr EMIT_BYTE
+EMIT_OP_SUB:               ld a,7  : jr EMIT_BYTE
+EMIT_OP_MUL:               ld a,8  : jr EMIT_BYTE
+EMIT_OP_DIV:               ld a,9  : jr EMIT_BYTE
+EMIT_OP_HALT:              xor a   : jr EMIT_BYTE
+EMIT_OP_JMP:               ld a,6  : jr EMIT_BYTE
+EMIT_OP_JMPZ:              ld a,12 : jr EMIT_BYTE
+EMIT_OP_FOR_INIT:          ld a,13 : jr EMIT_BYTE
+EMIT_OP_FOR_NEXT:          ld a,14 : jr EMIT_BYTE
+EMIT_OP_CMP_LT:            ld a,10 : jr EMIT_BYTE
+EMIT_OP_CMP_EQ:            ld a,11 : jr EMIT_BYTE
+EMIT_OP_CALL:              ld a,15 : jr EMIT_BYTE
+EMIT_OP_RET:               ld a,16 : jr EMIT_BYTE
+EMIT_BYTE_OP_PUSH_STR_LIT: ld a,17 : jr EMIT_BYTE
+EMIT_OP_STORE_STR_VAR:     ld a,18 : jr EMIT_BYTE
+EMIT_OP_STR_CONCAT:        ld a,19 : jr EMIT_BYTE
+EMIT_OP_STR_CMP_LT:        ld a,20 : jr EMIT_BYTE
+EMIT_OP_STR_CMP_EQ:        ld a,21 : jr EMIT_BYTE
+EMIT_BYTE_OP_PUSH_FLOAT_LIT: ld a,22 : jr EMIT_BYTE
 EMIT_OP_CLS:                ld a,23 : jp EMIT_BYTE
 EMIT_OP_BORDER:              ld a,24 : jp EMIT_BYTE
 EMIT_OP_INK:                 ld a,25 : jp EMIT_BYTE
@@ -1489,6 +1489,19 @@ EMIT_OP_JMP_ELSE:                                    ld a,47 : jp EMIT_BYTE  ; R
                                                        ; from a bare user GOTO
                                                        ; unambiguously -- no heuristic
                                                        ; byte-pattern guessing needed.
+
+; COMPILE_RELATIVE_OFFSET — R10.5 shrink: factors out the "current
+; bytecode position, relative to VM_CODE_BASE" computation duplicated at
+; nine call sites (label/fixup patching, IF/FOR/PROC skip-jump targets).
+; Output: HL = EMIT_PTR - VM_CODE_BASE. Flags are the raw sbc result;
+; no caller here branches on them, only uses HL/DE afterward. Behavior
+; unchanged; see docs/v2/R10_5_SHRINK.md.
+COMPILE_RELATIVE_OFFSET:
+        ld hl,(EMIT_PTR)
+        ld de,VM_CODE_BASE
+        or a
+        sbc hl,de
+        ret
 
 ; EMIT_PLACEHOLDER_16 — writes two dummy zero bytes (a forward-reference
 ; branch target not yet known), returns the ABSOLUTE address of the first
@@ -2970,10 +2983,7 @@ LABEL_DEFINE:
         ld de,9
         add hl,de                ; -> offset field (past name_len + 8 name bytes)
         push hl                   ; save the offset field's address
-        ld hl,(EMIT_PTR)
-        ld de,VM_CODE_BASE
-        or a
-        sbc hl,de                 ; HL = relative offset
+        call COMPILE_RELATIVE_OFFSET  ; HL = relative offset
         ex de,hl                  ; DE = relative offset
         pop hl                    ; HL = offset field's address (restored)
         ld (hl),e
@@ -3221,15 +3231,15 @@ COMPILE_1ARG_STMT:
 
 COMPILE_BORDER:
         ld hl,EMIT_OP_BORDER
-        jp COMPILE_1ARG_STMT
+        jr COMPILE_1ARG_STMT
 
 COMPILE_INK:
         ld hl,EMIT_OP_INK
-        jp COMPILE_1ARG_STMT
+        jr COMPILE_1ARG_STMT
 
 COMPILE_PAPER:
         ld hl,EMIT_OP_PAPER
-        jp COMPILE_1ARG_STMT
+        jr COMPILE_1ARG_STMT
 
 ; COMPILE_EXPECT_COMMA_EXPR — expects the current token to be ',',
 ; consumes it, then compiles the following expression (tail-calls
@@ -3575,10 +3585,7 @@ COMPILE_IF:
         ; patch the "skip" target to land HERE — right after the JMP —
         ; so a false condition falls through past the GOTO instead of
         ; taking it.
-        ld hl,(EMIT_PTR)
-        ld de,VM_CODE_BASE
-        or a
-        sbc hl,de                 ; HL = relative offset (current position)
+        call COMPILE_RELATIVE_OFFSET  ; HL = relative offset (current position)
         ex de,hl                  ; DE = relative offset
         ld hl,(IF_SKIP_PATCH_TMP)
         ld (hl),e
@@ -3652,10 +3659,7 @@ COMPILE_IF_BLOCK:
         ld (IF_ELSE_SKIP_PATCH_TMP),hl  ; not yet at risk -- the ELSE-body's
                                           ; own recursive call hasn't
                                           ; happened yet
-        ld hl,(EMIT_PTR)
-        ld de,VM_CODE_BASE
-        or a
-        sbc hl,de
+        call COMPILE_RELATIVE_OFFSET
         ex de,hl                          ; DE = relative offset
         pop hl                              ; HL = our own saved THEN-body
                                               ; patch address (balances the
@@ -3684,10 +3688,7 @@ COMPILE_IF_BLOCK:
         pop hl
         ret
 .else_have_endif:
-        ld hl,(EMIT_PTR)
-        ld de,VM_CODE_BASE
-        or a
-        sbc hl,de
+        call COMPILE_RELATIVE_OFFSET
         ex de,hl
         pop hl                            ; HL = our own saved else-skip
                                             ; patch address
@@ -3697,10 +3698,7 @@ COMPILE_IF_BLOCK:
         call LEX_NEXT_TOKEN                ; consume ENDIF
         ret
 .have_endif:
-        ld hl,(EMIT_PTR)
-        ld de,VM_CODE_BASE
-        or a
-        sbc hl,de
+        call COMPILE_RELATIVE_OFFSET
         ex de,hl
         pop hl                            ; HL = our own saved THEN-body
                                             ; patch address (balances the
@@ -3793,10 +3791,7 @@ COMPILE_FOR:
         call EMIT_OP_FOR_INIT
         ld a,(FOR_LOOP_VAR_INDEX)
         call EMIT_BYTE
-        ld hl,(EMIT_PTR)
-        ld de,VM_CODE_BASE
-        or a
-        sbc hl,de                ; HL = loop body's start, relative offset
+        call COMPILE_RELATIVE_OFFSET  ; HL = loop body's start, relative offset
         ld (FOR_LOOP_TOP_OFFSET),hl
         ex de,hl                  ; DE = top offset
         ld hl,(FOR_FRAME_ADDR_TMP)
@@ -3917,10 +3912,7 @@ COMPILE_NEXT:
         ; (post-R9) the OP_FOR_POP opcode emitted just below land on, so
         ; the loop's own FOR_STACK frame is popped exactly once regardless
         ; of which path exits the loop.
-        ld hl,(EMIT_PTR)
-        ld de,VM_CODE_BASE
-        or a
-        sbc hl,de                 ; HL = relative exit offset
+        call COMPILE_RELATIVE_OFFSET  ; HL = relative exit offset
         ld (RESOLVE_PATCH_TMP),hl
         ld a,(CFOR_STACK_DEPTH)
         dec a                       ; index of the loop being closed
@@ -4380,10 +4372,7 @@ COMPILE_PROC:
         ld a,(PROC_PARAM_INDEX_TMP)
         call EMIT_BYTE
         call EMIT_OP_RET
-        ld hl,(EMIT_PTR)
-        ld de,VM_CODE_BASE
-        or a
-        sbc hl,de                 ; HL = relative offset (current position)
+        call COMPILE_RELATIVE_OFFSET  ; HL = relative offset (current position)
         ex de,hl                  ; DE = relative offset
         ld hl,(PROC_SKIP_PATCH_TMP)
         ld (hl),e
@@ -4543,10 +4532,7 @@ COMPILE_DEF_FN:
         ld a,(PROC_PARAM_INDEX_TMP)
         call EMIT_BYTE
         call EMIT_OP_RET_DEFFN
-        ld hl,(EMIT_PTR)
-        ld de,VM_CODE_BASE
-        or a
-        sbc hl,de                 ; HL = relative offset (current position)
+        call COMPILE_RELATIVE_OFFSET  ; HL = relative offset (current position)
         ex de,hl                  ; DE = relative offset
         ld hl,(PROC_SKIP_PATCH_TMP)
         ld (hl),e
@@ -4634,7 +4620,7 @@ COMPILE_EXT_CALL:
         jr z,.have_comma
         ld a,28                     ; expected ',' between an
                                     ; extension call's own arguments
-        jp COMPILE_RAISE_ERROR
+        jr COMPILE_RAISE_ERROR
 .have_comma:
         call LEX_NEXT_TOKEN         ; consume ','
         jr .arg_loop

@@ -215,7 +215,7 @@ MATH_MULTIPLY16:
                                         ; old DE (unused from here)
     call MATH_UMUL16                      ; HL = unsigned product
 
-    jp   MATH_APPLY_SIGN
+    jr   MATH_APPLY_SIGN
 
 ; ============================================================================
 ; MATH_DIVIDE16
@@ -239,7 +239,7 @@ MATH_DIVIDE16:
                                         ; (dividend, abs(HL), was already
                                         ; in HL from the steps above)
 
-    jp   MATH_APPLY_SIGN
+    jr   MATH_APPLY_SIGN
 
 ; ============================================================================
 ; MATH_COMPARE16

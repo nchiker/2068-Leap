@@ -1044,7 +1044,7 @@ OP_STORE_VAR:
         ld a,(hl)               ; symbol index operand
         inc hl
         ld (VM_IP),hl
-        jp VM_STORE_VAR_BY_INDEX
+        jr VM_STORE_VAR_BY_INDEX
 
 ; VM_STORE_VAR_BY_INDEX -- input: A = symbol index. Pops one operand-
 ; stack value and stores it into that symbol, tag-aware (float values
@@ -1461,7 +1461,14 @@ OP_INPUT_STR:
         call VM_ADVANCE_OUTPUT_ROW
         jp VM_RUN.loop
 
-OP_ADD:
+; R10.5 shrink: OP_ADD/SUB/MUL/DIV shared a near-identical pop/tag-check
+; prologue and (for ADD/SUB/MUL, and DIV's own float_path) a near-identical
+; FLOAT-path calculator-stub invocation. Factored into
+; VM_PREPARE_BINARY_OPERANDS and VM_FLOAT_BINARY_COMMON below; the latter
+; reaches its op-specific CALC_*_STUB indirectly through HL via the
+; existing VM_CALL_USR_TRAMPOLINE `jp (hl)` idiom. Behavior unchanged
+; (same flags/ops/order); see docs/v2/R10_5_SHRINK.md.
+VM_PREPARE_BINARY_OPERANDS:
         call VM_POP             ; HL = b, A = tag_b
         ld (VM_FLOAT_B_TAG),a
         ld (VM_FLOAT_B_VAL),hl
@@ -1470,18 +1477,12 @@ OP_ADD:
         ld (VM_FLOAT_A_VAL),hl
         ld c,a
         ld a,(VM_FLOAT_B_TAG)
-        or c
-        jr nz,.float_path        ; either operand is FLOAT (R6)
-        ld hl,(VM_FLOAT_A_VAL)
-        ld de,(VM_FLOAT_B_VAL)
-        add hl,de               ; HL = a+b — native 16-bit Z80 add, the
-                                 ; integer fast path this whole architecture
-                                 ; exists to preserve. Untouched by R6:
-                                 ; reached only when BOTH operands are INT.
-        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
-        call VM_PUSH
-        jp VM_RUN.loop
-.float_path:
+        or c                    ; Z iff both operands are INT (tag 0)
+        ret
+
+VM_FLOAT_BINARY_COMMON:
+        ; entry: HL = address of the CALC_*_STUB to invoke for this op
+        push hl
         xor a
         ld (CALC_SP),a          ; start with a clean calculator stack —
                                   ; every float op here is self-contained,
@@ -1497,9 +1498,26 @@ OP_ADD:
         ld hl,(VM_FLOAT_B_VAL)
         ld (VM_FLOAT_OPERAND_VAL),hl
         call VM_FLOAT_PUSH_OPERAND
-        call VM_CALC_ADD_STUB
+        pop hl
+        call VM_CALL_USR_TRAMPOLINE   ; indirect call to the stub in HL
         call VM_FLOAT_STORE_RESULT
         jp VM_RUN.loop
+
+OP_ADD:
+        call VM_PREPARE_BINARY_OPERANDS
+        jr nz,.float_path        ; either operand is FLOAT (R6)
+        ld hl,(VM_FLOAT_A_VAL)
+        ld de,(VM_FLOAT_B_VAL)
+        add hl,de               ; HL = a+b — native 16-bit Z80 add, the
+                                 ; integer fast path this whole architecture
+                                 ; exists to preserve. Untouched by R6:
+                                 ; reached only when BOTH operands are INT.
+        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
+        call VM_PUSH
+        jp VM_RUN.loop
+.float_path:
+        ld hl,VM_CALC_ADD_STUB
+        jr VM_FLOAT_BINARY_COMMON
 
 OP_JMP:
         ld hl,(VM_IP)
@@ -1514,15 +1532,7 @@ OP_JMP:
         jp VM_RUN.loop
 
 OP_SUB:
-        call VM_POP             ; HL = b, A = tag_b
-        ld (VM_FLOAT_B_TAG),a
-        ld (VM_FLOAT_B_VAL),hl
-        call VM_POP             ; HL = a, A = tag_a
-        ld (VM_FLOAT_A_TAG),a
-        ld (VM_FLOAT_A_VAL),hl
-        ld c,a
-        ld a,(VM_FLOAT_B_TAG)
-        or c
+        call VM_PREPARE_BINARY_OPERANDS
         jr nz,.float_path
         ld hl,(VM_FLOAT_A_VAL)
         ld de,(VM_FLOAT_B_VAL)
@@ -1532,32 +1542,11 @@ OP_SUB:
         call VM_PUSH
         jp VM_RUN.loop
 .float_path:
-        xor a
-        ld (CALC_SP),a
-        ld a,(VM_FLOAT_A_TAG)
-        ld (VM_FLOAT_OPERAND_TAG),a
-        ld hl,(VM_FLOAT_A_VAL)
-        ld (VM_FLOAT_OPERAND_VAL),hl
-        call VM_FLOAT_PUSH_OPERAND
-        ld a,(VM_FLOAT_B_TAG)
-        ld (VM_FLOAT_OPERAND_TAG),a
-        ld hl,(VM_FLOAT_B_VAL)
-        ld (VM_FLOAT_OPERAND_VAL),hl
-        call VM_FLOAT_PUSH_OPERAND
-        call VM_CALC_SUB_STUB
-        call VM_FLOAT_STORE_RESULT
-        jp VM_RUN.loop
+        ld hl,VM_CALC_SUB_STUB
+        jr VM_FLOAT_BINARY_COMMON
 
 OP_MUL:
-        call VM_POP             ; HL = b, A = tag_b
-        ld (VM_FLOAT_B_TAG),a
-        ld (VM_FLOAT_B_VAL),hl
-        call VM_POP             ; HL = a, A = tag_a
-        ld (VM_FLOAT_A_TAG),a
-        ld (VM_FLOAT_A_VAL),hl
-        ld c,a
-        ld a,(VM_FLOAT_B_TAG)
-        or c
+        call VM_PREPARE_BINARY_OPERANDS
         jr nz,.float_path
         ld hl,(VM_FLOAT_A_VAL)
         ld de,(VM_FLOAT_B_VAL)
@@ -1576,21 +1565,8 @@ OP_MUL:
         call VM_PUSH
         jp VM_RUN.loop
 .float_path:
-        xor a
-        ld (CALC_SP),a
-        ld a,(VM_FLOAT_A_TAG)
-        ld (VM_FLOAT_OPERAND_TAG),a
-        ld hl,(VM_FLOAT_A_VAL)
-        ld (VM_FLOAT_OPERAND_VAL),hl
-        call VM_FLOAT_PUSH_OPERAND
-        ld a,(VM_FLOAT_B_TAG)
-        ld (VM_FLOAT_OPERAND_TAG),a
-        ld hl,(VM_FLOAT_B_VAL)
-        ld (VM_FLOAT_OPERAND_VAL),hl
-        call VM_FLOAT_PUSH_OPERAND
-        call VM_CALC_MUL_STUB
-        call VM_FLOAT_STORE_RESULT
-        jp VM_RUN.loop
+        ld hl,VM_CALC_MUL_STUB
+        jp VM_FLOAT_BINARY_COMMON
 
 ; OP_DIV — R6 addition changes this opcode's shape: even with two plain
 ; INT operands, the result must STAY FLOAT when the division is inexact
@@ -1604,15 +1580,7 @@ OP_MUL:
 ; divisions, which is most of them in ordinary integer-heavy programs,
 ; never touch the calculator at all.
 OP_DIV:
-        call VM_POP             ; HL = b, A = tag_b
-        ld (VM_FLOAT_B_TAG),a
-        ld (VM_FLOAT_B_VAL),hl
-        call VM_POP             ; HL = a, A = tag_a
-        ld (VM_FLOAT_A_TAG),a
-        ld (VM_FLOAT_A_VAL),hl
-        ld c,a
-        ld a,(VM_FLOAT_B_TAG)
-        or c
+        call VM_PREPARE_BINARY_OPERANDS
         jr nz,.float_path        ; either operand already FLOAT-tagged
         ld hl,(VM_FLOAT_B_VAL)
         ld a,h
@@ -1637,15 +1605,7 @@ OP_DIV:
         call VM_PUSH
         jp VM_RUN.loop
 .inexact:
-        xor a
-        ld (CALC_SP),a
-        ld hl,(VM_FLOAT_A_VAL)
-        call CALC_INT_TO_FP
-        ld hl,(VM_FLOAT_B_VAL)
-        call CALC_INT_TO_FP
-        call VM_CALC_DIV_STUB
-        call VM_FLOAT_STORE_RESULT
-        jp VM_RUN.loop
+        jp VM_DIV_VIA_FLOAT
 .float_path:
         ; R10 correction (V2_SEMANTIC_CAPABILITY_AUDIT.md matrix row 7):
         ; a FLOAT-tagged zero divisor is now caught here too, via the
@@ -1656,21 +1616,8 @@ OP_DIV:
         ld hl,(VM_FLOAT_B_VAL)
         call VM_FLOAT_TEST_ZERO
         jp z,VM_ERR_DIVIDE_BY_ZERO
-        xor a
-        ld (CALC_SP),a
-        ld a,(VM_FLOAT_A_TAG)
-        ld (VM_FLOAT_OPERAND_TAG),a
-        ld hl,(VM_FLOAT_A_VAL)
-        ld (VM_FLOAT_OPERAND_VAL),hl
-        call VM_FLOAT_PUSH_OPERAND
-        ld a,(VM_FLOAT_B_TAG)
-        ld (VM_FLOAT_OPERAND_TAG),a
-        ld hl,(VM_FLOAT_B_VAL)
-        ld (VM_FLOAT_OPERAND_VAL),hl
-        call VM_FLOAT_PUSH_OPERAND
-        call VM_CALC_DIV_STUB
-        call VM_FLOAT_STORE_RESULT
-        jp VM_RUN.loop
+        ld hl,VM_CALC_DIV_STUB
+        jp VM_FLOAT_BINARY_COMMON
 
 OP_CMP_LT:
         call VM_CMP_DISPATCH     ; A = 0 if a=b, 1 if a>b, $FF if a<b
@@ -2390,6 +2337,24 @@ VM_CALC_DIV_STUB:
         db $05,$38              ; divide, end-calc
         ret
 
+; VM_DIV_VIA_FLOAT — R10.5 shrink: three call sites (OP_DIV's own inexact-
+; quotient fallback, plus two other integer-pair-to-FLOAT-division paths)
+; shared this identical "convert both VM_FLOAT_A_VAL/VM_FLOAT_B_VAL to
+; FLOAT, divide via the calculator, store result" tail. Entry: caller has
+; already set VM_FLOAT_A_VAL/VM_FLOAT_B_VAL (as plain INT16s). Terminal —
+; falls straight through to VM_RUN.loop like its call sites always did.
+; Behavior unchanged; see docs/v2/R10_5_SHRINK.md.
+VM_DIV_VIA_FLOAT:
+        xor a
+        ld (CALC_SP),a
+        ld hl,(VM_FLOAT_A_VAL)
+        call CALC_INT_TO_FP
+        ld hl,(VM_FLOAT_B_VAL)
+        call CALC_INT_TO_FP
+        call VM_CALC_DIV_STUB
+        call VM_FLOAT_STORE_RESULT
+        jp VM_RUN.loop
+
 ; VM_FLOAT_TEST_ZERO -- input: A = tag, HL = value (as VM_POP delivers).
 ; TAG_INT tests HL directly. TAG_FLOAT treats HL as a FLOATTAB index and
 ; reads the real 5-byte packed record: byte0=0 is the small-int fast
@@ -2541,15 +2506,7 @@ OP_PUSH_FLOAT_LIT:
         inc hl
         ld (VM_IP),hl
         ld (VM_FLOAT_B_VAL),de
-        xor a
-        ld (CALC_SP),a          ; start with a clean calculator stack
-        ld hl,(VM_FLOAT_A_VAL)
-        call CALC_INT_TO_FP
-        ld hl,(VM_FLOAT_B_VAL)
-        call CALC_INT_TO_FP
-        call VM_CALC_DIV_STUB
-        call VM_FLOAT_STORE_RESULT
-        jp VM_RUN.loop
+        jp VM_DIV_VIA_FLOAT
 
 ; ===========================================================================
 ; PLATFORM INTEGRATION (R7 addition) — native-call opcodes reaching real,
@@ -3046,7 +3003,7 @@ OP_PRINT_NUM:
                                        ; itself (its float path's real
                                        ; need) -- this call site no
                                        ; longer needs to do it separately
-        jp VM_PRINT_COMMON
+        jr VM_PRINT_COMMON
 
 OP_PRINT_STR:
         call VM_POP                 ; HL = STRTAB index, A = tag
@@ -3549,15 +3506,7 @@ BUILTIN_FN_VAL:
                                   ; divisor shape OP_PUSH_FLOAT_LIT's
                                   ; compiler-side literal already uses)
         ld (VM_FLOAT_B_VAL),de
-        xor a
-        ld (CALC_SP),a
-        ld hl,(VM_FLOAT_A_VAL)
-        call CALC_INT_TO_FP
-        ld hl,(VM_FLOAT_B_VAL)
-        call CALC_INT_TO_FP
-        call VM_CALC_DIV_STUB
-        call VM_FLOAT_STORE_RESULT
-        jp VM_RUN.loop
+        jp VM_DIV_VIA_FLOAT
 .val_int_result:
         xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
         jp VM_PUSH
@@ -4247,47 +4196,47 @@ BUILTIN_FN_DEG:
 ; ---------------------------------------------------------------------------
 VM_ERR_ILLEGAL_OPCODE:
         ld a,1
-        jp VM_ERR_COMMON
+        jr VM_ERR_COMMON
 
 VM_ERR_STACK_OVERFLOW:
         ld a,2
-        jp VM_ERR_COMMON
+        jr VM_ERR_COMMON
 
 VM_ERR_STACK_UNDERFLOW:
         ld a,3
-        jp VM_ERR_COMMON
+        jr VM_ERR_COMMON
 
 VM_ERR_FLOAT_NOT_IMPLEMENTED:
         ld a,4
-        jp VM_ERR_COMMON
+        jr VM_ERR_COMMON
 
 VM_ERR_DIVIDE_BY_ZERO:
         ld a,5
-        jp VM_ERR_COMMON
+        jr VM_ERR_COMMON
 
 VM_ERR_CALL_STACK_OVERFLOW:
         ld a,6
-        jp VM_ERR_COMMON
+        jr VM_ERR_COMMON
 
 VM_ERR_CALL_STACK_UNDERFLOW:
         ld a,7
-        jp VM_ERR_COMMON
+        jr VM_ERR_COMMON
 
 VM_ERR_INVALID_SOUND_REGISTER:
         ld a,8
-        jp VM_ERR_COMMON
+        jr VM_ERR_COMMON
 
 VM_ERR_EXTENSION_NOT_FOUND:
         ld a,9
-        jp VM_ERR_COMMON
+        jr VM_ERR_COMMON
 
 VM_ERR_ARRAY_BOUNDS:
         ld a,10
-        jp VM_ERR_COMMON
+        jr VM_ERR_COMMON
 
 VM_ERR_ARRAY_TYPE:
         ld a,11
-        jp VM_ERR_COMMON
+        jr VM_ERR_COMMON
 
 ; VM_ERR_CHR_RANGE -- R8.5 Group 6: CHR$'s argument was outside 0-255.
 ; Reached inline via BUILTIN_FN_CHR's own "jp VM_ERR_COMMON" (no
