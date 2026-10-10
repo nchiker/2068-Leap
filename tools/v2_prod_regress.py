@@ -70,16 +70,187 @@ def tape_load_ok():
         "msg=%s prog_end=%04X" % (r["msg"], r["prog_end"])
 
 
-@case("tape-load-checksum", "a bad block checksum fails the LOAD")
-def tape_load_checksum():
+# ------------------------------------------- tape failure semantics (R10.9 Phase 2A, D1/D2)
+# Policy under test (docs/v2/R10_9_PHASE2A_REPORT.md s3):
+#   * a failed receive is NEVER reported as LOADED / VERIFIED;
+#   * failure BEFORE any destination byte was stored  -> program intact;
+#   * failure AFTER the first destination byte         -> known-safe empty program (as NEW);
+#   * VERIFY never modifies anything (it cannot touch the destination);
+#   * unsupported version -> BAD TAPE VERSION, nothing touched;  SPACE -> ABORTED.
+
+def _empty(r):
+    """The known-safe empty state after a destructive failure."""
+    return (r["prog_end"] == P.sym("PROG_AREA_START") and r["edit_pos"] == 0xFFFF
+            and r["edit_index"] == 0 and r["verify_mode"] == 0)
+
+
+def _intact(r):
+    return r["after"] == r["before"] and r["verify_mode"] == 0
+
+
+def _d(r):
+    return "msg=%s intact=%s empty=%s prog_end=%04X verify_mode=%d" % (
+        r["msg"], r["after"] == r["before"], _empty(r), r["prog_end"], r["verify_mode"])
+
+
+@case("D1-dropout", "tape drops out mid data block -> LOAD FAILED, program wiped (destination was touched)")
+def d1_dropout():
+    r = P.tape_op(TS.program_tape("TEST", SRC, dropout=(20, 12)), existing=OLD)
+    return r["msg"] == "LOAD_FAILED" and r["op_state"] == 6 and _empty(r), _d(r)
+
+
+@case("D1-truncated", "tape ends mid data block -> LOAD FAILED, program wiped")
+def d1_truncated():
+    r = P.tape_op(TS.program_tape("TEST", SRC, truncate_after=24), existing=OLD)
+    return r["msg"] == "LOAD_FAILED" and r["op_state"] == 6 and _empty(r), _d(r)
+
+
+@case("D1-flag-mismatch", "data block carries the wrong flag byte -> LOAD FAILED before any store: program intact")
+def d1_flag():
+    r = P.tape_op(TS.program_tape("TEST", SRC, data_flag=0x00), existing=OLD)
+    return r["msg"] == "LOAD_FAILED" and _intact(r), _d(r)
+
+
+@case("D1-dropout-before-data", "dropout over the flag byte -> LOAD FAILED before any store: program intact")
+def d1_dropout_early():
+    r = P.tape_op(TS.program_tape("TEST", SRC, dropout=(0, 2)), existing=OLD)
+    return r["msg"] == "LOAD_FAILED" and _intact(r), _d(r)
+
+
+@case("D1-checksum", "bad checksum -> LOAD FAILED; every byte was stored, so the program is wiped")
+def d1_checksum():
     r = P.tape_op(TS.program_tape("TEST", SRC, bad_checksum=True), existing=OLD)
-    return r["msg"] == "LOAD_FAILED", "msg=%s" % r["msg"]
+    return r["msg"] == "LOAD_FAILED" and _empty(r), _d(r)
 
 
-@case("tape-verify-identical", "VERIFY of the identical program -> VERIFIED, program untouched")
-def tape_verify_ok():
+@case("D1-space-abort", "SPACE held mid data block -> ABORTED, program wiped (destination was touched)")
+def d1_space():
+    def interfere():
+        assert P.wait_in_data(16), "never reached the data block"
+        P.press_space()
+    r = P.tape_op(TS.program_tape("TEST", SRC), existing=OLD, interfere=interfere)
+    return r["msg"] == "ABORTED" and r["op_state"] == 6 and _empty(r), _d(r)
+
+
+@case("D1-space-abort-header", "SPACE while waiting for a header -> ABORTED at once, program intact")
+def d1_space_header():
+    def interfere():
+        P.press_space()
+    r = P.tape_op(TS.program_tape("TEST", SRC), existing=OLD, interfere=interfere)
+    return r["msg"] == "ABORTED" and _intact(r), _d(r)
+
+
+@case("D1-recovers", "after a failed (wiping) LOAD the editor works and a second LOAD of a good copy succeeds")
+def d1_recovers():
+    hdr = TS.framed(0x00, TS.header_payload(0, "TEST", len(SRC), ABI.fmt_word))
+    t = TS.Tape()
+    t.block(hdr)
+    t.block(TS.framed(0xFF, SRC), truncate_after=24)          # first copy: cut short
+    t.block(hdr)
+    t.block(TS.framed(0xFF, SRC))                             # second copy: good
+    r = P.tape_op(t, existing=OLD)
+    if not (r["msg"] == "LOAD_FAILED" and _empty(r)):
+        return False, "first LOAD: " + _d(r)
+    m2 = P.call_prompt("V2_LOAD", maxi=900_000_000)
+    ok2 = m2 == "LOADED" and P.store() == PROG and P.read(P.sym("STORAGE_VERIFY_MODE"), 1)[0] == 0
+    P.key(KEY_LEFT)                                           # the first key only dismisses the message
+    P.type_text("k = 9")
+    return ok2 and P.store() == PROG + ["k = 9"], "second LOAD msg=%s store=%s" % (m2, P.store())
+
+
+@case("D1-wrong-name", "tape carries another file's name -> LOAD FAILED, program intact")
+def d1_wrong_name():
+    r = P.tape_op(TS.program_tape("OTHER", SRC), existing=OLD)
+    return r["msg"] == "LOAD_FAILED" and _intact(r), _d(r)
+
+
+@case("D1-wrong-type", "tape holds a header of another type (4 = package) -> LOAD FAILED, program intact")
+def d1_wrong_type():
+    r = P.tape_op(TS.program_tape("TEST", SRC, htype=4), existing=OLD)
+    return r["msg"] == "LOAD_FAILED" and _intact(r), _d(r)
+
+
+@case("D1-header-truncated", "header block cut short -> LOAD FAILED, program intact")
+def d1_header_truncated():
+    t = TS.Tape()
+    t.block(TS.framed(0x00, TS.header_payload(0, "TEST", len(SRC), ABI.fmt_word)), truncate_after=9)
+    r = P.tape_op(t, existing=OLD)
+    return r["msg"] == "LOAD_FAILED" and _intact(r), _d(r)
+
+
+@case("D2-verify-identical", "VERIFY of an identical program -> VERIFIED, program intact")
+def d2_identical():
     r = P.tape_op(TS.program_tape("TEST", SRC), existing=PROG, routine="V2_VERIFY")
-    return r["msg"] == "VERIFIED" and r["after"] == r["before"], "msg=%s" % r["msg"]
+    return r["msg"] == "VERIFIED" and _intact(r), _d(r)
+
+
+@case("D2-verify-mismatch", "VERIFY of a different program (valid checksum) -> VERIFY FAILED, program intact")
+def d2_mismatch():
+    r = P.tape_op(TS.program_tape("TEST", TS.source_records(OLD)), existing=PROG, routine="V2_VERIFY")
+    return r["msg"] == "VERIFY_FAILED" and _intact(r), _d(r)
+
+
+@case("D2-verify-last-byte", "VERIFY where only the final text byte differs -> VERIFY FAILED")
+def d2_last_byte():
+    other = bytearray(SRC)
+    other[-2] ^= 0x01                              # last character before the CR
+    r = P.tape_op(TS.program_tape("TEST", bytes(other)), existing=PROG, routine="V2_VERIFY")
+    return r["msg"] == "VERIFY_FAILED" and _intact(r), _d(r)
+
+
+@case("D2-verify-checksum", "VERIFY with a bad checksum -> VERIFY FAILED, program NOT erased")
+def d2_checksum():
+    r = P.tape_op(TS.program_tape("TEST", SRC, bad_checksum=True), existing=PROG, routine="V2_VERIFY")
+    return r["msg"] == "VERIFY_FAILED" and _intact(r), _d(r)
+
+
+@case("D2-verify-truncated", "VERIFY of a tape cut mid data block -> VERIFY FAILED, program intact")
+def d2_truncated():
+    r = P.tape_op(TS.program_tape("TEST", SRC, truncate_after=24), existing=PROG, routine="V2_VERIFY")
+    return r["msg"] == "VERIFY_FAILED" and _intact(r), _d(r)
+
+
+@case("D2-verify-dropout", "VERIFY with a dropout mid data block -> VERIFY FAILED, program intact")
+def d2_dropout():
+    r = P.tape_op(TS.program_tape("TEST", SRC, dropout=(20, 12)), existing=PROG, routine="V2_VERIFY")
+    return r["msg"] == "VERIFY_FAILED" and _intact(r), _d(r)
+
+
+@case("D2-verify-shorter-tape", "VERIFY where the tape is a PREFIX of the program -> VERIFY FAILED")
+def d2_shorter():
+    r = P.tape_op(TS.program_tape("TEST", TS.source_records(PROG[:3])), existing=PROG, routine="V2_VERIFY")
+    return r["msg"] == "VERIFY_FAILED" and _intact(r), _d(r)
+
+
+@case("D2-verify-longer-tape", "VERIFY where the tape extends past the program (stale RAM matches) -> VERIFY FAILED")
+def d2_longer():
+    keep = len(TS.source_records(PROG[:3]))
+
+    def shrink():                                  # program = first 3 lines; the deleted lines linger in RAM
+        P.poke16(P.sym("PROG_END"), P.sym("PROG_AREA_START") + keep)
+    r = P.tape_op(TS.program_tape("TEST", SRC), existing=PROG, routine="V2_VERIFY", prepare=shrink)
+    return r["msg"] == "VERIFY_FAILED" and _intact(r), _d(r)
+
+
+@case("D2-verify-wrong-type", "VERIFY against a package-type tape -> VERIFY FAILED, program intact")
+def d2_wrong_type():
+    r = P.tape_op(TS.program_tape("TEST", SRC, htype=4), existing=PROG, routine="V2_VERIFY")
+    return r["msg"] == "VERIFY_FAILED" and _intact(r), _d(r)
+
+
+@case("D2-verify-wrong-name", "VERIFY against another file's tape -> VERIFY FAILED, program intact")
+def d2_wrong_name():
+    r = P.tape_op(TS.program_tape("OTHER", SRC), existing=PROG, routine="V2_VERIFY")
+    return r["msg"] == "VERIFY_FAILED" and _intact(r), _d(r)
+
+
+@case("D2-verify-space-abort", "SPACE during VERIFY -> ABORTED, program intact, VERIFY mode cleared")
+def d2_space():
+    def interfere():
+        assert P.wait_in_data(16), "never reached the data block"
+        P.press_space()
+    r = P.tape_op(TS.program_tape("TEST", SRC), existing=PROG, routine="V2_VERIFY", interfere=interfere)
+    return r["msg"] == "ABORTED" and _intact(r), _d(r)
 
 
 @case("save-header", "SAVE hands the transport the program text under a type-0 header")
@@ -302,6 +473,32 @@ def abi_pkg_tape_ok():
     centre = P.read(pixel_addr(128, 96), 1)[0]
     return msg == "LOADED" and names == ["CIRCLE", "FILL"] and ln == len(_PKG_BLOB) and ve == 0 and centre == 0xFF, \
         "msg=%s registry=%s len=%d vm_err=%d centre=%02X" % (msg, names, ln, ve, centre)
+
+
+@case("D1-pkg-truncated", "a package tape cut mid block -> LOAD FAILED, nothing executed, registry and window length cleared")
+def d1_pkg_truncated():
+    t = TS.Tape()
+    t.block(TS.framed(0, TS.header_payload(4, "SHAPES", len(_PKG_BLOB), autostart=ABI.pkg_word)))
+    t.block(TS.framed(0xFF, _PKG_BLOB), truncate_after=200)
+    P.boot(t)
+    P.poke(P.sym("EDIT_LINE_BUF"), b'load "SHAPES" EXT\0')
+    msg = P.call_prompt("V2_DISPATCH", maxi=900_000_000)
+    names, ln = _registry_names(), P.w16(P.sym("V2_PACKAGE_LEN"))
+    return msg == "LOAD_FAILED" and names == [] and ln == 0, "msg=%s registry=%s len=%d" % (msg, names, ln)
+
+
+@case("D1-pkg-space-abort", "SPACE during a package LOAD -> ABORTED, registry and window length cleared")
+def d1_pkg_space():
+    P.boot(pkg_tape("SHAPES", _PKG_BLOB, ABI.pkg_word))
+    P.poke(P.sym("EDIT_LINE_BUF"), b'load "SHAPES" EXT\0')
+    D("mem-write", "0xFF00", struct.pack("<H", RET).hex())
+    D("set-register", "SP", "0xFF00")
+    D("set-register", "PC", hex(P.sym("V2_DISPATCH")))
+    assert P.wait_in_data(16, dest=P.sym("EXTENSION_MODULE_BASE")), "never reached the package data block"
+    P.press_space()
+    msg = P.to_prompt(900_000_000)
+    names, ln = _registry_names(), P.w16(P.sym("V2_PACKAGE_LEN"))
+    return msg == "ABORTED" and names == [] and ln == 0, "msg=%s registry=%s len=%d" % (msg, names, ln)
 
 
 def _mk_reject_pkg(label, word):

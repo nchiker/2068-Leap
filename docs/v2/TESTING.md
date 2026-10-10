@@ -29,7 +29,7 @@ shipped) and prints both logs. Library: `tools/v2_prod.py`; tape synthesiser:
 
 | Suite | File | Meaning of a result |
 |---|---|---|
-| **Gate** | `tools/v2_prod_regress.py` | every case must `PASS`. Editor key path, command dispatch, real tape LOAD/VERIFY/SAVE, all five packages, display-mode return, package ABI 2.0 (`abi-*`) |
+| **Gate** | `tools/v2_prod_regress.py` | every case must `PASS`. Editor key path, command dispatch, real tape LOAD/VERIFY/SAVE, cassette failure semantics (`D1-*`, `D2-*`, R10.9 Phase 2A), all five packages, display-mode return, package ABI 2.0 (`abi-*`) |
 | **Known defects** | `tools/v2_known_defects.py` | each case asserts the *correct* behaviour. `XFAIL` = a documented R10.8 defect reproduced (expected, exit 0). `PASS` = a positive control. `FAIL` = unexpected failure (exit 1). `XPASS` = a case marked as a known defect now behaves correctly (exit 1): the defect was fixed, so drop the `xfail=` marker and the case becomes a gate test |
 
 An XFAIL line is **not** a pass: the summary line counts them separately, and `docs/v2/
@@ -43,7 +43,9 @@ Substituted: (1) the EAR signal is a synthesised pulse train played through ZEsa
 (raw 8-bit samples at 15,600 Hz, ±226 T edge quantisation) — not analogue cassette audio;
 (2) `STORAGE_SEND_BLOCK` is intercepted at its call site (arguments captured, the call skipped) —
 SAVE's *output pulses* are not generated; (3) SPACE during LOAD is injected by forcing bit 0 of the
-single `in a,($FE)` at the receiver's edge sampler to read low; (4) the key latch is poked
+`in a,($FE)` at the receiver's edge sampler to read low and again at STORAGE_LOAD's own
+abort-classification read (`P.press_space()`), standing in for a key that stays down for
+milliseconds; (4) the key latch is poked
 directly, so physical matrix scanning/debounce/auto-repeat are not exercised; (5) packages are
 usually installed by copying the image to `$F400` and calling the real entry (the tape path is
 tested separately by `abi-pkg-*`); (6) tests call `V2_RUN_STORED`/`V2_DISPATCH`/`V2_LOAD`
@@ -62,3 +64,16 @@ the assertion, never the broken one. Use `P.boot()`, `P.key()/type_text()`, `P.p
 Isolate a manual run from `make test` with `TS2068_DEBUG_STATE_DIR=<dir> TS2068_V2_PORT=<port>`.
 
 **Package ABI.** `make check` runs `tools/check_package_abi.py` (see `docs/v2/PACKAGE_ABI.md` §8).
+
+## Cassette failure semantics and array defects (R10.9 Phase 2A)
+
+* `D1-*` / `D2-*` (LOAD / VERIFY failure semantics) were known defects in Phase 1 and are **fixed**; they are now
+  gate cases in `tools/v2_prod_regress.py` and cover: dropout, truncation, wrong flag, bad checksum, SPACE abort
+  (data block and header search), wrong name, wrong type, truncated header, VERIFY mismatch / prefix tape / longer
+  tape / bad checksum / abort, and package-tape failure. Each asserts the message *and* the resulting state (program
+  intact, or the known-safe empty state, `STORAGE_VERIFY_MODE` cleared). Policy: `docs/v2/R10_9_PHASE2A_REPORT.md` §3.
+* `D12`–`D15` (DIM zero-fill, `SAVE ... ARRAY` header type, array names > 8 characters, `LOAD ... ARRAY`
+  descriptor validation) are strict expected failures in `tools/v2_known_defects.py`; positive controls (8-character
+  names, well-formed tapes, `dim_count` normalisation) sit beside them. Nothing there is repaired yet (Phase 2C).
+* `P.press_space()`, `P.capture_save()` and `tape_op(prepare=...)` are the new harness helpers (`tools/v2_prod.py`).
+

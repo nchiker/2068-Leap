@@ -1197,6 +1197,14 @@ V2_LOAD:
     ld hl,V2_MSG_LOADED
     jp V2_SHOW_MESSAGE
 .failed:
+    ; R10.9 failure classes (STORAGE_LOAD: A = class, B = user-abort flag):
+    ;   A=0        nothing was stored: program/package state untouched
+    ;   A=$FF      destination was partly overwritten: the old program cannot be
+    ;              trusted and cannot be restored (no staging buffer), so fall
+    ;              into the known-safe empty state (same as NEW)
+    ;   A=$FE      unsupported tape version: refused before any byte arrived
+    ; STORAGE_LOAD never reports $FF in VERIFY mode, so VERIFY cannot wipe.
+    push bc
     push af
     ld a,(V2_REQUEST_TYPE)
     or a
@@ -1205,27 +1213,32 @@ V2_LOAD:
     ld hl,0
     ld (V2_PACKAGE_LEN),hl
     pop af
-    cp STORAGE_LOAD_BAD_VERSION
-    jr z,.bad_version
-    jr .clean_failure
+    jr .classify
 .program_failed:
     pop af
-    cp STORAGE_LOAD_BAD_VERSION
-    jr z,.bad_version
-    inc a
-    jr nz,.clean_failure
+    cp STORAGE_LOAD_DATA_TOUCHED
+    jr nz,.classify
     call MEM_INIT_V2
     call V2_RESET_EDIT
-.clean_failure:
+    xor a
+.classify:
+    pop bc
+    cp STORAGE_LOAD_BAD_VERSION
+    jr z,.bad_version
+.clean_failure:                ; B = abort flag (0 when arriving from .verified)
+    ld hl,V2_MSG_LOAD_FAILED
     ld a,(STORAGE_VERIFY_MODE)
     or a
-    jr z,.load_failed_msg
+    jr z,.pick_msg
     xor a
     ld (STORAGE_VERIFY_MODE),a
     ld hl,V2_MSG_VERIFY_FAILED
-    jp V2_SHOW_MESSAGE
-.load_failed_msg:
-    ld hl,V2_MSG_LOAD_FAILED
+.pick_msg:
+    ld a,b
+    or a
+    jr z,.show_msg
+    ld hl,V2_MSG_ABORTED
+.show_msg:
     jp V2_SHOW_MESSAGE
 .missing_name:
     ld hl,V2_MSG_SYNTAX
@@ -1236,6 +1249,16 @@ V2_LOAD:
     ld hl,V2_MSG_BAD_VERSION
     jp V2_SHOW_MESSAGE
 .verified:
+    ; R10.9 (D2): the transport compared the first <tape length> bytes; the
+    ; programs are only equal if the tape ALSO ends where the program does
+    ; (DE = tape length).  A shorter or longer tape would otherwise verify
+    ; against stale RAM or match a prefix.
+    ld hl,PROG_AREA_START
+    add hl,de
+    ld de,(PROG_END)
+    or a
+    sbc hl,de
+    jr nz,.clean_failure
     xor a
     ld (STORAGE_VERIFY_MODE),a
     ld hl,V2_MSG_VERIFIED
@@ -1361,6 +1384,11 @@ V2_LOAD_ARRAY:
     jp V2_SHOW_MESSAGE
 .load_failed:
     ld hl,V2_MSG_LOAD_FAILED
+    inc b                      ; R10.9: B = user-abort flag from STORAGE_LOAD
+    dec b
+    jr z,.load_failed_show
+    ld hl,V2_MSG_ABORTED
+.load_failed_show:
     jp V2_SHOW_MESSAGE
 .not_dimd:
     ld hl,V2_MSG_ARRAY_NOT_DIMD
@@ -1988,3 +2016,4 @@ V2_MSG_ARRAY_MISMATCH: DB "ARRAY ALREADY SET",0
 V2_MSG_VERIFIED: DB "VERIFIED",0
 V2_MSG_VERIFY_FAILED: DB "VERIFY FAILED",0
 V2_MSG_BAD_VERSION: DB "BAD TAPE VERSION",0
+V2_MSG_ABORTED: DB "ABORTED",0

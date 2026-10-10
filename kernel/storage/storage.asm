@@ -381,12 +381,17 @@ STORAGE_SEND_BLOCK:
 ;          project's own callers always load (this project has no
 ;          VERIFY command), kept for real-ROM fidelity at zero cost.
 ;      IX = destination pointer, DE = expected length
-; Out: Carry set = failure (timeout, SPACE pressed, wrong type, or
-;          checksum mismatch) — the real ROM's own single carry-out
-;          covers all of these; this project's caller (STORAGE_LOAD)
-;          retries or gives up the same way regardless of which one it
-;          was, matching the real ROM's own LD-LOOK-H convention.
-;      Carry clear = success.
+; Out: Carry set = failure (timeout, SPACE pressed, wrong type, verify
+;          mismatch, dropout, or checksum mismatch) — a single carry-out
+;          covers all of these; STORAGE_LOAD retries or gives up the same
+;          way regardless of which one it was. R10.9 (D1/D2): EVERY
+;          failure exit now sets carry (previously all but the checksum
+;          test returned carry clear = "success", so a truncated or
+;          dropped-out tape was reported as LOADED and a VERIFY mismatch
+;          as VERIFIED).
+;      Carry clear = success (DE = 0 on return, destination complete).
+;      On failure DE = bytes still outstanding (equals the entry DE iff
+;          nothing was stored to IX — STORAGE_LOAD's "touched" test).
 ; Destroys: AF, AF', BC, DE, HL, IX
 ; ============================================================================
 STORAGE_RECEIVE_BLOCK:
@@ -423,7 +428,9 @@ STORAGE_RECEIVE_BLOCK:
                                          ; flag state every later `ret
                                          ; nz`/`jr z` below depends on
 .break:
-    ret  nz
+    jp   nz, .fail                        ; SPACE held (NZ) -- R10.9: every
+                                         ; failure exit now funnels into
+                                         ; .fail so carry is SET (see header)
 .entry_start:
     ld   hl, (STORAGE_ENTRY_RETRY)          ; bounds this loop's own
                                          ; retry-forever tendency (the
@@ -479,7 +486,7 @@ STORAGE_RECEIVE_BLOCK:
     cp   STORAGE_SYNC_GAP_MAX
     jr   nc, .sync
     call .edge1
-    ret  nc
+    jr   nc, .fail
     ld   a, c
     xor  $03
     ld   c, a
@@ -496,7 +503,7 @@ STORAGE_RECEIVE_BLOCK:
 .flag:
     rl   c
     xor  l
-    ret  nz                               ; received type flag doesn't
+    jr   nz, .fail                        ; received type flag doesn't
                                          ; match what the caller asked
                                          ; for — genuine failure, not
                                          ; a retry-able condition
@@ -508,7 +515,7 @@ STORAGE_RECEIVE_BLOCK:
 .verify:
     ld   a, (ix+0)
     xor  l
-    ret  nz
+    jr   nz, .fail                        ; verify mismatch
 .next:
     inc  ix
 .dec:
@@ -519,7 +526,7 @@ STORAGE_RECEIVE_BLOCK:
     ld   l, $01
 .bits8:
     call .edge2
-    ret  nc
+    jr   nc, .fail                        ; dropout / SPACE mid-byte
     ld   a, STORAGE_BIT_COMPARE
     cp   b
     rl   l
@@ -537,11 +544,10 @@ STORAGE_RECEIVE_BLOCK:
     ; checksummed transfer with this file's own DE convention, not 1.
     ld   a, h
     or   a
-    jr   z, .success
-    scf
-    ret
-.success:
-    ret
+    ret  z                                ; checksum clean: carry clear
+.fail:
+    scf                                   ; R10.9 (D1/D2): the ONE failure
+    ret                                   ; exit -- carry SET, as documented
 
 .edge2:
     call .edge1
@@ -729,7 +735,12 @@ STORAGE_SAVE:
 ;          STORAGE_LOAD_DATA_TOUCHED on failure after destination writes
 ;      Carry set = total failure (no matching header, or header's own
 ;          claimed length exceeds the caller's bound, or the data block
-;          failed). A distinguishes whether destination bytes were written.
+;          failed). A distinguishes whether destination bytes were written
+;          (0 clean / STORAGE_LOAD_DATA_TOUCHED) or an unsupported version
+;          (STORAGE_LOAD_BAD_VERSION).  R10.9: B is nonzero on a failure
+;          if SPACE (the tape-abort key) was held; B = 0 on success.
+;          In VERIFY mode (STORAGE_VERIFY_MODE != 0) nothing is ever stored
+;          to IX, so a failure is always clean (A = 0).
 ; Destroys: AF, BC, DE, HL, IX
 ; ============================================================================
 STORAGE_LOAD:
@@ -771,10 +782,13 @@ STORAGE_LOAD:
     call STORAGE_RECEIVE_BLOCK
     pop  bc
     jr   nc, .header_found
+    call .space_held                      ; R10.9: a user abort ends the search
+    jr   nc, .header_giveup               ; now (it used to burn all retries)
     djnz .header_search
-    ; exhausted every attempt — give up cleanly instead of retrying
-    ; forever. Rebalance the entry-pushed IX/BC/HL (never consumed on
-    ; this path) before falling into .total_failure.
+.header_giveup:
+    ; exhausted every attempt (or aborted) — give up cleanly instead of
+    ; retrying forever. Rebalance the entry-pushed IX/BC/HL (never consumed
+    ; on this path) before falling into .total_failure.
     pop  ix
     pop  bc
     pop  hl
@@ -948,6 +962,7 @@ STORAGE_LOAD:
                                          ; see STORAGE_SAVE's own
                                          ; matching comment for why
     xor  a
+    ld   b, a                            ; B = 0 (no abort) on success
     ret
 
 .data_failed:
@@ -957,6 +972,10 @@ STORAGE_LOAD:
     ; program as though it were still trustworthy.
     pop  hl
     pop  ix
+    ld   a, (STORAGE_VERIFY_MODE)
+    or   a
+    jr   nz, .total_failure               ; R10.9: VERIFY never stores to IX, so
+                                         ; a VERIFY failure is always clean
     ld   a, d
     cp   h
     jr   nz, .data_touched
@@ -966,7 +985,7 @@ STORAGE_LOAD:
 .total_failure:
     xor  a                               ; clean failure: no program bytes
                                          ; were written
-    jr   .report_failure
+    jr   .abort_check
     IFDEF STORAGE_VERSIONED
 .bad_version:
     ld   a, STORAGE_LOAD_BAD_VERSION     ; clean failure, distinguishable
@@ -974,6 +993,17 @@ STORAGE_LOAD:
     ENDIF
 .data_touched:
     ld   a, STORAGE_LOAD_DATA_TOUCHED
+.abort_check:
+    ; R10.9: B = nonzero iff the user is holding SPACE (the receiver's abort
+    ; key) as the failure is reported, so callers can say "ABORTED" instead of
+    ; "LOAD FAILED".  The receiver samples SPACE thousands of times a second
+    ; and a keypress lasts milliseconds, so re-reading it here is reliable.
+    ld   c, a
+    call .space_held
+    sbc  a, a                             ; $FF if SPACE released, 0 if held
+    cpl
+    ld   b, a
+    ld   a, c
 .report_failure:
     push af                              ; preserve clean/dirty result marker
     ld   a, 6
@@ -985,6 +1015,13 @@ STORAGE_LOAD:
                                          ; for why
     pop  af
     scf
+    ret
+
+; .space_held -- Out: carry CLEAR iff SPACE is down.  Destroys A.
+.space_held:
+    ld   a, $7f
+    in   a, (PORT_ULA)
+    rra
     ret
 
 ; ============================================================================

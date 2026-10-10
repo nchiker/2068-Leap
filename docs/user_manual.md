@@ -1376,7 +1376,10 @@ text, not a new statement.
 | Message | Meaning |
 |---|---|
 | `SAVED` / `LOADED` | Success |
-| `LOAD FAILED` | Unreadable tape, or name mismatch |
+| `LOAD FAILED` | Unreadable, incomplete or wrong tape. If the failure happened before any data was stored the program in memory is kept; if it happened part-way through the block the partly overwritten program is discarded (the program area is left empty, as after `NEW`) |
+| `VERIFIED` / `VERIFY FAILED` | `VERIFY` compares the tape with the program in memory and never changes it; the tape must match the whole program (same length) |
+| `ABORTED` | SPACE was pressed during `LOAD`/`VERIFY`. As for `LOAD FAILED`, a `LOAD` aborted part-way leaves an empty program |
+| `BAD TAPE VERSION` | The tape was not written by this ROM's format (older or newer); nothing was changed |
 | `SAVE FAILED` | An extension SAVE was requested with no module installed |
 | `INVALID FILENAME` | Bad `SAVE`/`LOAD` filename |
 

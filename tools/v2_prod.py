@@ -203,7 +203,7 @@ def set_name(text, request_type=0, buf=0xFE80):
 
 
 def tape_op(tape, existing=None, routine="V2_LOAD", name="TEST", request_type=0,
-            lead=CPU_BOOT_T + 1_800_000, maxi=900_000_000, interfere=None):
+            lead=CPU_BOOT_T + 1_800_000, maxi=900_000_000, interfere=None, prepare=None):
     """Boot with `tape` as EAR input, optionally pre-load a program into the store,
     then run the real LOAD/VERIFY routine and report what happened.
 
@@ -212,6 +212,8 @@ def tape_op(tape, existing=None, routine="V2_LOAD", name="TEST", request_type=0,
     boot(tape, lead)
     if existing is not None:
         put_store(existing)
+    if prepare:
+        prepare()
     before = read(sym("PROG_AREA_START"), w16(sym("PROG_END")) - sym("PROG_AREA_START"))
     set_name(name, request_type)
     a = sym(routine)
@@ -224,13 +226,15 @@ def tape_op(tape, existing=None, routine="V2_LOAD", name="TEST", request_type=0,
     pe = w16(sym("PROG_END"))
     return {"msg": msg, "prog_end": pe, "before": before,
             "after": read(sym("PROG_AREA_START"), max(0, pe - sym("PROG_AREA_START"))),
-            "op_state": read(sym("STORAGE_OP_STATE"), 1)[0]}
+            "op_state": read(sym("STORAGE_OP_STATE"), 1)[0],
+            "verify_mode": read(sym("STORAGE_VERIFY_MODE"), 1)[0],
+            "edit_pos": w16(sym("CUR_EDIT_POS")), "edit_index": w16(sym("CUR_EDIT_INDEX"))}
 
 
-def wait_in_data(min_bytes, chunk=40_000, limit=6_000_000):
+def wait_in_data(min_bytes, chunk=40_000, limit=6_000_000, dest=None):
     """Run in small chunks until the receiver is `min_bytes` into the data block
     (IX walks the destination buffer while the data block is received)."""
-    dest = sym("PROG_AREA_START")
+    dest = sym("PROG_AREA_START") if dest is None else dest
     for _ in range(limit // chunk):
         D("run", "--max-instructions", str(chunk), t=600)
         ix = regs()["IX"]
@@ -255,6 +259,75 @@ def hold_space_for_one_sample():
     assert pc() == rra, "receiver sampler not found at %04X (pc=%04X)" % (rra, pc())
     a = regs()["AF"] >> 8
     D("set-register", "A", hex(a & 0xFE))
+
+
+def _in_rra(label, tail):
+    """Address of the `rra` after the `in a,($FE)` in routine-local `label`
+    (pattern in a,($FE) / rra / <tail byte>)."""
+    a = local_sym(label)
+    code = read(a, 48)
+    i = code.find(bytes([0xDB, 0xFE, 0x1F]) + tail)
+    assert i >= 0, "in a,($FE)/rra pattern not found in " + label
+    return a + i + 2
+
+
+def _space_down_at(addr, maxi):
+    assert run_to(addr, maxi), "never reached %04X" % addr
+    D("set-register", "A", hex((regs()["AF"] >> 8) & 0xFE))        # bit 0 low = SPACE down
+
+
+def press_space(maxi=400_000_000):
+    """A real SPACE press as the production code sees it: the receiver's edge sampler
+    reads SPACE down at its next sample (-> abort), and SPACE is STILL down when
+    STORAGE_LOAD re-reads it to classify the failure (a human keypress lasts
+    milliseconds, the failure is reported microseconds later).  Both SPACE reads in
+    STORAGE_LOAD's failure path (header-search give-up, abort classification) are
+    forced; the keyboard matrix itself is not exercised (see TESTING.md)."""
+    _space_down_at(_in_rra("STORAGE_RECEIVE_BLOCK.edge1", b"\xD0"), maxi)
+    held = _in_rra("STORAGE_LOAD.space_held", b"\xC9")
+    for _ in range(2):
+        if not run_to(held, 40):          # the header-search give-up is followed within ~15
+            break                         # instructions by the classification read; the data
+                                          # path has only the latter (40 stays short of the message)
+        D("set-register", "A", hex((regs()["AF"] >> 8) & 0xFE))
+
+
+def capture_save(cmdline, maxi=60_000_000):
+    """Run a typed SAVE command through the real V2_DISPATCH; STORAGE_SEND_BLOCK is
+    intercepted at its call site (arguments recorded, call skipped).  Returns
+    ([(flag, bytes)...], message-or-None)."""
+    poke(sym("EDIT_LINE_BUF"), cmdline.encode() + b"\0")
+    D("mem-write", "0xFF00", struct.pack("<H", RET).hex())
+    D("set-register", "SP", "0xFF00")
+    D("set-register", "PC", hex(sym("V2_DISPATCH")))
+    blocks, msg = [], None
+    send, show = sym("STORAGE_SEND_BLOCK"), sym("V2_SHOW_MESSAGE")
+    D("break", "STORAGE_SEND_BLOCK", "--index", "3")
+    D("break", "V2_SHOW_MESSAGE", "--index", "2")
+    try:
+        while True:
+            D("run", "--until", hex(IOK), "--max-instructions", str(maxi), t=1800)
+            D("pause")
+            p = pc()
+            if p == send:
+                r = regs()
+                blocks.append((r["AF"] >> 8, read(r["IX"], r["DE"])))
+                sp = r["SP"]
+                ret = read(sp, 2)
+                D("set-register", "SP", hex(sp + 2))
+                D("set-register", "PC", hex(ret[0] | ret[1] << 8))
+            elif p == show:
+                msg = msg_name(regs()["HL"])
+                D("clear-break", "--index", "2")
+            else:
+                break
+    finally:
+        for i in ("2", "3"):
+            try:
+                D("clear-break", "--index", i)
+            except Exception:
+                pass
+    return blocks, msg if pc() == IOK else "HUNG@%04X" % pc()
 
 
 def key(code, maxi=40_000_000):
