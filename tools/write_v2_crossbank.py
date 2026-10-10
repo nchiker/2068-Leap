@@ -64,6 +64,12 @@ NAMES = (
     "TOK_KW_REM",
     # R10.7 P2: tagged compile symbol table (rom/exrom_v2_symtab.asm).
     "SYM_RESET",
+    "NAME_CMP_FOLD",
+    "VM_DIM_COUNT_TMP",
+    "VM_STRARR_ADDR_TMP",
+    "VM_RUN_LOOP",
+    "SYM_FIND",
+    "VM_ERR_COMMON",
 )
 
 

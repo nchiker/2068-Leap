@@ -96,6 +96,17 @@ ARR2_BASE:        equ $E000
 ARR2_LIMIT:       equ $E800
 ARR2_END:         equ $B81B   ; 2: next free byte of segment 2 (reset by VM_INIT)
 ARR2_SWAPPED:     equ $B81D   ; 1: nonzero while ARRAYS_END/ARR2_END are exchanged
+; R10.9 Phase 2C -- persistent Array Store (rom/exrom_v2_arrstore.asm). The store occupies
+; ARR2_BASE .. PAS_END; entry = [len:2][kind:1 (2 numeric | 3 string)][namelen:1][name][descriptor].
+; PAS_END is set at cold start (V2_EXROM_ENTRY) and by NEW only -- never by MEM_INIT_V2, which
+; is also the failed-program-LOAD recovery. ARR2_END is always >= PAS_END.
+PAS_END:          equ $B81E   ; 2: first byte past the Array Store (ARR2_BASE = empty)
+ASV_KIND:         equ $B820   ; 1: DIM kind (SYM_K_ARR / SYM_K_SARR)
+ASV_IDX:          equ $B821   ; 1: array index
+ASV_ENT:          equ $B822   ; 2: store entry being built
+ASV_DESC:         equ $B824   ; 2: its descriptor
+ASV_NL:           equ $B826   ; 2: its total length
+ASV_EL:           equ $B828   ; 2: length of the entry being replaced
     ASSERT GFX_FILL_STACK_END <= ARR2_BASE
     ASSERT ARR2_LIMIT <= SPRITE_SLOT_IMG_BUF
 CSYM_COUNT:     equ SYM_COUNTS + SYM_K_NUM

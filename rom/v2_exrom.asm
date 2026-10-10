@@ -12,6 +12,8 @@
     DEVICE NOSLOT64K
     ORG V2_EXROM_ENTRY_ADDR
 V2_EXROM_ENTRY:
+    ld hl,ARR2_BASE
+    ld (PAS_END),hl              ; cold start: the Array Store is empty
     jp V2_COMMAND_LOOP
 
     ORG V2_EXROM_SAVE_ADDR
@@ -95,6 +97,8 @@ V2_EXROM_CLEAR:
     call V2_VERIFY_KTAB
     jp MEM_CLEAR_V2
 
+    ASSERT $ == V2_EXROM_ARRSVC_ADDR
+    INCLUDE "rom/exrom_v2_arrstore.asm"
     INCLUDE "kernel/storage/storage.asm"
     IFDEF STORAGE_TEST_FAKE_RECEIVE
         INCLUDE "rom/exrom_storage_test.asm"

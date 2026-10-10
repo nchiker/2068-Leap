@@ -71,23 +71,8 @@ V2_STATUS_BUF EQU $BEA8
 V2_ARRAY_NAME_PTR EQU $BEBC
 V2_ARRAY_NAME_LEN EQU $BEBE
 V2_ARRAY_IS_STR   EQU $BEBF
-V2_ARRAY_INDEX    EQU $BEC0   ; V2_LOAD_ARRAY's own resolved compile-
-                                ; time array index, parked here across
-                                ; the destructive STORAGE_LOAD_NAME_BUF
-                                ; (== EDIT_LINE_BUF) filename-padding
-                                ; copy and the STORAGE_LOAD call itself
-V2_RECEIVE_DEST   EQU $BEC1   ; V2_LOAD_ARRAY's own copy of (ARRAYS_END)
-                                ; at receive time (2 bytes)
-V2_ARRAY_NAME_CANON EQU $BEC3 ; case-insensitivity: V2_SCAN_ARRAY_NAME's
-                                ; own uppercased copy of the typed array
-                                ; name (8 bytes) -- ARRSYM_LOOKUP/
-                                ; STRARRSYM_LOOKUP now store/compare
-                                ; canonical uppercase names (rom/exrom_
-                                ; v2_compiler.asm's own CANON_TOKEN_NAME),
-                                ; so the raw EDIT_LINE_BUF text (which
-                                ; stays exactly as typed, case included)
-                                ; must be folded before V2_ARRAY_NAME_PTR
-                                ; is used for a lookup
+; ($BEC0-$BECA were V2_ARRAY_INDEX / V2_RECEIVE_DEST / V2_ARRAY_NAME_CANON, used only by the
+; pre-R10.9 pool-path V2_LOAD_ARRAY and its 8-character name fold; free again in Phase 2C.)
 
 V2_COMMAND_LOOP:
     xor a
@@ -599,6 +584,7 @@ V2_COMPILE_RUN:
     jp V2_SHOW_MESSAGE
 .compiled:
     call KTAB_VM_INIT
+    call ARR_RUN_INIT            ; R10.9 2B: Array Store bind (EXROM)
     ld hl,VM_CODE_BASE
     ld (VM_IP),hl
     call KTAB_GFX_CLS
@@ -648,6 +634,9 @@ V2_RUNTIME_MSG:
     ld hl,V2_MSG_NOMEM
     cp 64
     ret z
+    ld hl,V2_MSG_ARRAY_SHAPE
+    cp 65
+    ret z
     ld hl,V2_MSG_RUNTIME
     ret
 
@@ -672,6 +661,8 @@ V2_DISPATCH:
     ld de,V2_KW_NEW
     call V2_MATCH_EXACT
     jr c,.not_new
+    ld hl,ARR2_BASE
+    ld (PAS_END),hl              ; NEW (only) clears the Array Store
     call MEM_INIT_V2
     call V2_RESET_EDIT
     or a
@@ -751,8 +742,9 @@ V2_CLEAR_ARRAYS:
     ld (ARRAYS_END),hl
     ld hl,V2_SOURCE_END          ; R10.7 P3: a RUN carves its run-time tables from
     ld (VARS_START),hl           ; the pool top (lowering VARS_START); any edit
-    ld hl,ARR2_BASE              ; R10.7 P5.4: segment 2 (always-visible RAM at
-    ld (ARR2_END),hl             ; $E000) is emptied with the main pool
+    ld hl,(PAS_END)              ; R10.7 P5.4: segment 2 (always-visible RAM at
+    ld (ARR2_END),hl             ; $E000) is emptied with the main pool, but the
+                                   ; Array Store below PAS_END survives
     ret                          ; discards them, so the source may grow again
 
 MEM_INIT_V2:
@@ -766,22 +758,26 @@ MEM_INIT_V2:
     ld (V2_PACKAGE_LEN),hl
     ret
 
-; MEM_CLEAR_V2 -- CLEAR statement (R10.25 class B). Lighter sibling of
-; MEM_INIT_V2 above: resets scalar/array/extension state the same way
-; NEW does, but keeps the current program (PROG_END untouched) instead
-; of wiping it -- ARRAYS_END resets to the real PROG_END, not to
-; PROG_AREA_START, so no DIM'd array survives CLEAR but the program
-; text does. Called from HOME's OP_CLEAR (rom/exrom_v2_vm_core.asm) —
-; EXROM is already mapped in during ordinary VM execution (same
-; established pattern PRINT's own exrom_format.asm calls already use).
+; MEM_CLEAR_V2 -- CLEAR statement, run-scoped (R10.9 Phase 2C, D8). Called by HOME's
+; OP_CLEAR (EXROM is mapped during ordinary VM execution). It resets what the running
+; program owns and nothing else: the carved run tables (scalars, floats, strings,
+; array pointers) are zeroed in place, the ordinary-array arena restarts exactly as
+; VM_INIT leaves it, and the persistent Array Store is rebound. It does NOT touch the
+; compile symbol table or VARS_START (the tables stay valid), the control stack,
+; the program, or loaded packages.
 MEM_CLEAR_V2:
-    call V2_CLEAR_ARRAYS
+    ld hl,(SYM_END_V)
+    inc hl
+    ld (ARRAYS_END),hl           ; as VM_INIT: the arena starts past the symbol table
     ld hl,V2_SOURCE_END
-    ld (VARS_START),hl
-    call KTAB_EXT2_CLEAR_ALL
-    ld hl,0
-    ld (V2_PACKAGE_LEN),hl
-    ret
+    ld de,(VARS_START)
+    or a
+    sbc hl,de
+    ld b,h
+    ld c,l                       ; BC = carved block length
+    ex de,hl                     ; HL = block start
+    call KTAB_MEM_FILL_ZERO
+    jp ARR_RUN_INIT              ; ARR2_END = PAS_END, rebind the stored arrays
 
 V2_MATCH_EXACT:
     call V2_MATCH_PREFIX
@@ -940,34 +936,9 @@ V2_SCAN_ARRAY_NAME:
     ld a,b
     or a
     jr z,.bad
-    cp 9
-    jr c,.len_ok
-    ld a,8
-.len_ok:
+    cp IDENT_MAX_LEN+1
+    jr nc,.bad
     ld (V2_ARRAY_NAME_LEN),a
-    ; case-insensitivity: ARRSYM_LOOKUP/STRARRSYM_LOOKUP now fold case
-    ; on the fly during their own compare (rom/exrom_v2_compiler.asm's
-    ; FOLD_UPPER), but this raw EDIT_LINE_BUF text stays exactly as
-    ; typed -- fold a copy into V2_ARRAY_NAME_CANON and repoint
-    ; V2_ARRAY_NAME_PTR there too, so the two sides agree regardless of
-    ; which one's own fold logic changes later.
-    ld b,a
-    ld hl,(V2_ARRAY_NAME_PTR)
-    ld de,V2_ARRAY_NAME_CANON
-.fold_loop:
-    ld a,(hl)
-    cp 'a'
-    jr c,.fold_store
-    cp 'z'+1
-    jr nc,.fold_store
-    and $DF
-.fold_store:
-    ld (de),a
-    inc hl
-    inc de
-    djnz .fold_loop
-    ld hl,V2_ARRAY_NAME_CANON
-    ld (V2_ARRAY_NAME_PTR),hl
     or a
     ret
 .bad:
@@ -1086,13 +1057,14 @@ V2_SAVE_ARRAY:
     ld hl,(V2_NAME_PTR)
     ld a,(V2_NAME_LEN)
     ld b,a
+    ld a,STORAGE_ARRAY_TYPE
+    ld (STORAGE_REQUEST_TYPE),a   ; D13
     call STORAGE_SAVE
     ei
     ld hl,V2_MSG_SAVED
     jp V2_SHOW_MESSAGE
 .not_dimd:
-    ld hl,V2_MSG_ARRAY_NOT_DIMD
-    jp V2_SHOW_MESSAGE
+    jp ARR_SAVE_STORE
 
 ; V2_VERIFY -- R10.25 class B item. VERIFY only ever applies to the
 ; program itself (stock BASIC has no "VERIFY package" concept), so this
@@ -1122,23 +1094,7 @@ V2_LOAD:
     jr z,.wildcard
     ld b,a
     ld hl,(V2_NAME_PTR)
-    ld de,STORAGE_LOAD_NAME_BUF
-    ld c,10
-.pad:
-    ld a,b
-    or a
-    jr z,.space
-    ld a,(hl)
-    inc hl
-    dec b
-    jr .write
-.space:
-    ld a,' '
-.write:
-    ld (de),a
-    inc de
-    dec c
-    jr nz,.pad
+    call V2_PAD_NAME
     ld hl,STORAGE_LOAD_NAME_BUF
     ld b,10
     jr .receive
@@ -1262,139 +1218,6 @@ V2_LOAD:
     xor a
     ld (STORAGE_VERIFY_MODE),a
     ld hl,V2_MSG_VERIFIED
-    jp V2_SHOW_MESSAGE
-
-; V2_LOAD_ARRAY -- entry: V2_NAME_PTR/LEN (tape filename) and V2_ARRAY_
-; NAME_PTR/LEN/IS_STR (target array) already set. Write-once policy
-; (docs/v2/R10_7_ARRAY_ARCHITECTURE_AUDIT.md Part 2 item 5): the target
-; array must already be a known compile-time symbol (DIM'd somewhere in
-; the current program) but must NOT already be populated this run
-; (ARR_PTR_TABLE/STRARR_PTR_TABLE[index] still 0) -- LOAD allocates
-; fresh from the TAPE's own recorded size, it never resizes a live
-; array. Resolves the array name FIRST (reads V2_ARRAY_NAME_PTR, which
-; points into EDIT_LINE_BUF) before the filename gets padded into
-; STORAGE_LOAD_NAME_BUF (== EDIT_LINE_BUF, a real destructive overwrite
-; of the same buffer -- same ordering hazard V2_LOAD's own filename
-; copy already lives with, made explicit here since this routine reads
-; a SECOND field out of that same line).
-V2_LOAD_ARRAY:
-    ld a,(V2_ARRAY_IS_STR)
-    or a
-    jr nz,.string_array
-    ld hl,(V2_ARRAY_NAME_PTR)
-    ld a,(V2_ARRAY_NAME_LEN)
-    ld b,a
-    call ARRSYM_LOOKUP
-    jp c,.not_dimd
-    ld (V2_ARRAY_INDEX),a
-    ld h,0
-    ld l,a
-    add hl,hl
-    ld de,(RT_ARRPTR_PTR)
-    add hl,de
-    jr .check_empty
-.string_array:
-    ld hl,(V2_ARRAY_NAME_PTR)
-    ld a,(V2_ARRAY_NAME_LEN)
-    ld b,a
-    call STRARRSYM_LOOKUP
-    jp c,.not_dimd
-    ld (V2_ARRAY_INDEX),a
-    ld h,0
-    ld l,a
-    add hl,hl
-    ld de,(RT_STRARRPTR_PTR)
-    add hl,de
-.check_empty:
-    ld e,(hl)
-    inc hl
-    ld d,(hl)
-    ld a,d
-    or e
-    jr nz,.already_set
-    ; Safe from here on to destroy EDIT_LINE_BUF -- both the array name
-    ; and its kind have already been fully resolved above.
-    ld a,(V2_NAME_LEN)
-    ld b,a
-    ld hl,(V2_NAME_PTR)
-    ld de,STORAGE_LOAD_NAME_BUF
-    ld c,10
-.pad:
-    ld a,b
-    or a
-    jr z,.space
-    ld a,(hl)
-    inc hl
-    dec b
-    jr .write
-.space:
-    ld a,' '
-.write:
-    ld (de),a
-    inc de
-    dec c
-    jr nz,.pad
-    ld a,STORAGE_ARRAY_TYPE
-    ld (STORAGE_REQUEST_TYPE),a
-    ld hl,(ARRAYS_END)
-    ld (V2_RECEIVE_DEST),hl   ; ARENA_ALLOC_* re-reads (ARRAYS_END)
-                                ; itself for the real commit below, but
-                                ; STORAGE_LOAD's own IX param must be
-                                ; loaded fresh into IX, not left in HL
-    ld de,(ARRAYS_END)
-    ld hl,(VARS_START)
-    ld (VM_CSP),hl             ; R10.7 P4/P5.4: the allocator below bounds the
-                                 ; main pool by VM_CSP, which outside a RUN is
-                                 ; stale (0 after a cold boot) -- it is the
-                                 ; same as VARS_START here
-    or a
-    sbc hl,de                  ; HL = VARS_START-ARRAYS_END, the real
-                                 ; remaining arena headroom
-    ex de,hl                   ; DE = max allowed length
-    dec de                     ; the allocator needs ARRAYS_END+len < VM_CSP
-                                 ; strictly; never receive a length that would
-                                 ; push it into segment 2 away from the data
-    ld ix,(V2_RECEIVE_DEST)    ; IX = (ARRAYS_END), the receive dest
-    ld hl,STORAGE_LOAD_NAME_BUF
-    ld b,10
-    call STORAGE_LOAD
-    ei
-    jr c,.load_failed
-    ; Parse the just-received [dim_count:1][count:2][width:1 if string]
-    ; header directly from (ARRAYS_END) -- the real received bytes,
-    ; already sitting exactly where the real array data belongs.
-    ld hl,(V2_RECEIVE_DEST)
-    inc hl                      ; skip dim_count
-    ld e,(hl)
-    inc hl
-    ld d,(hl)                  ; DE = received count
-    inc hl
-    ld a,(V2_ARRAY_IS_STR)
-    or a
-    jr nz,.alloc_string
-    ld a,(V2_ARRAY_INDEX)
-    call ARENA_ALLOC_NUMERIC
-    jr .loaded
-.alloc_string:
-    ld c,(hl)                   ; C = received width
-    ld a,(V2_ARRAY_INDEX)
-    call ARENA_ALLOC_STRING
-.loaded:
-    ld hl,V2_MSG_LOADED
-    jp V2_SHOW_MESSAGE
-.load_failed:
-    ld hl,V2_MSG_LOAD_FAILED
-    inc b                      ; R10.9: B = user-abort flag from STORAGE_LOAD
-    dec b
-    jr z,.load_failed_show
-    ld hl,V2_MSG_ABORTED
-.load_failed_show:
-    jp V2_SHOW_MESSAGE
-.not_dimd:
-    ld hl,V2_MSG_ARRAY_NOT_DIMD
-    jp V2_SHOW_MESSAGE
-.already_set:
-    ld hl,V2_MSG_ARRAY_MISMATCH
     jp V2_SHOW_MESSAGE
 
 V2_LIST:
@@ -2012,7 +1835,9 @@ V2_MSG_LOADED: DB "LOADED",0
 V2_MSG_LOAD_FAILED: DB "LOAD FAILED",0
 V2_MSG_NO_PACKAGE: DB "NO PACKAGE",0
 V2_MSG_ARRAY_NOT_DIMD: DB "ARRAY NOT DIMD",0
-V2_MSG_ARRAY_MISMATCH: DB "ARRAY ALREADY SET",0
+V2_MSG_STORE_FULL: DB "ARRAY STORE FULL",0
+V2_MSG_BAD_ARRAY: DB "BAD ARRAY TAPE",0
+V2_MSG_ARRAY_SHAPE: DB "ARRAY SIZE MISMATCH",0
 V2_MSG_VERIFIED: DB "VERIFIED",0
 V2_MSG_VERIFY_FAILED: DB "VERIFY FAILED",0
 V2_MSG_BAD_VERSION: DB "BAD TAPE VERSION",0

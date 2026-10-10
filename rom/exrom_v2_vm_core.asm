@@ -930,9 +930,9 @@ VM_OP_TABLE:
         dw OP_TAB                                           ; 61  standalone
                                                              ; cursor stmts)
         dw OP_CLEAR                                         ; 62 (R10.7)
-        dw OP_DIM                                           ; 63 (R10.7
+        dw V2_EXROM_ARR_DIM_ADDR                            ; 63 (R10.9: EXROM-owned DIM
                                                              ; dynamic arrays)
-        dw OP_DIM_STR                                       ; 64 (R10.7
+        dw V2_EXROM_ARR_DIM_STR_ADDR                        ; 64 (R10.9: EXROM-owned DIM$
         dw OP_STRARR_LOAD                                   ; 65  Phase 2 --
         dw OP_STRARR_STORE                                  ; 66  string arrays)
 
@@ -1567,18 +1567,6 @@ ARENA_ALLOC_NUMERIC:
         ld (ARRAYS_END),hl
         jp VM_ARENA_DONE
 
-OP_DIM:
-        ld hl,(VM_IP)
-        ld a,(hl)
-        inc hl
-        ld e,(hl)
-        inc hl
-        ld d,(hl)
-        inc hl
-        ld (VM_IP),hl
-        call ARENA_ALLOC_NUMERIC
-        jp VM_RUN.loop
-
 ; ---------------------------------------------------------------------------
 ; R10.7 Dynamic Data Phase 2 -- string arrays, DIM A$(n[,w]). Same arena/
 ; pointer-table/OP_DIM machinery as the numeric arrays above (docs/v2/
@@ -1848,22 +1836,6 @@ VM_ARENA_SWAP:
         ld (ARRAYS_END),de
         ld (ARR2_END),hl
         ret
-
-OP_DIM_STR:
-        ld hl,(VM_IP)
-        ld b,(hl)          ; B = array index (temp -- A is needed free
-                              ; for the (hl)-addressed fetches below)
-        inc hl
-        ld e,(hl)
-        inc hl
-        ld d,(hl)          ; DE = count
-        inc hl
-        ld c,(hl)          ; C = width
-        inc hl
-        ld (VM_IP),hl
-        ld a,b             ; A = array index
-        call ARENA_ALLOC_STRING
-        jp VM_RUN.loop
 
 ; ---------------------------------------------------------------------------
 ; R8.5 Group 2 (closed out late) -- INPUT. Both opcodes carry a 1-byte
@@ -5111,3 +5083,4 @@ VM_TEST_ARGTYPE_BIT:
         ret
 
 VM_CORE_END:
+VM_RUN_LOOP EQU VM_RUN.loop   ; R10.9: exported for the EXROM array service
