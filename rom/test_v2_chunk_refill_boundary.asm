@@ -518,6 +518,7 @@ IO_READ_KEY_NONBLOCK:
     INCLUDE "kernel/math/math.asm"
     INCLUDE "rom/exrom_calc.asm"
     INCLUDE "rom/exrom_v2_vm_core.asm"
+    INCLUDE "rom/test_v2_local_dim.inc"   ; R10.9 2C: test-only DIM handlers
     INCLUDE "rom/exrom_v2_compiler.asm"
 
     DS   $4000 - $, $FF

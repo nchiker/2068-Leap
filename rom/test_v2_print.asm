@@ -332,6 +332,7 @@ IO_READ_KEY_NONBLOCK:
         ret
 
     INCLUDE "rom/exrom_v2_vm_core.asm"
+    INCLUDE "rom/test_v2_local_dim.inc"   ; R10.9 2C: test-only DIM handlers
     INCLUDE "rom/exrom_v2_compiler.asm"
     INCLUDE "rom/exrom_v2_decompiler.asm"
 

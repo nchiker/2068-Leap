@@ -267,6 +267,7 @@ MEM_FILL_ZERO:
     ret
     ENDIF
     INCLUDE "rom/exrom_v2_vm_core.asm"
+    INCLUDE "rom/test_v2_local_dim.inc"   ; R10.9 2C: test-only DIM handlers
     INCLUDE "rom/exrom_v2_compiler.asm"
 ; rom/exrom_v2_decompiler.asm (3500+ real lines) is NOT included here:
 ; combined with the real calculator this test's own float literal (3.7)
