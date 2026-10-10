@@ -155,6 +155,10 @@ COLD_START:
     ld   sp, $FF00
 
     call MEM_INIT
+    call MEM_LABEL_TABLE_CLEAR   ; production MEM_INIT no longer does
+                                ; this itself (R10.7 dormant-ROM
+                                ; removal) — see basic/
+                                ; legacy_kernel_compat.asm
 
 INJECT_POINT:
     ; Fuse breaks here (stable label address, read via --sym) and pokes

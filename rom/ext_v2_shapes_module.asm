@@ -1,6 +1,7 @@
 ; V2-native loadable CIRCLE/FILL package. Primitives are the validated
 ; graphics implementation retained from the former V1 SHAPES package.
     INCLUDE "include/hardware.inc"
+    DEFINE V2_COMPACT_SYSVARS   ; R10.7 P5: drop V1-only sysvars (see include/sysvars.inc)
     INCLUDE "include/sysvars.inc"
     INCLUDE "build/v2_crossbank.inc"
     DEVICE NOSLOT64K
@@ -302,31 +303,16 @@ SHAPES_GFX_FILL_POP:
     scf
     ret
 
-SHAPES_GFX_FILL_TRY_NEIGHBOR:
-    push bc
-    call GFX_READ_PIXEL
-    ld   e, a
-    ld   a, (GFX_FILL_TARGET)
-    cp   e
-    jr   nz, .not_match
+; R10.7 P5: FILL is now a scanline SPAN fill. The old per-pixel 4-neighbour
+; fill pushed up to four seeds per pixel and needed ~4 KB of stack (and lost
+; part of any large region when that filled). The span fill paints a whole
+; horizontal run, then pushes ONE seed per run of fillable pixels on the rows
+; above and below, so the stack stays tiny. Fillable = pixel equals the seed's
+; original value AND is not yet visited; the visited bitmap is unchanged.
 
-    pop  bc
-    push bc
-    call SHAPES_GFX_FILL_VISITED_CHECK_SET
-    jr   c, .not_match
-
-    pop  bc
-    push bc
-    ld   d, 0
-    ld   a, (GFX_FILL_ATTR)
-    call GFX_WRITE_PIXEL
-    pop  bc
-    jp   SHAPES_GFX_FILL_PUSH
-.not_match:
-    pop  bc
-    ret
-
-SHAPES_GFX_FILL_VISITED_CHECK_SET:
+; SHAPES_VISITED_ADDR -- B = x, C = y. Out: HL = visited-bitmap byte, E = mask.
+; Destroys: AF, D.
+SHAPES_VISITED_ADDR:
     ld   a, c
     ld   l, a
     ld   h, 0
@@ -344,7 +330,6 @@ SHAPES_GFX_FILL_VISITED_CHECK_SET:
     add  hl, de
     ld   de, GFX_FILL_VISITED
     add  hl, de
-
     ld   a, b
     and  %00000111
     ld   e, a
@@ -352,9 +337,13 @@ SHAPES_GFX_FILL_VISITED_CHECK_SET:
     push hl
     ld   hl, SHAPES_BIT_MASK_TABLE
     add  hl, de
-    ld   a, (hl)
+    ld   e, (hl)
     pop  hl
-    ld   e, a
+    ret
+
+; SHAPES_GFX_FILL_VISITED_CHECK_SET -- mark (B,C) visited; carry set if it was.
+SHAPES_GFX_FILL_VISITED_CHECK_SET:
+    call SHAPES_VISITED_ADDR
     ld   a, (hl)
     and  e
     jr   nz, .already
@@ -366,6 +355,56 @@ SHAPES_GFX_FILL_VISITED_CHECK_SET:
 .already:
     scf
     ret
+
+; SHAPES_FILLABLE -- B = x, C = y. Carry clear if the pixel still equals the
+; seed's original value and is unvisited. Preserves BC.
+SHAPES_FILLABLE:
+    push bc
+    call GFX_READ_PIXEL
+    ld   e, a
+    ld   a, (GFX_FILL_TARGET)
+    cp   e
+    jr   nz, .no
+    pop  bc
+    push bc
+    call SHAPES_VISITED_ADDR
+    ld   a, (hl)
+    and  e
+    jr   z, .yes
+.no:
+    pop  bc
+    scf
+    ret
+.yes:
+    pop  bc                 ; (AND cleared carry)
+    ret
+
+; SHAPES_FILL_ROW -- C = row. Push one seed at the start of every run of
+; fillable pixels between SHAPES_XL and SHAPES_XR.
+SHAPES_FILL_ROW:
+    xor  a
+    ld   (SHAPES_PREV), a
+    ld   a, (SHAPES_XL)
+    ld   b, a
+.x:
+    call SHAPES_FILLABLE
+    jr   c, .not
+    ld   a, (SHAPES_PREV)
+    or   a
+    jr   nz, .next
+    inc  a
+    ld   (SHAPES_PREV), a
+    call SHAPES_GFX_FILL_PUSH
+    jr   .next
+.not:
+    xor  a
+    ld   (SHAPES_PREV), a
+.next:
+    ld   a, (SHAPES_XR)
+    cp   b
+    ret  z
+    inc  b
+    jr   .x
 
 SHAPES_GFX_FILL:
     ld   hl, GFX_FILL_STACK
@@ -388,70 +427,78 @@ SHAPES_GFX_FILL:
     ld   b, a
     ld   a, (GFX_FILL_Y)
     ld   c, a
-    call SHAPES_GFX_FILL_VISITED_CHECK_SET
-    ld   a, (GFX_FILL_X)
-    ld   b, a
-    ld   a, (GFX_FILL_Y)
-    ld   c, a
-    ld   d, 0
-    ld   a, (GFX_FILL_ATTR)
-    call GFX_WRITE_PIXEL
-    ld   a, (GFX_FILL_X)
-    ld   b, a
-    ld   a, (GFX_FILL_Y)
-    ld   c, a
     call SHAPES_GFX_FILL_PUSH
 
 .loop:
     call SHAPES_GFX_FILL_POP
     ret  c
-
-    ld   a, b
-    ld   (GFX_FILL_X), a
     ld   a, c
-    ld   (GFX_FILL_Y), a
+    ld   (SHAPES_Y), a
+    call SHAPES_FILLABLE
+    jr   c, .loop
 
-    ld   a, (GFX_FILL_X)
-    cp   255
-    jr   z, .skip_right
-    ld   b, a
-    inc  b
-    ld   a, (GFX_FILL_Y)
-    ld   c, a
-    call SHAPES_GFX_FILL_TRY_NEIGHBOR
-.skip_right:
-
-    ld   a, (GFX_FILL_X)
+    push bc                 ; seed
+.left:
+    ld   a, b
     or   a
-    jr   z, .skip_left
-    ld   b, a
+    jr   z, .left_done
     dec  b
-    ld   a, (GFX_FILL_Y)
-    ld   c, a
-    call SHAPES_GFX_FILL_TRY_NEIGHBOR
-.skip_left:
+    call SHAPES_FILLABLE
+    jr   nc, .left
+    inc  b
+.left_done:
+    ld   a, b
+    ld   (SHAPES_XL), a
+    pop  bc
+.right:
+    ld   a, b
+    cp   255
+    jr   z, .right_done
+    inc  b
+    call SHAPES_FILLABLE
+    jr   nc, .right
+    dec  b
+.right_done:
+    ld   a, b
+    ld   (SHAPES_XR), a
 
-    ld   a, (GFX_FILL_Y)
-    cp   191
-    jr   nc, .skip_down
-    ld   c, a
-    inc  c
-    ld   a, (GFX_FILL_X)
+    ld   a, (SHAPES_XL)
     ld   b, a
-    call SHAPES_GFX_FILL_TRY_NEIGHBOR
-.skip_down:
-
-    ld   a, (GFX_FILL_Y)
+.paint:
+    push bc
+    call SHAPES_GFX_FILL_VISITED_CHECK_SET
+    pop  bc
+    push bc
+    ld   d, 0
+    ld   a, (GFX_FILL_ATTR)
+    call GFX_WRITE_PIXEL
+    pop  bc
+    ld   a, (SHAPES_XR)
+    cp   b
+    jr   z, .painted
+    inc  b
+    jr   .paint
+.painted:
+    ld   a, (SHAPES_Y)
     or   a
-    jr   z, .skip_up
+    jr   z, .no_up
+    dec  a
     ld   c, a
-    dec  c
-    ld   a, (GFX_FILL_X)
-    ld   b, a
-    call SHAPES_GFX_FILL_TRY_NEIGHBOR
-.skip_up:
+    call SHAPES_FILL_ROW
+.no_up:
+    ld   a, (SHAPES_Y)
+    cp   191
+    jr   nc, .loop
+    inc  a
+    ld   c, a
+    call SHAPES_FILL_ROW
+    jr   .loop
 
-    jp   .loop
+; span-fill scratch (the package image lives in RAM)
+SHAPES_XL:   DB 0
+SHAPES_XR:   DB 0
+SHAPES_Y:    DB 0
+SHAPES_PREV: DB 0
 
 V2_SHAPES_PACKAGE_END:
     ASSERT $ <= EXTENSION_MODULE_LIMIT

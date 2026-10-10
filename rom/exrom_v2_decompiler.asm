@@ -3753,6 +3753,14 @@ STR_DEG_FN:    db "DEG"
 STR_DEG_FN_LEN: equ $-STR_DEG_FN
 STR_SIN_FN:    db "SIN"
 STR_SIN_FN_LEN: equ $-STR_SIN_FN
+STR_FREE_FN:   db "FREE"
+STR_FREE_FN_LEN: equ $-STR_FREE_FN
+STR_COS_FN:    db "COS"
+STR_COS_FN_LEN: equ $-STR_COS_FN
+STR_TAN_FN:    db "TAN"
+STR_TAN_FN_LEN: equ $-STR_TAN_FN
+STR_MID_FN:    db "MID$"
+STR_MID_FN_LEN: equ $-STR_MID_FN
 
 ; DECOMP_BUILTIN_FN_TABLE -- [text_ptr:2][len:1][argcount:1] per
 ; fn_index, same order as rom/exrom_v2_compiler.asm's own
@@ -3822,6 +3830,16 @@ DECOMP_BUILTIN_FN_TABLE:
         db STR_DEG_FN_LEN, 1, 0
         dw STR_SIN_FN
         db STR_SIN_FN_LEN, 1, 0
+        dw STR_FREE_FN              ; 25 FREE()
+        db STR_FREE_FN_LEN, 0, 0
+        dw STR_COS_FN               ; 26
+        db STR_COS_FN_LEN, 1, 0
+        dw STR_TAN_FN               ; 27
+        db STR_TAN_FN_LEN, 1, 0
+        dw STR_MID_FN               ; 28 MID$(s$,start,len)
+        db STR_MID_FN_LEN, 3, 1
+        dw STR_FREE_FN              ; 29 FREE(n)
+        db STR_FREE_FN_LEN, 1, 0
 
 STR_GOTO:      db "GOTO "
 STR_GOTO_LEN:  equ $-STR_GOTO

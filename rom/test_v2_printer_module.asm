@@ -288,18 +288,6 @@ PRINT_RASTER_ROW:
 ; kernel/memory/memory.asm is NOT included here -- but EXT2_CLEAR_ALL
 ; genuinely calls its real MEM_FILL_ZERO, so that one routine needs a
 ; real (not no-op) stub.
-MEM_FILL_ZERO:
-    xor  a
-    ld   (hl), a
-    ld   d, h
-    ld   e, l
-    inc  de
-    dec  bc
-    ld   a, b
-    or   c
-    ret  z
-    ldir
-    ret
     INCLUDE "kernel/extensions/ext_registry.asm"
     INCLUDE "rom/exrom_format.asm"
 IO_READ_KEY_NONBLOCK:

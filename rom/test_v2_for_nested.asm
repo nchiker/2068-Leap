@@ -3,7 +3,7 @@
 ; nested FOR/NEXT (docs/v2/V2_SEMANTIC_CAPABILITY_AUDIT.md S9).
 ;
 ; Standalone ROM image exercising rom/exrom_v2_compiler.asm's new
-; CFOR_STACK-based COMPILE_FOR/COMPILE_NEXT/COMPILE_EXIT_FOR and rom/
+; compile-stack-based COMPILE_FOR/COMPILE_NEXT/COMPILE_EXIT_FOR and rom/
 ; exrom_v2_vm_core.asm's new VM_FOR_STACK-based OP_FOR_INIT/OP_FOR_POP.
 ; NOT wired into the production BASIC dispatch or the shipping EXROM
 ; build. Built on the shared production-shaped test harness (rom/
@@ -45,6 +45,7 @@
     DEFINE TEST_V2_CUSTOM_CHECKS
     DEFINE TEST_V2_NEEDS_DECOMPILE
     INCLUDE "rom/test_v2_harness_home_head.inc"
+    INCLUDE "rom/test_v2_symmacros.inc"
 
 TEST_CUSTOM_MAIN:
     call COMPILER_INIT
@@ -69,14 +70,18 @@ TEST_CUSTOM_MAIN:
     or   a
     jp   nz, TEST_FAIL
 
-    ; both FOR_STACK depths must be back to 0 once every loop has closed
-    ; normally -- if either leaked, a later real program's own FOR_NEST_MAX
-    ; check would wrongly refuse further nesting.
-    ld   a, (CFOR_STACK_DEPTH)
+    ; both FOR stacks must be empty once every loop has closed normally: the
+    ; compile stack (R10.7 P2: no frame open <=> SYM_LIMIT_V == V2_SOURCE_END)
+    ; and the VM FOR stack -- a leak would corrupt a later nesting.
+    ld   hl, (SYM_LIMIT_V)
+    ld   de, V2_SOURCE_END
     or   a
+    sbc  hl, de
     jp   nz, TEST_FAIL
-    ld   a, (VM_FOR_STACK_DEPTH)
+    ld   hl, (VM_CSP)
+    ld   de, (VARS_START)
     or   a
+    sbc  hl, de
     jp   nz, TEST_FAIL
 
     call CHECK_RESULT
@@ -106,18 +111,77 @@ TEST_CUSTOM_MAIN:
     jp   nz, TEST_FAIL
 
     ; ------------------------------------------------------------------
-    ; Negative check 2: nesting past VM_FOR_NEST_MAX/CFOR_STACK's own
-    ; depth (4) must be a real compile-time error (55), not a silent
-    ; frame-table overrun.
+    ; R10.7 P2: the compile-time nesting limit (FOR_NEST_MAX = 4, error 55) is
+    ; gone -- loop frames live on the memory-limited compile stack. A
+    ; five-deep nest must now compile AND run: 2^5 = 32 innermost iterations.
     ; ------------------------------------------------------------------
     call COMPILER_INIT
-    ld   hl, TOODEEP_SOURCE
+    ld   hl, DEEP_SOURCE
     ld   (SRC_PTR), hl
     ld   hl, VM_CODE_BASE
     ld   (EMIT_PTR), hl
     call COMPILE_PROGRAM
     ld   a, (COMPILE_ERROR_CODE)
-    cp   55
+    or   a
+    jp   nz, TEST_FAIL
+    call VM_INIT
+    ld   hl, VM_CODE_BASE
+    ld   (VM_IP), hl
+    call VM_RUN
+    ld   a, (VM_ERROR_CODE)
+    or   a
+    jp   nz, TEST_FAIL
+    ld   hl, (VM_CSP)
+    ld   de, (VARS_START)
+    or   a
+    sbc  hl, de
+    jp   nz, TEST_FAIL
+    TSYM_LD16 1  ; S is symbol 0
+    ld   de, 32
+    or   a
+    sbc  hl, de
+    jp   nz, TEST_FAIL
+
+    ; ------------------------------------------------------------------
+    ; R10.7 P2: EXIT FOR statements per loop are no longer capped at 4
+    ; (error 45): the patch addresses are threaded through the emitted code.
+    ; Six EXIT FORs in one loop, only the third-from-last ever taken; every one
+    ; must be patched to land after the loop (Z ends at 111).
+    ; ------------------------------------------------------------------
+    call COMPILER_INIT
+    ld   hl, EXITS_SOURCE
+    ld   (SRC_PTR), hl
+    ld   hl, VM_CODE_BASE
+    ld   (EMIT_PTR), hl
+    call COMPILE_PROGRAM
+    ld   a, (COMPILE_ERROR_CODE)
+    or   a
+    jp   nz, TEST_FAIL
+    call VM_INIT
+    ld   hl, VM_CODE_BASE
+    ld   (VM_IP), hl
+    call VM_RUN
+    ld   a, (VM_ERROR_CODE)
+    or   a
+    jp   nz, TEST_FAIL
+    TSYM_LD16 1  ; Z is symbol 0
+    ld   de, 111
+    or   a
+    sbc  hl, de
+    jp   nz, TEST_FAIL
+
+    ; ------------------------------------------------------------------
+    ; EXIT FOR with no FOR open is an explicit compile error (63) now (the
+    ; old code indexed a frame that did not exist).
+    ; ------------------------------------------------------------------
+    call COMPILER_INIT
+    ld   hl, STRAY_EXIT_SOURCE
+    ld   (SRC_PTR), hl
+    ld   hl, VM_CODE_BASE
+    ld   (EMIT_PTR), hl
+    call COMPILE_PROGRAM
+    ld   a, (COMPILE_ERROR_CODE)
+    cp   63
     jp   nz, TEST_FAIL
 
     jp   TEST_PASS
@@ -132,29 +196,38 @@ SOURCE_TEXT:
 MISMATCH_SOURCE:
     db "FOR I=1 TO 3:FOR J=1 TO 3:NEXT I:NEXT J", 0
 
-; Five levels deep -- one past CFOR_STACK/VM_FOR_STACK's own explicit
-; four-deep limit.
-TOODEEP_SOURCE:
-    db "FOR A=1 TO 2:FOR B=1 TO 2:FOR C=1 TO 2:FOR D=1 TO 2:"
-    db "FOR E=1 TO 2:NEXT E:NEXT D:NEXT C:NEXT B:NEXT A", 0
+; Five levels deep -- one past the OLD compile-time limit of four.
+DEEP_SOURCE:
+    db "S=0:FOR A=1 TO 2:FOR B=1 TO 2:FOR C=1 TO 2:FOR D=1 TO 2:"
+    db "FOR E=1 TO 2:S=S+1:NEXT E:NEXT D:NEXT C:NEXT B:NEXT A", 0
+
+; Six EXIT FOR statements in a single loop (the old cap was four).
+EXITS_SOURCE:
+    db "Z=0:FOR I=1 TO 10:IF I=1 THEN Z=Z+1 ENDIF:IF I=2 THEN Z=Z+10 ENDIF:"
+    db "IF I>5 THEN EXIT FOR ENDIF:IF I>4 THEN EXIT FOR ENDIF:"
+    db "IF I>3 THEN EXIT FOR ENDIF:IF I>3 THEN EXIT FOR ENDIF:"
+    db "IF I>3 THEN EXIT FOR ENDIF:IF I>3 THEN EXIT FOR ENDIF:NEXT I:Z=Z+100", 0
+
+STRAY_EXIT_SOURCE:
+    db "EXIT FOR", 0
 
 ; ============================================================================
 ; CHECK_RESULT — direct SYMTAB memory reads. Compiler assigns indices in
 ; first-use order: 0=S, 1=I, 2=J, 3=T, 4=K, 5=L.
 ; ============================================================================
 CHECK_RESULT:
-    ld   a, (SYMTAB_BASE + 0*3)     ; S's own tag
+    TSYM_LD8 0*3  ; S's own tag
     cp   0
     jr   nz, .fail
-    ld   hl, (SYMTAB_BASE + 0*3 + 1)
+    TSYM_LD16 0*3 + 1
     ld   de, 9
     or   a
     sbc  hl, de
     jr   nz, .fail
-    ld   a, (SYMTAB_BASE + 3*3)     ; T's own tag
+    TSYM_LD8 3*3  ; T's own tag
     cp   0
     jr   nz, .fail
-    ld   hl, (SYMTAB_BASE + 3*3 + 1)
+    TSYM_LD16 3*3 + 1
     ld   de, 12
     or   a
     sbc  hl, de

@@ -314,6 +314,11 @@ nothing for a `kernel/` API to abstract here.
 **`FREE()`** returns the number of bytes still free in the program
 area (`PROG_AREA_MAX - PROG_END`, `kernel/memory`'s own `MEM_FREE_
 BYTES`) — the first zero-argument built-in function this dialect has.
+In a running V2 program it is the gap between the arrays and the control
+stack (`VM_CSP − ARRAYS_END`). **`FREE(1)`** returns the bytes still free in
+the second array segment (`$E000–$E7FF`, 2,048 bytes when empty); an array
+goes there only when it does not fit in the main pool. `FREE(0)` is the same
+as `FREE()`.
 
 ### Deliberately not added
 

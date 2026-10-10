@@ -1,6 +1,16 @@
 ; ============================================================================
 ; kernel/memory/memory.asm — line storage, program iterator, label table
 ;
+    DEFINE KERNEL_MEMORY_PRESENT
+    ; ^ R10.7 source-staging-architecture change (docs/v2/R10_7_SOURCE_
+    ; STAGING_ARCHITECTURE_AUDIT.md): lets rom/exrom_v2_compiler.asm's
+    ; CHUNK_APPEND_ONE_RECORD guard its one same-bank call to MEM_LINE_
+    ; NEXT behind IFDEF -- several rom/test_v2_*.asm standalone harnesses
+    ; (rom/test_v2_harness_home_tail.inc) assemble the compiler together
+    ; with kernel/bank+math+vm_core but deliberately WITHOUT this file at
+    ; all (they feed bytecode-compilation input directly, never via a
+    ; stored-program RUN), so that reference must not be unconditional.
+;
 ; CURRENT STATUS: assembled into the working ROM and exercised under
 ; Fuse by the automated language/memory regression suite. The core fill,
 ; shift, line-storage, iterator, and label-table paths are implemented;
@@ -74,16 +84,16 @@ MEM_COLD_INIT:
 
 ; ============================================================================
 ; MEM_INIT
-; Initializes the program area to empty and clears the top-level label
-; table's entry count. Call once at cold start, and again on NEW. Without
-; this, PROG_END holds whatever garbage was in RAM at power-on, and
-; MEM_LINE_FIRST has no reliable way to tell "empty program" from
-; "program starting at a stale pointer" — this was a real gap, caught by
-; writing a test for MEM_LINE_FIRST rather than by inspection.
+; Initializes the program area to empty. Call once at cold start, and
+; again on NEW. Without this, PROG_END holds whatever garbage was in RAM
+; at power-on, and MEM_LINE_FIRST has no reliable way to tell "empty
+; program" from "program starting at a stale pointer" — this was a real
+; gap, caught by writing a test for MEM_LINE_FIRST rather than by
+; inspection.
 ; In:  none
 ; Out: PROG_END = PROG_AREA_START; ARRAYS_END = PROG_END (no arrays
 ;      exist yet); VARS_START = PROG_AREA_MAX (no scalars exist yet);
-;      LABEL_TABLE_TOP's count = 0; all sprite slots undefined/unshown
+;      all sprite slots undefined/unshown
 ; Destroys: AF, BC, DE, HL
 ; ============================================================================
 MEM_INIT:
@@ -137,7 +147,7 @@ MEM_INIT:
     IFDEF FULL_ENGINE_PRESENT
     call BASIC_RESET_TEXT_ATTR           ; cold boot/NEW shared default
     ENDIF
-    jr MEM_LABEL_TABLE_CLEAR
+    ret
 
     IFDEF FULL_ENGINE_PRESENT
     IFNDEF STACK_AUDIT
@@ -158,28 +168,14 @@ EXT_SERVICE_TABLE_TEMPLATE_END:
     ENDIF
     ENDIF
 
-; ============================================================================
-; MEM_LABEL_TABLE_CLEAR
-; Resets just the label table to empty, leaving the program itself
-; untouched — split out of MEM_INIT (which still calls this) since
-; basic/'s BASIC_RUN needs the same reset before its own label
-; pre-pass, without wiping the program it's about to execute.
-; In:  none
-; Out: none
-; Destroys: AF, HL
-; ============================================================================
-MEM_LABEL_TABLE_CLEAR:
-    xor  a
-    ld   (LABEL_TABLE_TOP), a
-    ld   (LABEL_TABLE_TOP+1), a
-    ld   hl, 2                    ; LABEL_TABLE_USED starts at 2: just the
-    ld   (LABEL_TABLE_USED), hl   ; 2-byte count header, no entries yet.
-                                  ; Added when MEM_LABEL_ADD/REMOVE were
-                                  ; written — LABEL_TABLE_USED didn't exist
-                                  ; when this routine was first tested, so
-                                  ; this line is new, not yet re-verified
-                                  ; against rom/test_memory.asm.
-    ret
+; MEM_LABEL_TABLE_CLEAR removed (R10.7 dormant-ROM audit, docs/v2/R10_7_
+; DORMANT_ROM_CONSOLIDATION_AUDIT.md): it reset LABEL_TABLE_TOP/USED, state
+; that only MEM_LABEL_FIND/LOOKUP/ADD/REMOVE (also removed, see below) ever
+; read — V1's own runtime label table, superseded for V2 by the compile-
+; time-only LABELTAB in rom/exrom_v2_compiler.asm. Confirmed zero other
+; callers in the real V2 build (rom/v2_home.asm/rom/v2_exrom.asm's own
+; INCLUDE chains); MEM_INIT above now just `ret`s directly instead of tail-
+; jumping here.
 
 ; ============================================================================
 ; MEM_FILL_ZERO
@@ -341,246 +337,14 @@ MEM_LINE_NEXT:
     ld   hl, 0                ; candidate >= PROG_END — no next statement
     ret
 
-; ============================================================================
-; MEM_LABEL_FIND (internal — not declared in kernel_api.inc)
-; Shared scan logic for MEM_LABEL_LOOKUP and MEM_LABEL_REMOVE — both need
-; to locate an entry by name, they just need different things back from
-; it (LOOKUP wants the stored position; REMOVE wants to know where the
-; entry starts and how big it is, to shift the gap closed). Written once
-; here rather than duplicated in both callers.
-; In:  HL = pointer to name, B = name length
-; Out: carry clear + HL = pointer to the entry's 2-byte position field,
-;      C = entry's name_len; carry set if not found
-; Destroys: AF, BC, DE, HL
-; ============================================================================
-MEM_LABEL_FIND:
-    ld   (LOOKUP_NAME_PTR), hl
-    ld   a, b
-    ld   (LOOKUP_NAME_LEN), a
-
-    ld   hl, (LABEL_TABLE_TOP)
-    ld   (LOOKUP_ENTRY_COUNT), hl
-    ld   hl, LABEL_TABLE_TOP
-    inc  hl
-    inc  hl                       ; HL = first entry (past the 2-byte count)
-
-.scan_loop:
-    ld   de, (LOOKUP_ENTRY_COUNT)
-    ld   a, d
-    or   e
-    jr   z, .not_found
-
-    ld   a, (hl)
-    inc  hl                       ; HL -> entry name bytes (entry_start+1)
-    ld   c, a                     ; C = this entry's name_len
-
-    ld   a, (LOOKUP_NAME_LEN)
-    cp   c
-    jr   nz, .skip_entry
-
-    ld   a, c
-    or   a
-    jr   z, .match                ; both zero-length: trivially equal —
-                                  ; HL is already correctly positioned
-                                  ; (no name bytes to skip over)
-
-    push hl                       ; save entry name start, in case of a
-                                  ; length-matched-but-content-differs fail
-    ld   de, (LOOKUP_NAME_PTR)
-    ld   b, c
-.compare_loop:
-    ld   a, (de)
-    cp   (hl)
-    jr   nz, .compare_fail
-    inc  hl
-    inc  de
-    djnz .compare_loop
-    ; full match: HL has advanced C times from entry name start, landing
-    ; exactly on the position field — discard the saved value, nothing
-    ; more to undo.
-    pop  de
-.match:
-    or   a                        ; clear carry: found
-    ret
-
-.compare_fail:
-    pop  hl                       ; HL restored = entry name start
-    ; fall through — HL and C are now in the same state as the
-    ; length-mismatch path below, so one skip_entry serves both
-.skip_entry:
-    ld   b, 0
-    add  hl, bc                    ; HL += name_len -> position field start
-    inc  hl
-    inc  hl                         ; HL += 2 -> next entry's name_len byte
-    ld   de, (LOOKUP_ENTRY_COUNT)
-    dec  de
-    ld   (LOOKUP_ENTRY_COUNT), de
-    jr   .scan_loop
-
-.not_found:
-    scf
-    ret
-
-; ============================================================================
-; MEM_LABEL_LOOKUP
-; Looks up a label by name in the top-level scope's table (see format
-; note above this file's header). Thin wrapper around MEM_LABEL_FIND.
-; In:  HL = pointer to name, B = name length
-; Out: carry clear + DE = program position on match; carry set if not found
-; Destroys: AF, BC, DE, HL
-; ============================================================================
-MEM_LABEL_LOOKUP:
-    call MEM_LABEL_FIND
-    ret  c
-    ld   e, (hl)
-    inc  hl
-    ld   d, (hl)
-    or   a
-    ret
-
-; ============================================================================
-; MEM_LABEL_ADD
-; Adds a label to the top-level scope's table. Fails (carry set) if the
-; name already exists in that scope (see docs/basic_language_reference.md,
-; "Scope" — a label must be unique within its enclosing scope) or if the
-; table is full (LABEL_TABLE_MAXLEN, see sysvars.inc).
-; In:  HL = pointer to name, B = name length, DE = program position
-; Out: carry clear on success; carry set on failure
-; Destroys: AF, BC, DE, HL
-; ============================================================================
-MEM_LABEL_ADD:
-    ld   (ADD_POSITION), de
-    call MEM_LABEL_LOOKUP          ; also stashes LOOKUP_NAME_PTR/LEN,
-                                   ; which the rest of this routine reads
-                                   ; back rather than trusting HL/B to
-                                   ; have survived the call
-    jr   nc, .duplicate
-
-    ld   a, (LOOKUP_NAME_LEN)
-    add  a, 3                      ; entry size = name_len + 1 (len byte)
-                                   ; + 2 (position)
-    ld   c, a
-    ld   b, 0
-    ld   hl, (LABEL_TABLE_USED)
-    add  hl, bc                    ; HL = projected new total
-    ld   de, LABEL_TABLE_MAXLEN
-    call MEM_FITS_CHECK
-    ret  c                           ; table full
-    ld   hl, LABEL_TABLE_TOP
-    ld   de, (LABEL_TABLE_USED)
-    add  hl, de                      ; HL = write pointer (current table end)
-
-    ld   a, (LOOKUP_NAME_LEN)
-    ld   (hl), a
-    inc  hl
-
-    ld   de, (LOOKUP_NAME_PTR)
-    ld   a, (LOOKUP_NAME_LEN)
-    or   a
-    jr   z, .skip_name_copy           ; guard: B=0 into DJNZ below would
-                                      ; wrap to 256 iterations, same class
-                                      ; of Z80 gotcha as LDIR/LDDR's BC=0
-    ld   b, a
-.copy_name_loop:
-    ld   a, (de)
-    ld   (hl), a
-    inc  de
-    inc  hl
-    djnz .copy_name_loop
-.skip_name_copy:
-
-    ld   de, (ADD_POSITION)
-    ld   (hl), e
-    inc  hl
-    ld   (hl), d
-
-    ld   a, (LOOKUP_NAME_LEN)
-    add  a, 3
-    ld   c, a
-    ld   b, 0
-    ld   hl, (LABEL_TABLE_USED)
-    add  hl, bc
-    ld   (LABEL_TABLE_USED), hl
-
-    ld   hl, (LABEL_TABLE_TOP)
-    inc  hl
-    ld   (LABEL_TABLE_TOP), hl
-
-    or   a
-    ret
-
-.duplicate:
-    scf
-    ret
-
-; ============================================================================
-; MEM_LABEL_REMOVE
-; Removes a label from the top-level scope's table by name.
-; In:  HL = pointer to name, B = name length
-; Out: carry clear on success; carry set if the name wasn't found
-; Destroys: AF, BC, DE, HL
-; ============================================================================
-MEM_LABEL_REMOVE:
-    call MEM_LABEL_FIND
-    ret  c                          ; not found
-
-    ; HL = position-field-start, C = name_len. entry_start = HL - C - 1.
-    ld   a, c
-    ld   e, a
-    ld   d, 0
-    or   a
-    sbc  hl, de
-    dec  hl
-    ld   (REMOVE_ENTRY_START), hl
-
-    ld   a, c
-    add  a, 3
-    ld   (REMOVE_ENTRY_SIZE), a
-
-    ld   hl, (REMOVE_ENTRY_START)
-    ld   a, (REMOVE_ENTRY_SIZE)
-    ld   e, a
-    ld   d, 0
-    add  hl, de                      ; HL = block_start = entry_start + entry_size
-    ld   (REMOVE_BLOCK_START), hl
-
-    ld   hl, (REMOVE_ENTRY_START)
-    ld   de, LABEL_TABLE_TOP
-    or   a
-    sbc  hl, de                       ; HL = entry_offset (from table base)
-
-    ex   de, hl                        ; DE = entry_offset
-    ld   hl, (LABEL_TABLE_USED)
-    or   a
-    sbc  hl, de                         ; HL = used - entry_offset
-    ld   a, (REMOVE_ENTRY_SIZE)
-    ld   e, a
-    ld   d, 0
-    or   a
-    sbc  hl, de                          ; HL -= entry_size -> block_length
-    ld   (REMOVE_BLOCK_LEN), hl
-
-    ld   hl, (REMOVE_BLOCK_START)
-    ld   bc, (REMOVE_BLOCK_LEN)
-    ld   a, (REMOVE_ENTRY_SIZE)
-    ld   e, a
-    ld   d, 0
-    call MEM_SHIFT_DOWN
-
-    ld   hl, (LABEL_TABLE_USED)
-    ld   a, (REMOVE_ENTRY_SIZE)
-    ld   e, a
-    ld   d, 0
-    or   a
-    sbc  hl, de
-    ld   (LABEL_TABLE_USED), hl
-
-    ld   hl, (LABEL_TABLE_TOP)
-    dec  hl
-    ld   (LABEL_TABLE_TOP), hl
-
-    or   a
-    ret
+; MEM_LABEL_FIND/MEM_LABEL_LOOKUP/MEM_LABEL_ADD/MEM_LABEL_REMOVE removed
+; (R10.7 dormant-ROM audit, docs/v2/R10_7_DORMANT_ROM_CONSOLIDATION_AUDIT.
+; md): V1's own runtime label table (editor-level "label replaces line
+; number" rewriting at a program-text POSITION), confirmed zero callers in
+; the real V2 build (rom/v2_home.asm/rom/v2_exrom.asm's own INCLUDE
+; chains) -- V2 has its own, completely separate, compile-time-only
+; LABELTAB in rom/exrom_v2_compiler.asm (GOTO/PROC/DEF FN), unrelated to
+; this mechanism. 331 bytes recovered.
 
 ; ============================================================================
 ; MEM_LINE_STORE
@@ -596,8 +360,8 @@ MEM_LABEL_REMOVE:
 
 ; ============================================================================
 ; MEM_FITS_CHECK
-; Shared bounds check used by MEM_LABEL_ADD/MEM_LINE_STORE/MEM_LINE_
-; INSERT below: is a projected total within some maximum, inclusive?
+; Shared bounds check used by MEM_LINE_STORE/MEM_LINE_INSERT below: is a
+; projected total within some maximum, inclusive?
 ; In:  HL = projected total, DE = maximum allowed
 ; Out: carry clear if HL <= DE (fits); carry set if HL > DE (doesn't)
 ; Destroys: AF, HL

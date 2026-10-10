@@ -58,6 +58,7 @@
     DEFINE TEST_V2_CHECK_DECOMPILED_TEXT
     DEFINE TEST_V2_CUSTOM_CHECKS
     INCLUDE "rom/test_v2_harness_home_head.inc"
+    INCLUDE "rom/test_v2_symmacros.inc"
 
 ; Capture exactly where the harness head left off before jumping
 ; backward to patch in USR_TEST_ROUTINE, then resume from that exact
@@ -105,7 +106,7 @@ TEST_CUSTOM_MAIN:
     jp   nz, TEST_FAIL
 
     ; A (index 0): SGN(-5) = -1
-    ld   hl, SYMTAB_BASE + 0*3 + 1
+    TSYM_ADDR 0*3 + 1
     ld   a, (hl)
     cp   $FF
     jp   nz, TEST_FAIL
@@ -115,7 +116,7 @@ TEST_CUSTOM_MAIN:
     jp   nz, TEST_FAIL
 
     ; B (index 1): SGN(0) = 0
-    ld   hl, SYMTAB_BASE + 1*3 + 1
+    TSYM_ADDR 1*3 + 1
     ld   a, (hl)
     or   a
     jp   nz, TEST_FAIL
@@ -125,7 +126,7 @@ TEST_CUSTOM_MAIN:
     jp   nz, TEST_FAIL
 
     ; C (index 2): SGN(5) = 1
-    ld   hl, SYMTAB_BASE + 2*3 + 1
+    TSYM_ADDR 2*3 + 1
     ld   a, (hl)
     cp   1
     jp   nz, TEST_FAIL
@@ -135,7 +136,7 @@ TEST_CUSTOM_MAIN:
     jp   nz, TEST_FAIL
 
     ; D (index 3): MOD(17,5) = 2
-    ld   hl, SYMTAB_BASE + 3*3 + 1
+    TSYM_ADDR 3*3 + 1
     ld   a, (hl)
     cp   2
     jp   nz, TEST_FAIL
@@ -145,7 +146,7 @@ TEST_CUSTOM_MAIN:
     jp   nz, TEST_FAIL
 
     ; E (index 4): DIV(17,5) = 3
-    ld   hl, SYMTAB_BASE + 4*3 + 1
+    TSYM_ADDR 4*3 + 1
     ld   a, (hl)
     cp   3
     jp   nz, TEST_FAIL
@@ -156,7 +157,7 @@ TEST_CUSTOM_MAIN:
 
     ; F (index 5): RND(10) -- range check only: 0 <= F <= 10, high byte
     ; must be 0 (a value in this range never sets it).
-    ld   hl, SYMTAB_BASE + 5*3 + 2
+    TSYM_ADDR 5*3 + 2
     ld   a, (hl)
     or   a
     jp   nz, TEST_FAIL
@@ -167,7 +168,7 @@ TEST_CUSTOM_MAIN:
 
     ; G (index 6): POINT(5,10) -- stub GFX_READ_PIXEL below returns
     ; (x+y)&1; 5+10=15, odd -> 1
-    ld   hl, SYMTAB_BASE + 6*3 + 1
+    TSYM_ADDR 6*3 + 1
     ld   a, (hl)
     cp   1
     jp   nz, TEST_FAIL
@@ -178,7 +179,7 @@ TEST_CUSTOM_MAIN:
 
     ; H (index 7): ATTR(2,3) -- real memory read back from the seeded
     ; ATTR_TEST_BUF byte via the stub GFX_CELL_ATTR_ADDR below
-    ld   hl, SYMTAB_BASE + 7*3 + 1
+    TSYM_ADDR 7*3 + 1
     ld   a, (hl)
     cp   42
     jp   nz, TEST_FAIL
@@ -188,7 +189,7 @@ TEST_CUSTOM_MAIN:
     jp   nz, TEST_FAIL
 
     ; I (index 8): INT(7) = 7 (an int argument passes through unchanged)
-    ld   hl, SYMTAB_BASE + 8*3 + 1
+    TSYM_ADDR 8*3 + 1
     ld   a, (hl)
     cp   7
     jp   nz, TEST_FAIL
@@ -198,7 +199,7 @@ TEST_CUSTOM_MAIN:
     jp   nz, TEST_FAIL
 
     ; J (index 9): PEEK(0) -- this ROM's own RST vector byte (DI = $F3 = 243)
-    ld   hl, SYMTAB_BASE + 9*3 + 1
+    TSYM_ADDR 9*3 + 1
     ld   a, (hl)
     cp   243
     jp   nz, TEST_FAIL
@@ -208,7 +209,7 @@ TEST_CUSTOM_MAIN:
     jp   nz, TEST_FAIL
 
     ; K (index 10): USR(4) -- USR_TEST_ROUTINE loads HL=4321 and RETs
-    ld   hl, SYMTAB_BASE + 10*3 + 1
+    TSYM_ADDR 10*3 + 1
     ld   a, (hl)
     cp   (4321 & $FF)
     jp   nz, TEST_FAIL
@@ -218,7 +219,7 @@ TEST_CUSTOM_MAIN:
     jp   nz, TEST_FAIL
 
     ; L (index 11): LEN(Z$) where Z$="HI" -> 2
-    ld   hl, SYMTAB_BASE + 11*3 + 1
+    TSYM_ADDR 11*3 + 1
     ld   a, (hl)
     cp   2
     jp   nz, TEST_FAIL
@@ -228,7 +229,7 @@ TEST_CUSTOM_MAIN:
     jp   nz, TEST_FAIL
 
     ; M (index 12): CODE(Z$) where Z$="HI" -> ASCII 'H' = 72
-    ld   hl, SYMTAB_BASE + 12*3 + 1
+    TSYM_ADDR 12*3 + 1
     ld   a, (hl)
     cp   'H'
     jp   nz, TEST_FAIL
@@ -238,7 +239,7 @@ TEST_CUSTOM_MAIN:
     jp   nz, TEST_FAIL
 
     ; N (index 13): VAL("123") -> 123
-    ld   hl, SYMTAB_BASE + 13*3 + 1
+    TSYM_ADDR 13*3 + 1
     ld   a, (hl)
     cp   123
     jp   nz, TEST_FAIL

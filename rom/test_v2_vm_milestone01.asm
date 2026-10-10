@@ -43,7 +43,9 @@
 ; ============================================================================
 
     INCLUDE "include/hardware.inc"
+    DEFINE V2_COMPACT_SYSVARS   ; R10.7 P5: drop V1-only sysvars (see include/sysvars.inc)
     INCLUDE "include/sysvars.inc"
+    INCLUDE "rom/test_v2_symmacros.inc"
 
     DEVICE NOSLOT64K
 
@@ -115,7 +117,7 @@ CHECK_TEST1:
     ld   a, (VM_ERROR_CODE)
     or   a
     jr   nz, .fail
-    ld   hl, SYMTAB_BASE            ; record 0: [tag][value_lo][value_hi]
+    ld   hl, (RT_SYMTAB_PTR)  ; record 0: [tag][value_lo][value_hi]
                                      ; (matches rom/exrom_v2_vm_core.asm's
                                      ; actual OP_STORE_VAR/OP_LOAD_VAR layout
                                      ; -- an earlier version of this check
@@ -156,7 +158,7 @@ CHECK_TEST4:
     ld   a, (VM_ERROR_CODE)
     or   a
     jr   nz, .fail
-    ld   hl, SYMTAB_BASE + 2*SYM_REC_LEN
+    TSYM_ADDR 2*SYM_REC_LEN
     ld   a, (hl)
     cp   TAG_INT
     jr   nz, .fail
@@ -180,7 +182,7 @@ CHECK_TEST5:
     ld   a, (VM_ERROR_CODE)
     or   a
     jr   nz, .fail
-    ld   hl, SYMTAB_BASE + 4*SYM_REC_LEN
+    TSYM_ADDR 4*SYM_REC_LEN
     ld   a, (hl)
     cp   TAG_INT
     jr   nz, .fail
@@ -204,7 +206,7 @@ CHECK_TEST6:
     ld   a, (VM_ERROR_CODE)
     or   a
     jr   nz, .fail
-    ld   hl, SYMTAB_BASE + 5*SYM_REC_LEN
+    TSYM_ADDR 5*SYM_REC_LEN
     ld   a, (hl)
     cp   TAG_INT
     jr   nz, .fail
@@ -331,6 +333,29 @@ BASIC_STMT_LPRINT_EXROM:
     ret
 
 KTAB_CALC_EXIT_TRAMPOLINE:
+    ret
+; MEM_CLEAR_V2 (R10.7 CLEAR statement) is production EXROM-resident
+; (rom/exrom_v2_shell.asm), not included here; this test never exercises
+; CLEAR -- same stubbing discipline as this file's own KTAB_CALC_EXIT_
+; TRAMPOLINE stub just above.
+MEM_CLEAR_V2:
+    ret
+
+; FOLD_UPPER -- a local copy, test-only (R10.7 dormant-ROM audit, docs/v2/
+; R10_7_DORMANT_ROM_CONSOLIDATION_AUDIT.md): this VM-only test includes
+; kernel/extensions/ext_registry.asm's own EXT2_LOOKUP without also
+; including rom/exrom_v2_compiler.asm (the real, production FOLD_UPPER's
+; home), so EXT2_LOOKUP's own `call FOLD_UPPER` needs this stand-in here.
+; Production's own EXT2_LOOKUP now shares the real FOLD_UPPER directly
+; (the former EXT2_FOLD_UPPER duplicate was removed from kernel/
+; extensions/ext_registry.asm) since every real build includes both
+; files together. Same logic as the real routine's own header.
+FOLD_UPPER:
+    cp 'a'
+    ret c
+    cp 'z'+1
+    ret nc
+    and $DF
     ret
 
     INCLUDE "kernel/math/math.asm"

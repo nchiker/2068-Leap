@@ -1,5 +1,6 @@
 ; R9 production HOME image. The V1 interpreter is held in Git at cd2f1df.
     INCLUDE "include/hardware.inc"
+    DEFINE V2_COMPACT_SYSVARS   ; R10.7 P5: drop V1-only sysvars (see include/sysvars.inc)
     INCLUDE "include/sysvars.inc"
     INCLUDE "include/v2_layout.inc"
     DEFINE V2_PRODUCTION
@@ -57,6 +58,7 @@ SOUND_EXROM EQU V2_EXROM_SOUND_ADDR
 BASIC_NUM_TO_STRING_EXROM EQU V2_EXROM_NUM_TO_STRING_ADDR
 BASIC_FLOAT_TO_STRING_EXROM EQU V2_EXROM_FLOAT_TO_STRING_ADDR
 DECOMP_END_ADDR EQU V2_DECOMP_END_ADDR
+MEM_CLEAR_V2 EQU V2_EXROM_CLEAR_ADDR
 
     INCLUDE "kernel/memory/memory.asm"
     INCLUDE "kernel/io/io.asm"

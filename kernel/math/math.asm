@@ -447,7 +447,7 @@ MATH_MOD16:
                                         ; (HL = quotient, unused here)
     ex   de, hl                          ; HL = remainder magnitude
 
-    jp   MATH_APPLY_SIGN                 ; apply the dividend's sign
+    jr   MATH_APPLY_SIGN                 ; apply the dividend's sign
                                         ; (or leaves it positive if
                                         ; divisor was 0, remainder 0
                                         ; either way)

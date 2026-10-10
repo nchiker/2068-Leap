@@ -858,7 +858,34 @@ STORAGE_LOAD:
     ld   a, STORAGE_TYPE_DATA
     cp   STORAGE_NZ_SENTINEL              ; force Z clear — see that
                                          ; constant's own header
+    push af                               ; preserve A/F (Z included)
+                                         ; exactly as STORAGE_RECEIVE_
+                                         ; BLOCK's own internal AF'
+                                         ; stash-and-restore protocol
+                                         ; needs, undisturbed by the
+                                         ; verify-mode test below --
+                                         ; tested BEFORE popping back
+                                         ; (an earlier version of this
+                                         ; branch popped first, which
+                                         ; clobbered the verify-mode
+                                         ; test's own flags with the
+                                         ; just-restored ones before
+                                         ; the jr z below ever read
+                                         ; them -- caught by this
+                                         ; milestone's own real-ZEsarUX
+                                         ; storage-transport test)
+    ld   a, (STORAGE_VERIFY_MODE)
+    or   a
+    jr   z, .data_load_mode
+    pop  af
     scf
+    ccf                                    ; carry clear, Z/S/A
+                                         ; untouched by scf/ccf
+    jr   .data_recv
+.data_load_mode:
+    pop  af
+    scf
+.data_recv:
     call STORAGE_RECEIVE_BLOCK
     jr   c, .data_failed
 .data_ok:

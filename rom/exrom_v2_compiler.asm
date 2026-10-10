@@ -179,7 +179,6 @@ TOK_NAME:           equ $BA07   ; current token identifier text pointer (2B)
 TOK_LEN:            equ $BA09   ; current token identifier length (1 byte)
 COMPILE_ERROR_CODE: equ $BA0A   ; 0 = no error; see header for nonzero codes
 
-CSYM_COUNT:         equ $BA0B   ; number of distinct compile-time symbols
 IDENT_LOAD_INDEX:   equ $BA10   ; COMPILE_IDENT_LOAD scratch (1 byte) — same
                                 ; bug class as ASSIGN_TARGET_INDEX below:
                                 ; CSYM_FIND_OR_CREATE's returned index (in A)
@@ -209,34 +208,37 @@ ASSIGN_TARGET_INDEX: equ $BA0F  ; COMPILE_ASSIGN scratch (1 byte) — MUST be
                                 ; ZEsarUX run (STORE_VAR targeted the wrong
                                 ; symbol slot; wrong final values), not by
                                 ; inspection.
-CSYM_FIND_NAME_PTR: equ $BA0C   ; CSYM_FIND_OR_CREATE scratch (2 bytes) —
                                 ; must be real RAM, not inline ROM data (an
                                 ; earlier version of this file declared this
                                 ; as `dw 0` in the code stream, which would
                                 ; have been a silent no-op write to ROM once
                                 ; assembled into a real ROM image — caught
                                 ; before assembling, not at runtime)
-CSYM_FIND_NAME_LEN: equ $BA0E   ; CSYM_FIND_OR_CREATE scratch (1 byte)
-CSYMTAB_BASE:       equ $B800   ; compile-time symbol name table
-CSYM_REC_LEN:       equ 9       ; [name_len:1][name:8]
-CSYMTAB_MAX_ENTRIES: equ 16     ; bounded, per this module's R2 scope
+                                  ; 0-15 (unchanged address/size from R2)
+; R10.7 item 7 overflow tiers: 144 contiguous extra bytes (16 more entries
+; * 9B) do not fit in any single genuinely-free gap in this densely-packed
+; bank (the largest, $B890-$B900, is only 112 bytes), so entries 16-31 are
+; split across two confirmed-free, always-unused gaps instead of relocating
+; CSYMTAB_BASE itself (which would cascade-shift LABELTAB/FIXUPTAB/CFOR_
+; STACK/SRC_PTR and everything after them — out of scope for this change;
+; see the audit's own Option-D reasoning). CSYM_ENTRY_ADDR below picks the
+; right tier; this is a compile-time-only lookup, so the extra branch has
+; no runtime-performance cost (the audit's performance constraint is about
+; RUNTIME variable access, not compile-time identifier resolution).
+                                  ; free gap between CSYMTAB_BASE's own
+                                  ; real end ($B890) and LABELTAB_BASE
+                                  ; ($B900), confirmed free by direct
+                                  ; address-collision grep across every
+                                  ; v2 file's own equ's before placing this
+                                  ; gap between STRSYMTAB_BASE's own real
+                                  ; end ($BA84) and DECOMP_FRAG_BASE
+                                  ; ($BB00), same confirmed-free discipline
 
 ; --- R3 additions: labels, forward-reference fixups, FOR/NEXT loop state ---
-LABEL_COUNT:        equ $BA11   ; number of labels defined so far
-LABELTAB_BASE:      equ $B900   ; [name_len:1][name:8][offset:2] = 11B/entry
-LABEL_REC_LEN:       equ 11
-LABELTAB_MAX_ENTRIES: equ 8
 
-FIXUP_COUNT:        equ $BA12   ; number of outstanding forward-reference fixups
-FIXUPTAB_BASE:      equ $B960   ; [patch_addr:2][name_len:1][name:8] = 11B/entry
-FIXUP_REC_LEN:       equ 11
-FIXUPTAB_MAX_ENTRIES: equ 8
 
-LABEL_FIND_NAME_PTR: equ $BA17  ; LABEL_LOOKUP/LABEL_DEFINE scratch (2 bytes)
-LABEL_FIND_NAME_LEN: equ $BA19  ; (1 byte) — same "must be RAM, not
                                   ; register-or-inline-data" discipline as
                                   ; CSYM_FIND_NAME_PTR/LEN above
-LABEL_LOOKUP_RESULT: equ $BA1A  ; LABEL_LOOKUP output (2 bytes): resolved
                                   ; offset if found
 FOR_LOOP_TOP_OFFSET: equ $BA1C  ; COMPILE_FOR/COMPILE_NEXT scratch (2 bytes):
                                   ; the INNERMOST currently-open loop's own
@@ -257,73 +259,10 @@ FOR_LOOP_TOP_OFFSET: equ $BA1C  ; COMPILE_FOR/COMPILE_NEXT scratch (2 bytes):
 FOR_LOOP_VAR_INDEX: equ $BA1E    ; COMPILE_FOR/COMPILE_NEXT scratch (1 byte):
                                   ; same "innermost loop's own cached copy"
                                   ; role as FOR_LOOP_TOP_OFFSET above.
-
-; ---------------------------------------------------------------------------
-; Post-R9 nested FOR/NEXT correction (docs/v2/V2_SEMANTIC_CAPABILITY_AUDIT.md
-; S9): a real, bounded loop-frame stack, plausibly similar in spirit to the
-; already-proven VM_CALL_STACK mechanism the audit itself suggested. Each
-; frame remembers one nesting level's own loop variable index, loop-body
-; offset, and the enclosing level's own EXITFOR_COUNT (so "EXIT FOR" inside
-; an inner loop cannot corrupt an outer loop's own pending exit-patch count).
-; FOR_NEST_MAX=4 is an explicit, documented nesting-depth limit (matching
-; this compiler's other small bounded tables — LABELTAB/FIXUPTAB/ARRSYMTAB
-; are all 4-8 deep — not a technical ceiling). Placed in the free gap
-; between FIXUPTAB_BASE+11*8=$B9B8 and SRC_PTR=$BA00 (72 bytes; checked
-; directly against every other v2 file's own equ's before placing this).
-; ---------------------------------------------------------------------------
-FOR_NEST_MAX:         equ 4
-CFOR_STACK_DEPTH:      equ $B9B8  ; number of currently-open FOR loops (1 byte)
-CFOR_STACK_REC_LEN:    equ 4      ; [var_index:1][top_offset:2][saved_exitfor_count:1]
-CFOR_STACK_BASE:       equ $B9B9  ; FOR_NEST_MAX*CFOR_STACK_REC_LEN = 16 bytes,
-                                   ; $B9B9-$B9C8
-EXITFOR_PATCH_TABLE:  equ $B9C9  ; now ONE 8-byte (EXITFOR_MAX*2) region PER
-                                   ; nesting level, not a single shared
-                                   ; table — an inner loop's own EXIT FOR
-                                   ; patches must never overwrite an outer
-                                   ; loop's still-pending ones. Indexed as
-                                   ; EXITFOR_PATCH_TABLE + depth*EXITFOR_MAX*2,
-                                   ; where depth is CFOR_STACK_DEPTH-1 (the
-                                   ; loop currently being compiled). Total
-                                   ; FOR_NEST_MAX*EXITFOR_MAX*2 = 32 bytes,
-                                   ; $B9C9-$B9E8.
-FOR_FRAME_ADDR_TMP:   equ $B9E9  ; COMPILE_FOR/COMPILE_NEXT scratch (2 bytes):
-                                   ; a just-computed frame/table address,
-                                   ; parked before a call that would
-                                   ; otherwise clobber it
-NEXT_VAR_INDEX_TMP:   equ $B9EB  ; COMPILE_NEXT scratch (1 byte): this
-                                   ; NEXT's own referenced variable index,
-                                   ; saved before comparing it against the
-                                   ; innermost open FOR's own recorded index
-                                   ; (still within the same 72-byte gap —
-                                   ; 20 bytes left spare, $B9EC-$B9FF)
-
-; CFOR_STACK_FRAME_ADDR — A = depth index (0-based) -> HL = that frame's
-; address (CFOR_STACK_BASE + depth*CFOR_STACK_REC_LEN). Destroys: DE.
-CFOR_STACK_FRAME_ADDR:
-        ld l,a
-        ld h,0
-        add hl,hl               ; *2
-        add hl,hl               ; *4 (CFOR_STACK_REC_LEN)
-        ld de,CFOR_STACK_BASE
-        add hl,de
-        ret
-
-; EXITFOR_TABLE_ADDR — A = depth index (0-based) -> HL = that nesting
-; level's own EXIT-FOR patch table (EXITFOR_PATCH_TABLE + depth*
-; EXITFOR_MAX*2). Destroys: DE.
-EXITFOR_TABLE_ADDR:
-        ld l,a
-        ld h,0
-        add hl,hl               ; *2
-        add hl,hl               ; *4
-        add hl,hl               ; *8 (EXITFOR_MAX*2)
-        ld de,EXITFOR_PATCH_TABLE
-        add hl,de
-        ret
+FOR_FRAME_ADDR_TMP:   equ $B9E9  ; COMPILE_FOR/COMPILE_NEXT scratch (2 bytes): a frame
+                                   ; address parked across a call that would clobber it
+NEXT_VAR_INDEX_TMP:   equ $B9EB  ; COMPILE_NEXT scratch (1 byte): this NEXT's own variable index
 BRANCH_PATCH_TMP:   equ $BA1F   ; COMPILE_BRANCH_TARGET scratch (2 bytes)
-FIXUP_PATCH_TMP:    equ $BA21   ; FIXUP_RECORD scratch (2 bytes)
-FIXUP_NAME_PTR_TMP: equ $BA23   ; FIXUP_RECORD scratch (2 bytes)
-FIXUP_NAME_LEN_TMP: equ $BA25   ; FIXUP_RECORD scratch (1 byte)
 RESOLVE_PATCH_TMP:  equ $BA26   ; RESOLVE_ALL_FIXUPS scratch (2 bytes)
 STMT_IDENT_NAME_PTR: equ $BA28  ; COMPILE_PROGRAM scratch (2 bytes): the
                                   ; current statement's leading identifier
@@ -331,7 +270,6 @@ STMT_IDENT_NAME_PTR: equ $BA28  ; COMPILE_PROGRAM scratch (2 bytes): the
                                   ; lookahead that decides label-def vs.
                                   ; assignment overwrites TOK_NAME
 STMT_IDENT_NAME_LEN: equ $BA2A   ; (1 byte)
-RESOLVE_FIXUP_INDEX: equ $BA2B   ; RESOLVE_ALL_FIXUPS scratch (1 byte) —
                                   ; see that routine's own comment for why
                                   ; this must be memory, not just C
 FOR_NEXT_HIGH_TMP:   equ $BA2C   ; COMPILE_NEXT scratch (1 byte) — see that
@@ -350,16 +288,7 @@ PROC_PARAM_INDEX_TMP: equ $BA31  ; COMPILE_PROC scratch (1 byte): the
 ; from CSYMTAB above — "A" (numeric) and "A$" (string) are different
 ; identifiers with independent index spaces, matching the runtime VM's
 ; own separate SYMTAB/STRTAB split (rom/exrom_v2_vm_core.asm). ---
-STRSYM_COUNT:        equ $BA32  ; number of distinct string symbols
-STRSYMTAB_BASE:      equ $BA60  ; compile-time string-symbol name table
-STRSYM_REC_LEN:      equ 9      ; [name_len:1][name:8], same shape as CSYMTAB
-STRSYMTAB_MAX_ENTRIES: equ 4    ; matches STRTAB_MAX_VARS in the VM core —
-                                  ; the compiler and the VM must agree on
-                                  ; this bound; it is not independently
-                                  ; enforced by either side against the
-                                  ; other, a documented coupling, not a gap
-STRSYM_FIND_NAME_PTR: equ $BA33 ; STRSYM_FIND_OR_CREATE scratch (2 bytes)
-STRSYM_FIND_NAME_LEN: equ $BA35 ; (1 byte)
+                                  ; entries 0-3 (unchanged address/size)
 CSTR_LIT_LEN_TMP:    equ $BA36  ; COMPILE_STR_FACTOR scratch (1 byte): a
                                   ; string literal's clamped length, saved
                                   ; across the EMIT_BYTE_OP_PUSH_STR_LIT
@@ -429,7 +358,10 @@ CEXT_ARGTYPES:      equ $BA5A   ; R8.5 (generic typed extension args,
                                   ; extension can have several arguments
                                   ; of different types, unlike a single-
                                   ; argument built-in function)
-DIMN_SIZE_TMP:      equ $BA5B   ; R8.5 Group 6 (DIMN) -- COMPILE_DIMN's
+; R10.7: widened to 2 bytes (was 1); relocated next to ARR_SIZE_TMP/
+; CARR_SIZE above -- the old $BA5B would now collide with rom/exrom_v2_
+; vm_core.asm's own VM_EXT_EXEC_PTR at $BA5C.
+DIMN_SIZE_TMP:      equ $BDD4   ; R8.5 Group 6 (DIMN) -- COMPILE_DIMN's
                                   ; own copy of ARR_SIZE_TMP (ARRSYM_
                                   ; LOOKUP's own output), parked here
                                   ; before LEX_NEXT_TOKEN gets a chance
@@ -454,16 +386,24 @@ IF_ELSE_SKIP_PATCH_TMP: equ $BA45  ; COMPILE_IF_BLOCK scratch (2 bytes):
 ; (rom/exrom_v2_vm_core.asm's ARRTAB) possible with no allocator at all,
 ; the same "resolve to a small index at compile time" philosophy this
 ; whole rewrite already uses for scalars/strings/labels.
-ARRSYM_COUNT:        equ $BA47   ; number of distinct arrays DIM'd so far
-ARRSYM_FIND_NAME_PTR: equ $BA48  ; ARRSYM_FIND_OR_CREATE/ARRSYM_LOOKUP
-ARRSYM_FIND_NAME_LEN: equ $BA4A   ; scratch (2+1 bytes) — same "must be
                                     ; real RAM" discipline as CSYM_FIND_
                                     ; NAME_PTR/LEN above
-ARR_SIZE_TMP:        equ $BA4B   ; COMPILE_DIM's own validated size /
+; R10.7: widened to 2 bytes (was 1); relocated to the old, now-abandoned
+; CSYMTAB_BASE address ($B800, freed by that table's own R10.7
+; relocation above) rather than widening in place, which would collide
+; with CARR_INDEX/CINPUT_INDEX_TMP immediately following at the old
+; $BA4C/$BA4E. Placed right after STRARRSYMTAB_BASE's own end
+; ($BD70+96=$BDD0) -- CSYMTAB_BASE reverted to its original $B800 (item
+; 7's scalar/string/recursion capacity increases were reverted after a
+; real regression was found and not safely isolated in time; see docs/
+; v2/R10_7_CAPABILITY_RESTORATION.md), so $B800 is no longer free.
+ARR_SIZE_TMP:        equ $BDD0   ; COMPILE_DIM's own validated size /
                                     ; ARRSYM_LOOKUP's found-array size
-                                    ; output (1 byte)
+                                    ; output (2 bytes)
 CARR_INDEX:          equ $BA4C   ; COMPILE_ARRAY_ASSIGN/COMPILE_FACTOR's
-CARR_SIZE:           equ $BA4D    ; own array-read scratch (1 byte each):
+CARR_SIZE:           equ $BDD2    ; R10.7 -- widened to 2 bytes (was 1),
+                                    ; relocated next to ARR_SIZE_TMP above
+                                    ; for the same reason. own array-read scratch:
                                     ; the matched array's runtime index and
                                     ; declared size, saved to memory BEFORE
                                     ; compiling the index/value sub-
@@ -483,7 +423,6 @@ CINPUT_INDEX_TMP:     equ $BA4E   ; COMPILE_INPUT scratch (1 byte): the
                                     ; DECOMP_EMIT_CHAR bug this same
                                     ; milestone) — not worth the risk to
                                     ; save one equ.
-EXITFOR_COUNT:        equ $BA4F  ; R8.5 Group 5 -- number of outstanding
                                     ; EXIT FOR patch addresses for the
                                     ; loop CURRENTLY being compiled. Post-
                                     ; R9 nested-FOR/NEXT correction: this
@@ -495,24 +434,56 @@ EXITFOR_COUNT:        equ $BA4F  ; R8.5 Group 5 -- number of outstanding
                                     ; nested FOR and restored from there
                                     ; once that nested loop's own NEXT
                                     ; closes — see CFOR_STACK_BASE below.
-EXITFOR_MAX:          equ 4        ; per nesting level (unchanged limit)
-ARRSYMTAB_BASE:       equ $B890   ; compile-time array name table (free
-                                    ; gap between CSYMTAB_BASE+16*9=$B890
-                                    ; and LABELTAB_BASE=$B900 — checked
-                                    ; directly against every other v2 file's
-                                    ; own equ's before placing this)
-ARRSYM_REC_LEN:       equ 10      ; [name_len:1][name:8][size:1]
-ARRSYMTAB_MAX_ENTRIES: equ 4      ; MUST match rom/exrom_v2_vm_core.asm's
-                                    ; own ARRAY_MAX_COUNT — an array's
-                                    ; ARRSYMTAB creation order (0-based) IS
-                                    ; its runtime ARRTAB slot index, baked
-                                    ; directly into OP_ARR_LOAD/STORE's own
-                                    ; operand byte at compile time
+; R10.7 dynamic-array redesign: relocated right after the also-relocated
+; CSYMTAB_BASE ($BBA0+32*9=$BCC0); the old $B890 free-gap placement no
+; longer fits once CSYMTAB itself grew (item 7). REC_LEN widened 10->11
+; ([name_len:1][name:8][size_lo:1][size_hi:1] -- size is now 16-bit,
+; arena-bounded, not a fixed 16-element ceiling) and MAX_ENTRIES raised
+; 4->16 -- an array's compile-time creation order is still its runtime
+; ARR_PTR_TABLE slot index (rom/exrom_v2_vm_core.asm), just no longer
+; ALSO its fixed runtime-pool slot (that pool no longer exists).
+
+; R10.7 item 3 -- string arrays. Same shape as ARRSYMTAB, plus a 1-byte
+; per-element width field (DIM A$(n,w)'s own "w"). Placed right after
+; ARRSYMTAB ($BCC0+16*11=$BD70).
 ; ARRAY_MAX_ELEMS itself is NOT redefined here -- rom/exrom_v2_vm_core.asm
 ; already defines it, and every v2 test file includes that module before
 ; this one (the same established cross-file equ-sharing convention this
 ; compiler already relies on for VM_CODE_BASE); a second `equ` with the
 ; same name is a real duplicate-label build error, not a style choice.
+
+; Dynamic Data Phase 2 -- string-array compiler scratch. Placed in the
+; real free span confirmed by direct address-collision grep: DIMN_
+; SIZE_TMP (above) ends at $BDD6; rom/exrom_v2_decompiler.asm's own next
+; cell starts at $BE00 -- $BDD6-$BDFF (42 bytes) is genuinely free.
+                                       ; DIM'd so far (1 byte)
+                                       ; ARRSYM_FIND_NAME_PTR/LEN above
+STRARR_SIZE_TMP:         equ $BDDA  ; COMPILE_DIM_STR's own validated
+                                       ; count / STRARRSYM_LOOKUP's found
+                                       ; count output (2 bytes)
+STRARR_WIDTH_TMP:        equ $BDDC  ; COMPILE_DIM_STR's own validated
+                                       ; width / STRARRSYM_LOOKUP's found
+                                       ; width output (1 byte)
+; ($BDDD-$BDDF deliberately left unused here -- the string-array read/
+; assign index+count scratch now reuses CARR_INDEX/CARR_SIZE directly,
+; shared with the numeric path, same discipline as VM_ARR_ELEM_TMP's own
+; cross-kind reuse on the VM side; see COMPILE_ARR_READ_COMMON/COMPILE_
+; ARR_ASSIGN_COMMON below.)
+COMPILE_ARR_ASSIGN_IS_STR: equ $BDE0 ; COMPILE_ARR_ASSIGN_COMMON/COMPILE_
+                                       ; ARR_READ_COMMON's own selector
+                                       ; (1 byte): 0 = numeric (COMPILE_
+                                       ; EXPR/EMIT_OP_ARR_STORE/LOAD),
+                                       ; nonzero = string (COMPILE_STR_
+                                       ; EXPR/EMIT_OP_STRARR_STORE/LOAD) --
+                                       ; shared tail factored out of
+                                       ; COMPILE_ARRAY_ASSIGN/COMPILE_
+                                       ; STRARR_ASSIGN and COMPILE_FACTOR.
+                                       ; arr_read/COMPILE_STR_FACTOR.
+                                       ; strarr_read during the Dynamic
+                                       ; Data Phase 2 HOME-budget shrink
+                                       ; pass (identical skeletons, only
+                                       ; the value-expression compiler and
+                                       ; emitted opcode differ)
 
 ; every one of the scratch cells above is real RAM (not a register
 ; held across a call, not inline ROM data) — the two bug classes this
@@ -606,34 +577,21 @@ TOK_KW_EXIT:        equ 55   ; R8.5 Group 5 -- EXIT FOR (V1's own real
 ; docs/v2/deffn_design/README.md) -- confirmed free by this same removal.
 TOK_KW_DEF:         equ 56   ; DEF FN name(param) = expr
 TOK_KW_FN:          equ 57   ; FN name(arg), as an expression factor
+TOK_KW_FLASH:       equ 58   ; R10.7 attribute setters (R10.25 class B)
+TOK_KW_BRIGHT:      equ 59
+TOK_KW_OVER:        equ 60
+TOK_KW_INVERSE:     equ 61
+TOK_KW_AT:          equ 62   ; R10.7 standalone cursor statements
+TOK_KW_TAB:         equ 63
+TOK_KW_CLEAR:       equ 64   ; R10.7
 
 ; ---------------------------------------------------------------------------
 ; COMPILER_INIT — call once before COMPILE_PROGRAM.
 ; ---------------------------------------------------------------------------
 COMPILER_INIT:
         xor a
-        ld (CSYM_COUNT),a
         ld (COMPILE_ERROR_CODE),a
-        ld (LABEL_COUNT),a       ; R3 addition — an earlier version of this
-        ld (FIXUP_COUNT),a       ; routine never zeroed these two, so a
-        ld (STRSYM_COUNT),a      ; R5 addition — same bug, same fix,
-        ld (ARRSYM_COUNT),a      ; R8.5 Group 4 addition — same bug class,
-        ld (CFOR_STACK_DEPTH),a  ; post-R9 nested FOR/NEXT — same bug
-                                  ; class again: a stale nesting depth
-                                  ; from a prior compile in the same
-                                  ; session must not carry into this one
-                                  ; found again: a second compile within
-                                  ; the same ZEsarUX session (RAM is NOT
-                                  ; cleared by `reset`, only CPU registers
-                                  ; are) inherited whatever LABEL_COUNT/
-                                  ; FIXUP_COUNT/STRSYM_COUNT a prior run had
-                                  ; left behind, producing
-                                  ; duplicate-looking label-table entries
-                                  ; and eventually a real "table full"
-                                  ; error — caught by a real ZEsarUX run
-                                  ; showing LABEL_COUNT=8 after only 2 real
-                                  ; LABEL_DEFINE calls (confirmed via a
-                                  ; write watchpoint), not by inspection
+        call SYM_RESET           ; R10.7 P2: empty tagged symbol table at PROG_END
         ret
 
 ; ===========================================================================
@@ -651,7 +609,70 @@ LEX_SKIP_SPACES:
         ld (SRC_PTR),hl
         ret
 
+; HL_OUTSIDE_CHUNK_BUF -- shared bounds check (R10.7 source-staging-
+; architecture change), used by both LEX_NEXT_TOKEN's refill gate and
+; LEX_SCAN_STRING's mid-scan guard. A single unsigned range test serves
+; both "HL < CHUNK_BUF" and "HL >= CHUNK_BUF+CHUNK_SIZE": when HL <
+; CHUNK_BUF, HL-CHUNK_BUF wraps to a large value that the second
+; subtraction also correctly rejects, so no separate short-circuit check
+; is needed for that case.
+; In:  HL = pointer to test
+; Out: carry SET if HL is outside [CHUNK_BUF, CHUNK_BUF+CHUNK_SIZE);
+;      carry CLEAR if inside. HL preserved.
+; Destroys: AF, DE.
+HL_OUTSIDE_CHUNK_BUF:
+        push hl
+        ld de,CHUNK_BUF
+        or a
+        sbc hl,de
+        ld de,CHUNK_SIZE
+        or a
+        sbc hl,de               ; carry set here means (HL-CHUNK_BUF) <
+                                ; CHUNK_SIZE, i.e. INSIDE -- flip it
+        ccf
+        pop hl
+        ret
+
+; Deliberately NOT gated on V2_RUN_IS_STORED (an exrom_v2_shell.asm flag
+; the real shell always sets, but every rom/test_v2_*.asm standalone
+; harness does not -- they call COMPILER_INIT/set SRC_PTR directly, so
+; that flag would be whatever uninitialized RAM happens to hold). Instead
+; this checks where SRC_PTR itself actually points: only inside the chunk
+; buffer does refill logic apply -- immediate-mode compiles (SRC_PTR=
+; EDIT_LINE_BUF+1) and every standalone test's own SOURCE_TEXT buffer
+; fall outside that range and skip this unconditionally, correctly, with
+; no dependency on any other flag.
+; LEX_NEXT_TOKEN -- fetch the next token into TOK_*. Preserves BC and DE.
+; R10.7 P3: the chunk-buffer refill gate in the core below always loads DE
+; (CHUNK_MARGIN) and a refill clobbers BC, but callers keep live values in
+; BC/DE across this call -- COMPILE_ARR_READ_COMMON holds the array INDEX in B
+; and the declared COUNT in DE while it consumes the closing ')'. Without this
+; wrapper every array READ emitted count = 128 (the VM validates indices
+; against that operand, so out-of-range reads of indices up to 127 went
+; unchecked) and, when the ')' sat on a refill boundary, index 0 (the read
+; silently returned array 0's element).
 LEX_NEXT_TOKEN:
+        push bc
+        push de
+        call LEX_NEXT_TOKEN_CORE
+        pop de
+        pop bc
+        ret
+
+LEX_NEXT_TOKEN_CORE:
+        ld hl,(SRC_PTR)
+        call HL_OUTSIDE_CHUNK_BUF
+        jr c,.no_refill_check
+        ld hl,(CHUNK_FILL_PTR)
+        ld de,(SRC_PTR)
+        or a
+        sbc hl,de
+        ld de,CHUNK_MARGIN
+        or a
+        sbc hl,de
+        jr nc,.no_refill_check
+        call CHUNK_REFILL
+.no_refill_check:
         call LEX_SKIP_SPACES
         ld hl,(SRC_PTR)
         ld a,(hl)
@@ -704,6 +725,24 @@ LEX_NEXT_TOKEN:
                                    ; mid-token. Fixed with an explicit jump
                                    ; rather than relying on adjacency again.
 .ident_start:
+        and $DF                  ; case-insensitivity: fold a COPY of A
+                                  ; for this routing test only -- purely a
+                                  ; "does this byte start an identifier?"
+                                  ; range check, not an equality compare,
+                                  ; so the blind fold is safe here (see
+                                  ; FOLD_UPPER's own header for why that
+                                  ; distinction matters); LEX_SCAN_IDENT
+                                  ; re-reads the real, unfolded byte from
+                                  ; (SRC_PTR) itself, so nothing here
+                                  ; leaks into stored/compared text. This
+                                  ; gate was the ACTUAL reason lowercase
+                                  ; BASIC failed end to end (found by this
+                                  ; session's own dedicated case-
+                                  ; insensitivity test): LEX_SCAN_IDENT's
+                                  ; own internal loop already accepted
+                                  ; lowercase, but execution never reached
+                                  ; it for a lowercase-led token, because
+                                  ; THIS gate rejected it first.
         cp 'A'
         jr c,.unknown
         cp 'Z'+1
@@ -899,12 +938,98 @@ LEX_SCAN_NUMBER:
 ; that were NOT re-lexable by this SAME compiler without this fix,
 ; breaking R8's own decompile-then-recompile round-trip claim) and
 ; again this session (a PROC named "ADD1" failed to compile at all).
+; NOTE on case-insensitivity (R10.7 phase 2b): an earlier version of this
+; fix canonicalized TOK_NAME here (uppercasing into a single shared fixed
+; buffer and repointing TOK_NAME at it). That broke real-ZEsarUX-tested
+; nested-compile recursion (PROC/CALL, DEF FN): several call sites save
+; TOK_NAME's own POINTER value across a later LEX_NEXT_TOKEN call (e.g.
+; STMT_IDENT_NAME_PTR, parked across COMPILE_EXPR for nested "FN other(
+; ...)" calls) and expect the pointed-to BYTES to remain stable in the
+; meantime -- true when TOK_NAME points into the immutable source text
+; (the original, pre-this-fix design), false once it points into one
+; shared buffer that the very next identifier/keyword scan overwrites.
+; Fix instead applied at the narrower, genuinely-safe point: every
+; identifier/keyword NAME COMPARISON folds case on the fly (mirroring
+; this project's own already-proven V2_MATCH_PREFIX/V2_MATCH_EXACT
+; pattern in rom/exrom_v2_shell.asm), while TOK_NAME keeps pointing at
+; real source text throughout, exactly as before. See LEX_CLASSIFY_
+; KEYWORD and each symbol table's own FIND_OR_CREATE/LOOKUP compare loop.
+;
+; FOLD_UPPER -- A -> A folded to uppercase if (and only if) it is
+; currently a lowercase letter ('a'-'z'); every other byte (digits, '$',
+; punctuation) passes through completely UNCHANGED. A blind "and $DF" is
+; UNSAFE wherever the result is compared for exact equality against a
+; second byte: '$' (0x24) and every decimal digit (0x30-0x39) each have
+; bit 5 set, so an unconditional AND $DF silently corrupts them (a real
+; regression found by this session's own regression suite: ext_registry.
+; asm's EXT2_LOOKUP uses "LPRINT$" as an internal registration name, and
+; a blind fold turned its own '$' into 0x04, permanently failing to
+; match its own stored copy; the same blind mistake would have broken
+; any symbol name containing a digit, e.g. the decompiler's own
+; generated "V0"/"L25" style names). Safe to use a blind "and $DF" only
+; for a pure range-MEMBERSHIP test ("is this inside 'A'-'Z'?") where the
+; folded result is never itself compared for equality against another
+; byte -- LEX_SCAN_IDENT's own `.loop` classification fold above
+; qualifies; this routine is for every other case. Destroys: F.
+FOLD_UPPER:
+        cp 'a'
+        ret c
+        cp 'z'+1
+        ret nc
+        and $DF
+        ret
+; CLAMP_IDENT_LEN -- A = an identifier's length -> A clamped to IDENT_MAX_LEN
+; (31). R10.7: a longer name is an explicit compile error (61), never silently
+; truncated (two long names sharing a prefix used to merge into one variable).
+; Compilation continues with the clamped length so exactly one error is
+; reported. SYM_FIND applies it to every symbol lookup; STASH_IDENT_NAME needs
+; it for its own bounded copy. Preserves every register but A and F.
+CLAMP_IDENT_LEN:
+        cp IDENT_MAX_LEN+1
+        ret c
+        ld a,61
+        call COMPILE_RAISE_ERROR
+        ld a,IDENT_MAX_LEN
+        ret
+
+; NAME_CMP_FOLD -- shared case-insensitive name-compare inner loop, used
+; by CSYM/STRSYM/ARRSYM/STRARRSYM_FIND_OR_CREATE's own linear scans and
+; LABEL_LOOKUP alike (identical ~16-17 byte loop body previously
+; duplicated 5x; HOME-budget shrink pass). Input: HL/DE = the two name
+; pointers to compare, B = remaining length (>=1, caller's own stack-
+; saved copy -- this routine does not touch the hardware stack itself,
+; just an ordinary call/ret, so the caller's surrounding push bc/pop bc
+; is unaffected). Output: Z set if every byte matched after case-
+; folding (HL/DE left one past the last compared byte); Z clear on the
+; first mismatch (HL/DE left AT the mismatching pair, matching this
+; loop's own prior in-place behavior, in case any caller ever wants it).
+; Destroys: AF, BC, HL, DE (HL/DE are also outputs, advanced in place).
+NAME_CMP_FOLD:
+.loop:
+        ld a,(de)
+        call FOLD_UPPER
+        ld c,a
+        ld a,(hl)
+        call FOLD_UPPER
+        cp c
+        ret nz
+        inc hl
+        inc de
+        djnz .loop
+        ret
+
 LEX_SCAN_IDENT:
         ld hl,(SRC_PTR)
         ld (TOK_NAME),hl
         ld b,0
 .loop:
         ld a,(hl)
+        and $DF                  ; case-insensitivity: fold lowercase to
+                                  ; uppercase for this A-Z classification
+                                  ; test only (safe for digits/punctuation
+                                  ; too -- they fall outside 'A'-'Z' either
+                                  ; way); the source byte at (hl) itself is
+                                  ; untouched, only this copy in A
         cp 'A'
         jr c,.maybe_digit
         cp 'Z'+1
@@ -962,8 +1087,7 @@ LEX_SCAN_IDENT:
         ld (TOK_LEN),a
         ld a,TOK_IDENT
         ld (TOK_TYPE),a
-        call LEX_CLASSIFY_KEYWORD
-        ret
+        jp LEX_CLASSIFY_KEYWORD
 
 ; LEX_SCAN_STRING — a "quoted" string literal (R5 addition). No escape
 ; sequences (a documented happy-path gap, matching this project's own
@@ -975,6 +1099,65 @@ LEX_SCAN_STRING:
         inc hl                   ; skip the opening '"'
         ld (TOK_NAME),hl
         ld b,0
+        ; R10.7 source-staging-architecture change: is this string being
+        ; scanned out of the chunk buffer at all? Shared bounds check
+        ; (HL_OUTSIDE_CHUNK_BUF, same one LEX_NEXT_TOKEN's own refill
+        ; gate uses), checked once here, not every iteration -- if not
+        ; chunked (immediate mode, or any standalone test's own
+        ; SOURCE_TEXT buffer), .loop below is byte-for-byte the
+        ; original, with zero added overhead.
+        call HL_OUTSIDE_CHUNK_BUF
+        jr c,.loop
+        jr .loop_chunked
+.loop_chunked:
+        ld de,(CHUNK_FILL_PTR)
+        ld a,l
+        cp e
+        jr nz,.chunked_char
+        ld a,h
+        cp d
+        jr nz,.chunked_char
+        ; HL has reached the end of currently-loaded data. If that byte
+        ; is the true EOF $00, or there is genuinely nothing left to pull
+        ; in, fall through to the ordinary terminator check (same as the
+        ; pre-chunking behavior: stop at EOF, don't consume past it).
+        ; Otherwise more authoritative source remains beyond what's
+        ; loaded -- refill, anchored at this string's own start (TOK_NAME,
+        ; not the stale mid-scan SRC_PTR), which keeps the partially-
+        ; scanned string's bytes intact and contiguous across the shift
+        ; (the one case in this whole mechanism where a refill happens
+        ; mid-token, preserving the pre-existing behavior that an
+        ; unterminated string may already span multiple authoritative
+        ; records before this change).
+        ld a,(hl)
+        or a
+        jr z,.chunked_char
+        ld de,(CHUNK_NEXT_REC)
+        ld a,d
+        or e
+        jr z,.chunked_char
+        push bc
+        ld hl,(TOK_NAME)
+        ld (SRC_PTR),hl
+        call CHUNK_REFILL
+        pop bc
+        ld hl,CHUNK_BUF
+        ld (TOK_NAME),hl
+        ld a,b
+        add a,l
+        ld l,a
+        jr nc,.loop_chunked
+        inc h
+        jr .loop_chunked
+.chunked_char:
+        ld a,(hl)
+        cp '"'
+        jr z,.done
+        or a
+        jr z,.done
+        inc hl
+        inc b
+        jr .loop_chunked
 .loop:
         ld a,(hl)
         cp '"'
@@ -995,6 +1178,162 @@ LEX_SCAN_STRING:
         ld (TOK_LEN),a
         ld a,TOK_STRING
         ld (TOK_TYPE),a
+        ret
+
+; ============================================================================
+; CHUNK_APPEND_ONE_RECORD -- R10.7 source-staging-architecture change
+; (docs/v2/R10_7_SOURCE_STAGING_ARCHITECTURE_AUDIT.md). Appends exactly one
+; authoritative line-store record (CHUNK_NEXT_REC) to the chunk buffer at
+; CHUNK_FILL_PTR: strips the record's 2-byte length header, copies content
+; up to its own trailing $0D, then applies the SAME colon-continuation
+; suppression the old whole-program V2_BUILD_SOURCE always used (append a
+; real $0D unless the content just copied ends in ':', and unless nothing
+; has been written yet at all -- this second case only arises for a
+; genuinely empty-content record, not "is this chunk's first record",
+; since CHUNK_FILL_PTR can equal CHUNK_BUF after a mid-program compaction
+; too). Advances CHUNK_FILL_PTR, records which authoritative record this
+; was (CHUNK_CUR_REC_PTR -- used by V2_JUMP_TO_ERROR_LINE), and advances
+; CHUNK_NEXT_REC to its successor. If that successor is 0 (no more
+; records), appends the true EOF $00 sentinel immediately.
+; In:  none (reads CHUNK_NEXT_REC/CHUNK_FILL_PTR)
+; Out: none
+; Destroys: AF, BC, DE, HL
+; ============================================================================
+CHUNK_APPEND_ONE_RECORD:
+        ld hl,(CHUNK_NEXT_REC)
+        ld (CHUNK_CUR_REC_PTR),hl
+        push hl
+        inc hl
+        inc hl
+        ld de,(CHUNK_FILL_PTR)
+.copy:
+        ld a,(hl)
+        cp $0D
+        jr z,.end_line
+        ld (de),a
+        inc de
+        inc hl
+        jr .copy
+.end_line:
+        ld a,e
+        cp LOW CHUNK_BUF
+        jr nz,.check_last
+        ld a,d
+        cp HIGH CHUNK_BUF
+        jr z,.append_cr
+.check_last:
+        dec de
+        ld a,(de)
+        inc de
+        cp ':'
+        jr z,.next_record
+.append_cr:
+        ld a,$0D
+        ld (de),a
+        inc de
+.next_record:
+        ld (CHUNK_FILL_PTR),de
+        pop hl
+    IFDEF KERNEL_MEMORY_PRESENT
+        call MEM_LINE_NEXT
+    ELSE
+        ; kernel/memory.asm isn't linked in this build (a compiler-only
+        ; standalone test harness -- see KERNEL_MEMORY_PRESENT's own
+        ; header comment). CHUNK_REFILL is bounds-checked and never
+        ; actually called in that configuration; this exists only so the
+        ; reference to MEM_LINE_NEXT doesn't become a hard link error.
+        ld hl,0
+    ENDIF
+        ld (CHUNK_NEXT_REC),hl
+        ld a,h
+        or l
+        ret nz
+        ld de,(CHUNK_FILL_PTR)
+        xor a
+        ld (de),a
+        ; R10.7 Phase 6 production-bug fix: the EOF terminator byte just
+        ; written at CHUNK_FILL_PTR was never included in the buffer's
+        ; own tracked [SRC_PTR, CHUNK_FILL_PTR) remainder range (this
+        ; write doesn't advance CHUNK_FILL_PTR past it) -- so any LATER
+        ; CHUNK_REFILL call (every LEX_NEXT_TOKEN does one) compacts the
+        ; still-unread remainder down to CHUNK_BUF but leaves the NUL
+        ; behind, uncopied, replaced at its new post-compaction position
+        ; by whatever stale byte already sat there from an earlier fill.
+        ; The lexer then reads that stale byte as if it were more source
+        ; text instead of stopping at end-of-program -- found live via
+        ; ts2068-debug on a real "FOR i = 1 TO 20 / PRINT i / NEXT i"
+        ; three-line program: compiled correctly through FOR and up to
+        ; PRINT, then spuriously failed with COMPILE_ERROR_CODE=2 after
+        ; NEXT once the lexer ran into the lost terminator's garbage.
+        ; Advancing CHUNK_FILL_PTR past the NUL here means it IS inside
+        ; the remainder every subsequent compaction preserves.
+        inc de
+        ld (CHUNK_FILL_PTR),de
+        ret
+
+; ============================================================================
+; CHUNK_REFILL -- shared refill core for both the between-token top-up
+; (LEX_NEXT_TOKEN) and the mid-string-scan boundary case (LEX_SCAN_STRING).
+; Compacts the buffer (discards bytes before the current anchor, which the
+; caller has placed in SRC_PTR -- either the real SRC_PTR, or the string
+; scan's own TOK_NAME, temporarily, per LEX_SCAN_STRING's own comment),
+; shifting the still-needed remainder down to CHUNK_BUF, then appends
+; records one at a time until at least CHUNK_MARGIN bytes are available or
+; no more records remain. SRC_PTR always ends this call equal to CHUNK_BUF.
+; KTAB entry (KTAB_CHUNK_REFILL) exists solely so EXROM-resident
+; V2_BUILD_SOURCE can reach this HOME-resident routine for the initial
+; priming fill; the lexer's own two call sites below are same-bank, direct.
+; In:  SRC_PTR = anchor (earliest buffer byte that must survive)
+; Out: SRC_PTR = CHUNK_BUF
+; Destroys: AF, BC, DE, HL
+; ============================================================================
+CHUNK_REFILL:
+        ld hl,(CHUNK_FILL_PTR)
+        ld de,(SRC_PTR)
+        or a
+        sbc hl,de
+        ld b,h
+        ld c,l
+        ld a,b
+        or c
+        jr z,.no_remainder
+        push bc                  ; LDIR decrements BC to 0 as it completes
+                                  ; -- save the remainder length across it,
+                                  ; or the add hl,bc below silently uses 0
+                                  ; instead of the real shifted length (the
+                                  ; one real bug this mechanism's first
+                                  ; implementation had: the next-appended
+                                  ; record's own bytes ended up overwriting
+                                  ; the just-shifted remainder at CHUNK_BUF
+                                  ; instead of following it, since
+                                  ; CHUNK_FILL_PTR came out equal to
+                                  ; CHUNK_BUF; found live via ts2068-debug
+                                  ; single-stepping, not by inspection).
+        ld hl,(SRC_PTR)
+        ld de,CHUNK_BUF
+        ldir
+        pop bc
+.no_remainder:
+        ld hl,CHUNK_BUF
+        ld (SRC_PTR),hl
+        add hl,bc
+        ld (CHUNK_FILL_PTR),hl
+.fill_loop:
+        ld hl,(CHUNK_NEXT_REC)
+        ld a,h
+        or l
+        jr z,.done
+        ld hl,(CHUNK_FILL_PTR)
+        ld de,CHUNK_BUF
+        or a
+        sbc hl,de
+        ld de,CHUNK_MARGIN
+        or a
+        sbc hl,de
+        jr nc,.done
+        call CHUNK_APPEND_ONE_RECORD
+        jr .fill_loop
+.done:
         ret
 
 ; LEX_CLASSIFY_KEYWORD — if TOK_NAME/TOK_LEN spell one of GOTO/IF/THEN/FOR/
@@ -1048,6 +1387,9 @@ LEX_CLASSIFY_KEYWORD:
                                         ; occurs in practice; kept safe)
 .cmp_loop:
         ld a,(de)
+        call FOLD_UPPER           ; case-insensitivity: fold the as-typed
+                                  ; source byte; KEYWORD_TABLE's own text
+                                  ; is always stored uppercase already
         cp (hl)                  ; CP only supports (hl), not (de)
         jr nz,.skip                ; mismatch partway through -- C
                                      ; already holds the remaining
@@ -1092,7 +1434,9 @@ V2_GET_KEYWORD_TABLE:
         ld a,KEYWORD_TABLE_COUNT
         ret
 
-KEYWORD_TABLE_COUNT: equ 36  ; post-R9 DEF FN reintegration adds DEF/FN
+KEYWORD_TABLE_COUNT: equ 43  ; R10.7 adds FLASH/BRIGHT/OVER/INVERSE/AT/
+                             ; TAB/CLEAR (7) on top of the post-R9 DEF
+                             ; FN reintegration count below
 
 ; Each row is [len:1][text:len][token:1], variable-stride (bounded ROM
 ; consolidation pass -- converted from a fixed-11-byte padded layout
@@ -1145,242 +1489,22 @@ KEYWORD_TABLE:
         ; statement keywords.
         db 3, "DEF", TOK_KW_DEF       ; post-R9 DEF FN reintegration
         db 2, "FN", TOK_KW_FN
+        db 5, "FLASH", TOK_KW_FLASH   ; R10.7 capability restoration
+        db 6, "BRIGHT", TOK_KW_BRIGHT
+        db 4, "OVER", TOK_KW_OVER
+        db 7, "INVERSE", TOK_KW_INVERSE
+        db 2, "AT", TOK_KW_AT
+        db 3, "TAB", TOK_KW_TAB
+        db 5, "CLEAR", TOK_KW_CLEAR
 
 ; ===========================================================================
 ; COMPILE-TIME SYMBOL TABLE — real name storage, real comparison (the piece
 ; the sizing spikes explicitly stubbed out).
 ; ===========================================================================
 
-; CSYM_FIND_OR_CREATE — input: HL = name pointer, B = name length (1-8,
-; longer names are truncated to 8 by the caller before this is reached).
-; Output: A = symbol index (0-based). Sets COMPILE_ERROR_CODE=1 and returns
-; A=0 if the table is full and the name isn't already present.
-CSYM_FIND_OR_CREATE:
-        ld (CSYM_FIND_NAME_PTR),hl
-        ld a,b
-        ld (CSYM_FIND_NAME_LEN),a
-        ld c,0                  ; C = index being checked
-.scan_loop:
-        ld a,c
-        push hl
-        ld hl,CSYM_COUNT
-        cp (hl)
-        pop hl
-        jr z,.not_found          ; reached the count: no match exists
-        ; compare CSYMTAB_BASE + c*9's stored name against (name_ptr,name_len)
-        push bc
-        call CSYM_ENTRY_ADDR    ; input: C = index; output: HL = entry addr
-        ld a,(hl)                ; stored name_len
-        pop bc
-        cp b
-        jr nz,.next
-        ; lengths match; compare up to B bytes
-        push hl
-        inc hl                   ; -> stored name bytes
-        ld de,(CSYM_FIND_NAME_PTR)
-        ld a,b
-        or a
-        jr nz,.have_len
-        pop hl                   ; zero-length name (shouldn't happen — the
-                                  ; lexer never produces one — but balance
-                                  ; the stack properly rather than relying
-                                  ; on "shouldn't happen": an earlier
-                                  ; version of this branch jumped to .match
-                                  ; without this pop, a latent stack-
-                                  ; imbalance bug caught by inspection before
-                                  ; it could ever corrupt a return address)
-        jr .match
-.have_len:
-        push bc
-.cmp_loop:
-        ld a,(de)
-        cp (hl)
-        jr nz,.cmp_fail
-        inc hl
-        inc de
-        dec b
-        jr nz,.cmp_loop
-        pop bc
-        pop hl
-        jr .match
-.cmp_fail:
-        pop bc
-        pop hl
-        jr .next
-.next:
-        inc c
-        jr .scan_loop
-.match:
-        ld a,c
-        ret
-.not_found:
-        ld a,(CSYM_COUNT)
-        cp CSYMTAB_MAX_ENTRIES
-        jr nz,.create
-        ld a,1
-        ld (COMPILE_ERROR_CODE),a
-        xor a
-        ret
-.create:
-        ld a,(CSYM_COUNT)
-        ld c,a
-        call CSYM_ENTRY_ADDR    ; HL = new entry's address
-        ld a,(CSYM_FIND_NAME_LEN)
-        ld (hl),a
-        inc hl
-        ld de,(CSYM_FIND_NAME_PTR)
-        ld b,a
-        or a
-        jr z,.create_done
-.copy_loop:
-        ld a,(de)
-        ld (hl),a
-        inc hl
-        inc de
-        dec b
-        jr nz,.copy_loop
-.create_done:
-        ld a,(CSYM_COUNT)
-        inc a
-        ld (CSYM_COUNT),a
-        ld a,c
-        ret
-
-
-; CSYM_ENTRY_ADDR — input: C = index; output: HL = CSYMTAB_BASE + index*9.
-CSYM_ENTRY_ADDR:
-        ld l,c
-        ld h,0                  ; HL = index
-        ld d,h
-        ld e,l                  ; DE = index
-        add hl,hl               ; *2
-        add hl,hl               ; *4
-        add hl,hl               ; *8
-        add hl,de               ; *9
-        ld de,CSYMTAB_BASE
-        add hl,de
-        ret
-
-
-; ===========================================================================
-; COMPILE-TIME STRING SYMBOL TABLE (R5 addition) — identical shape and
-; register discipline to CSYM_FIND_OR_CREATE/CSYM_ENTRY_ADDR above, over a
-; separate name table (STRSYMTAB_BASE) and count (STRSYM_COUNT), since
-; string identifiers ("A$") are a distinct namespace from numeric ones
-; ("A") — reusing the proven register discipline directly rather than
-; re-deriving it, since that discipline is exactly what R2/R3's real bugs
-; were about getting right.
-; ===========================================================================
-
-; STRSYM_FIND_OR_CREATE — input: HL = name pointer, B = name length (1-8,
-; longer names are truncated to 8 by the caller before this is reached).
-; Output: A = symbol index (0-based). Sets COMPILE_ERROR_CODE=1 and returns
-; A=0 if the table is full and the name isn't already present.
-STRSYM_FIND_OR_CREATE:
-        ld (STRSYM_FIND_NAME_PTR),hl
-        ld a,b
-        ld (STRSYM_FIND_NAME_LEN),a
-        ld c,0                  ; C = index being checked
-.scan_loop:
-        ld a,c
-        push hl
-        ld hl,STRSYM_COUNT
-        cp (hl)
-        pop hl
-        jr z,.not_found          ; reached the count: no match exists
-        ; compare STRSYMTAB_BASE + c*9's stored name against (name_ptr,name_len)
-        push bc
-        call STRSYM_ENTRY_ADDR    ; input: C = index; output: HL = entry addr
-        ld a,(hl)                ; stored name_len
-        pop bc
-        cp b
-        jr nz,.next
-        ; lengths match; compare up to B bytes
-        push hl
-        inc hl                   ; -> stored name bytes
-        ld de,(STRSYM_FIND_NAME_PTR)
-        ld a,b
-        or a
-        jr nz,.have_len
-        pop hl                   ; zero-length name (shouldn't happen — the
-                                  ; lexer never produces one — but balance
-                                  ; the stack properly rather than relying
-                                  ; on "shouldn't happen": an earlier
-                                  ; version of this branch jumped to .match
-                                  ; without this pop, a latent stack-
-                                  ; imbalance bug caught by inspection before
-                                  ; it could ever corrupt a return address)
-        jr .match
-.have_len:
-        push bc
-.cmp_loop:
-        ld a,(de)
-        cp (hl)
-        jr nz,.cmp_fail
-        inc hl
-        inc de
-        dec b
-        jr nz,.cmp_loop
-        pop bc
-        pop hl
-        jr .match
-.cmp_fail:
-        pop bc
-        pop hl
-        jr .next
-.next:
-        inc c
-        jr .scan_loop
-.match:
-        ld a,c
-        ret
-.not_found:
-        ld a,(STRSYM_COUNT)
-        cp STRSYMTAB_MAX_ENTRIES
-        jr nz,.create
-        ld a,1
-        ld (COMPILE_ERROR_CODE),a
-        xor a
-        ret
-.create:
-        ld a,(STRSYM_COUNT)
-        ld c,a
-        call STRSYM_ENTRY_ADDR    ; HL = new entry's address
-        ld a,(STRSYM_FIND_NAME_LEN)
-        ld (hl),a
-        inc hl
-        ld de,(STRSYM_FIND_NAME_PTR)
-        ld b,a
-        or a
-        jr z,.create_done
-.copy_loop:
-        ld a,(de)
-        ld (hl),a
-        inc hl
-        inc de
-        dec b
-        jr nz,.copy_loop
-.create_done:
-        ld a,(STRSYM_COUNT)
-        inc a
-        ld (STRSYM_COUNT),a
-        ld a,c
-        ret
-
-
-; STRSYM_ENTRY_ADDR — input: C = index; output: HL = STRSYMTAB_BASE + index*9.
-STRSYM_ENTRY_ADDR:
-        ld l,c
-        ld h,0                  ; HL = index
-        ld d,h
-        ld e,l                  ; DE = index
-        add hl,hl               ; *2
-        add hl,hl               ; *4
-        add hl,hl               ; *8
-        add hl,de               ; *9
-        ld de,STRSYMTAB_BASE
-        add hl,de
-        ret
+; The tagged compile symbol table (CSYM/STRSYM/ARRSYM/STRARRSYM find-or-create,
+; lookup and the SYM_FIND/SYM_ADD core) lives in rom/exrom_v2_symtab.asm.
+    INCLUDE "rom/exrom_v2_symtab.asm"
 
 ; ===========================================================================
 ; BYTECODE EMITTER
@@ -1489,6 +1613,17 @@ EMIT_OP_JMP_ELSE:                                    ld a,47 : jp EMIT_BYTE  ; R
                                                        ; from a bare user GOTO
                                                        ; unambiguously -- no heuristic
                                                        ; byte-pattern guessing needed.
+EMIT_OP_FLASH:      ld a,37 : jp EMIT_BYTE  ; R10.7
+EMIT_OP_BRIGHT:      ld a,38 : jp EMIT_BYTE  ; R10.7
+EMIT_OP_OVER:         ld a,58 : jp EMIT_BYTE  ; R10.7
+EMIT_OP_INVERSE:       ld a,59 : jp EMIT_BYTE  ; R10.7
+EMIT_OP_AT:             ld a,60 : jp EMIT_BYTE  ; R10.7
+EMIT_OP_TAB:             ld a,61 : jp EMIT_BYTE  ; R10.7
+EMIT_OP_CLEAR:            ld a,62 : jp EMIT_BYTE  ; R10.7
+EMIT_OP_DIM:               ld a,63 : jp EMIT_BYTE  ; R10.7 dynamic arrays
+EMIT_OP_DIM_STR:            ld a,64 : jp EMIT_BYTE  ; Dynamic Data Phase 2
+EMIT_OP_STRARR_LOAD:         ld a,65 : jp EMIT_BYTE  ; -- string arrays
+EMIT_OP_STRARR_STORE:         ld a,66 : jp EMIT_BYTE
 
 ; COMPILE_RELATIVE_OFFSET — R10.5 shrink: factors out the "current
 ; bytecode position, relative to VM_CODE_BASE" computation duplicated at
@@ -1534,6 +1669,8 @@ EMIT_PLACEHOLDER_16:
 ; matching every mainstream BASIC's own convention, not "(NOT A)<B").
 ; ===========================================================================
 COMPILE_EXPR:
+        call COMPILE_STACK_CHECK
+        ret c
         call COMPILE_BOOL_AND
 .loop:
         ld a,(TOK_TYPE)
@@ -1569,8 +1706,7 @@ COMPILE_BOOL_NOT:
                                   ; negation) also parses, same reasoning
                                   ; COMPILE_FACTOR's own unary-minus
                                   ; recursion already uses
-        call EMIT_OP_NOT
-        ret
+        jp EMIT_OP_NOT
 
 ; COMPILE_RELATIONAL — bare comparison (was COMPILE_EXPR's own whole body
 ; before this milestone). The full relop set: <, <=, =, >=, >, <>.
@@ -1601,33 +1737,27 @@ COMPILE_RELATIONAL:
 .do_lt:
         call LEX_NEXT_TOKEN
         call COMPILE_ADDITIVE
-        call EMIT_OP_CMP_LT
-        ret
+        jp EMIT_OP_CMP_LT
 .do_le:
         call LEX_NEXT_TOKEN
         call COMPILE_ADDITIVE
-        call EMIT_OP_CMP_LE
-        ret
+        jp EMIT_OP_CMP_LE
 .do_eq:
         call LEX_NEXT_TOKEN
         call COMPILE_ADDITIVE
-        call EMIT_OP_CMP_EQ
-        ret
+        jp EMIT_OP_CMP_EQ
 .do_ge:
         call LEX_NEXT_TOKEN
         call COMPILE_ADDITIVE
-        call EMIT_OP_CMP_GE
-        ret
+        jp EMIT_OP_CMP_GE
 .do_gt:
         call LEX_NEXT_TOKEN
         call COMPILE_ADDITIVE
-        call EMIT_OP_CMP_GT
-        ret
+        jp EMIT_OP_CMP_GT
 .do_ne:
         call LEX_NEXT_TOKEN
         call COMPILE_ADDITIVE
-        call EMIT_OP_CMP_NE
-        ret
+        jp EMIT_OP_CMP_NE
 
 COMPILE_ADDITIVE:
         call COMPILE_TERM
@@ -1702,8 +1832,7 @@ COMPILE_FACTOR:
         ld a,(COMPILE_ERROR_CODE)
         or a
         ret nz
-        call EMIT_OP_SUB
-        ret
+        jp EMIT_OP_SUB
 .paren:
         call LEX_NEXT_TOKEN
         call COMPILE_EXPR
@@ -1717,12 +1846,10 @@ COMPILE_FACTOR:
         ret
 .number:
         call COMPILE_NUMBER_LITERAL
-        call LEX_NEXT_TOKEN
-        ret
+        jp LEX_NEXT_TOKEN
 .float_number:
         call COMPILE_FLOAT_LITERAL
-        call LEX_NEXT_TOKEN
-        ret
+        jp LEX_NEXT_TOKEN
 .ident:
         ; R8.5 Group 6 (DIMN) -- DIMN(name) returns an array's declared
         ; size, a real COMPILE-TIME CONSTANT (an array's size is fully
@@ -1736,11 +1863,24 @@ COMPILE_FACTOR:
         ld a,(TOK_LEN)
         cp 4
         jr nz,.not_dimn
-        ld hl,(TOK_NAME)
-        ld de,DIMN_KEYWORD_TEXT
+        ld de,(TOK_NAME)
+        ld hl,DIMN_KEYWORD_TEXT
         ld b,4
 .dimn_cmp:
         ld a,(de)
+        call FOLD_UPPER           ; case-insensitivity fix (R10.7 dormant-
+                                  ; ROM audit, docs/v2/R10_7_DORMANT_ROM_
+                                  ; CONSOLIDATION_AUDIT.md): this hand-
+                                  ; rolled compare was missed when every
+                                  ; other name-compare site in this file
+                                  ; got FOLD_UPPER -- "dimn(x)"/"Dimn(x)"
+                                  ; silently fell through to being parsed
+                                  ; as a plain identifier instead of the
+                                  ; DIMN builtin. DIMN_KEYWORD_TEXT is a
+                                  ; constant, already uppercase (like
+                                  ; KEYWORD_TABLE), so this single-side
+                                  ; fold mirrors LEX_CLASSIFY_KEYWORD's
+                                  ; own proven pattern exactly.
         cp (hl)
         jr nz,.not_dimn
         inc hl
@@ -1787,53 +1927,14 @@ COMPILE_FACTOR:
         call ARRSYM_LOOKUP
         jr nc,.arr_read
         call COMPILE_IDENT_LOAD
-        call LEX_NEXT_TOKEN
-        ret
+        jp LEX_NEXT_TOKEN
 .arr_read:
-        ld (CARR_INDEX),a         ; memory, not a register initially -- but
-        ld a,(ARR_SIZE_TMP)        ; see the real bug this became anyway,
-        ld (CARR_SIZE),a           ; below
-        call LEX_NEXT_TOKEN         ; consume the array name, fetch next
-        ld a,(TOK_TYPE)
-        cp TOK_LPAREN
-        jr z,.arr_have_lparen
-        ld a,40
-        jp COMPILE_RAISE_ERROR
-.arr_have_lparen:
-        call LEX_NEXT_TOKEN          ; consume '('
-        ; BUG FOUND (real hardware, R8.5 Group 4): the index sub-expression
-        ; compiled next can itself contain a NESTED array read (e.g.
-        ; "A(B(0))") -- COMPILE_FACTOR's own .arr_read branch for that
-        ; inner read overwrites this SAME CARR_INDEX/CARR_SIZE pair before
-        ; this outer read's own EMIT below gets to use them. Same "shared
-        ; scratch clobbered by a nested compile call" bug class
-        ; COMPILE_IF_BLOCK already hit and fixed with hardware-stack push/
-        ; pop (see its own header) -- applying the identical fix here:
-        ; park this read's own index/size in BC, not memory, across the
-        ; recursive COMPILE_EXPR call.
-        ld a,(CARR_INDEX)
-        ld b,a
-        ld a,(CARR_SIZE)
-        ld c,a
-        push bc
-        call COMPILE_EXPR
-        pop bc
-        ld a,(COMPILE_ERROR_CODE)
-        or a
-        ret nz
-        ld a,(TOK_TYPE)
-        cp TOK_RPAREN
-        jr z,.arr_have_rparen
-        ld a,41
-        jp COMPILE_RAISE_ERROR
-.arr_have_rparen:
-        call LEX_NEXT_TOKEN           ; consume ')'
-        call EMIT_OP_ARR_LOAD
-        ld a,b
-        call EMIT_BYTE
-        ld a,c
-        call EMIT_BYTE
-        ret
+        push af                    ; A = array index, preserve across the
+        xor a                        ; flag-set below
+        ld (COMPILE_ARR_ASSIGN_IS_STR),a
+        pop af
+        ld hl,(ARR_SIZE_TMP)
+        jp COMPILE_ARR_READ_COMMON
 .fn_call:
         ld (CFN_INDEX),a
         ld a,(BFN_FOUND_ARGCOUNT)
@@ -1846,10 +1947,21 @@ COMPILE_FACTOR:
         cp TOK_LPAREN
         jr z,.fn_have_lparen
         ld a,29                    ; expected '(' after a built-in
-        ld (COMPILE_ERROR_CODE),a   ; function name
-        ret
+        jp COMPILE_RAISE_ERROR
 .fn_have_lparen:
         call LEX_NEXT_TOKEN         ; consume '('
+        ld a,(CFN_INDEX)
+        cp 25                        ; FREE: "FREE()" or "FREE(n)" (P5.5)
+        jr nz,.fn_not_free
+        ld a,(TOK_TYPE)
+        cp TOK_RPAREN
+        jr z,.fn_not_free
+        ld a,29
+        ld (CFN_INDEX),a
+        ld a,1
+        ld (CFN_ARGCOUNT),a
+        ld (CFN_REMAINING),a
+.fn_not_free:
         ld a,(CFN_REMAINING)
         or a
         jr z,.fn_rparen              ; 0-arg function (none exist yet,
@@ -1929,8 +2041,7 @@ COMPILE_FACTOR:
         cp TOK_COMMA
         jr z,.fn_have_comma
         ld a,30                     ; expected ',' between a built-in
-        ld (COMPILE_ERROR_CODE),a    ; function's own arguments
-        ret
+        jp COMPILE_RAISE_ERROR
 .fn_have_comma:
         call LEX_NEXT_TOKEN
         jr .fn_arg_loop
@@ -1939,14 +2050,12 @@ COMPILE_FACTOR:
         cp TOK_RPAREN
         jr z,.fn_have_rparen
         ld a,31                      ; expected ')' to close a built-in
-        ld (COMPILE_ERROR_CODE),a     ; function call
-        ret
+        jp COMPILE_RAISE_ERROR
 .fn_have_rparen:
         call LEX_NEXT_TOKEN            ; consume ')'
         call EMIT_OP_CALL_FN
         ld a,(CFN_INDEX)
-        call EMIT_BYTE
-        ret
+        jp EMIT_BYTE
 
 ; .udf_call — FN name(arg), as an expression factor (post-R9 DEF FN
 ; reintegration, docs/v2/deffn_design/README.md). Resolved via the SAME
@@ -1962,12 +2071,7 @@ COMPILE_FACTOR:
         ld a,50                  ; expected a function name (shared with
         jp COMPILE_RAISE_ERROR    ; DEF FN's own identical error)
 .udf_have_name:
-        ld hl,(TOK_NAME)
-        ld (STMT_IDENT_NAME_PTR),hl
-        ld a,(TOK_LEN)
-        ld (STMT_IDENT_NAME_LEN),a
-        call LEX_NEXT_TOKEN     ; consume the function name
-        ld a,(TOK_TYPE)
+        call STASH_IDENT_AND_PEEK
         cp TOK_LPAREN
         jr z,.udf_have_lparen
         ld a,51                  ; expected '(' after a name
@@ -1977,25 +2081,41 @@ COMPILE_FACTOR:
         ; Because compiling the argument expression can itself
         ; recursively compile a NESTED "FN othername(...)" call using the
         ; SAME shared STMT_IDENT_NAME_PTR/LEN scratch cells, park this
-        ; call's own name pointer+length on the hardware stack first --
-        ; the exact nested-call scratch-clobber lesson Group 6's CFN_
-        ; INDEX/ARGCOUNT/REMAINING/ARGTYPE fix (.fn_call above) and
-        ; COMPILE_FACTOR.arr_read's CARR_INDEX/SIZE fix already taught
-        ; this project, applied here proactively before any bug
-        ; manifested (docs/v2/deffn_design/README.md's own documented
-        ; precaution from the original experiment).
-        ld hl,(STMT_IDENT_NAME_PTR)
-        push hl
-        ld a,(STMT_IDENT_NAME_LEN)
-        ld c,a
-        ld b,0
-        push bc
+        ; call's own name on the hardware stack first -- the exact
+        ; nested-call scratch-clobber lesson Group 6's CFN_INDEX/
+        ; ARGCOUNT/REMAINING/ARGTYPE fix (.fn_call above) and COMPILE_
+        ; FACTOR.arr_read's CARR_INDEX/SIZE fix already taught this
+        ; project, applied here proactively before any bug manifested
+        ; (docs/v2/deffn_design/README.md's own documented precaution
+        ; from the original experiment).
+        ;
+        ; R10.7 source-staging-architecture change: STMT_IDENT_NAME_PTR
+        ; is now always STMT_IDENT_NAME_BUF (a fixed address STASH_IDENT_
+        ; AND_PEEK writes into, never the live chunk buffer -- see that
+        ; routine's own header). Parking just the POINTER value no longer
+        ; protects anything, since it is now a constant; what must be
+        ; parked is the BUFFER'S OWN CONTENT, since a nested call's own
+        ; STASH_IDENT_AND_PEEK overwrites that same fixed buffer. Parked/
+        ; restored as a whole-buffer block copy (see below).
+        ld hl,-(STMT_IDENT_NAME_BUF_LEN+1)
+        add hl,sp
+        ld sp,hl                 ; reserve buffer + length byte on the stack
+        ex de,hl                 ; DE = destination
+        ld hl,STMT_IDENT_NAME_BUF
+        ld bc,STMT_IDENT_NAME_BUF_LEN
+        ldir                     ; R10.7 P2: the buffer is now 32 bytes (31-char
+        ld a,(STMT_IDENT_NAME_LEN) ; identifiers), so park all of it with a block
+        ld (de),a                ; copy instead of four pushed words
         call COMPILE_EXPR       ; argument -> VM operand stack
-        pop bc
-        ld a,c
+        ld hl,0
+        add hl,sp
+        ld de,STMT_IDENT_NAME_BUF
+        ld bc,STMT_IDENT_NAME_BUF_LEN
+        ldir
+        ld a,(hl)
         ld (STMT_IDENT_NAME_LEN),a
-        pop hl
-        ld (STMT_IDENT_NAME_PTR),hl
+        inc hl
+        ld sp,hl                 ; release the parked copy
         ld a,(COMPILE_ERROR_CODE)
         or a
         ret nz
@@ -2008,25 +2128,11 @@ COMPILE_FACTOR:
         call LEX_NEXT_TOKEN     ; consume ')'
         call EMIT_OP_CALL_UDF
         call EMIT_PLACEHOLDER_16   ; HL = patch address
-        ld (BRANCH_PATCH_TMP),hl
+        ex de,hl                 ; DE = the operand slot just emitted
         ld hl,(STMT_IDENT_NAME_PTR)
         ld a,(STMT_IDENT_NAME_LEN)
         ld b,a
-        call LABEL_LOOKUP
-        jr c,.udf_resolved
-        ld hl,(BRANCH_PATCH_TMP)
-        ld de,(STMT_IDENT_NAME_PTR)
-        ld a,(STMT_IDENT_NAME_LEN)
-        ld b,a
-        call FIXUP_RECORD
-        ret
-.udf_resolved:
-        ld hl,(BRANCH_PATCH_TMP)
-        ld de,(LABEL_LOOKUP_RESULT)
-        ld (hl),e
-        inc hl
-        ld (hl),d
-        ret
+        jp LABEL_REF             ; defined: patched now; else threaded on the chain
 
 ; ===========================================================================
 ; R8.5 Group 1 -- built-in (resident) function-call grammar. Compile-
@@ -2041,6 +2147,76 @@ COMPILE_FACTOR:
 ; RESULT is always numeric either way (OP_CALL_FN always pushes back
 ; through the same TAG_INT/TAG_FLOAT path), only the ARGUMENT grammar
 ; differs.
+; COMPILE_ARR_READ_COMMON — shared array-read skeleton for both numeric
+; (A(expr)) and string (A$(expr)) array reads, factored out of
+; COMPILE_FACTOR's own .arr_read branch and COMPILE_STR_FACTOR's
+; .strarr_read branch during the Dynamic Data Phase 2 HOME-budget
+; shrink pass (identical skeleton, differing only in which opcode gets
+; emitted -- selected via COMPILE_ARR_ASSIGN_IS_STR, set by the caller,
+; the same flag cell COMPILE_ARR_ASSIGN_COMMON already uses). Input:
+; A = array index, HL = declared element count; the array NAME token is
+; still the CURRENT token (not yet consumed).
+;
+; BUG FOUND (real hardware, R8.5 Group 4): the index sub-expression
+; compiled next can itself contain a NESTED array read (e.g.
+; "A(B(0))") -- this same CARR_INDEX/CARR_SIZE pair would otherwise be
+; overwritten by that inner read before this outer read's own EMIT
+; below gets to use it. Same "shared scratch clobbered by a nested
+; compile call" bug class COMPILE_IF_BLOCK already hit and fixed with
+; hardware-stack push/pop (see its own header) -- applying the
+; identical fix here: park this read's own index (B) and count (DE)
+; across the recursive COMPILE_EXPR call.
+COMPILE_ARR_READ_COMMON:
+        ld (CARR_INDEX),a
+        ld (CARR_SIZE),hl
+        call LEX_NEXT_TOKEN         ; consume the array name, fetch next
+        ld a,(TOK_TYPE)
+        cp TOK_LPAREN
+        jr z,.have_lparen
+        ld a,40
+        jp COMPILE_RAISE_ERROR
+.have_lparen:
+        call LEX_NEXT_TOKEN          ; consume '('
+        ld a,(CARR_INDEX)
+        ld b,a
+        ld de,(CARR_SIZE)
+        push bc
+        push de
+        call COMPILE_EXPR
+        pop de
+        pop bc
+        ld a,(COMPILE_ERROR_CODE)
+        or a
+        ret nz
+        ld a,(TOK_TYPE)
+        cp TOK_RPAREN
+        jr z,.have_rparen
+        ld a,41
+        jp COMPILE_RAISE_ERROR
+.have_rparen:
+        call LEX_NEXT_TOKEN           ; consume ')'
+        ld a,(COMPILE_ARR_ASSIGN_IS_STR)
+        or a
+        jr nz,.emit_str
+        call EMIT_OP_ARR_LOAD
+        jr EMIT_ARR_OPERAND
+.emit_str:
+        call EMIT_OP_STRARR_LOAD
+        jr EMIT_ARR_OPERAND
+
+; EMIT_ARR_OPERAND — shared [index:1][count:2] bytecode-operand emit,
+; the common tail of both COMPILE_ARR_READ_COMMON and COMPILE_ARR_
+; ASSIGN_COMMON (same three bytes, same order, after either an ARR_LOAD/
+; STORE or STRARR_LOAD/STORE opcode byte has already been emitted by the
+; caller). Input: B = array index, D/E = declared count, high/low.
+EMIT_ARR_OPERAND:
+        ld a,b
+        call EMIT_BYTE
+        ld a,e
+        call EMIT_BYTE
+        ld a,d
+        jp EMIT_BYTE
+
 ; ===========================================================================
 ; VARIABLE-STRIDE table (bounded ROM consolidation pass, same technique
 ; LEX_CLASSIFY_KEYWORD's own header explains in full): each row is now
@@ -2076,6 +2252,15 @@ BUILTIN_FN_FIND:               ; input: TOK_NAME/TOK_LEN (current, not
                                         ; in practice; kept safe)
 .cmp_loop:
         ld a,(de)
+        call FOLD_UPPER           ; case-insensitivity: fold the as-typed
+                                  ; source byte only -- BUILTIN_FN_TABLE's
+                                  ; own text is always stored uppercase
+                                  ; already, and C is this loop's own live
+                                  ; remaining-length countdown (not saved
+                                  ; around the loop the way CSYM/STRSYM/
+                                  ; ARRSYM/STRARRSYM/LABELTAB's B-countdown
+                                  ; loops push/pop BC), so it must not be
+                                  ; used as fold scratch here
         cp (hl)
         jr nz,.skip                  ; mismatch partway -- C already
                                        ; holds the remaining length to skip
@@ -2117,7 +2302,7 @@ BUILTIN_FN_FIND:               ; input: TOK_NAME/TOK_LEN (current, not
         or a                       ; clear carry -- not a built-in
         ret                          ; function name
 
-BUILTIN_FN_TABLE_COUNT: equ 25
+BUILTIN_FN_TABLE_COUNT: equ 30
 
 ; fn_index 0 = ABS (rom/exrom_v2_vm_core.asm's own BUILTIN_FN_ABS).
 ; Group 6 appends the remaining ~24 functions to this same table --
@@ -2202,6 +2387,11 @@ BUILTIN_FN_TABLE:
     db 5, "LOWER", 1, 16, $81
     db 4, "LEFT", 2, 17, $81
     db 5, "RIGHT", 2, 18, $81
+; MID$ (fn_index 28): R10.7, R10.25 class C. 3 args (s$, start, len);
+; only arg0 is a string (argtype $81, same bit layout as LEFT$/RIGHT$ --
+; bit0 set = arg0 string, bit7 set = result string; bits 1-2 clear =
+; start/len are both numeric).
+    db 3, "MID", 3, 28, $81
     db 5, "INKEY", 0, 19, $80
 
 ; SQR (fn_index 20): int-only argument, RESULT is always a real float
@@ -2217,6 +2407,18 @@ BUILTIN_FN_TABLE:
     db 3, "DEG", 1, 23, 0
 ; SIN (fn_index 24): int-only argument (degrees), always a real float.
     db 3, "SIN", 1, 24, 0
+; FREE (fn_index 25): 0 args, always a real int — R10.25 class B item,
+; wraps kernel/memory/memory.asm's own MEM_FREE_BYTES (already labeled
+; "Backs BASIC's FREE()" in its own header).
+    db 4, "FREE", 0, 25, 0
+; FREE(n) (fn_index 29): R10.7 P5.5 -- same name, one argument. BUILTIN_FN_FIND
+; always matches the 0-arg row above first; .fn_have_lparen switches to this
+; index when the call has an argument. FREE(1) = bytes free in array segment 2.
+    db 4, "FREE", 1, 29, 0
+; COS/TAN (fn_index 26-27): R10.7, R10.25 class C. Int-only argument
+; (matching RAD/DEG/SIN's own contract), always a real float result.
+    db 3, "COS", 1, 26, 0
+    db 3, "TAN", 1, 27, 0
 
 ; BUG FOUND (real hardware, R8.5 Group 5): a literal 128-255 has TOK_VAL
 ; high byte 0, so this used to take the PUSH_I8 path below -- but
@@ -2241,15 +2443,13 @@ COMPILE_NUMBER_LITERAL:
         jr nz,.wide            ; 128-255 -- PUSH_I8 would sign-extend
         call EMIT_BYTE_OP_PUSH_I8
         ld a,e
-        call EMIT_BYTE
-        ret
+        jp EMIT_BYTE
 .wide:
         call EMIT_BYTE_OP_PUSH_I16
         ld a,e
         call EMIT_BYTE
         ld a,d
-        call EMIT_BYTE
-        ret
+        jp EMIT_BYTE
 
 ; COMPILE_FLOAT_LITERAL — emits PUSH_FLOAT_LIT's 4-byte operand: TOK_VAL
 ; (the literal's digits) then TOK_FLOAT_DIVISOR (10^fractional-digits),
@@ -2267,22 +2467,76 @@ COMPILE_FLOAT_LITERAL:
         ld a,e
         call EMIT_BYTE
         ld a,d
-        call EMIT_BYTE
-        ret
+        jp EMIT_BYTE
 
 COMPILE_IDENT_LOAD:
         ld hl,(TOK_NAME)
         ld a,(TOK_LEN)
-        cp 9
-        jr c,.len_ok
-        ld a,8                  ; truncate to 8 (documented R2 limitation)
 .len_ok:
         ld b,a
         call CSYM_FIND_OR_CREATE
         ld (IDENT_LOAD_INDEX),a
         call EMIT_BYTE_OP_LOAD_VAR
         ld a,(IDENT_LOAD_INDEX)
-        call EMIT_BYTE
+        jp EMIT_BYTE
+
+; STASH_IDENT_NAME -- copies the CURRENT identifier token (TOK_NAME/
+; TOK_LEN) into the fixed STMT_IDENT_NAME_BUF/STMT_IDENT_NAME_PTR/LEN
+; cells, clamped to 8 bytes (same clamp every FIND_OR_CREATE/LOOKUP call
+; site already applies). Does NOT advance the lexer -- callers that also
+; need the next token call LEX_NEXT_TOKEN themselves afterward (see
+; STASH_IDENT_AND_PEEK below, and COMPILE_PROC/COMPILE_DEF_FN's own
+; "have_name" labels, which used to inline this exact copy with a bare
+; pointer instead of calling it -- see this routine's own R10.7 note).
+;
+; R10.7 source-staging-architecture change: this now COPIES the
+; identifier's bytes into a fixed buffer rather than just storing a
+; pointer into the live chunk buffer. Any subsequent LEX_NEXT_TOKEN call
+; can trigger a refill; the identifier just scanned is already behind
+; SRC_PTR by then (outside the region a refill preserves), so a bare
+; pointer into the old buffer position would read wrong, overwritten
+; content by the time a caller actually uses it for a symbol-table
+; lookup (LABEL_DEFINE, CSYM_FIND_OR_CREATE, etc.). Found live (an array
+; assignment failed "never DIM'd" even though DIM had already run, and
+; separately a GOTO/PROC/DEF-FN label failed "undefined" even though it
+; was defined) via ts2068-debug single-stepping, not by inspection.
+; COMPILE_PROC and COMPILE_DEF_FN each had their OWN inline copy of the
+; old, unsafe pattern (not routed through the shared helper at all) --
+; both now call this routine instead, fixing all three sites at once and
+; removing the duplication.
+; Destroys: AF, BC, DE, HL.
+STASH_IDENT_NAME:
+        ld hl,(TOK_NAME)
+        ld a,(TOK_LEN)
+        call CLAMP_IDENT_LEN          ; R10.7 P2: an over-long name is error 61, never
+        ld (STMT_IDENT_NAME_LEN),a ; silently truncated (the label/PROC/FN sites
+                                   ; used to pass the UNclamped length)
+        ld de,STMT_IDENT_NAME_BUF
+        or a
+        jr z,.copy_done
+        ld b,a
+.copy:
+        ld a,(hl)
+        ld (de),a
+        inc hl
+        inc de
+        djnz .copy
+.copy_done:
+        ld hl,STMT_IDENT_NAME_BUF
+        ld (STMT_IDENT_NAME_PTR),hl
+        ret
+
+; STASH_IDENT_AND_PEEK -- shared one-token-lookahead prologue: saves the
+; CURRENT identifier token via STASH_IDENT_NAME above, consumes it, and
+; returns A = the NEXT token's own TOK_TYPE (already fetched) for the
+; caller to test -- identical logic previously duplicated across DEF FN/
+; PROC/CALL name parsing and the numeric/string statement-identifier
+; dispatch (HOME-budget shrink pass).
+; Destroys: AF, BC, DE, HL.
+STASH_IDENT_AND_PEEK:
+        call STASH_IDENT_NAME
+        call LEX_NEXT_TOKEN
+        ld a,(TOK_TYPE)
         ret
 
 ; ===========================================================================
@@ -2309,9 +2563,6 @@ COMPILE_ASSIGN_CONTINUED:
         jp z,COMPILE_ARRAY_ASSIGN
         ld hl,(STMT_IDENT_NAME_PTR)
         ld a,(STMT_IDENT_NAME_LEN)
-        cp 9
-        jr c,.len_ok
-        ld a,8
 .len_ok:
         ld b,a
         call CSYM_FIND_OR_CREATE
@@ -2320,15 +2571,13 @@ COMPILE_ASSIGN_CONTINUED:
         ld a,(TOK_TYPE)
         cp TOK_ASSIGN
         jr z,.have_assign
-        ld a,2
-        jp COMPILE_RAISE_ERROR
+        jp ERR_EXPECTED_ASSIGN
 .have_assign:
         call LEX_NEXT_TOKEN     ; consume '='
         call COMPILE_EXPR
         call EMIT_BYTE_OP_STORE_VAR
         ld a,(ASSIGN_TARGET_INDEX)
-        call EMIT_BYTE
-        ret
+        jp EMIT_BYTE
 
 ; ===========================================================================
 ; R8.5 Group 4 -- DIM/array grammar.
@@ -2351,17 +2600,26 @@ COMPILE_DIM:
         ld a,(TOK_TYPE)
         cp TOK_IDENT
         jr z,.have_ident
+        cp TOK_STR_IDENT          ; Dynamic Data Phase 2 -- DIM A$(n[,w])
+        jr z,COMPILE_DIM_STR
         ld a,32
         jp COMPILE_RAISE_ERROR
 .have_ident:
-        ld hl,(TOK_NAME)
-        ld (ARRSYM_FIND_NAME_PTR),hl
-        ld a,(TOK_LEN)
-        cp 9
-        jr c,.len_ok
-        ld a,8
-.len_ok:
-        ld (ARRSYM_FIND_NAME_LEN),a
+        ; R10.7 source-staging-architecture change: this used to stash
+        ; TOK_NAME directly into ARRSYM_FIND_NAME_PTR (ARRSYM_FIND_OR_
+        ; CREATE's own internal scratch cell, borrowed here as a
+        ; premature cache) and read it back after the '('/size/')'
+        ; tokens below were consumed -- a bare pointer into the live
+        ; chunk buffer, exactly STMT_IDENT_NAME_PTR's own bug class (see
+        ; STASH_IDENT_NAME's header). A refill during any of those
+        ; intervening LEX_NEXT_TOKEN calls could relocate the array
+        ; name's own bytes before ARRSYM_FIND_OR_CREATE ever read them.
+        ; Found live: "DIM ARR(3):ARR(0)=11" failed "array assignment
+        ; target was never DIM'd" even though DIM had just run, the
+        ; exact symptom the original STMT_IDENT_NAME_PTR bug produced.
+        ; STASH_IDENT_NAME copies into the same safe, fixed buffer that
+        ; mechanism already uses.
+        call STASH_IDENT_NAME
         call LEX_NEXT_TOKEN       ; consume the name, fetch next
         ld a,(TOK_TYPE)
         cp TOK_LPAREN
@@ -2373,36 +2631,172 @@ COMPILE_DIM:
         ld a,(TOK_TYPE)
         cp TOK_NUMBER
         jr z,.have_size
-        ld a,34
-        jp COMPILE_RAISE_ERROR
+        jp ERR_DIM_EXPECTED_NUMBER
 .have_size:
-        ld a,(TOK_VAL)            ; low byte -- DIM sizes never legitimately
-                                    ; exceed ARRAY_MAX_ELEMS (16), so TOK_VAL's
-                                    ; high byte is never inspected
-        or a
+        ; R10.7 dynamic-array redesign: size is now a full 16-bit value
+        ; (TOK_VAL, both bytes) -- no more fixed ARRAY_MAX_ELEMS ceiling
+        ; (arena-allocated now, not a fixed pool; real capacity is
+        ; whatever OP_DIM's own runtime arena-exhaustion check allows).
+        ld hl,(TOK_VAL)
+        ld a,h
+        or l
         jr nz,.size_nonzero
         ld a,35
         jp COMPILE_RAISE_ERROR
 .size_nonzero:
-        cp ARRAY_MAX_ELEMS+1
-        jr c,.size_ok
-        ld a,36
-        jp COMPILE_RAISE_ERROR
-.size_ok:
-        ld (ARR_SIZE_TMP),a
+        ld (ARR_SIZE_TMP),hl
         call LEX_NEXT_TOKEN       ; consume the size literal, fetch next
         ld a,(TOK_TYPE)
         cp TOK_RPAREN
         jr z,.have_rparen
-        ld a,37
-        jp COMPILE_RAISE_ERROR
+        jp ERR_DIM_EXPECTED_SEP
 .have_rparen:
         call LEX_NEXT_TOKEN       ; consume ')'
-        ld hl,(ARRSYM_FIND_NAME_PTR)
-        ld a,(ARRSYM_FIND_NAME_LEN)
+        ld hl,(STMT_IDENT_NAME_PTR)   ; the safe copy (see .have_ident)
+        ld a,(STMT_IDENT_NAME_LEN)
         ld b,a
         call ARRSYM_FIND_OR_CREATE
+        ; R10.7: DIM now emits real bytecode (OP_DIM), unlike the old
+        ; fixed-pool design where DIM did zero runtime work. A holds
+        ; the new array's own index (ARRSYM_FIND_OR_CREATE's own
+        ; return contract, updated above) -- parked on the stack BEFORE
+        ; reading COMPILE_ERROR_CODE below (real bug caught here: an
+        ; earlier version read COMPILE_ERROR_CODE into A first, silently
+        ; clobbering the real index with 0 before it was ever saved --
+        ; every array after the first one then compiled with index 0).
+        push af
+        ld a,(COMPILE_ERROR_CODE)
+        or a
+        jr z,.dim_emit
+        pop af                    ; balance the stack on every exit path
+        ret                        ; already DIM'd / table full -- no
+                                     ; bytecode to emit
+.dim_emit:
+        call EMIT_OP_DIM
+        pop af
+        ld de,(ARR_SIZE_TMP)      ; DE, not HL -- EMIT_BYTE destroys HL
+                                     ; (real bug caught here: an earlier
+                                     ; version used HL and had the high
+                                     ; byte's own `ld a,h` read EMIT_
+                                     ; PTR's own just-advanced value
+                                     ; instead of the real size)
+        jp EMIT_IDX_COUNT         ; array index + count, low/high byte
+
+; COMPILE_DIM_STR -- DIM A$(n[,w]). Mirrors COMPILE_DIM exactly, plus an
+; optional comma-width argument -- real, stock Sinclair BASIC syntax
+; (DIM A$(n,w) declares n strings of w characters each on a real
+; Spectrum, see docs/v2/R10_7_ARRAY_ARCHITECTURE_AUDIT.md Part 2 item 2
+; for why this syntax was chosen over inventing a new one). No width
+; given defaults to STRARR_DEFAULT_WIDTH. Entry: TOK_TYPE is TOK_STR_
+; IDENT (the array name, not yet consumed).
+STRARR_DEFAULT_WIDTH: equ 16  ; [len:1][content:15] -- a deliberately
+                                ; modest default (not the scalar STRTAB's
+                                ; 31-byte cap): enough for a short label/
+                                ; name, cheap enough that DIM A$(n) alone
+                                ; doesn't silently commit n*31 bytes of
+                                ; arena the program never asked for
+COMPILE_DIM_STR:
+        ; R10.7 source-staging-architecture change: see COMPILE_DIM's own
+        ; ".have_ident" comment -- same bug, same fix (this routine has
+        ; even more intervening LEX_NEXT_TOKEN calls than COMPILE_DIM,
+        ; since it also parses an optional comma-width argument).
+        call STASH_IDENT_NAME
+        call LEX_NEXT_TOKEN       ; consume the array name, fetch next
+        ld a,(TOK_TYPE)
+        cp TOK_LPAREN
+        jr z,.have_lparen
+        ld a,33
+        jp COMPILE_RAISE_ERROR
+.have_lparen:
+        call LEX_NEXT_TOKEN       ; consume '(', fetch the size literal
+        ld a,(TOK_TYPE)
+        cp TOK_NUMBER
+        jr z,.have_size
+        jp ERR_DIM_EXPECTED_NUMBER
+.have_size:
+        ld hl,(TOK_VAL)
+        ld a,h
+        or l
+        jr nz,.size_nonzero
+        ld a,35
+        jp COMPILE_RAISE_ERROR
+.size_nonzero:
+        ld (STRARR_SIZE_TMP),hl
+        ld a,STRARR_DEFAULT_WIDTH
+        ld (STRARR_WIDTH_TMP),a
+        call LEX_NEXT_TOKEN       ; consume the size literal, fetch next
+        ld a,(TOK_TYPE)
+        cp TOK_COMMA
+        jr z,.have_comma
+        cp TOK_RPAREN
+        jr z,.have_rparen
+        jr ERR_DIM_EXPECTED_SEP
+.have_comma:
+        call LEX_NEXT_TOKEN       ; consume ',', fetch the width literal
+        ld a,(TOK_TYPE)
+        cp TOK_NUMBER
+        jr z,.have_width
+        jr ERR_DIM_EXPECTED_NUMBER
+.have_width:
+        ld hl,(TOK_VAL)
+        ld a,h
+        or a
+        jr nz,.width_range_err    ; width must fit one byte
+        ld a,l
+        cp 2
+        jr nc,.width_ok           ; a width<2 record has no room for any
+                                     ; content at all (length byte only)
+.width_range_err:
+        jr ERR_DIM_EXPECTED_NUMBER
+.width_ok:
+        ld (STRARR_WIDTH_TMP),a
+        call LEX_NEXT_TOKEN        ; consume the width literal, fetch next
+        ld a,(TOK_TYPE)
+        cp TOK_RPAREN
+        jr z,.have_rparen
+        jr ERR_DIM_EXPECTED_SEP
+.have_rparen:
+        call LEX_NEXT_TOKEN        ; consume ')'
+        ld hl,(STMT_IDENT_NAME_PTR)   ; the safe copy (see this routine's
+        ld a,(STMT_IDENT_NAME_LEN)    ; own top-of-routine comment)
+        ld b,a
+        call STRARRSYM_FIND_OR_CREATE
+        ; A holds the new array's own index (same "park it on the stack
+        ; before reading COMPILE_ERROR_CODE" fix COMPILE_DIM's own header
+        ; already documents the real bug for)
+        push af
+        ld a,(COMPILE_ERROR_CODE)
+        or a
+        jr z,.dim_emit
+        pop af
         ret
+.dim_emit:
+        call EMIT_OP_DIM_STR
+        pop af
+        ld de,(STRARR_SIZE_TMP)   ; DE, not HL -- EMIT_BYTE destroys HL
+        call EMIT_IDX_COUNT       ; array index + count, low/high byte
+        ld a,(STRARR_WIDTH_TMP)
+        jp EMIT_BYTE              ; width
+
+; EMIT_IDX_COUNT — shared [index:1][count_lo:1][count_hi:1] bytecode-
+; operand emit, the common tail of both COMPILE_DIM's and COMPILE_DIM_
+; STR's own .dim_emit (COMPILE_DIM_STR emits one further width byte of
+; its own afterward). Input: A = array index, DE = declared count.
+EMIT_IDX_COUNT:
+        call EMIT_BYTE
+        ld a,e
+        call EMIT_BYTE
+        ld a,d
+        jp EMIT_BYTE
+
+; Shared one-error-code stubs -- each of these exact "ld a,N / jp
+; COMPILE_RAISE_ERROR" pairs was duplicated 3-4 times across COMPILE_
+; DIM/COMPILE_DIM_STR/COMPILE_ARR_ASSIGN_COMMON (identical literal
+; error code, identical raise call); factored out during the Dynamic
+; Data Phase 2 HOME-budget shrink pass.
+ERR_DIM_EXPECTED_NUMBER: ld a,34 : jp COMPILE_RAISE_ERROR
+ERR_DIM_EXPECTED_SEP:    ld a,37 : jp COMPILE_RAISE_ERROR
+ERR_EXPECTED_ASSIGN:     ld a,2  : jp COMPILE_RAISE_ERROR
 
 ; COMPILE_ARRAY_ASSIGN — entry: STMT_IDENT_NAME_PTR/LEN describe the
 ; array name (already consumed); TOK_TYPE is already TOK_LPAREN (already
@@ -2418,33 +2812,45 @@ COMPILE_ARRAY_ASSIGN:
         ld a,42
         jp COMPILE_RAISE_ERROR
 .found:
-        ; BUG FOUND (real hardware, R8.5 Group 4), TWO layers deep:
-        ; (1) both sub-expressions compiled below can contain their OWN
-        ; array reads (e.g. "B(0)=A(1)+A(0)") -- COMPILE_FACTOR's own
-        ; .arr_read branch reuses this SAME CARR_INDEX/CARR_SIZE pair,
-        ; silently overwriting this outer assignment's own target before
-        ; EMIT_OP_ARR_STORE below got to use it. (2) A first attempt fixed
-        ; that by parking the target in BC across EACH COMPILE_EXPR call
-        ; separately (push immediately before, pop immediately after) --
-        ; but LEX_NEXT_TOKEN (called to consume ')' and '=' BETWEEN the two
-        ; calls) turned out to ALSO destroy BC (it scans the next token via
-        ; LEX_CLASSIFY_KEYWORD, which uses B/C as its own table-scan
-        ; counters) -- so the SECOND push captured already-clobbered
-        ; garbage, not the real target (caught via a real ZEsarUX run:
-        ; B(0)=A(1)+A(0) wrote 30 into A(0) instead of B(0); single-
-        ; stepping showed BC=0000, not 0005, already corrupted at the
-        ; second `push bc`, before COMPILE_EXPR for the value even ran).
-        ; Real fix: ONE push spanning the ENTIRE rest of this routine
-        ; (every LEX_NEXT_TOKEN and both COMPILE_EXPR calls), with exactly
-        ; ONE pop, on EVERY exit path, right before the single point BC is
-        ; actually used -- the same "balance every exit path" discipline
-        ; COMPILE_IF_BLOCK's own header already documents, now proven to
-        ; matter even when no further nested recursion is directly visible
-        ; at the call site.
         ld b,a
-        ld a,(ARR_SIZE_TMP)
-        ld c,a
-        push bc
+        ld de,(ARR_SIZE_TMP)      ; R10.7 -- widened to 2 bytes (was in C)
+        xor a
+        ld (COMPILE_ARR_ASSIGN_IS_STR),a
+        jr COMPILE_ARR_ASSIGN_COMMON
+
+; COMPILE_ARR_ASSIGN_COMMON — shared array-assignment skeleton for both
+; numeric (A(expr)=expr) and string (A$(expr)=str_expr) targets,
+; factored out of COMPILE_ARRAY_ASSIGN/COMPILE_STRARR_ASSIGN during the
+; Dynamic Data Phase 2 HOME-budget shrink pass (identical skeleton,
+; differing only in which value-expression compiler and which opcode get
+; emitted -- selected via COMPILE_ARR_ASSIGN_IS_STR, set by the caller).
+; Input: B = array index, DE = declared element count, TOK_TYPE is
+; already TOK_LPAREN (not yet consumed).
+;
+; BUG FOUND (real hardware, R8.5 Group 4), TWO layers deep: (1) both
+; sub-expressions compiled below can contain their OWN array reads
+; (e.g. "B(0)=A(1)+A(0)") -- COMPILE_FACTOR's own .arr_read branch
+; reuses this SAME CARR_INDEX/CARR_SIZE pair, silently overwriting this
+; outer assignment's own target before EMIT_OP_ARR_STORE below got to
+; use it. (2) A first attempt fixed that by parking the target in BC
+; across EACH COMPILE_EXPR call separately (push immediately before,
+; pop immediately after) -- but LEX_NEXT_TOKEN (called to consume ')'
+; and '=' BETWEEN the two calls) turned out to ALSO destroy BC (it
+; scans the next token via LEX_CLASSIFY_KEYWORD, which uses B/C as its
+; own table-scan counters) -- so the SECOND push captured already-
+; clobbered garbage, not the real target (caught via a real ZEsarUX
+; run: B(0)=A(1)+A(0) wrote 30 into A(0) instead of B(0); single-
+; stepping showed BC=0000, not 0005, already corrupted at the second
+; `push bc`, before COMPILE_EXPR for the value even ran). Real fix: ONE
+; push spanning the ENTIRE rest of this routine (every LEX_NEXT_TOKEN
+; and both value-expr compiles), with exactly ONE pop, on EVERY exit
+; path, right before the single point BC is actually used -- the same
+; "balance every exit path" discipline COMPILE_IF_BLOCK's own header
+; already documents, now proven to matter even when no further nested
+; recursion is directly visible at the call site.
+COMPILE_ARR_ASSIGN_COMMON:
+        push bc                    ; B = array index (C unused/don't-care)
+        push de                    ; D/E = declared size, low/high
         call LEX_NEXT_TOKEN        ; consume '(', fetch the index expr's
                                      ; first token
         call COMPILE_EXPR
@@ -2455,33 +2861,41 @@ COMPILE_ARRAY_ASSIGN:
         cp TOK_RPAREN
         jr z,.have_rparen
         ld a,41
-        ld (COMPILE_ERROR_CODE),a
-        jr .err_pop
+        jr .raise_err
 .have_rparen:
         call LEX_NEXT_TOKEN         ; consume ')'
         ld a,(TOK_TYPE)
         cp TOK_ASSIGN
         jr z,.have_assign
         ld a,2
-        ld (COMPILE_ERROR_CODE),a
-        jr .err_pop
+        jr .raise_err
 .have_assign:
         call LEX_NEXT_TOKEN          ; consume '='
+        ld a,(COMPILE_ARR_ASSIGN_IS_STR)
+        or a
+        jr nz,.str_value
         call COMPILE_EXPR             ; value expr -- pushed ON TOP of the
-                                        ; already-compiled index expr, the
-                                        ; order OP_ARR_STORE's own runtime
-                                        ; handler expects (pops value first)
+        jr .value_done                 ; already-compiled index expr, the
+.str_value:                             ; order OP_ARR_STORE/OP_STRARR_
+        call COMPILE_STR_EXPR           ; STORE's own runtime handler
+.value_done:                             ; expects (pops value first)
         ld a,(COMPILE_ERROR_CODE)
         or a
         jr nz,.err_pop
+        pop de
         pop bc
+        ld a,(COMPILE_ARR_ASSIGN_IS_STR)
+        or a
+        jr nz,.emit_str
         call EMIT_OP_ARR_STORE
-        ld a,b
-        call EMIT_BYTE
-        ld a,c
-        call EMIT_BYTE
-        ret
+        jp EMIT_ARR_OPERAND
+.emit_str:
+        call EMIT_OP_STRARR_STORE
+        jp EMIT_ARR_OPERAND
+.raise_err:
+        ld (COMPILE_ERROR_CODE),a
 .err_pop:
+        pop de
         pop bc
         ret
 
@@ -2523,8 +2937,8 @@ COMPILE_DIMN:
         ld a,47                     ; not a DIM'd array (same code --
         jp COMPILE_RAISE_ERROR       ; same real failure either way)
 .have_size:
-        ld a,(ARR_SIZE_TMP)
-        ld (DIMN_SIZE_TMP),a
+        ld hl,(ARR_SIZE_TMP)      ; R10.7 -- widened to 2 bytes (was 1)
+        ld (DIMN_SIZE_TMP),hl
         call LEX_NEXT_TOKEN         ; consume the array name
         ld a,(TOK_TYPE)
         cp TOK_RPAREN
@@ -2533,180 +2947,20 @@ COMPILE_DIMN:
         jp COMPILE_RAISE_ERROR
 .have_rparen:
         call LEX_NEXT_TOKEN           ; consume ')'
-        call EMIT_BYTE_OP_PUSH_I8
-        ld a,(DIMN_SIZE_TMP)
+        ; R10.7: always PUSH_I16, not PUSH_I8 -- a DIM'd size of 128+
+        ; (routine, now that the old 16-element ceiling is gone) would
+        ; sign-extend through PUSH_I8 (OP_PUSH_I8's own real behavior,
+        ; confirmed via a real ZEsarUX run: DIMN(A) after DIM A(200)
+        ; came back as -56, not 200) -- same fix COMPILE_FACTOR's own
+        ; numeric-literal path already applies for values 128-255.
+        call EMIT_BYTE_OP_PUSH_I16
+        ld de,(DIMN_SIZE_TMP)     ; DE, not HL -- EMIT_BYTE destroys HL
+        ld a,e
+        call EMIT_BYTE
+        ld a,d
         jp EMIT_BYTE
 
 DIMN_KEYWORD_TEXT: db "DIMN"
-
-; ARRSYM_ENTRY_ADDR — input: C = index. Output: HL = ARRSYMTAB_BASE +
-; index*ARRSYM_REC_LEN(10).
-ARRSYM_ENTRY_ADDR:
-        ld l,c
-        ld h,0
-        add hl,hl                ; *2
-        ld d,h
-        ld e,l                    ; DE = *2
-        add hl,hl                 ; *4
-        add hl,hl                 ; *8
-        add hl,de                  ; *8 + *2 = *10
-        ld de,ARRSYMTAB_BASE
-        add hl,de
-        ret
-
-; ARRSYM_FIND_OR_CREATE — input: HL = name ptr, B = name len; ARR_SIZE_TMP
-; = the just-validated DIM size. Output: COMPILE_ERROR_CODE set (38 =
-; already DIM'd, 39 = table full) on failure; on success, a new entry
-; exists with this name and size. Destroys: AF, BC, DE, HL.
-ARRSYM_FIND_OR_CREATE:
-        ld (ARRSYM_FIND_NAME_PTR),hl
-        ld a,b
-        ld (ARRSYM_FIND_NAME_LEN),a
-        ld c,0
-.scan_loop:
-        ld a,c
-        push hl
-        ld hl,ARRSYM_COUNT
-        cp (hl)
-        pop hl
-        jr z,.not_found
-        push bc
-        call ARRSYM_ENTRY_ADDR
-        ld a,(hl)
-        pop bc
-        cp b
-        jr nz,.next
-        push hl
-        inc hl
-        ld de,(ARRSYM_FIND_NAME_PTR)
-        ld a,b
-        or a                     ; zero-length name -- shouldn't happen (the
-        jr nz,.have_len            ; lexer never produces one), but balance
-        pop hl                      ; the stack properly rather than relying
-        jr .already                  ; on "shouldn't happen" (same discipline
-                                       ; CSYM_FIND_OR_CREATE's own comment
-                                       ; explains)
-.have_len:
-        push bc
-.cmp_loop:
-        ld a,(de)
-        cp (hl)
-        jr nz,.cmp_fail
-        inc hl
-        inc de
-        djnz .cmp_loop
-        pop bc
-        pop hl
-        jr .already
-.cmp_fail:
-        pop bc
-        pop hl
-.next:
-        inc c
-        jr .scan_loop
-.already:
-        ld a,38
-        jp COMPILE_RAISE_ERROR
-.not_found:
-        ld a,(ARRSYM_COUNT)
-        cp ARRSYMTAB_MAX_ENTRIES
-        jr nz,.create
-        ld a,39
-        jp COMPILE_RAISE_ERROR
-.create:
-        ld a,(ARRSYM_COUNT)
-        ld c,a
-        call ARRSYM_ENTRY_ADDR
-        ld a,(ARRSYM_FIND_NAME_LEN)
-        ld (hl),a
-        inc hl
-        ld de,(ARRSYM_FIND_NAME_PTR)
-        ld b,a
-        or a
-        jr z,.write_size
-.copy_loop:
-        ld a,(de)
-        ld (hl),a
-        inc hl
-        inc de
-        dec b
-        jr nz,.copy_loop
-.write_size:
-        ld a,(ARRSYM_COUNT)
-        ld c,a
-        call ARRSYM_ENTRY_ADDR
-        ld de,9
-        add hl,de
-        ld a,(ARR_SIZE_TMP)
-        ld (hl),a
-        ld a,(ARRSYM_COUNT)
-        inc a
-        ld (ARRSYM_COUNT),a
-        ret
-
-; ARRSYM_LOOKUP — input: HL = name ptr, B = name len. Output: carry clear
-; + A = array index + ARR_SIZE_TMP = that array's declared size, if a
-; DIM'd array with this exact name exists; carry set (A/ARR_SIZE_TMP
-; unchanged) otherwise. Read-only -- never creates an entry (DIM is the
-; only writer). Destroys: AF, BC, DE, HL.
-ARRSYM_LOOKUP:
-        ld (ARRSYM_FIND_NAME_PTR),hl
-        ld a,b
-        ld (ARRSYM_FIND_NAME_LEN),a
-        ld c,0
-.scan_loop:
-        ld a,c
-        push hl
-        ld hl,ARRSYM_COUNT
-        cp (hl)
-        pop hl
-        jr z,.not_found
-        push bc
-        call ARRSYM_ENTRY_ADDR
-        ld a,(hl)
-        pop bc
-        cp b
-        jr nz,.next
-        push hl
-        inc hl
-        ld de,(ARRSYM_FIND_NAME_PTR)
-        ld a,b
-        or a
-        jr nz,.have_len
-        pop hl
-        jr .found
-.have_len:
-        push bc
-.cmp_loop:
-        ld a,(de)
-        cp (hl)
-        jr nz,.cmp_fail
-        inc hl
-        inc de
-        djnz .cmp_loop
-        pop bc
-        pop hl
-        jr .found
-.cmp_fail:
-        pop bc
-        pop hl
-.next:
-        inc c
-        jr .scan_loop
-.found:
-        push bc
-        call ARRSYM_ENTRY_ADDR
-        ld de,9
-        add hl,de
-        ld a,(hl)
-        ld (ARR_SIZE_TMP),a
-        pop bc
-        ld a,c
-        or a
-        ret
-.not_found:
-        scf
-        ret
 
 ; ===========================================================================
 ; R8.5 Group 2 (closed out late) -- INPUT.
@@ -2728,9 +2982,6 @@ COMPILE_INPUT:
 .numeric:
         ld hl,(TOK_NAME)
         ld a,(TOK_LEN)
-        cp 9
-        jr c,.num_len_ok
-        ld a,8
 .num_len_ok:
         ld b,a
         call CSYM_FIND_OR_CREATE
@@ -2738,14 +2989,10 @@ COMPILE_INPUT:
         call LEX_NEXT_TOKEN        ; consume the target identifier
         call EMIT_OP_INPUT_NUM
         ld a,(CINPUT_INDEX_TMP)
-        call EMIT_BYTE
-        ret
+        jp EMIT_BYTE
 .string:
         ld hl,(TOK_NAME)
         ld a,(TOK_LEN)
-        cp 9
-        jr c,.str_len_ok
-        ld a,8
 .str_len_ok:
         ld b,a
         call STRSYM_FIND_OR_CREATE
@@ -2753,8 +3000,7 @@ COMPILE_INPUT:
         call LEX_NEXT_TOKEN        ; consume the target identifier
         call EMIT_OP_INPUT_STR
         ld a,(CINPUT_INDEX_TMP)
-        call EMIT_BYTE
-        ret
+        jp EMIT_BYTE
 
 ; ===========================================================================
 ; STRING EXPRESSION/STATEMENT COMPILERS (R5 addition)
@@ -2789,8 +3035,7 @@ COMPILE_STR_FACTOR:
         cp TOK_STR_IDENT
         jr z,.ident
         ld a,3                   ; unexpected character (factor could not
-        ld (COMPILE_ERROR_CODE),a ; start a string expression)
-        ret
+        jp COMPILE_RAISE_ERROR
 .literal:
         ld a,(TOK_LEN)
         cp 32
@@ -2830,8 +3075,7 @@ COMPILE_STR_FACTOR:
         inc de
         djnz .lit_copy_loop
 .lit_no_content:
-        call LEX_NEXT_TOKEN
-        ret
+        jp LEX_NEXT_TOKEN
 .ident:
         ; R8.5 Group 6 (string-result functions) -- mirrors COMPILE_
         ; FACTOR.ident's own identical check (see its header for the
@@ -2862,13 +3106,28 @@ COMPILE_STR_FACTOR:
 .not_str_result:
         pop af
 .plain_str_ident:
+        ; Dynamic Data Phase 2 -- a string-array NAME used as a value is
+        ; a string-array read, "STR_IDENT(expr)". Checked by NAME lookup
+        ; (STRARRSYMTAB is a separate lexical namespace from STRSYMTAB),
+        ; same precedent as COMPILE_FACTOR.ident's own ARRSYM_LOOKUP
+        ; check before its plain-scalar fallback.
         ld hl,(TOK_NAME)
         ld a,(TOK_LEN)
-        cp 9
-        jr c,.len_ok
-        ld a,8
-.len_ok:
+.plen_ok:
         ld b,a
+        push bc                   ; preserve the clamped length across
+                                   ; STRARRSYM_LOOKUP (destroys BC) so the
+                                   ; fallback path below doesn't need to
+                                   ; recompute it (HOME-budget shrink pass,
+                                   ; D7, docs/v2/R10_7_DORMANT_ROM_
+                                   ; CONSOLIDATION_AUDIT.md) -- only HL
+                                   ; needs reloading, a genuine second
+                                   ; input to STRSYM_FIND_OR_CREATE
+        call STRARRSYM_LOOKUP
+        pop bc
+        jr nc,.strarr_read
+        ld hl,(TOK_NAME)
+.len_ok:
         call STRSYM_FIND_OR_CREATE
         ld (CSTR_IDENT_INDEX_TMP),a
         call EMIT_BYTE_OP_PUSH_I16
@@ -2876,33 +3135,79 @@ COMPILE_STR_FACTOR:
         call EMIT_BYTE
         xor a
         call EMIT_BYTE            ; high byte: always 0, indices are small
-        call LEX_NEXT_TOKEN
-        ret
+        jp LEX_NEXT_TOKEN
+.strarr_read:
+        ; thin wrapper around the shared COMPILE_ARR_READ_COMMON skeleton
+        ; (see its own header) -- flag set to select the string opcode.
+        push af                    ; A = array index, preserve across the
+        ld a,1                       ; flag-set below
+        ld (COMPILE_ARR_ASSIGN_IS_STR),a
+        pop af
+        ld hl,(STRARR_SIZE_TMP)
+        jp COMPILE_ARR_READ_COMMON
 
-; COMPILE_STR_ASSIGN — STR_IDENT '=' str_expr
-COMPILE_STR_ASSIGN:
-        ld hl,(TOK_NAME)
-        ld a,(TOK_LEN)
-        cp 9
-        jr c,.len_ok
-        ld a,8
-.len_ok:
+; COMPILE_STR_IDENT_STMT — entry: TOK_TYPE is TOK_STR_IDENT (the
+; statement-starting string identifier, not yet consumed). Same one-
+; token lookahead .ident_stmt already uses to disambiguate a numeric
+; array assignment from a plain scalar one (Dynamic Data Phase 2,
+; mirrored here for string targets): "STR_IDENT(" is always a string-
+; array assignment. A separate CALLed routine (not inlined into .str_
+; ident_stmt itself) so the two tail-jumps below return to the
+; DISPATCHER's own call site, not to whichever of THIS routine's own
+; callers happened to be on the stack -- same reasoning COMPILE_ASSIGN_
+; CONTINUED's own existence already documents for the numeric case.
+COMPILE_STR_IDENT_STMT:
+        call STASH_IDENT_AND_PEEK
+        cp TOK_LPAREN
+        jr z,COMPILE_STRARR_ASSIGN
+        jr COMPILE_STR_ASSIGN_CONTINUED
+
+; COMPILE_STR_ASSIGN_CONTINUED — entry: STMT_IDENT_NAME_PTR/LEN describe
+; the string-variable assignment target (already consumed by the
+; dispatcher's own one-token lookahead, Dynamic Data Phase 2 addition --
+; see .str_ident_stmt below); TOK_TYPE is already the token immediately
+; after it (typically TOK_ASSIGN). Same split COMPILE_ASSIGN_CONTINUED
+; already uses for numeric targets, needed here for the same reason:
+; disambiguating a plain string assignment from a string-ARRAY assignment
+; needs to see whether '(' follows the name, which only the dispatcher's
+; existing lookahead already has in hand.
+COMPILE_STR_ASSIGN_CONTINUED:
+        ld hl,(STMT_IDENT_NAME_PTR)
+        ld a,(STMT_IDENT_NAME_LEN)
         ld b,a
         call STRSYM_FIND_OR_CREATE
         ld (CSTR_ASSIGN_TARGET_TMP),a
-        call LEX_NEXT_TOKEN       ; consume the string identifier
         ld a,(TOK_TYPE)
         cp TOK_ASSIGN
         jr z,.have_assign
-        ld a,2
-        jp COMPILE_RAISE_ERROR
+        jp ERR_EXPECTED_ASSIGN
 .have_assign:
         call LEX_NEXT_TOKEN       ; consume '='
         call COMPILE_STR_EXPR
         call EMIT_OP_STORE_STR_VAR
         ld a,(CSTR_ASSIGN_TARGET_TMP)
-        call EMIT_BYTE
-        ret
+        jp EMIT_BYTE
+
+; COMPILE_STRARR_ASSIGN — Dynamic Data Phase 2: A$(expr) = str_expr.
+; Thin wrapper around the shared COMPILE_ARR_ASSIGN_COMMON skeleton (see
+; its own header) -- STRARRSYM_LOOKUP in place of ARRSYM_LOOKUP, flag set
+; to select the string value-compiler/opcode. Entry: STMT_IDENT_NAME_
+; PTR/LEN describe the array name (already consumed); TOK_TYPE is
+; already TOK_LPAREN.
+COMPILE_STRARR_ASSIGN:
+        ld hl,(STMT_IDENT_NAME_PTR)
+        ld a,(STMT_IDENT_NAME_LEN)
+        ld b,a
+        call STRARRSYM_LOOKUP
+        jr nc,.found
+        ld a,42
+        jp COMPILE_RAISE_ERROR
+.found:
+        ld b,a
+        ld de,(STRARR_SIZE_TMP)
+        ld a,1
+        ld (COMPILE_ARR_ASSIGN_IS_STR),a
+        jp COMPILE_ARR_ASSIGN_COMMON
 
 ; ===========================================================================
 ; LABEL TABLE + FORWARD-REFERENCE FIXUPS (R3 addition)
@@ -2914,254 +3219,6 @@ COMPILE_STR_ASSIGN:
 ; already broke).
 ; ===========================================================================
 
-; LABEL_ENTRY_ADDR — input: C = index; output: HL = LABELTAB_BASE + index*11.
-LABEL_ENTRY_ADDR:
-        ld l,c
-        ld h,0
-        ld d,h
-        ld e,l                  ; DE = index
-        add hl,hl               ; *2
-        add hl,hl               ; *4
-        add hl,hl               ; *8
-        add hl,de                ; *9
-        add hl,de                ; *10
-        add hl,de                ; *11
-        ld de,LABELTAB_BASE
-        add hl,de
-        ret
-
-; FIXUP_ENTRY_ADDR — input: C = index; output: HL = FIXUPTAB_BASE + index*11.
-FIXUP_ENTRY_ADDR:
-        ld l,c
-        ld h,0
-        ld d,h
-        ld e,l
-        add hl,hl
-        add hl,hl
-        add hl,hl
-        add hl,de
-        add hl,de
-        add hl,de
-        ld de,FIXUPTAB_BASE
-        add hl,de
-        ret
-
-; LABEL_DEFINE — input: HL = name pointer, B = name length. Records the
-; CURRENT EMIT_PTR, as an offset relative to VM_CODE_BASE, under this name.
-LABEL_DEFINE:
-        ld (LABEL_FIND_NAME_PTR),hl
-        ld a,b
-        ld (LABEL_FIND_NAME_LEN),a
-        ld a,(LABEL_COUNT)
-        cp LABELTAB_MAX_ENTRIES
-        jr nz,.have_room
-        ld a,5                  ; label table full
-        jp COMPILE_RAISE_ERROR
-.have_room:
-        ld c,a
-        call LABEL_ENTRY_ADDR   ; HL -> new entry
-        ld a,(LABEL_FIND_NAME_LEN)
-        ld (hl),a
-        inc hl
-        ld b,a
-        ld de,(LABEL_FIND_NAME_PTR)
-        or a
-        jr z,.name_written
-.copy_loop:
-        ld a,(de)
-        ld (hl),a
-        inc hl
-        inc de
-        dec b
-        jr nz,.copy_loop
-.name_written:
-        ; recompute the entry address fresh rather than trust HL's position
-        ; after the variable-length copy loop above
-        ld a,(LABEL_COUNT)
-        ld c,a
-        call LABEL_ENTRY_ADDR
-        ld de,9
-        add hl,de                ; -> offset field (past name_len + 8 name bytes)
-        push hl                   ; save the offset field's address
-        call COMPILE_RELATIVE_OFFSET  ; HL = relative offset
-        ex de,hl                  ; DE = relative offset
-        pop hl                    ; HL = offset field's address (restored)
-        ld (hl),e
-        inc hl
-        ld (hl),d
-        ld a,(LABEL_COUNT)
-        inc a
-        ld (LABEL_COUNT),a
-        ret
-
-; LABEL_LOOKUP — input: HL = name pointer, B = name length. Output: carry
-; SET if found (LABEL_LOOKUP_RESULT holds the resolved relative offset),
-; carry CLEAR if not found (not yet defined — caller records a fixup).
-LABEL_LOOKUP:
-        ld (LABEL_FIND_NAME_PTR),hl
-        ld a,b
-        ld (LABEL_FIND_NAME_LEN),a
-        ld c,0
-.scan_loop:
-        ld a,c
-        push hl
-        ld hl,LABEL_COUNT
-        cp (hl)
-        pop hl
-        jr z,.not_found
-        push bc
-        call LABEL_ENTRY_ADDR
-        ld a,(hl)                ; stored name_len
-        pop bc
-        cp b
-        jr nz,.next
-        push hl
-        inc hl
-        ld de,(LABEL_FIND_NAME_PTR)
-        ld a,b
-        or a
-        jr nz,.have_len
-        pop hl
-        jr .found_at_c
-.have_len:
-        push bc
-.cmp_loop:
-        ld a,(de)
-        cp (hl)
-        jr nz,.cmp_fail
-        inc hl
-        inc de
-        dec b
-        jr nz,.cmp_loop
-        pop bc
-        pop hl
-        jr .found_at_c
-.cmp_fail:
-        pop bc
-        pop hl
-        jr .next
-.next:
-        inc c
-        jr .scan_loop
-.found_at_c:
-        ; recompute the entry address fresh, then read its offset field
-        call LABEL_ENTRY_ADDR
-        ld de,9
-        add hl,de
-        ld e,(hl)
-        inc hl
-        ld d,(hl)
-        ld (LABEL_LOOKUP_RESULT),de
-        scf
-        ret
-.not_found:
-        or a
-        ret
-
-; FIXUP_RECORD — input: HL = patch address (absolute RAM address), DE =
-; label name pointer, B = label name length. Records a forward reference,
-; resolved once by RESOLVE_ALL_FIXUPS at the end of compilation.
-FIXUP_RECORD:
-        ld (FIXUP_PATCH_TMP),hl
-        ld (FIXUP_NAME_PTR_TMP),de
-        ld a,b
-        ld (FIXUP_NAME_LEN_TMP),a
-        ld a,(FIXUP_COUNT)
-        cp FIXUPTAB_MAX_ENTRIES
-        jr nz,.have_room
-        ld a,6                  ; fixup table full
-        jp COMPILE_RAISE_ERROR
-.have_room:
-        ld c,a
-        call FIXUP_ENTRY_ADDR   ; HL -> new entry
-        ld de,(FIXUP_PATCH_TMP)
-        ld (hl),e
-        inc hl
-        ld (hl),d
-        inc hl
-        ld a,(FIXUP_NAME_LEN_TMP)
-        ld (hl),a
-        inc hl
-        ld b,a
-        ld de,(FIXUP_NAME_PTR_TMP)
-        or a
-        jr z,.done
-.copy_loop:
-        ld a,(de)
-        ld (hl),a
-        inc hl
-        inc de
-        dec b
-        jr nz,.copy_loop
-.done:
-        ld a,(FIXUP_COUNT)
-        inc a
-        ld (FIXUP_COUNT),a
-        ret
-
-; RESOLVE_ALL_FIXUPS — called once, at the end of COMPILE_PROGRAM. Patches
-; every outstanding forward reference now that every label has been
-; defined. Sets COMPILE_ERROR_CODE=7 (undefined label) and returns early
-; if any fixup's label was never defined anywhere in the program.
-RESOLVE_ALL_FIXUPS:
-        ld c,0
-.loop:
-        ld a,c
-        ld hl,FIXUP_COUNT
-        cp (hl)
-        ret z
-        ld (RESOLVE_FIXUP_INDEX),a  ; save the OUTER loop's own fixup
-                                     ; index in memory before calling
-                                     ; LABEL_LOOKUP, which uses C as its
-                                     ; own internal scan-index scratch and
-                                     ; does not restore it — an earlier
-                                     ; version kept this index only in C
-                                     ; across that call, so a successful
-                                     ; lookup (which naturally leaves C
-                                     ; equal to whatever LABELTAB index it
-                                     ; matched, not the fixup index) sent
-                                     ; this loop into a bogus extra
-                                     ; iteration over garbage fixup-table
-                                     ; memory, producing a spurious
-                                     ; "undefined label" error even though
-                                     ; the real lookup had already
-                                     ; succeeded and patched correctly.
-                                     ; Root-caused by single-stepping the
-                                     ; actual instruction sequence on real
-                                     ; ZEsarUX hardware, not by inspection —
-                                     ; the bug was invisible without
-                                     ; watching C's value survive (or not)
-                                     ; across the call.
-        call FIXUP_ENTRY_ADDR   ; HL -> entry: [patch_lo][patch_hi][name_len][name...]
-        ld e,(hl)
-        inc hl
-        ld d,(hl)                ; DE = patch address
-        inc hl
-        ld a,(hl)                ; name_len
-        inc hl                    ; HL -> name bytes (LABEL_LOOKUP's own input)
-        ld b,a                    ; B = name length (LABEL_LOOKUP's own input)
-        ld (RESOLVE_PATCH_TMP),de
-        call LABEL_LOOKUP
-        jr nc,.undefined
-        ld de,(RESOLVE_PATCH_TMP)
-        ld hl,(LABEL_LOOKUP_RESULT)
-        ld a,l
-        ld (de),a
-        inc de
-        ld a,h
-        ld (de),a
-        ld a,(RESOLVE_FIXUP_INDEX)
-        inc a
-        ld c,a
-        jr .loop
-.undefined:
-        ld a,7
-        jp COMPILE_RAISE_ERROR
-
-; ===========================================================================
-; BRANCH STATEMENT COMPILERS (R3 addition: GOTO, IF...THEN GOTO)
-; ===========================================================================
-
 ; COMPILE_BRANCH_TARGET — shared by COMPILE_GOTO and COMPILE_IF. Input:
 ; HL = the branch opcode's placeholder patch address (from
 ; EMIT_PLACEHOLDER_16); current token must be TOK_IDENT (the label name).
@@ -3169,27 +3226,12 @@ RESOLVE_ALL_FIXUPS:
 ; reference), otherwise records a fixup for RESOLVE_ALL_FIXUPS to patch
 ; later (forward reference).
 COMPILE_BRANCH_TARGET:
-        ld (BRANCH_PATCH_TMP),hl
+        ex de,hl                 ; DE = the operand slot just emitted
         ld hl,(TOK_NAME)
         ld a,(TOK_LEN)
         ld b,a
-        call LABEL_LOOKUP
-        jr c,.resolved
-        ld hl,(BRANCH_PATCH_TMP)
-        ld de,(TOK_NAME)
-        ld a,(TOK_LEN)
-        ld b,a
-        call FIXUP_RECORD
-        call LEX_NEXT_TOKEN     ; consume the label identifier
-        ret
-.resolved:
-        ld hl,(BRANCH_PATCH_TMP)
-        ld de,(LABEL_LOOKUP_RESULT)
-        ld (hl),e
-        inc hl
-        ld (hl),d
-        call LEX_NEXT_TOKEN     ; consume the label identifier
-        ret
+        call LABEL_REF           ; defined: patched now; else threaded on the chain
+        jp LEX_NEXT_TOKEN ; consume the label identifier
 
 ; ===========================================================================
 ; PLATFORM INTEGRATION (R7 addition) — graphics/system command family.
@@ -3203,8 +3245,7 @@ COMPILE_BRANCH_TARGET:
 ; COMPILE_CLS — CLS (no arguments)
 COMPILE_CLS:
         call LEX_NEXT_TOKEN     ; consume CLS
-        call EMIT_OP_CLS
-        ret
+        jp EMIT_OP_CLS
 
 ; COMPILE_BORDER / COMPILE_INK / COMPILE_PAPER — KEYWORD <expr>, one
 ; numeric argument, identical shape, differing only in which opcode gets
@@ -3241,6 +3282,41 @@ COMPILE_PAPER:
         ld hl,EMIT_OP_PAPER
         jr COMPILE_1ARG_STMT
 
+; COMPILE_FLASH/BRIGHT/OVER/INVERSE — same 1-arg shape as COMPILE_INK/
+; PAPER above (R10.7 attribute setters, R10.25 class B).
+COMPILE_FLASH:
+        ld hl,EMIT_OP_FLASH
+        jr COMPILE_1ARG_STMT
+
+COMPILE_BRIGHT:
+        ld hl,EMIT_OP_BRIGHT
+        jr COMPILE_1ARG_STMT
+
+COMPILE_OVER:
+        ld hl,EMIT_OP_OVER
+        jr COMPILE_1ARG_STMT
+
+COMPILE_INVERSE:
+        ld hl,EMIT_OP_INVERSE
+        jr COMPILE_1ARG_STMT
+
+; COMPILE_TAB — TAB <expr>, one numeric argument (R10.7).
+COMPILE_TAB:
+        ld hl,EMIT_OP_TAB
+        jr COMPILE_1ARG_STMT
+
+; COMPILE_AT — AT <expr>,<expr>, same 2-arg comma shape as COMPILE_PLOT.
+COMPILE_AT:
+        call LEX_NEXT_TOKEN     ; consume AT
+        call COMPILE_EXPR       ; row -> VM operand stack
+        call COMPILE_EXPECT_COMMA_EXPR  ; col -> VM operand stack
+        jp EMIT_OP_AT
+
+; COMPILE_CLEAR — CLEAR, no arguments (R10.7).
+COMPILE_CLEAR:
+        call LEX_NEXT_TOKEN     ; consume CLEAR
+        jp EMIT_OP_CLEAR
+
 ; COMPILE_EXPECT_COMMA_EXPR — expects the current token to be ',',
 ; consumes it, then compiles the following expression (tail-calls
 ; COMPILE_EXPR, so its own `ret` returns straight to THIS routine's
@@ -3265,8 +3341,7 @@ COMPILE_PLOT:
         ld a,(COMPILE_ERROR_CODE)
         or a
         ret nz
-        call EMIT_OP_PLOT
-        ret
+        jp EMIT_OP_PLOT
 
 ; R8.5 Group 5's own resident MODE/ULAPLUS/PALETTE removed (product
 ; decision, following the same principle that moved SPRITE off resident
@@ -3316,8 +3391,7 @@ COMPILE_LINE:
 .have_comma2:
         call LEX_NEXT_TOKEN     ; consume ','
         call COMPILE_EXPR       ; y1
-        call EMIT_OP_LINE
-        ret
+        jp EMIT_OP_LINE
 
 ; COMPILE_BEEP — BEEP <duration>,<pitch>  (matches V1's own
 ; BASIC_STMT_BEEP argument order). "Expected comma" now reports code
@@ -3332,8 +3406,7 @@ COMPILE_BEEP:
         ld a,(COMPILE_ERROR_CODE)
         or a
         ret nz
-        call EMIT_OP_BEEP
-        ret
+        jp EMIT_OP_BEEP
 
 ; COMPILE_SOUND — SOUND <register>,<data>  (matches V1's own
 ; BASIC_STMT_SOUND argument order)
@@ -3344,8 +3417,7 @@ COMPILE_SOUND:
         ld a,(COMPILE_ERROR_CODE)
         or a
         ret nz
-        call EMIT_OP_SOUND
-        ret
+        jp EMIT_OP_SOUND
 
 ; COMPILE_POKE — POKE <address>,<value>  (matches V1's own
 ; BASIC_STMT_POKE argument order)
@@ -3356,8 +3428,7 @@ COMPILE_POKE:
         ld a,(COMPILE_ERROR_CODE)
         or a
         ret nz
-        call EMIT_OP_POKE
-        ret
+        jp EMIT_OP_POKE
 
 ; COMPILE_PAUSE — PAUSE <n>  (one argument, same shape as BORDER/INK/
 ; PAPER above)
@@ -3388,12 +3459,10 @@ COMPILE_PRINT:
         ld a,(COMPILE_ERROR_CODE)
         or a
         ret nz
-        call EMIT_OP_PRINT_NUM
-        ret
+        jp EMIT_OP_PRINT_NUM
 .str_arg:
         call COMPILE_STR_EXPR
-        call EMIT_OP_PRINT_STR
-        ret
+        jp EMIT_OP_PRINT_STR
 
 ; COMPILE_LPRINT -- printer-package ROM reconciliation: LPRINT is no
 ; longer a resident opcode. Its own real body (rom/exrom_printer.asm's
@@ -3447,8 +3516,7 @@ COMPILE_LPRINT:
         jr COMPILE_LPRINT_EMIT
 .not_loaded:
         ld a,32                  ; LPRINT used but the printer package
-        ld (COMPILE_ERROR_CODE),a  ; isn't loaded/registered
-        ret
+        jp COMPILE_RAISE_ERROR
 
 LPRINT_NUM_NAME: db "LPRINT",0
 LPRINT_NUM_NAME_LEN: equ $-LPRINT_NUM_NAME-1
@@ -3502,8 +3570,7 @@ COMPILE_GOTO:
         ld a,12                 ; expected a label name after GOTO
         jp COMPILE_RAISE_ERROR
 .have_target:
-        call COMPILE_BRANCH_TARGET
-        ret
+        jp COMPILE_BRANCH_TARGET
 
 ; COMPILE_IF — IF <expr> THEN GOTO <label>  (block IF/ENDIF is out of R3's
 ; scope, per the implementation plan's own staging)
@@ -3541,8 +3608,7 @@ COMPILE_IF:
         cp TOK_ASSIGN
         jr z,.str_eq
         ld a,3                   ; unexpected character (expected a string
-        ld (COMPILE_ERROR_CODE),a ; comparison operator)
-        ret
+        jp COMPILE_RAISE_ERROR
 .str_lt:
         call LEX_NEXT_TOKEN
         call COMPILE_STR_EXPR
@@ -3566,7 +3632,7 @@ COMPILE_IF:
         ld a,(TOK_TYPE)
         cp TOK_KW_GOTO
         jr z,.have_goto
-        jp COMPILE_IF_BLOCK      ; R8.5 Group 3 -- anything other than
+        jr COMPILE_IF_BLOCK      ; R8.5 Group 3 -- anything other than
                                     ; GOTO after THEN is the start of a
                                     ; block IF's own THEN-body (see
                                     ; COMPILE_IF_BLOCK's own header)
@@ -3642,8 +3708,6 @@ COMPILE_IF_BLOCK:
         jr z,.have_endif
         ld a,9                   ; expected ELSE or ENDIF
         ld (COMPILE_ERROR_CODE),a
-        pop hl
-        ret
 .err_pop1:
         pop hl
         ret
@@ -3682,8 +3746,6 @@ COMPILE_IF_BLOCK:
         jr z,.else_have_endif
         ld a,9
         ld (COMPILE_ERROR_CODE),a
-        pop hl
-        ret
 .err_pop2:
         pop hl
         ret
@@ -3695,8 +3757,7 @@ COMPILE_IF_BLOCK:
         ld (hl),e
         inc hl
         ld (hl),d
-        call LEX_NEXT_TOKEN                ; consume ENDIF
-        ret
+        jp LEX_NEXT_TOKEN ; consume ENDIF
 .have_endif:
         call COMPILE_RELATIVE_OFFSET
         ex de,hl
@@ -3706,8 +3767,7 @@ COMPILE_IF_BLOCK:
         ld (hl),e
         inc hl
         ld (hl),d
-        call LEX_NEXT_TOKEN             ; consume ENDIF
-        ret
+        jp LEX_NEXT_TOKEN ; consume ENDIF
 
 ; ===========================================================================
 ; LOOP STATEMENT COMPILERS (R3 addition: FOR/NEXT)
@@ -3725,27 +3785,16 @@ COMPILE_IF_BLOCK:
 ; COMPILE_FOR — FOR <ident> = <expr> TO <expr>  (explicit STEP optional,
 ; defaults to a literal 1)
 COMPILE_FOR:
-        ld a,(CFOR_STACK_DEPTH)
-        cp FOR_NEST_MAX
-        jr nz,.depth_ok
-        ld a,55                  ; FOR nesting exceeds FOR_NEST_MAX
-        jp COMPILE_RAISE_ERROR
-.depth_ok:
-        call CFOR_STACK_FRAME_ADDR  ; HL = this new frame (A = current
-                                     ; depth, unchanged by the cp above)
+        call CSTK_PUSH           ; R10.7 P2: loop frames live on the memory-limited
+        ret c                    ; compile stack (no FOR_NEST_MAX); carry = no room
         ld (FOR_FRAME_ADDR_TMP),hl
         inc hl
         inc hl
-        inc hl                     ; HL -> frame+3 (saved_exitfor_count)
-        ld a,(EXITFOR_COUNT)
-        ld (hl),a                  ; save the enclosing loop's own count
-                                     ; (harmless/unused if this is the
-                                     ; outermost loop)
+        inc hl                   ; HL -> frame+3 (exit-chain head)
         xor a
-        ld (EXITFOR_COUNT),a       ; reset for THIS loop's own use
-        ld a,(CFOR_STACK_DEPTH)
-        inc a
-        ld (CFOR_STACK_DEPTH),a     ; commit the push
+        ld (hl),a
+        inc hl
+        ld (hl),a                ; no EXIT FOR recorded yet
         call LEX_NEXT_TOKEN     ; consume FOR
         ld a,(TOK_TYPE)
         cp TOK_IDENT
@@ -3764,8 +3813,7 @@ COMPILE_FOR:
         ld a,(TOK_TYPE)
         cp TOK_ASSIGN
         jr z,.have_assign
-        ld a,2
-        jp COMPILE_RAISE_ERROR
+        jp ERR_EXPECTED_ASSIGN
 .have_assign:
         call LEX_NEXT_TOKEN     ; consume '='
         call COMPILE_EXPR       ; initial value -> VM operand stack
@@ -3814,32 +3862,30 @@ COMPILE_EXIT_FOR:
         ld a,44
         jp COMPILE_RAISE_ERROR
 .have_for:
-        ld a,(EXITFOR_COUNT)
-        cp EXITFOR_MAX
+        call CSTK_TOP            ; innermost open FOR frame
         jr nz,.record
-        ld a,45
+        ld a,63                  ; EXIT FOR with no FOR open
         jp COMPILE_RAISE_ERROR
 .record:
+        push hl                  ; the frame
         call EMIT_OP_JMP
-        call EMIT_PLACEHOLDER_16
-        ld (BRANCH_PATCH_TMP),hl   ; this JMP's own operand address
-        ld a,(CFOR_STACK_DEPTH)
-        dec a                       ; index of the innermost open loop
-        call EXITFOR_TABLE_ADDR     ; HL = this loop's own exit-patch table
-        ld a,(EXITFOR_COUNT)
-        ld c,a
-        ld b,0
-        add hl,bc
-        add hl,bc                  ; HL = table + index*2
-        ld de,(BRANCH_PATCH_TMP)
-        ld (hl),e
+        call EMIT_PLACEHOLDER_16 ; HL = this JMP's own operand slot
+        ex de,hl                 ; DE = slot
+        pop hl
         inc hl
+        inc hl
+        inc hl                   ; HL -> frame+3 (chain head)
+        ld c,(hl)
+        inc hl
+        ld b,(hl)                ; BC = previous head
         ld (hl),d
-        ld a,(EXITFOR_COUNT)
-        inc a
-        ld (EXITFOR_COUNT),a
-        call LEX_NEXT_TOKEN         ; consume FOR
-        ret
+        dec hl
+        ld (hl),e                ; head = this slot
+        ex de,hl                 ; HL = slot
+        ld (hl),c
+        inc hl
+        ld (hl),b                ; slot = previous head (0 ends the chain)
+        jp LEX_NEXT_TOKEN ; consume FOR
 
 ; COMPILE_NEXT — NEXT <ident>
 COMPILE_NEXT:
@@ -3859,11 +3905,8 @@ COMPILE_NEXT:
         ; FOR (docs/v2/V2_SEMANTIC_CAPABILITY_AUDIT.md S9 -- previously
         ; unchecked entirely: "this R3 scope does not verify the name
         ; matches the innermost open FOR").
-        ld a,(CFOR_STACK_DEPTH)
-        or a
-        jr z,.mismatch              ; NEXT with no FOR open at all
-        dec a
-        call CFOR_STACK_FRAME_ADDR   ; HL = innermost open frame
+        call CSTK_TOP                ; HL = innermost open frame
+        jr z,.mismatch               ; NEXT with no FOR open at all
         ld a,(hl)                   ; A = that loop's own var_index
         ld b,a
         ld a,(NEXT_VAR_INDEX_TMP)
@@ -3913,53 +3956,44 @@ COMPILE_NEXT:
         ; the loop's own FOR_STACK frame is popped exactly once regardless
         ; of which path exits the loop.
         call COMPILE_RELATIVE_OFFSET  ; HL = relative exit offset
-        ld (RESOLVE_PATCH_TMP),hl
-        ld a,(CFOR_STACK_DEPTH)
-        dec a                       ; index of the loop being closed
-        call EXITFOR_TABLE_ADDR     ; HL = this loop's own exit-patch table
-        ld (FOR_FRAME_ADDR_TMP),hl
-        ld a,(EXITFOR_COUNT)
-        or a
-        jr z,.no_exits
-        ld b,a
-        ld hl,(FOR_FRAME_ADDR_TMP)
-.patch_loop:
-        push bc
+        push hl                   ; the exit offset every EXIT FOR jumps to
+        call CSTK_TOP             ; HL = the loop being closed (destroys DE)
+        pop de                    ; DE = the exit offset
         push hl
-        ld e,(hl)
-        inc hl
-        ld d,(hl)                 ; DE = this slot's own patch address
-        ex de,hl                  ; HL = patch address
-        ld de,(RESOLVE_PATCH_TMP)
-        ld (hl),e
-        inc hl
-        ld (hl),d
-        pop hl
-        pop bc
         inc hl
         inc hl
-        djnz .patch_loop
+        inc hl
+        ld c,(hl)
+        inc hl
+        ld b,(hl)                 ; BC = head of this loop's EXIT FOR chain
+.patch_loop:
+        ld a,b
+        or c
+        jr z,.no_exits
+        ld a,(bc)
+        ld l,a
+        inc bc
+        ld a,(bc)
+        ld h,a                    ; HL = next slot in the chain
+        ld a,d
+        ld (bc),a                 ; slot+1 = exit offset hi
+        dec bc
+        ld a,e
+        ld (bc),a                 ; slot+0 = exit offset lo
+        ld b,h
+        ld c,l
+        jr .patch_loop
 .no_exits:
         call EMIT_OP_FOR_POP
-        ; Pop this loop's own FOR_STACK frame: restore the enclosing
-        ; loop's own EXITFOR_COUNT, then (if a loop is still open) reload
-        ; the now-innermost frame's own cached top-offset/var-index so a
-        ; later EXIT FOR/NEXT for THAT loop reads the right values.
-        ld a,(CFOR_STACK_DEPTH)
-        dec a
-        call CFOR_STACK_FRAME_ADDR   ; HL = the frame being closed
-        inc hl
-        inc hl
-        inc hl                       ; HL -> frame+3 (saved_exitfor_count)
-        ld a,(hl)
-        ld (EXITFOR_COUNT),a
-        ld a,(CFOR_STACK_DEPTH)
-        dec a
-        ld (CFOR_STACK_DEPTH),a
+        pop hl                    ; the frame being closed
+        ld de,CSTK_FRAME_LEN
+        add hl,de
+        ld (SYM_LIMIT_V),hl       ; pop it
+        ld de,V2_SOURCE_END
         or a
-        ret z                        ; no enclosing loop left
-        dec a
-        call CFOR_STACK_FRAME_ADDR    ; HL = the now-innermost frame
+        sbc hl,de
+        ret z                     ; no enclosing loop left
+        ld hl,(SYM_LIMIT_V)       ; the now-innermost frame
         ld a,(hl)
         ld (FOR_LOOP_VAR_INDEX),a
         inc hl
@@ -3986,6 +4020,8 @@ COMPILE_NEXT:
 ; fixed here (like COMPILE_PROGRAM's earlier ones) is fixed everywhere a
 ; statement can appear, not just at the top level.
 COMPILE_STATEMENT_LIST:
+        call COMPILE_STACK_CHECK
+        ret c
 .loop:
         ld a,(TOK_TYPE)
         cp TOK_COLON
@@ -4023,15 +4059,15 @@ COMPILE_STATEMENT_LIST:
         cp TOK_KW_DEF
         jp z,.def_fn
         cp TOK_KW_CLS
-        jr z,.cls
+        jp z,.cls
         cp TOK_KW_BORDER
-        jr z,.border
+        jp z,.border
         cp TOK_KW_INK
-        jr z,.ink
+        jp z,.ink
         cp TOK_KW_PAPER
-        jr z,.paper
+        jp z,.paper
         cp TOK_KW_PLOT
-        jr z,.plot
+        jp z,.plot
         cp TOK_KW_LINE
         jp z,.line
         cp TOK_KW_BEEP
@@ -4060,6 +4096,20 @@ COMPILE_STATEMENT_LIST:
         jp z,.input
         cp TOK_KW_EXIT
         jp z,.exit_for
+        cp TOK_KW_FLASH
+        jp z,.flash
+        cp TOK_KW_BRIGHT
+        jp z,.bright
+        cp TOK_KW_OVER
+        jp z,.over
+        cp TOK_KW_INVERSE
+        jp z,.inverse
+        cp TOK_KW_AT
+        jp z,.at
+        cp TOK_KW_TAB
+        jp z,.tab
+        cp TOK_KW_CLEAR
+        jp z,.clear
         cp TOK_IDENT
         jp z,.ident_stmt
         cp TOK_STR_IDENT
@@ -4081,6 +4131,27 @@ COMPILE_STATEMENT_LIST:
         jp .after_stmt
 .paper:
         call COMPILE_PAPER
+        jp .after_stmt
+.flash:
+        call COMPILE_FLASH
+        jp .after_stmt
+.bright:
+        call COMPILE_BRIGHT
+        jp .after_stmt
+.over:
+        call COMPILE_OVER
+        jp .after_stmt
+.inverse:
+        call COMPILE_INVERSE
+        jp .after_stmt
+.at:
+        call COMPILE_AT
+        jp .after_stmt
+.tab:
+        call COMPILE_TAB
+        jp .after_stmt
+.clear:
+        call COMPILE_CLEAR
         jp .after_stmt
 .plot:
         call COMPILE_PLOT
@@ -4138,7 +4209,7 @@ COMPILE_STATEMENT_LIST:
         call LEX_NEXT_TOKEN
         jp .after_stmt
 .str_ident_stmt:
-        call COMPILE_STR_ASSIGN
+        call COMPILE_STR_IDENT_STMT
         jp .after_stmt
 .dim:
         call COMPILE_DIM
@@ -4179,12 +4250,7 @@ COMPILE_STATEMENT_LIST:
         ; lookahead only ever runs at genuine statement start). Otherwise,
         ; the peeked token IS the token COMPILE_ASSIGN_CONTINUED needs as
         ; "whatever follows the target identifier" — no re-fetch needed.
-        ld hl,(TOK_NAME)
-        ld (STMT_IDENT_NAME_PTR),hl
-        ld a,(TOK_LEN)
-        ld (STMT_IDENT_NAME_LEN),a
-        call LEX_NEXT_TOKEN
-        ld a,(TOK_TYPE)
+        call STASH_IDENT_AND_PEEK
         cp TOK_COLON
         jr z,.label
         call COMPILE_ASSIGN_CONTINUED
@@ -4258,7 +4324,7 @@ COMPILE_PROGRAM:
         or a
         ret nz
         call EMIT_OP_HALT
-        call RESOLVE_ALL_FIXUPS
+        call LABEL_CHECK_ALL
         ld hl,(EMIT_PTR)
         ld (DECOMP_END_ADDR),hl
         ret
@@ -4298,10 +4364,7 @@ COMPILE_PROC:
         ld a,17                  ; expected a procedure name
         jp COMPILE_RAISE_ERROR
 .have_name:
-        ld hl,(TOK_NAME)
-        ld (STMT_IDENT_NAME_PTR),hl
-        ld a,(TOK_LEN)
-        ld (STMT_IDENT_NAME_LEN),a
+        call STASH_IDENT_NAME
         call LEX_NEXT_TOKEN     ; consume the procedure name
         call EMIT_OP_JMP
         call EMIT_PLACEHOLDER_16   ; HL = patch address for the skip-over
@@ -4378,8 +4441,7 @@ COMPILE_PROC:
         ld (hl),e
         inc hl
         ld (hl),d
-        call LEX_NEXT_TOKEN     ; consume ENDP, fetch whatever follows
-        ret
+        jp LEX_NEXT_TOKEN ; consume ENDP, fetch whatever follows
 
 ; COMPILE_CALL_STMT — CALL name(arg)
 ;
@@ -4398,12 +4460,7 @@ COMPILE_CALL_STMT:
         ld a,13                  ; expected a procedure name after CALL
         jp COMPILE_RAISE_ERROR
 .have_name:
-        ld hl,(TOK_NAME)
-        ld (STMT_IDENT_NAME_PTR),hl
-        ld a,(TOK_LEN)
-        ld (STMT_IDENT_NAME_LEN),a
-        call LEX_NEXT_TOKEN     ; consume the procedure name
-        ld a,(TOK_TYPE)
+        call STASH_IDENT_AND_PEEK
         cp TOK_LPAREN
         jr z,.have_lparen
         ld a,14                  ; expected '(' after the procedure name
@@ -4420,25 +4477,11 @@ COMPILE_CALL_STMT:
         call LEX_NEXT_TOKEN     ; consume ')'
         call EMIT_OP_CALL
         call EMIT_PLACEHOLDER_16   ; HL = patch address
-        ld (BRANCH_PATCH_TMP),hl
+        ex de,hl                 ; DE = the operand slot just emitted
         ld hl,(STMT_IDENT_NAME_PTR)
         ld a,(STMT_IDENT_NAME_LEN)
         ld b,a
-        call LABEL_LOOKUP
-        jr c,.resolved
-        ld hl,(BRANCH_PATCH_TMP)
-        ld de,(STMT_IDENT_NAME_PTR)
-        ld a,(STMT_IDENT_NAME_LEN)
-        ld b,a
-        call FIXUP_RECORD
-        ret
-.resolved:
-        ld hl,(BRANCH_PATCH_TMP)
-        ld de,(LABEL_LOOKUP_RESULT)
-        ld (hl),e
-        inc hl
-        ld (hl),d
-        ret
+        jp LABEL_REF             ; defined: patched now; else threaded on the chain
 
 ; ===========================================================================
 ; COMPILE_DEF_FN — DEF FN name(param) = expr (post-R9 reintegration,
@@ -4467,10 +4510,7 @@ COMPILE_DEF_FN:
         ld a,50                  ; expected a function name
         jp COMPILE_RAISE_ERROR
 .have_name:
-        ld hl,(TOK_NAME)
-        ld (STMT_IDENT_NAME_PTR),hl
-        ld a,(TOK_LEN)
-        ld (STMT_IDENT_NAME_LEN),a
+        call STASH_IDENT_NAME
         call LEX_NEXT_TOKEN     ; consume the function name
         call EMIT_OP_JMP_DEFFN
         call EMIT_PLACEHOLDER_16   ; HL = patch address for the skip-over
@@ -4631,8 +4671,7 @@ COMPILE_EXT_CALL:
         ld a,(CEXT_GEN)
         call EMIT_BYTE
         ld a,(CEXT_ARGCOUNT)
-        call EMIT_BYTE
-        ret
+        jp EMIT_BYTE
 
 ; COMPILE_TEST_ARGTYPE_BIT removed (bounded ROM consolidation pass) --
 ; was byte-identical to rom/exrom_v2_decompiler.asm's own DECOMP_TEST_
@@ -4656,7 +4695,35 @@ COMPILE_EXT_CALL:
 ; only the exact "set-then-immediately-return" shape was touched.
 ; Input: A = error code. Destroys: nothing else.
 COMPILE_RAISE_ERROR:
-        ld (COMPILE_ERROR_CODE),a
+        push hl                 ; preserves every register (callers continue
+        ld hl,COMPILE_ERROR_CODE ; after an error and some keep B/C live)
+        inc (hl)                ; R10.7 P0: the FIRST error is the real one; a
+        dec (hl)                ; cascade of follow-on errors must not replace
+        jr nz,.keep             ; it (the nesting guard below relies on this)
+        ld (hl),a
+.keep:
+        pop hl
         ret
+
+; COMPILE_STACK_CHECK -- R10.7 P0. The compiler recurses on the Z80 stack
+; (parentheses, IF blocks, unary chains). Nothing used to stop a deeply
+; nested program from running the stack down into the package window at
+; $F400-$F7FF. Returns carry set (after raising error 60) when SP is below
+; V2_COMPILE_STACK_FLOOR; the caller returns at once without recursing, and
+; the first-error-wins rule in COMPILE_RAISE_ERROR keeps code 60 as the
+; reported error. Floor $FA00 leaves 512 bytes above the package window for
+; unguarded unary/NOT chains (<= 127 chars), helper calls and interrupts.
+; MEASURED: 12 nested parentheses used 174 bytes (12-14 B per level).
+COMPILE_STACK_CHECK:
+        ld hl,0
+        add hl,sp
+        ld a,h
+        cp V2_COMPILE_STACK_FLOOR >> 8
+        ret nc
+        ld a,60
+        call COMPILE_RAISE_ERROR
+        scf
+        ret
+V2_COMPILE_STACK_FLOOR: equ $FA00
 
 COMPILER_END:

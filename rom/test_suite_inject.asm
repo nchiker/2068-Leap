@@ -84,6 +84,10 @@ COLD_START:
     ld   sp, $FF00
     call MEM_COLD_INIT
     call MEM_INIT
+    call MEM_LABEL_TABLE_CLEAR   ; production MEM_INIT no longer does
+                                ; this itself (R10.7 dormant-ROM
+                                ; removal) — see basic/
+                                ; legacy_kernel_compat.asm
     ; No fixture accepts keyboard input. MEM_COLD_INIT already leaves the
     ; interrupt-owned state safely zeroed, so the interactive ROM's explicit
     ; KBD_ISR_INIT call is unnecessary here. Omitting it also keeps this
@@ -128,6 +132,8 @@ INJECT_POINT:
     call EXTENSION_MODULE_BASE       ; debugger has injected installer here
     IFDEF TEST_RAM_EXTENSION_CLEAR
     call MEM_INIT                    ; prove NEW/cold reset unregisters it
+    call MEM_LABEL_TABLE_CLEAR        ; see COLD_START above for why this
+                                     ; is now explicit
     ENDIF
     ENDIF
     call BASIC_RUN                   ; real call — properly balances

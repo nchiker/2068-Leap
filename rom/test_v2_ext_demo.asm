@@ -1,16 +1,14 @@
 ; ============================================================================
 ; rom/test_v2_ext_demo.asm — Architecture B, R7.5 smoke test
 ;
-; Standalone ROM image exercising the new V2-native loadable-extension
-; mechanism (kernel/extensions/ext_registry.asm's EXT2_REGISTER/
-; EXT2_LOOKUP/EXT2_SLOT_ADDR, rom/exrom_v2_vm_core.asm's new OP_CALL_EXT
-; opcode, rom/exrom_v2_compiler.asm's registry-fallback in
-; COMPILE_STATEMENT_LIST) end to end — a real demo "extension" registers
-; itself, a real V2 program compiled AFTERWARD calls it by name, and the
-; V2 VM dispatches through the registry at runtime. Deliberately NOT an
-; adapted V1 extension module (rom/extensions/*.asm) — this is a fresh,
-; V2-native demo, per the user's own explicit "existing V1 extensions
-; may require rebuilding... that is acceptable" direction. NOT wired
+; Exercises the V2-native loadable-extension mechanism (kernel/
+; extensions/ext_registry.asm's EXT2_REGISTER/EXT2_LOOKUP/EXT2_SLOT_ADDR,
+; rom/exrom_v2_vm_core.asm's OP_CALL_EXT opcode, rom/exrom_v2_compiler.
+; asm's registry-fallback in COMPILE_STATEMENT_LIST) end to end — a real
+; demo "extension" registers itself, a real V2 program compiled
+; AFTERWARD calls it by name, and the V2 VM dispatches through the
+; registry at runtime. Deliberately NOT an adapted V1 extension module
+; (rom/extensions/*.asm) — this is a fresh, V2-native demo. NOT wired
 ; into the production BASIC dispatch or the shipping EXROM build.
 ;
 ; Demo extension: TRIADD <a>,<b>,<destaddr> — writes (a+b)'s low byte to
@@ -25,57 +23,35 @@
 ;
 ;   TRIADD 3,4,38912
 ;
-; Hand-computed expected result: byte at $9800 (38912 decimal — the
-; same plain, otherwise-unused RAM address rom/test_v2_compiler_r7.asm's
-; own POKE test already used, comfortably clear of every VM table/
-; stack/registry workspace) becomes 3+4 = 7.
+; Hand-computed expected result: byte at $9800 (38912 decimal) becomes
+; 3+4 = 7.
 ;
-; Build:
-;   tools/sjasmplus_strict.sh --sym=build/test_v2_ext_demo.sym \
-;       rom/test_v2_ext_demo.asm
-; Run (PASS=green/FAIL=red border):
-;   ts2068-debug start --rom build/smoke/test_v2_ext_demo_zesarux.bin
-;   ts2068-debug run --max-instructions 500000
-;   ts2068-debug timex   (border field)
+; Dynamic Data Phase 2 migration: this test used to be its own flat,
+; single-bank 16K image (the SAME artificial-ceiling problem rom/
+; test_v2_harness_home_head.inc's own header documents for the 14 tests
+; already migrated post-R9) -- the string-array work grew vm_core+
+; compiler enough to overflow it by 190 bytes with zero TRIADD-relevant
+; content to show for the extra budget. Migrated onto the SAME shared
+; production-shaped two-bank harness rom/test_v2_shapes_circle.asm/rom/
+; test_v2_graphics_module.asm already use for an EXT2-registry-needing
+; test (that harness has no EXT2 presence of its own -- kernel/
+; extensions/ext_registry.asm is pulled in explicitly below, same as
+; those two). No change to the real TRIADD/SUM3 test logic itself.
 ; ============================================================================
 
-    INCLUDE "include/hardware.inc"
-    INCLUDE "include/sysvars.inc"
+    DEFINE TEST_V2_CUSTOM_CHECKS
+    INCLUDE "rom/test_v2_harness_home_head.inc"
 
-    DEVICE NOSLOT64K
+DECOMP_END_ADDR: equ $9900   ; this test never includes the decompiler
+                               ; (compile+run only); COMPILE_PROGRAM
+                               ; still unconditionally sets this
 
-; DECOMP_END_ADDR stub: this test never includes rom/exrom_v2_
-; decompiler.asm (it only exercises compile+run, per this file's own
-; header), but rom/exrom_v2_compiler.asm's own COMPILE_PROGRAM now
-; unconditionally sets DECOMP_END_ADDR at the end of every compile
-; (printer-package ROM reconciliation -- resolves DECOMPILE_PROGRAM's
-; own former "caller contract" automatically; see that routine's own
-; header). $9900, real RAM, clear of $9800 (this file's own TRIADD
-; destaddr) and every VM/registry workspace table.
-DECOMP_END_ADDR: equ $9900
-
-    ORG $0000
-RST_00:
-    di
-    jp   COLD_START
-    DS   $0028 - $, $FF
-    ; RST $28 -- still needed even though this test never exercises a
-    ; float opcode: rom/exrom_v2_vm_core.asm is ONE file with R6's float
-    ; code still compiled in, so its CALC_* label references must still
-    ; resolve for this whole image to assemble.
-    jp   CALC_EXROM_ENTRY
-    DS   $0100 - $, $FF
-
-COLD_START:
-    ld   sp, $FF00
-
-    call EXT2_CLEAR_ALL       ; real cold-init, mirroring V1's own
-                                ; EXTENSION_MAGIC reset (see EXT2_CLEAR_
-                                ; ALL's own header for why this matters)
+TEST_CUSTOM_MAIN:
+    call EXT2_CLEAR_ALL
     call SUM3_INSTALL
-    jp   c, FAIL              ; registration itself failed (shouldn't,
-                              ; on a fresh table) — a real, checked
-                              ; failure path, not assumed to always work
+    jp   c, TEST_FAIL          ; registration itself failed (shouldn't,
+                                ; on a fresh table) — a real, checked
+                                ; failure path, not assumed to always work
 
     call COMPILER_INIT
     ld   hl, SOURCE_TEXT
@@ -86,7 +62,7 @@ COLD_START:
 
     ld   a, (COMPILE_ERROR_CODE)
     or   a
-    jp   nz, FAIL
+    jp   nz, TEST_FAIL
 
     call VM_INIT
     ld   hl, VM_CODE_BASE
@@ -94,17 +70,9 @@ COLD_START:
     call VM_RUN
 
     call CHECK_RESULT
-    jp   c, FAIL
+    jp   c, TEST_FAIL
 
-PASS:
-    ld   a, 4                ; green
-    out  (PORT_ULA), a
-    jr   $
-
-FAIL:
-    ld   a, 2                ; red
-    out  (PORT_ULA), a
-    jr   $
+    jp   TEST_PASS
 
 ; ============================================================================
 ; CHECK_RESULT — VM_ERROR_CODE must be 0, and $9800 must hold 7 (3+4,
@@ -153,69 +121,63 @@ SUM3_INSTALL:
     ld   de, SUM3_EXEC
     ld   b, 3                  ; argcount = 3
     ld   c, 0                  ; argtypes = 0 (all-numeric) -- EXT2_
-                                ; REGISTER's own new typed-argument
-                                ; parameter (printer-package ROM
-                                ; reconciliation); TRIADD has no string
-                                ; arguments
-    call EXT2_REGISTER
-    ret                          ; carry already set/clear correctly by
-                                ; EXT2_REGISTER itself — nothing more to
-                                ; do here
+                                ; REGISTER's own typed-argument parameter;
+                                ; TRIADD has no string arguments
+    jp   EXT2_REGISTER          ; carry already set/clear correctly by
+                                  ; EXT2_REGISTER itself
 
 SOURCE_TEXT:
     db 'TRIADD 3,4,38912', 0
 
-    ; KTAB_CALC_EXIT_TRAMPOLINE -- see rom/test_v2_compiler_r6.asm's own
-    ; header for the full explanation; unchanged here.
-; Test-only stub: rom/exrom_v2_vm_core.asm's own OP_LPRINT_NUM/STR
-; reference the real rom/exrom_printer.asm's BASIC_STMT_LPRINT_EXROM
-; unconditionally, but pulling in that whole (real-ZX-printer-
-; hardware-facing, ~300-line) file pushed this standalone flat 16K
-; test image over budget with no LPRINT coverage to show for it (this
-; file's own test program never calls LPRINT). A dedicated PRINT/
-; LPRINT test (rom/test_v2_print.asm) includes the real file and
-; genuinely exercises it; every other test stubs it, same discipline
-; as this file's own existing KTAB_CALC_EXIT_TRAMPOLINE stub just below.
+; Test-only stubs: this file's own test program never exercises PRINT/
+; LPRINT/BEEP/SOUND/PAUSE/INPUT/arrays, and never checks real screen
+; bitmap content -- only EXT2 registry reachability is in scope here
+; (same discipline rom/test_v2_shapes_circle.asm's own stub block
+; already established).
 BASIC_STMT_LPRINT_EXROM:
     ret
-
-KTAB_CALC_EXIT_TRAMPOLINE:
+SOUND_BEEP:
+    ret
+SOUND_EXROM:
+    or a
+    ret
+IO_READ_KEY:
+    xor a
+    ret
+INT_GET_FRAMES:
+    ld hl,0
     ret
 
-; Test-only stubs (post-R9 nested FOR/NEXT correction pushed this flat 16K
-; image's own real product-code content over budget by 232 bytes): this
-; file's own test program never produces a FLOAT value (its own comment
-; above already established that even the real exrom_calc.asm was only
-; ever included here for label resolution, never genuine float coverage
-; — no test in this file exercised it). Same stubbing discipline
-; rom/test_v2_for_step.asm's own header already established: the real
-; ~1900-line calculator is dropped entirely, recovering far more than the
-; 232 bytes needed.
-CALC_EXROM_ENTRY:
+GFX_CLS:
     ret
-CALC_INT_TO_FP:
+GFX_PAINT_ATTR:
     ret
-CALC_FP_TO_INT:
+GFX_SET_BORDER:
     ret
-CALC_SP_TO_NEXT_FREE_PTR:
+GFX_WRITE_PIXEL:
     ret
-CALC_PUSH_PI:
+GFX_LINE:
     ret
-CALC_PUSH_FP_RAW:
+GFX_PRINT_STRING_ATTR:
     ret
-
-    INCLUDE "kernel/math/math.asm"
-    INCLUDE "kernel/graphics/graphics.asm"
-    INCLUDE "kernel/sound/sound.asm"
-    INCLUDE "rom/exrom_sound.asm"
-    INCLUDE "kernel/io/io.asm"
-    INCLUDE "kernel/interrupt/interrupt.asm"
-    INCLUDE "kernel/memory/memory.asm"
+GFX_SCROLL_OUTPUT_UP:
+    ret
+GFX_READ_PIXEL:
+    xor a
+    ret
+GFX_CELL_ATTR_ADDR:
+    scf
+    ret
+; kernel/memory/memory.asm is NOT included here -- but EXT2_CLEAR_ALL
+; (kernel/extensions/ext_registry.asm) genuinely calls its real
+; MEM_FILL_ZERO to zero the registry table, so that one routine needs a
+; real (not no-op) stub: fills BC bytes at HL with zero, matching its
+; real In:HL=dest,BC=count contract exactly (same stub rom/test_v2_
+; shapes_circle.asm/rom/test_v2_dynamic_arrays.asm already use).
     INCLUDE "kernel/extensions/ext_registry.asm"
     INCLUDE "rom/exrom_format.asm"
-    INCLUDE "rom/exrom_v2_vm_core.asm"
-    INCLUDE "rom/exrom_v2_compiler.asm"
+IO_READ_KEY_NONBLOCK:
+        xor a
+        ret
 
-    DS   $4000 - $, $FF
-
-    SAVEBIN "test_v2_ext_demo.bin", $0000, $4000
+    INCLUDE "rom/test_v2_harness_home_tail.inc"

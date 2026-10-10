@@ -74,6 +74,7 @@
     DEFINE TEST_V2_CUSTOM_CHECKS
     DEFINE TEST_V2_NEEDS_DECOMPILE
     INCLUDE "rom/test_v2_harness_home_head.inc"
+    INCLUDE "rom/test_v2_symmacros.inc"
 
 ; TEST_PROGRAM_LEN must NOT be plain ROM-resident DW data (this test's
 ; own first draft made exactly that mistake): $0000-$3FFF is the real,
@@ -182,15 +183,15 @@ SOURCE_TEXT:
 ; Out: carry clear = pass, carry set = fail
 ; ============================================================================
 CHECK_VM_RESULT:
-    ld   hl, SYMTAB_BASE + 1*SYM_REC_LEN
+    TSYM_ADDR 1*SYM_REC_LEN
     ld   de, 14
     call .check_one           ; B
     jr   c, .fail
-    ld   hl, SYMTAB_BASE + 2*SYM_REC_LEN
+    TSYM_ADDR 2*SYM_REC_LEN
     ld   de, 6
     call .check_one           ; C
     jr   c, .fail
-    ld   hl, SYMTAB_BASE + 3*SYM_REC_LEN
+    TSYM_ADDR 3*SYM_REC_LEN
     ld   de, 4
     call .check_one           ; I
     ret

@@ -32,6 +32,7 @@
     DEFINE TEST_V2_CUSTOM_CHECKS
     DEFINE TEST_V2_NEEDS_DECOMPILE
     INCLUDE "rom/test_v2_harness_home_head.inc"
+    INCLUDE "rom/test_v2_symmacros.inc"
 
 TEST_CUSTOM_MAIN:
     call COMPILER_INIT
@@ -98,21 +99,21 @@ TEST_KEY_PTR: equ $85E0
 ; registered string symbol (index 0).
 ; ============================================================================
 CHECK_INPUT_RESULT:
-    ld   a, (SYMTAB_BASE)          ; tag byte
+    TSYM_LD8 0  ; tag byte
     cp   0                          ; TAG_INT
     jr   nz, .fail
-    ld   hl, (SYMTAB_BASE+1)
+    TSYM_LD16 1
     ld   de, 42
     or   a
     sbc  hl, de
     jr   nz, .fail
-    ld   a, (STRTAB_BASE)           ; B$'s own length byte
+    TSTR_LD8 0  ; B$'s own length byte
     cp   2
     jr   nz, .fail
-    ld   a, (STRTAB_BASE+1)
+    TSTR_LD8 1
     cp   "H"
     jr   nz, .fail
-    ld   a, (STRTAB_BASE+2)
+    TSTR_LD8 2
     cp   "I"
     jr   nz, .fail
     ret

@@ -1,4 +1,4 @@
-.PHONY: all build check smoke-build test budget audit-basic manual clean cplot-extension block-extension frame-extension invert-extension ayreg-extension out-extension sprite-extension shapes-extension v2-packages v2-standalone-test release-assets
+.PHONY: all build check smoke-build test test-legacy test-all budget audit-basic manual clean cplot-extension block-extension frame-extension invert-extension ayreg-extension out-extension sprite-extension shapes-extension v2-packages v2-standalone-test release-assets
 
 all: check build
 
@@ -19,6 +19,8 @@ check: build
 	python3 tools/check_storage_contract.py
 	python3 tools/check_tape_fixture.py
 	python3 tools/check_commit_validation.py
+	tools/check_test_targets.sh
+	python3 tools/check_builtin_tables.py
 	python3 tools/test_check_basic_source.py
 	# tests/err1.txt is excluded: it's tools/run_all_tests.sh's own EXPECTED_CYAN
 	# fixture, deliberately testing an out-of-bounds DIM access -- a genuine,
@@ -28,12 +30,40 @@ check: build
 	python3 tools/z80sim/test_sprite_driver.py
 	python3 tools/z80sim/test_sprite_basic_driver.py
 	tools/build_smoke_roms.sh
+	# Assemble-only guard for the non-production legacy/component-test
+	# fixture (basic/basic.asm + rom/exrom_build.asm, see docs/v2/
+	# R10_7_DORMANT_ARCHITECTURE_AUDIT.md sec3/sec6.4): this chain shares
+	# kernel/memory.asm and kernel/io.asm with the real V2 production
+	# build, so a future production dead-code pass can silently break it
+	# unless something checks reachability against BOTH builds. `make
+	# check` already runs more often than the emulator-based `make test`
+	# (which is what actually caught this the one time it broke), so the
+	# fast syntax/link-only check belongs here too.
+	tools/sjasmplus_strict.sh -DEDITOR_TEST_EXROM rom/exrom_build.asm
+	tools/sjasmplus_strict.sh -DEDITOR_AUTO_OMIT_DEF_FN rom/test_editor_auto.asm
 
 smoke-build:
 	tools/build_smoke_roms.sh
 
+# ---------------------------------------------------------------------------
+# TEST TARGETS -- read before changing.
+#   make test         DEFAULT. Fully headless (ts2068-debug / ZEsarUX, no X11, no
+#                     Fuse window): kernel smoke ROMs, the V2 standalone component
+#                     tests, and the production-ROM checks. This is what to run.
+#   make test-legacy  The V1 tests that drive a real Fuse window under X11
+#                     (editor_auto, storage named-load family). Kept in full; they
+#                     are NOT part of `make test`.
+#   make test-all     Both suites.
+# `make check` is unchanged (assemble/lint only; it launches no emulator).
+# `make -n test | grep -i fuse` must print nothing (see docs/v2/TESTING.md).
+# ---------------------------------------------------------------------------
 test: all
 	tools/run_smoke_rom_tests.sh
+	tools/run_v2_standalone_tests.sh
+	python3 tools/v2_production_checks.py
+	python3 tools/v2_fill_check.py
+
+test-legacy: all
 	tools/run_editor_auto_test.sh
 	tools/run_editor_auto_test.sh insert
 	tools/run_storage_named_load_test.sh
@@ -47,7 +77,8 @@ test: all
 	tools/run_storage_named_load_test.sh autorun_zero
 	tools/run_storage_named_load_test.sh autorun_trailing
 	tools/run_storage_named_load_test.sh autorun_out_of_range
-	tools/run_v2_standalone_tests.sh
+
+test-all: test test-legacy
 
 v2-standalone-test: build
 	tools/run_v2_standalone_tests.sh
@@ -62,10 +93,12 @@ v2-packages: build
 	tools/sjasmplus_strict.sh rom/v2_package_sprite.asm
 	tools/sjasmplus_strict.sh rom/v2_package_printer.asm
 	tools/sjasmplus_strict.sh rom/v2_package_shapes.asm
+	tools/sjasmplus_strict.sh rom/v2_package_graphics.asm
 	python3 tools/make_extension_tzx.py build/extensions/v2_mode.tzx MODE build/v2_package_mode.bin
 	python3 tools/make_extension_tzx.py build/extensions/v2_sprite.tzx SPRITE build/v2_package_sprite.bin
 	python3 tools/make_extension_tzx.py build/extensions/v2_printer.tzx PRINTER build/v2_package_printer.bin
 	python3 tools/make_extension_tzx.py build/extensions/v2_shapes.tzx SHAPES build/v2_package_shapes.bin
+	python3 tools/make_extension_tzx.py build/extensions/v2_graphics.tzx GRAPHICS build/v2_package_graphics.bin
 
 cplot-extension: build
 	mkdir -p build/extensions

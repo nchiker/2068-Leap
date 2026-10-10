@@ -31,7 +31,9 @@
 ; ============================================================================
 
     INCLUDE "include/hardware.inc"
+    DEFINE V2_COMPACT_SYSVARS   ; R10.7 P5: drop V1-only sysvars (see include/sysvars.inc)
     INCLUDE "include/sysvars.inc"
+    INCLUDE "rom/test_v2_symmacros.inc"
 
     DEVICE NOSLOT64K
 
@@ -83,7 +85,7 @@ CHECK_RESULT:
     or   a
     jr   nz, .fail
     ; SCORE (symbol 0): [tag][value_lo][value_hi] at SYMTAB_BASE+0
-    ld   hl, SYMTAB_BASE
+    ld   hl, (RT_SYMTAB_PTR)
     ld   a, (hl)
     cp   TAG_INT
     jr   nz, .fail
@@ -96,7 +98,7 @@ CHECK_RESULT:
     sbc  hl, de
     jr   nz, .fail
     ; TOTAL (symbol 1): SYMTAB_BASE + 1*SYM_REC_LEN
-    ld   hl, SYMTAB_BASE + SYM_REC_LEN
+    TSYM_ADDR SYM_REC_LEN
     ld   a, (hl)
     cp   TAG_INT
     jr   nz, .fail

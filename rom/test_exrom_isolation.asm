@@ -97,6 +97,17 @@ RST_38:
 
     DS   $0100 - $, $FF
 
+; TEST_BANK_CALL_EXROM -- inlined here (R10.7 dormant-ROM audit, docs/v2/
+; R10_7_DORMANT_ROM_CONSOLIDATION_AUDIT.md): previously kernel/bank/
+; bank.asm's own BANK_CALL_EXROM, a convenience wrapper whose only real
+; caller was this file. Removed from the shared kernel file as dead
+; production code (not part of any Makefile target or test script); kept
+; here so this historical isolation test still assembles standalone.
+TEST_BANK_CALL_EXROM:
+    call BANK_PAGE_EXROM_IN
+    call $C000
+    jp   BANK_PAGE_EXROM_OUT
+
 COLD_START:
     ld   sp, $FF00
     call KBD_ISR_INIT                ; must run before EI below, same
@@ -131,7 +142,7 @@ COLD_START:
     ld   (EXROM_TEST_MARKER), a
 
     ; ---- step 3: the actual paging round-trip ----
-    call BANK_CALL_EXROM
+    call TEST_BANK_CALL_EXROM
 
     ; ---- step 4: did the payload run to completion? ----
     ld   a, (EXROM_TEST_MARKER)

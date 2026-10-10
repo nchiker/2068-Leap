@@ -245,15 +245,33 @@ PROG_END:            DEFS 2           ; 2-byte pointer to just past the last byt
 ; and DELRANGE_* never active at the same time), but that's an
 ; optimization to revisit once everything here is confirmed correct,
 ; not before.
+    IFNDEF V2_COMPACT_SYSVARS
 LOOKUP_NAME_PTR:     DEFS 2           ; 2 bytes
+    ENDIF
+    IFNDEF V2_COMPACT_SYSVARS
 LOOKUP_NAME_LEN:     DEFS 1           ; 1 byte
+    ENDIF
+    IFNDEF V2_COMPACT_SYSVARS
 LOOKUP_ENTRY_COUNT:  DEFS 2           ; 2 bytes
+    ENDIF
+    IFNDEF V2_COMPACT_SYSVARS
 LABEL_TABLE_USED:    DEFS 2           ; 2 bytes — total bytes used in LABEL_TABLE_TOP
+    ENDIF
+    IFNDEF V2_COMPACT_SYSVARS
 ADD_POSITION:        DEFS 2           ; 2 bytes
+    ENDIF
+    IFNDEF V2_COMPACT_SYSVARS
 REMOVE_ENTRY_START:  DEFS 2           ; 2 bytes
+    ENDIF
+    IFNDEF V2_COMPACT_SYSVARS
 REMOVE_ENTRY_SIZE:   DEFS 1           ; 1 byte
+    ENDIF
+    IFNDEF V2_COMPACT_SYSVARS
 REMOVE_BLOCK_START:  DEFS 2           ; 2 bytes
+    ENDIF
+    IFNDEF V2_COMPACT_SYSVARS
 REMOVE_BLOCK_LEN:    DEFS 2           ; 2 bytes
+    ENDIF
 STORE_POSITION:      DEFS 2           ; 2 bytes
 STORE_NEW_PTR:       DEFS 2           ; 2 bytes
 STORE_OLD_LEN:       DEFS 2           ; 2 bytes
@@ -318,7 +336,9 @@ PRINT_BUF:           DEFS 64          ; 64 bytes (63 chars + null) — scratch
                                  ; itself, for AT-positioned prints and
                                  ; any future use of the captured text
                                  ; beyond just this one draw call.
+    IFNDEF V2_COMPACT_SYSVARS
 BASIC_OUTPUT_ROW:    DEFS 1           ; 1 byte — next screen row a PRINT
+    ENDIF
                                  ; statement writes to; no scrolling yet
 ; VAR_TABLE (26 fixed 2-byte numeric-scalar slots) lived here through
 ; Phase 3 — retired in Phase 4 (2026-08-23), moved into the dynamic
@@ -326,10 +346,14 @@ BASIC_OUTPUT_ROW:    DEFS 1           ; 1 byte — next screen row a PRINT
 ; below). Removing it shifts every sysvar after this point down by 52
 ; bytes, same as removing anything else in this DEFS-computed chain —
 ; the assembler re-derives every address, nothing to do by hand.
+    IFNDEF V2_COMPACT_SYSVARS
 INPUT_BUF:           DEFS 8           ; 8 bytes — raw digit accumulation for
+    ENDIF
                                  ; INPUT (sign + up to 5 digits + null),
                                  ; before parsing into a variable
+    IFNDEF V2_COMPACT_SYSVARS
 CUR_VAR_LETTER:      DEFS 1           ; 1 byte — which variable letter the
+    ENDIF
                                  ; current INPUT or assignment statement
                                  ; targets. Stashed in memory rather
                                  ; than a register — originally named
@@ -356,7 +380,9 @@ EDITOR_REDRAW_HOOK:  DEFS 2           ; 2 bytes — optional custom redraw
                                  ; goal for kernel/* modules.
 
 ; ---- basic/ keyword-highlighting state ----
+    IFNDEF V2_COMPACT_SYSVARS
 HILITE_KW_LEN:       DEFS 1           ; 1 byte — length of the recognized
+    ENDIF
                                  ; keyword prefix at the start of
                                  ; whichever line BASIC_PRINT_LINE_
                                  ; HIGHLIGHTED is currently rendering
@@ -369,10 +395,14 @@ HILITE_KW_LEN:       DEFS 1           ; 1 byte — length of the recognized
                                  ; sysvar itself is just "how many
                                  ; leading chars to bold," read-only
                                  ; everywhere else
+    IFNDEF V2_COMPACT_SYSVARS
 HILITE_COL:          DEFS 1           ; 1 byte — column counter used while
+    ENDIF
                                  ; BASIC_PRINT_LINE_HIGHLIGHTED walks a
                                  ; line
+    IFNDEF V2_COMPACT_SYSVARS
 HILITE_ROW:          DEFS 1           ; 1 byte — which row
+    ENDIF
                                  ; BASIC_PRINT_LINE_HIGHLIGHTED is
                                  ; currently rendering to. Kept in
                                  ; memory, not a register, since
@@ -405,7 +435,9 @@ BASIC_ACTIVE_ROW:    DEFS 1           ; 1 byte — which screen row the
                                  ; CUR_EDIT_POS) — set by
                                  ; BASIC_REDRAW_PROGRAM each redraw, so
                                  ; the cursor gets drawn on the right row
+    IFNDEF V2_COMPACT_SYSVARS
 PROGRAM_ROW:         DEFS 1           ; 1 byte — BASIC_REDRAW_PROGRAM's own
+    ENDIF
                                  ; row counter while walking the
                                  ; program, kept in memory rather than
                                  ; register B — a real bug (found via a
@@ -479,14 +511,18 @@ EDIR_NEXT_ERROR     EQU 10      ; SYMBOL SHIFT+A — same reasoning as
                                 ; mean" is entirely basic/'s concern
 EDIR_PREV_ERROR     EQU 11      ; SYMBOL SHIFT+S
 
+    IFNDEF V2_COMPACT_SYSVARS
 NAV_TOTAL:           DEFS 2           ; 2 bytes — total existing statement
+    ENDIF
                                  ; count, computed fresh by
                                  ; BASIC_HANDLE_NAV each time it runs
                                  ; (via BASIC_COUNT_STATEMENTS) and
                                  ; stashed here since it's needed
                                  ; across several comparisons in that
                                  ; routine
+    IFNDEF V2_COMPACT_SYSVARS
 COUNT_TMP:           DEFS 2           ; 2 bytes — BASIC_COUNT_STATEMENTS'
+    ENDIF
                                  ; running counter, kept in memory
                                  ; rather than a register: both
                                  ; MEM_LINE_FIRST and MEM_LINE_NEXT
@@ -496,7 +532,9 @@ COUNT_TMP:           DEFS 2           ; 2 bytes — BASIC_COUNT_STATEMENTS'
                                  ; calls to either — a real bug shipped
                                  ; once already from assuming DE would
                                  ; survive
+    IFNDEF V2_COMPACT_SYSVARS
 FIND_REMAINING:      DEFS 2           ; 2 bytes — BASIC_FIND_STATEMENT_AT_
+    ENDIF
                                  ; INDEX's remaining-steps counter,
                                  ; same reason as COUNT_TMP above
 
@@ -517,13 +555,17 @@ STATUS_WRITE_PTR:    DEFS 2           ; 2 bytes — current write position
                                  ; BASIC_NUM_TO_STRING calls, which
                                  ; destroy DE (same lesson as
                                  ; everywhere else in this project)
+    IFNDEF V2_COMPACT_SYSVARS
 STATUS_TOTAL_TMP:    DEFS 2           ; 2 bytes — total statement count,
+    ENDIF
                                  ; stashed here since it's needed after
                                  ; an intervening BASIC_NUM_TO_STRING
                                  ; call that would otherwise clobber it
 
 ; ---- expression evaluation (basic/) ----
+    IFNDEF V2_COMPACT_SYSVARS
 EXPR_PARSE_PTR:      DEFS 2           ; 2 bytes — basic/'s current position
+    ENDIF
                                  ; while evaluating an expression.
                                  ; Genuinely shared across recursion
                                  ; levels (nested parens call the
@@ -533,7 +575,9 @@ EXPR_PARSE_PTR:      DEFS 2           ; 2 bytes — basic/'s current position
                                  ; ongoing position in the source text
                                  ; that every level of recursion reads
                                  ; and advances together, by design
+    IFNDEF V2_COMPACT_SYSVARS
 EXPR_MUL_A:           DEFS 2           ; 2 bytes — BASIC_EVAL_TERM's `*`
+    ENDIF
                                  ; overflow check: the left operand,
                                  ; stashed here since MATH_MULTIPLY16
                                  ; destroys HL/DE and the divide-back
@@ -541,7 +585,9 @@ EXPR_MUL_A:           DEFS 2           ; 2 bytes — BASIC_EVAL_TERM's `*`
                                  ; operands afterward. Pure per-call
                                  ; scratch, same sharing rationale as
                                  ; the kernel/math scratch below.
+    IFNDEF V2_COMPACT_SYSVARS
 EXPR_MUL_B:            DEFS 2           ; 2 bytes — same, right operand
+    ENDIF
 
 ; ---- kernel/math scratch ----
 ; All of these are pure per-call scratch, safe to share across nested
@@ -581,7 +627,9 @@ MATH_SIGN:           DEFS 1           ; 1 byte — MATH_MULTIPLY16/
 PROG_AREA_MAX        EQU $C000
 
 ; ---- labels / GOTO (basic/) ----
+    IFNDEF V2_COMPACT_SYSVARS
 GOTO_TARGET:         DEFS 2           ; 2 bytes — set by BASIC_STMT_GOTO on
+    ENDIF
                                  ; a successful label lookup; checked
                                  ; by BASIC_RUN's loop after every
                                  ; statement to decide whether to jump
@@ -590,7 +638,9 @@ GOTO_TARGET:         DEFS 2           ; 2 bytes — set by BASIC_STMT_GOTO on
                                  ; sentinel, since $0000 is never a
                                  ; valid program position
                                  ; (PROG_AREA_START is $6000)
+    IFNDEF V2_COMPACT_SYSVARS
 SCAN_STMT_POS:       DEFS 2           ; 2 bytes — BASIC_SCAN_LABELS' own
+    ENDIF
                                  ; "current statement's position"
                                  ; scratch while walking the program
                                  ; looking for label definitions,
@@ -603,7 +653,9 @@ SCAN_STMT_POS:       DEFS 2           ; 2 bytes — BASIC_SCAN_LABELS' own
                                  ; between would otherwise clobber it
 
 ; ---- error reporting (basic/) ----
+    IFNDEF V2_COMPACT_SYSVARS
 CUR_EXEC_STMT:       DEFS 2           ; 2 bytes — the statement currently
+    ENDIF
                                  ; being executed by BASIC_RUN's loop,
                                  ; set fresh at the top of every
                                  ; iteration. Lets BASIC_REPORT_ERROR
@@ -615,7 +667,9 @@ CUR_EXEC_STMT:       DEFS 2           ; 2 bytes — the statement currently
                                  ; those routines don't otherwise have
                                  ; any way to know which top-level
                                  ; statement they're being called from
+    IFNDEF V2_COMPACT_SYSVARS
 PENDING_ERROR_MSG:   DEFS 2           ; 2 bytes — holds a pointer to the
+    ENDIF
                                  ; error message if one is pending, or
                                  ; $0000 if none. Replaces the earlier
                                  ; 1-byte ERROR_REPORTED flag: the
@@ -642,7 +696,9 @@ PENDING_ERROR_MSG:   DEFS 2           ; 2 bytes — holds a pointer to the
                                  ; the gap the old 1-byte flag left
                                  ; before ERR_MSG_PTR — no sysvar
                                  ; addresses needed to move
+    IFNDEF V2_COMPACT_SYSVARS
 ERR_MSG_PTR:         DEFS 2           ; 2 bytes — BASIC_REPORT_ERROR's own
+    ENDIF
                                  ; stash for the caller's message
                                  ; pointer. A real bug shipped once
                                  ; already: the caller sets HL to the
@@ -656,7 +712,9 @@ ERR_MSG_PTR:         DEFS 2           ; 2 bytes — BASIC_REPORT_ERROR's own
                                  ; in the very routine meant to help
                                  ; catch this class of thing
 
+    IFNDEF V2_COMPACT_SYSVARS
 IDENT_WRITE_PTR:     DEFS 2           ; 2 bytes — current write position
+    ENDIF
                                  ; while BASIC_PARSE_IDENTIFIER fills
                                  ; DETOK_BUF (reused as scratch space
                                  ; here — it's already 128 bytes, safe
@@ -673,7 +731,9 @@ IDENT_WRITE_PTR:     DEFS 2           ; 2 bytes — current write position
                                  ; other things mid-loop here
 
 ; ---- whole-program static check pass (basic/) ----
+    IFNDEF V2_COMPACT_SYSVARS
 CHECK_ERROR_COUNT:   DEFS 2           ; 2 bytes — how many statements
+    ENDIF
                                  ; failed BASIC_CHECK_STATEMENT during
                                  ; the most recent BASIC_CHECK_PROGRAM
                                  ; pass
@@ -685,7 +745,9 @@ CHECK_FIRST_ERROR_STMT:DEFS 2         ; 2 bytes — position of the FIRST
                                  ; display at something concrete when
                                  ; multiple errors exist, rather than
                                  ; an arbitrary or blank statement
+    IFNDEF V2_COMPACT_SYSVARS
 CHECK_ERROR_LIST:    DEFS 32          ; 32 bytes — up to 16 statement
+    ENDIF
                                  ; positions (2 bytes each), every one
                                  ; BASIC_CHECK_PROGRAM found invalid,
                                  ; not just the first. Populated fresh
@@ -704,13 +766,17 @@ CHECK_ERROR_LIST:    DEFS 32          ; 32 bytes — up to 16 statement
                                  ; via BASIC_IS_ERROR_STATEMENT, to
                                  ; decide whether to render a given
                                  ; line's ink in red
+    IFNDEF V2_COMPACT_SYSVARS
 SEARCH_TARGET:       DEFS 2           ; 2 bytes — BASIC_IS_ERROR_STATEMENT's
+    ENDIF
                                  ; own scratch for the position it's
                                  ; currently searching CHECK_ERROR_LIST
                                  ; for, kept in memory rather than a
                                  ; register since HL is needed to walk
                                  ; the list itself during the search
+    IFNDEF V2_COMPACT_SYSVARS
 LINE_IS_ERROR:       DEFS 1           ; 1 byte — BASIC_REDRAW_PROGRAM's own
+    ENDIF
                                  ; scratch, remembering whether the
                                  ; statement it's currently rendering
                                  ; is in CHECK_ERROR_LIST, across the
@@ -720,7 +786,9 @@ LINE_IS_ERROR:       DEFS 1           ; 1 byte — BASIC_REDRAW_PROGRAM's own
                                  ; live in one) — checked afterward to
                                  ; decide whether to color that row's
                                  ; ink red
+    IFNDEF V2_COMPACT_SYSVARS
 WRAP_TARGET:         DEFS 2           ; 2 bytes — BASIC_FIND_PREV_ERROR's
+    ENDIF
                                  ; own scratch, remembering the last
                                  ; entry in CHECK_ERROR_LIST before its
                                  ; backward scan begins, so it has
@@ -738,7 +806,9 @@ WRAP_TARGET:         DEFS 2           ; 2 bytes — BASIC_FIND_PREV_ERROR's
 ; last time, so a settled row whose content genuinely hasn't changed
 ; can be skipped entirely (no clear, no redraw) instead of being wiped
 ; and redrawn identically every time.
+    IFNDEF V2_COMPACT_SYSVARS
 ROW_SHADOW_POS:      DEFS 48          ; 48 bytes — 24 rows x 2 bytes each,
+    ENDIF
                                  ; the statement position shown at
                                  ; that row as of the last redraw, or
                                  ; $FFFF (the same sentinel used
@@ -751,7 +821,9 @@ ROW_SHADOW_POS:      DEFS 48          ; 48 bytes — 24 rows x 2 bytes each,
                                  ; shadow entry set to a value that
                                  ; will correctly mismatch once it
                                  ; becomes a settled row later
+    IFNDEF V2_COMPACT_SYSVARS
 ROW_SHADOW_FLAGS:    DEFS 24          ; 24 bytes — 1 byte per row,
+    ENDIF
                                  ; bit 0 = "was this row error-
                                  ; flagged (shown in red) as of the
                                  ; last redraw" — compared alongside
@@ -761,7 +833,9 @@ ROW_SHADOW_FLAGS:    DEFS 24          ; 24 bytes — 1 byte per row,
                                  ; redraws without its position
                                  ; changing at all (e.g. right after
                                  ; RUN finds new errors)
+    IFNDEF V2_COMPACT_SYSVARS
 LAST_RENDERED_ROWS:  DEFS 1           ; 1 byte — how many rows were
+    ENDIF
                                  ; actually used (statement rows plus
                                  ; the active/cursor row) as of the
                                  ; last redraw. If the current redraw
@@ -772,7 +846,9 @@ LAST_RENDERED_ROWS:  DEFS 1           ; 1 byte — how many rows were
                                  ; would ever touch them, since the
                                  ; main render loop simply stops once
                                  ; it runs out of statements
+    IFNDEF V2_COMPACT_SYSVARS
 LAST_STATUS_TEXT:    DEFS 33          ; 33 bytes (32 chars + null
+    ENDIF
                                  ; terminator) — the status bar's own
                                  ; piece of the screen-flicker fix.
                                  ; BASIC_DRAW_STATUS_LINE runs on
@@ -787,7 +863,9 @@ LAST_STATUS_TEXT:    DEFS 33          ; 33 bytes (32 chars + null
                                  ; earlier status-bar toggle fix
 
 ; ---- Structured IF/ELSEIF/ELSE/END IF ----
+    IFNDEF V2_COMPACT_SYSVARS
 IF_SCAN_POS:         DEFS 2           ; 2 bytes — BASIC_IF_SCAN_STEP/
+    ENDIF
                                  ; BASIC_RESOLVE_IF_CHAIN/
                                  ; BASIC_SKIP_TO_ENDIF's shared current
                                  ; scan position, same EXPR_PARSE_PTR-
@@ -797,13 +875,17 @@ IF_SCAN_POS:         DEFS 2           ; 2 bytes — BASIC_IF_SCAN_STEP/
                                  ; that must survive across them lives
                                  ; in memory, reloaded fresh each step,
                                  ; never carried in a bare register
+    IFNDEF V2_COMPACT_SYSVARS
 IF_SCAN_DEPTH:       DEFS 1           ; 1 byte — nesting depth while
+    ENDIF
                                  ; scanning forward past a false IF/
                                  ; ELSEIF condition or past a taken
                                  ; branch's body; only ELSE/ELSEIF seen
                                  ; at depth 0 belong to the block being
                                  ; resolved, not some inner nested IF
+    IFNDEF V2_COMPACT_SYSVARS
 IF_TEMP_RESULT:      DEFS 1           ; 1 byte — BASIC_STMT_IF's own
+    ENDIF
                                  ; condition result (always exactly 0
                                  ; or 1), saved here because matching
                                  ; the following THEN keyword destroys
@@ -843,7 +925,9 @@ CURRENT_OVER:        DEFS 1           ; 1 byte, 0/1, default 0 — stored for
                                  ; glyph pixels onto the existing bitmap.
 
 ; ---- AT/TAB cursor positioning ----
+    IFNDEF V2_COMPACT_SYSVARS
 BASIC_OUTPUT_COL:    DEFS 1           ; 1 byte, 0-31, default 0 — column
+    ENDIF
                                  ; companion to BASIC_OUTPUT_ROW
                                  ; ($5EE9, no free byte adjacent to it,
                                  ; hence living here instead). Read by
@@ -900,7 +984,9 @@ PRINT_OVER_SCRATCH:  DEFS 1           ; GFX_PRINT_STRING_ATTR's OVER flag;
                                  ; survives per-character graphics calls
 
 ; ---- LIST / EDIT <label> / DELETE <range> ----
+    IFNDEF V2_COMPACT_SYSVARS
 DELETE_START:        DEFS 2           ; 2 bytes — BASIC_DO_DELETE's own
+    ENDIF
                                  ; parsed start index, held here rather
                                  ; than threaded through registers or
                                  ; the stack across the several
@@ -908,7 +994,9 @@ DELETE_START:        DEFS 2           ; 2 bytes — BASIC_DO_DELETE's own
                                  ; BASIC_COUNT_STATEMENTS,
                                  ; BASIC_FIND_STATEMENT_AT_INDEX) that
                                  ; come between parsing it and using it
+    IFNDEF V2_COMPACT_SYSVARS
 DELETE_END:          DEFS 2           ; 2 bytes — same reasoning, for the
+    ENDIF
                                  ; parsed end index. Only 3 bytes were
                                  ; free before PROG_AREA_START — not
                                  ; enough for these 4 bytes together,
@@ -942,7 +1030,9 @@ EDIT_LABEL_COPY      EQU TOKEN_BUF
                                  ; BASIC_DO_EDIT's own header for the
                                  ; full writeup.
 
+    IFNDEF V2_COMPACT_SYSVARS
 DELETE_INVALID_FLAG: DEFS 1           ; 1 byte, 0/1 — set by the DELETE
+    ENDIF
                                  ; dispatch when BASIC_DO_DELETE
                                  ; rejects the typed range (malformed
                                  ; number, missing comma, a typed 0,
@@ -956,7 +1046,9 @@ DELETE_INVALID_FLAG: DEFS 1           ; 1 byte, 0/1 — set by the DELETE
                                  ; through the next line the user
                                  ; types.
 
+    IFNDEF V2_COMPACT_SYSVARS
 PENDING_DELETE_POS:  DEFS 2           ; 2 bytes — position of a just-
+    ENDIF
                                  ; rejected immediate command's text,
                                  ; stored (per the existing "any
                                  ; problem falls through to being
@@ -1060,6 +1152,11 @@ STORAGE_HEADER_FILENAME_LEN EQU 10 ; NOT a sysvar address — a plain
                                  ; below.
 STORAGE_PROGRAM_TYPE   EQU 0
 STORAGE_EXTENSION_TYPE EQU 4
+STORAGE_ARRAY_TYPE     EQU 8      ; Dynamic Data Phase 2 -- SAVE/LOAD
+                                   ; "name" ARRAY arrname (rom/exrom_v2_
+                                   ; shell.asm's V2_SAVE_ARRAY/V2_LOAD_
+                                   ; ARRAY); a third STORAGE_REQUEST_TYPE
+                                   ; value, clear of the two above
 STORAGE_REQUEST_TYPE: DEFS 1      ; requested header type for SAVE/LOAD
 STORAGE_CMD_INVALID_FLAG:DEFS 1          ; 1 byte, 0/1 — SAVE/LOAD command
                                  ; syntax validation, unrelated to the
@@ -1148,18 +1245,24 @@ STORAGE_PROGRESS_HOOK:DEFS 2           ; 2 bytes — address of a caller-
 ; its own original addresses and appending this feature's block
 ; immediately after, rather than interleaving or arbitrarily
 ; reordering either side.
+    IFNDEF V2_COMPACT_SYSVARS
 BOUNDARY_IN_STRING:  DEFS 1           ; 1 byte, 0/1 — BASIC_FIND_
+    ENDIF
                                  ; STATEMENT_BOUNDARY's own toggle,
                                  ; tracking whether the scan is
                                  ; currently inside a quoted string
                                  ; literal (a ':' inside one is just
                                  ; text, never a real separator)
+    IFNDEF V2_COMPACT_SYSVARS
 MULTI_SEG_START:     DEFS 2           ; 2 bytes — current segment's start
+    ENDIF
                                  ; position, held here (not a
                                  ; register) since BASIC_FIND_
                                  ; STATEMENT_BOUNDARY's own scan
                                  ; destroys HL
+    IFNDEF V2_COMPACT_SYSVARS
 MULTI_SEG_END:       DEFS 2           ; 2 bytes — current segment's
+    ENDIF
                                  ; boundary position (pointing AT the
                                  ; ':' or the terminating $0D),
                                  ; returned by BASIC_FIND_STATEMENT_
@@ -1196,13 +1299,17 @@ MULTI_STMT_BUF       EQU TOKEN_BUF
     ASSERT EDIT_LINE_BUF_LEN <= 128
 
 ; ---- built-in function calls in expressions (ABS(x), SGN(x), MOD(x,y), ...) ----
+    IFNDEF V2_COMPACT_SYSVARS
 FUNC_CALL_HANDLER:   DEFS 2           ; 2-byte handler address from
+    ENDIF
                                  ; FUNCTION_TABLE. BASIC_EVAL_PRIMARY
                                  ; snapshots it on the Z80 stack before
                                  ; recursively parsing arguments, so a
                                  ; nested function may safely overwrite
                                  ; this shared lookup result.
+    IFNDEF V2_COMPACT_SYSVARS
 FUNC_CALL_ARGC:      DEFS 1           ; 1 byte — how many arguments the
+    ENDIF
                                  ; matched function takes (1 or 2),
                                  ; set alongside FUNC_CALL_HANDLER by the
                                  ; same BASIC_TRY_EVAL_FUNCTION table
@@ -1438,8 +1545,16 @@ CURRENT_BRIGHT:      DEFS 1          ; 1 byte, 0/1, default 0
 ; bitmap at $C000 it occupies $C000-$E7FF only while FILL is executing.
 ; FILL is HOME-ROM code and makes no EXROM calls, so EXROM temporarily
 ; hiding $C000-$DFFF can never overlap a live fill operation.
-GFX_FILL_STACK       EQU $D800         ; 4096 bytes (2048 x/y entries)
+GFX_FILL_STACK       EQU $D800         ; V1: 4096 bytes (2048 x/y entries)
+    IFDEF V2_COMPACT_SYSVARS
+; R10.7 P5: the V2 package FILL is a scanline span fill that keeps one seed per
+; run on the neighbouring rows; its measured peak is 184 bytes on a worst-case
+; comb pattern (4 bytes for discs), so 1 KB (512 seeds) is ample, and the
+; transient FILL footprint ends at $DC00, entirely inside the hidden chunk.
+GFX_FILL_STACK_END     EQU GFX_FILL_STACK + 1024
+    ELSE
 GFX_FILL_STACK_END     EQU GFX_FILL_STACK + 4096
+    ENDIF
 GFX_FILL_SP:         DEFS 2           ; 2 bytes — pointer into GFX_FILL_
                                    ; STACK; == GFX_FILL_STACK means
                                    ; empty, == GFX_FILL_STACK_END means
@@ -1492,12 +1607,16 @@ WRAP_ROW_IDX:        DEFS 1           ; 1 byte — current row index
 ; BASIC_PRINT_LINE_HIGHLIGHTED's own scratch, now that it prints
 ; multiple wrapped rows per call instead of one — see that routine's
 ; header for the full reasoning.
+    IFNDEF V2_COMPACT_SYSVARS
 HILITE_LINE_BASE:    DEFS 2           ; 2 bytes — the line's own base
+    ENDIF
                                    ; pointer, saved before EDITOR_WRAP_
                                    ; CALC runs (which advances its own
                                    ; WRAP_TEXT_PTR past the end as it
                                    ; walks, so that can't double as this)
+    IFNDEF V2_COMPACT_SYSVARS
 HILITE_WRAP_ROW:     DEFS 1           ; 1 byte — which wrapped row (0-
+    ENDIF
                                    ; based, within THIS line) is
                                    ; currently being printed
 HILITE_LINE_START_ROW:DEFS 1           ; 1 byte — the SCREEN row the first
@@ -1507,19 +1626,27 @@ HILITE_LINE_START_ROW:DEFS 1           ; 1 byte — the SCREEN row the first
                                    ; wherever wrap row HILITE_WRAP_ROW
                                    ; actually draws (LINE_START_ROW +
                                    ; WRAP_ROW), recomputed once per row
+    IFNDEF V2_COMPACT_SYSVARS
 HILITE_ROW_START:    DEFS 1           ; 1 byte — current wrapped row's own
+    ENDIF
                                    ; start offset within the line
                                    ; (EDIT_WRAP_START[HILITE_WRAP_ROW])
+    IFNDEF V2_COMPACT_SYSVARS
 HILITE_ROW_LEN:      DEFS 1           ; 1 byte — current wrapped row's own
+    ENDIF
                                    ; content length
                                    ; (EDIT_WRAP_LEN[HILITE_WRAP_ROW])
 ; BASIC_REDRAW_PROGRAM's own scratch for iterating a statement's
 ; multiple physical rows (clear/print/shadow/error-color/advance) —
 ; see that routine's own header.
+    IFNDEF V2_COMPACT_SYSVARS
 STMT_ROW_COUNT:      DEFS 1           ; 1 byte — how many physical rows
+    ENDIF
                                    ; the statement/line currently being
                                    ; rendered occupies
+    IFNDEF V2_COMPACT_SYSVARS
 STMT_ROW_IDX:        DEFS 1           ; 1 byte — loop index into those rows
+    ENDIF
 
 ; Row-height-aware scroll math (BASIC_SCROLL_TO_FIT/BASIC_ROWS_BEFORE_
 ; INDEX/BASIC_STMT_ROW_COUNT) — centralized rather than the usual
@@ -1527,15 +1654,23 @@ STMT_ROW_IDX:        DEFS 1           ; 1 byte — loop index into those rows
 ; multi-call sequence (EDITOR_WRAP_CALC + a per-statement walk), not
 ; the few-line arithmetic the 3 call sites used to duplicate; see
 ; BASIC_SCROLL_TO_FIT's own header for the full reasoning.
+    IFNDEF V2_COMPACT_SYSVARS
 SCROLL_OWN_ROWS:     DEFS 1           ; 1 byte — the target line's own
+    ENDIF
                                    ; wrapped row count (from EDIT_LINE_
                                    ; BUF, already loaded by the time
                                    ; any of the 3 call sites run this)
+    IFNDEF V2_COMPACT_SYSVARS
 ROWS_BEFORE_IDX:     DEFS 2           ; 2 bytes — BASIC_ROWS_BEFORE_
+    ENDIF
                                    ; INDEX's own running statement-
                                    ; index counter
+    IFNDEF V2_COMPACT_SYSVARS
 ROWS_BEFORE_TOTAL:   DEFS 2           ; 2 bytes — running row-count total
+    ENDIF
+    IFNDEF V2_COMPACT_SYSVARS
 ROWS_BEFORE_PTR:     DEFS 2           ; 2 bytes — running statement
+    ENDIF
                                    ; position pointer
 
 ; BASIC_SCROLL_TO_FIT's own .scroll_down_check loop state (2026-08-24)
@@ -1551,9 +1686,13 @@ ROWS_BEFORE_PTR:     DEFS 2           ; 2 bytes — running statement
 ; this loop's own pointer walks from VIEW_TOP_INDEX forward — a
 ; different position than where BASIC_ROWS_BEFORE_INDEX's own walk
 ; ends up (CUR_EDIT_INDEX's statement).
+    IFNDEF V2_COMPACT_SYSVARS
 SCROLL_ROWS_BEFORE:  DEFS 2           ; 2 bytes — running total, updated
+    ENDIF
                                    ; incrementally instead of resummed
+    IFNDEF V2_COMPACT_SYSVARS
 SCROLL_TOP_PTR:      DEFS 2           ; 2 bytes — position of whatever
+    ENDIF
                                    ; statement currently sits at
                                    ; VIEW_TOP_INDEX, advanced one
                                    ; MEM_LINE_NEXT per loop iteration
@@ -1574,12 +1713,18 @@ SCROLL_TOP_PTR:      DEFS 2           ; 2 bytes — position of whatever
 ; Bounded at 23 entries — WRAP_MAX_ROWS (8) means no more than 23
 ; statements could ever fit in the 23-row view even if every one were
 ; a single row, so this is a hard ceiling, not a guess.
+    IFNDEF V2_COMPACT_SYSVARS
 ROW_COUNT_CACHE:     DEFS 23          ; 23 bytes — one row-count per
+    ENDIF
                                    ; statement, in VIEW_TOP_INDEX order
+    IFNDEF V2_COMPACT_SYSVARS
 ROW_COUNT_CACHE_LEN: DEFS 1           ; 1 byte — how many entries above
+    ENDIF
                                    ; are valid this redraw (written by
                                    ; BASIC_ROWS_BEFORE_INDEX)
+    IFNDEF V2_COMPACT_SYSVARS
 RENDER_CACHE_IDX:    DEFS 1           ; 1 byte — BASIC_REDRAW_PROGRAM's
+    ENDIF
                                    ; own read position into the cache,
                                    ; reset to 0 at the top of every
                                    ; render pass
@@ -1606,14 +1751,20 @@ GFX_SCROLL_SRC_ROW:  DEFS 1           ; 1 byte — source row (0-22)
 ; NEW, RUN, LOAD, HELP, ...) correctly disables the fast path for the
 ; next redraw too, same "when in doubt, fall back to the slow path"
 ; discipline the fast-scroll integration follows throughout.
+    IFNDEF V2_COMPACT_SYSVARS
 LAST_VIEW_TOP_INDEX: DEFS 2           ; 2 bytes
+    ENDIF
 
 ; BASIC_REDRAW_PROGRAM's own fast-scroll path (same pass as LAST_VIEW_
 ; TOP_INDEX above) — pure scratch, both written and consumed entirely
 ; within one redraw, never needs resetting between redraws
+    IFNDEF V2_COMPACT_SYSVARS
 FAST_SCROLL_NEW_ROW: DEFS 1           ; 1 byte — row the newly-scrolled-
+    ENDIF
                                  ; into-view active line lands on
+    IFNDEF V2_COMPACT_SYSVARS
 FAST_SCROLL_OLD_POS: DEFS 2           ; 2 bytes — program position of
+    ENDIF
                                  ; the statement that WAS the active
                                  ; line before this scroll (now
                                  ; settled — needs a highlighted
@@ -1623,7 +1774,9 @@ FAST_SCROLL_OLD_POS: DEFS 2           ; 2 bytes — program position of
 ; [stated]'s second consolidation request this session. Both entry
 ; points now share one body; this flag is the only thing distinguishing
 ; them (see that routine's own header for how it's used).
+    IFNDEF V2_COMPACT_SYSVARS
 HILITE_PLAIN_MODE:   DEFS 1           ; 1 byte — nonzero when called via
+    ENDIF
                                    ; the plain (no keyword-bold) entry
                                    ; point
 
@@ -1676,9 +1829,13 @@ FOR_STACK_MAX          EQU 8       ; max nesting depth — generous
                                    ; is likely to run, same sizing
                                    ; philosophy as WRAP_MAX_ROWS
 FOR_STACK_ENTRY_LEN    EQU 7
+    IFNDEF V2_COMPACT_SYSVARS
 FOR_STACK:           DEFS 56          ; FOR_STACK_MAX*FOR_STACK_ENTRY_LEN
+    ENDIF
                                    ; = 56 bytes, through $953B
+    IFNDEF V2_COMPACT_SYSVARS
 FOR_STACK_DEPTH:     DEFS 1           ; 1 byte — number of live entries;
+    ENDIF
                                    ; the top (most recently pushed) is
                                    ; always the one BASIC_STMT_NEXT acts
                                    ; on, since loops nest strictly (an
@@ -1692,29 +1849,45 @@ FOR_STACK_DEPTH:     DEFS 1           ; 1 byte — number of live entries;
 ; assembled into a FOR_STACK entry only once the whole header has
 ; parsed successfully — same "don't push partial/invalid state" care
 ; BASIC_TRY_ASSIGNMENT already takes with CUR_VAR_LETTER.
+    IFNDEF V2_COMPACT_SYSVARS
 FOR_TEMP_VAR:        DEFS 1           ; 1 byte
+    ENDIF
+    IFNDEF V2_COMPACT_SYSVARS
 FOR_TEMP_START:      DEFS 2           ; 2 bytes
+    ENDIF
+    IFNDEF V2_COMPACT_SYSVARS
 FOR_TEMP_END:        DEFS 2           ; 2 bytes
+    ENDIF
+    IFNDEF V2_COMPACT_SYSVARS
 FOR_TEMP_STEP:       DEFS 2           ; 2 bytes
+    ENDIF
 ; BASIC_SKIP_TO_NEXT's own forward-scan position/depth, same role and
 ; same reasoning as IF_SCAN_POS/IF_SCAN_DEPTH above — used only when a
 ; FOR's initial condition means the loop body must be skipped entirely
 ; without ever being entered.
+    IFNDEF V2_COMPACT_SYSVARS
 FOR_SCAN_POS:        DEFS 2           ; 2 bytes
+    ENDIF
+    IFNDEF V2_COMPACT_SYSVARS
 FOR_SCAN_DEPTH:      DEFS 1           ; 1 byte
+    ENDIF
 ; BASIC_STMT_FOR's own scratch for the new FOR_STACK entry's address
 ; while it's being assembled field-by-field — same EXPR_PARSE_PTR-style
 ; reasoning as everything else here: MEM_LINE_NEXT (used to compute the
 ; entry's body-start field) destroys AF/BC/DE/HL, so the entry pointer
 ; can't just be held in a register across that call.
+    IFNDEF V2_COMPACT_SYSVARS
 FOR_ENTRY_PTR:       DEFS 2           ; 2 bytes
+    ENDIF
 ; BASIC_STMT_NEXT's own scratch for the freshly-incremented loop
 ; variable's value — computed once (current value + step, via
 ; MATH_ADD16), then read back twice more (writing it into the
 ; variable, and comparing it against the entry's end value) without
 ; needing to recompute or juggle it through a register across those
 ; intervening BASIC_VAR_ADDR/MATH_COMPARE16 calls.
+    IFNDEF V2_COMPACT_SYSVARS
 FOR_NEXT_NEWVAL:     DEFS 2           ; 2 bytes
+    ENDIF
 
 ; ---- kernel/storage: incoming-length guard (2026-08-18) ----
 ; STORAGE_LOAD's own In: contract gained a caller-supplied max-length
@@ -1735,6 +1908,22 @@ FOR_NEXT_NEWVAL:     DEFS 2           ; 2 bytes
 STORAGE_MAX_LEN:     DEFS 2           ; 2 bytes — caller's max allowed
                                  ; data length, passed in via DE at
                                  ; STORAGE_LOAD's entry
+
+; STORAGE_VERIFY_MODE — R10.7 VERIFY support. 0 (default) = STORAGE_
+; LOAD's own data-block receive uses load mode (write to IX), matching
+; every existing LOAD caller exactly, zero behavior change. Nonzero =
+; the data-block receive uses verify mode (compare against IX,
+; STORAGE_RECEIVE_BLOCK's own pre-existing carry-clear path, "kept for
+; real-ROM fidelity at zero cost" per that routine's own header) —
+; never affects the header search, which always still LOADS into its
+; own scratch STORAGE_HEADER_BUF regardless. Set by V2_VERIFY, cleared
+; by V2_LOAD's own success/failure exit once consumed.
+STORAGE_VERIFY_MODE: DEFS 1
+
+; BFN_MID_START_TMP — R10.7 MID$ scratch (1 byte): the resolved 0-based
+; start offset, parked in memory across VM_STR_ALLOC_TEMP/VM_STR_ADDR
+; the same way rom/exrom_v2_vm_core.asm's own BFN_STR_TMP already is.
+BFN_MID_START_TMP: DEFS 1
 
 ; ---- kernel/interrupt: real-time frame counter (2026-08-18) ----
 ; Added for two reasons at once: (1) the real ZX Spectrum system
@@ -1772,7 +1961,9 @@ FRAMES:              DEFS 2           ; 2 bytes
 ; cleared) by both BASIC_SCAN_LABELS_EXROM and BASIC_FULL_CHECK_EXROM,
 ; since either can change which statement positions are flagged or
 ; shift positions outright.
+    IFNDEF V2_COMPACT_SYSVARS
 STATUS_CHECK_VALID:  DEFS 1           ; 1 byte — nonzero: the two
+    ENDIF
                                      ; fields below hold a real,
                                      ; still-current result; zero:
                                      ; ignore them, a fresh check is
@@ -1817,9 +2008,13 @@ EXROM_KTAB_MISMATCH_FLAG:DEFS 1           ; 1 byte — 0 = never tripped;
 ; carry "which sysvar, what mask" through the call from the stub into
 ; the shared body. These two cells do that instead, set by the stub
 ; immediately before the shared body runs.
+    IFNDEF V2_COMPACT_SYSVARS
 STMT_TARGET_ADDR:    DEFS 2           ; 2 bytes — sysvar address the parsed
+    ENDIF
                                 ; value gets masked and stored into
+    IFNDEF V2_COMPACT_SYSVARS
 STMT_TARGET_MASK:    DEFS 1           ; 1 byte — AND mask applied before
+    ENDIF
                                 ; storing (e.g. $07 for INK/PAPER,
                                 ; $01 for the boolean attributes,
                                 ; $1F for TAB)
@@ -1897,7 +2092,9 @@ SPRITE_SLOT_ROW:     DEFS 8           ; 8 bytes (1/slot) — current display
                                 ; the saved background goes back)
 SPRITE_SLOT_COL:     DEFS 8           ; 8 bytes (1/slot) — same, column
 SPRITE_DISPLAY_DEPTH: DEFS 1          ; number of slots currently shown
+    IFNDEF V2_COMPACT_SYSVARS
 SPRITE_DISPLAY_STACK: DEFS 8          ; slot numbers in SHOW order;
+    ENDIF
                                 ; save-under restoration must pop these
                                 ; in reverse order to preserve overlaps
 ; The two large buffers are persistent across EXROM calls, so they live in
@@ -1926,11 +2123,21 @@ SPRITE_SLOT_BG_BUF   EQU $EC80         ; 1152 bytes — saved background
 ; coordinate parsing) before the next BASIC_EXPECT_COMMA_EXPR call
 ; destroys BC/DE/HL. Shared between GRAB and SHOW (never both live at
 ; once — one statement's parse completes before the next begins).
+    IFNDEF V2_COMPACT_SYSVARS
 SPRITE_ARG_SLOT:     DEFS 1           ; 1 byte
+    ENDIF
+    IFNDEF V2_COMPACT_SYSVARS
 SPRITE_ARG_ROW:      DEFS 1           ; 1 byte
+    ENDIF
+    IFNDEF V2_COMPACT_SYSVARS
 SPRITE_ARG_COL:      DEFS 1           ; 1 byte
+    ENDIF
+    IFNDEF V2_COMPACT_SYSVARS
 SPRITE_ARG_W:        DEFS 1           ; 1 byte
+    ENDIF
+    IFNDEF V2_COMPACT_SYSVARS
 SPRITE_ARG_H:        DEFS 1           ; 1 byte
+    ENDIF
 
 ; GFX_FILL's per-pixel visited-tracker — see GFX_FILL's own header
 ; (kernel/graphics/graphics.asm) for why this has to be a separate
@@ -1943,7 +2150,11 @@ SPRITE_ARG_H:        DEFS 1           ; 1 byte
 GFX_FILL_VISITED     EQU $C000         ; 6144 bytes, through $D7FF
 
     ASSERT GFX_FILL_VISITED + 6144 == GFX_FILL_STACK
+    IFDEF V2_COMPACT_SYSVARS
+    ASSERT GFX_FILL_STACK_END == $DC00
+    ELSE
     ASSERT GFX_FILL_STACK_END == $E800
+    ENDIF
     ASSERT GFX_FILL_STACK_END <= $FF00 ; keep clear of machine stack
 
 ; Calculator engine (RST $28) working storage — RPN stack, calculator
@@ -2142,7 +2353,9 @@ FUNC_RESULT_FLOAT_NEGATIVE:DEFS 1         ; 1 byte — 1 if the true value in
                                 ; than folded into the packed float,
                                 ; which keeps BASIC_FLOAT_TO_STRING
                                 ; itself sign-agnostic.
+    IFNDEF V2_COMPACT_SYSVARS
 FUNC_RESULT_FLOAT:   DEFS 5           ; 5 bytes — packed float (rom/exrom_
+    ENDIF
                                 ; calc.asm's own format), valid only
                                 ; when FUNC_RESULT_IS_FLOAT=1. A plain
                                 ; copy taken from CALC_STACK's top slot
@@ -2197,7 +2410,9 @@ SIN_POWER:           DEFS 5           ; 5 bytes — running |term_k| (always
 ; nonzero by both wrapper routines around their own page-in/call/page-
 ; out, checked by BASIC_EVAL_PRIMARY's USR dispatch case, which skips
 ; the actual jump and returns 0 instead whenever this is set.
+    IFNDEF V2_COMPACT_SYSVARS
 BASIC_CHECK_ONLY:    DEFS 1           ; 1 byte — 0 = real execution (USR
+    ENDIF
                                 ; really jumps), nonzero = a static
                                 ; check pass is in progress (USR is a
                                 ; no-op, returns 0)
@@ -2248,9 +2463,13 @@ BANK_EXROM_DEPTH:    DEFS 1           ; 1 byte — 0 = chunk 6 currently Home
 ; "generous but bounded" sizing rather than being separately justified.
 GOSUB_STACK_MAX     EQU 8
 GOSUB_STACK_ENTRY_LEN EQU 2
+    IFNDEF V2_COMPACT_SYSVARS
 GOSUB_STACK:         DEFS 16          ; GOSUB_STACK_MAX*GOSUB_STACK_ENTRY_LEN
+    ENDIF
                                 ; = 16 bytes, through $B2A0
+    IFNDEF V2_COMPACT_SYSVARS
 GOSUB_STACK_DEPTH:   DEFS 1           ; 1 byte — number of live entries
+    ENDIF
 
 ; ---- UDG table + block-graphics scratch (2026-08-22) ----
 ; Real TS2068/Spectrum-family hardware (confirmed via the ROM
@@ -2312,8 +2531,12 @@ BLOCK_GFX_SCRATCH:   DEFS 8           ; 8 bytes, through $B351
 ;     OWN buffer since both sides must be held simultaneously to
 ;     compare them — that's STR_CMP_RIGHT, the one buffer that
 ;     couldn't be shared with anything else.
+    IFNDEF V2_COMPACT_SYSVARS
 STR_EXPR_SCRATCH:    DEFS 32          ; 32 bytes, through $B6B1
+    ENDIF
+    IFNDEF V2_COMPACT_SYSVARS
 STR_CMP_RIGHT:       DEFS 32          ; 32 bytes, through $B6D1
+    ENDIF
 
 ; ---- Numeric arrays (Phase 3, part 3, 2026-08-22) ----
 ; Option 2 from the design discussion: a DYNAMIC region, not a fixed
@@ -2349,12 +2572,18 @@ STR_CMP_RIGHT:       DEFS 32          ; 32 bytes, through $B6D1
 ; used repeatedly (SPRITE_ARG_*, GFX_FILL_X/Y, etc.).
 ARRAYS_END:          DEFS 2           ; 2 bytes — current top of the dynamic
                                 ; arrays region (== PROG_END when empty)
+    IFNDEF V2_COMPACT_SYSVARS
 ARRAY_DIM_COUNT:     DEFS 2           ; 2 bytes — DIM's own parsed size,
+    ENDIF
                                 ; between parsing and committing
+    IFNDEF V2_COMPACT_SYSVARS
 ARRAY_INDEX:         DEFS 2           ; 2 bytes — a parsed array subscript,
+    ENDIF
                                 ; shared by the read and write paths
                                 ; (never live at the same time)
+    IFNDEF V2_COMPACT_SYSVARS
 ARRAY_ASSIGN_VALUE:  DEFS 2           ; 2 bytes — array assignment's own
+    ENDIF
                                 ; parsed RHS value, between parsing and
                                 ; the store
 
@@ -2401,20 +2630,36 @@ VARS_START:          DEFS 2           ; 2 bytes — scalar pool's own
                                 ; high-water mark, grows DOWN from
                                 ; PROG_AREA_MAX (opposite direction
                                 ; from ARRAYS_END)
+    IFNDEF V2_COMPACT_SYSVARS
 POOL_SCAN_END:       DEFS 2           ; 2 bytes — BASIC_ARRAY_FIND's own
+    ENDIF
                                 ; scratch: the resolved end boundary
                                 ; for whichever region the current scan
                                 ; is searching (ARRAYS_END or PROG_AREA_
                                 ; MAX), re-read fresh every loop
                                 ; iteration since DE is busy holding
                                 ; each record's own count field
+    IFNDEF V2_COMPACT_SYSVARS
 POOL_RECORD_KIND:    DEFS 1           ; current record kind during scan
+    ENDIF
+    IFNDEF V2_COMPACT_SYSVARS
 ARRAY_DIM_KIND:      DEFS 1           ; DIM allocator's requested kind
+    ENDIF
+    IFNDEF V2_COMPACT_SYSVARS
 ARRAY_ALLOC_BYTES:   DEFS 2           ; DIM's computed data-byte count
+    ENDIF
+    IFNDEF V2_COMPACT_SYSVARS
 STR_ASSIGN_KIND:     DEFS 1           ; 0=scalar, nonzero=string array
+    ENDIF
+    IFNDEF V2_COMPACT_SYSVARS
 STR_ASSIGN_LETTER:   DEFS 1           ; target survives nested RHS parsing
+    ENDIF
+    IFNDEF V2_COMPACT_SYSVARS
 STR_ASSIGN_INDEX:    DEFS 2           ; target index survives RHS parsing
+    ENDIF
+    IFNDEF V2_COMPACT_SYSVARS
 VAR_CHECK_SCRATCH:   DEFS 32          ; 32 bytes — BASIC_VAR_FIND_OR_
+    ENDIF
                                 ; CREATE's dummy return address during
                                 ; a BASIC_CHECK_ONLY whole-program check
                                 ; pass, so a scalar reference in a
@@ -2590,11 +2835,15 @@ STR_FUNC_POOL_NEXT:  DEFS 1           ; 1 byte — next free slot (0-4); reset
                                 ; within a single statement's own
                                 ; evaluation should always leave it at
                                 ; 0 again on its own
+    IFNDEF V2_COMPACT_SYSVARS
 STR_FUNC_CALL_ID:    DEFS 1           ; 1 byte — which STRING_FUNCTION_TABLE
+    ENDIF
                                 ; entry matched; numeric functions now store
                                 ; a handler pointer instead
                                 ; own shape for the numeric side
+    IFNDEF V2_COMPACT_SYSVARS
 STR_FUNC_DEST:       DEFS 2           ; 2 bytes — the CALLER's own target
+    ENDIF
                                 ; buffer (BASIC_EVAL_STR_PRIMARY's own
                                 ; DE-in contract), stashed here across
                                 ; argument parsing, which needs DE for
@@ -2676,14 +2925,22 @@ ARGC_STR2           EQU 102  ; two string arguments (INSTR)
 HILITE_KW_MAX_SPANS EQU 4        ; more colon-separated keyword
                                  ; segments than this on one 128-byte
                                  ; line is not realistically reachable
+    IFNDEF V2_COMPACT_SYSVARS
 HILITE_KW_COUNT:     DEFS 1           ; 1 byte — how many spans below are
+    ENDIF
                                 ; valid (0-HILITE_KW_MAX_SPANS)
+    IFNDEF V2_COMPACT_SYSVARS
 HILITE_KW_START:     DEFS 4           ; HILITE_KW_MAX_SPANS bytes — each
+    ENDIF
                                 ; span's start offset from
                                 ; HILITE_LINE_BASE
+    IFNDEF V2_COMPACT_SYSVARS
 HILITE_KW_SPANLEN:   DEFS 4           ; HILITE_KW_MAX_SPANS bytes — each
+    ENDIF
                                 ; span's length
+    IFNDEF V2_COMPACT_SYSVARS
 HILITE_TABLE_PTR:    DEFS 2           ; 2 bytes — KEYWORD_HILITE_TABLE's own
+    ENDIF
                                 ; real address (basic/basic.asm),
                                 ; stashed here by the Home-side
                                 ; BASIC_DETECT_KEYWORD_PREFIX wrapper
@@ -2715,7 +2972,9 @@ PRINT_REMAINING:     DEFS 2           ; LPRINT's own remaining character
                                 ; count across multiple chunks
 PRINT_CUR_ADDR:      DEFS 2           ; LPRINT's own current source
                                 ; pointer across multiple chunks
+    IFNDEF V2_COMPACT_SYSVARS
 PRINT_LLIST_LINE:    DEFS 2           ; LLIST's own current program-line
+    ENDIF
                                 ; pointer while walking MEM_LINE_FIRST/
                                 ; MEM_LINE_NEXT
 

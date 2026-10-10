@@ -72,6 +72,7 @@
 ; ============================================================================
 
     INCLUDE "include/hardware.inc"
+    DEFINE V2_COMPACT_SYSVARS   ; R10.7 P5 (see include/sysvars.inc)
     INCLUDE "include/sysvars.inc"
     INCLUDE "rom/test_v2_harness_addrs.inc"
 
@@ -96,6 +97,39 @@ DECOMP_OUT_BUF EQU $BC00
 DECOMP_OUT_PTR EQU $BE34
     ENDIF
 
+; MEM_FREE_BYTES/MEM_CLEAR_V2 -- R10.7 additions. Both are real, narrow
+; reproductions (same "reproduced/stubbed narrowly" convention as this
+; file's own VM_TEST_ARGTYPE_BIT precedent above), not cross-bank stubs:
+; MEM_FREE_BYTES is genuine HOME-resident kernel code in production too
+; (kernel/memory/memory.asm, not pulled in whole here to avoid dragging
+; in the rest of that file's own dependencies this harness doesn't
+; otherwise need). MEM_CLEAR_V2 is production EXROM-resident (rom/
+; exrom_v2_shell.asm) but this harness has no EXT2/extension-registry
+; presence at all (see rom/test_v2_harness_exrom.asm's own header) --
+; the extension-registry-clear call is dropped here, matching the
+; existing EXT2_TABLE-empty-is-fine precedent a few lines above for the
+; decompiler's own CALL_EXT case.
+TEST_V2_SOURCE_END EQU V2_SOURCE_END   ; the canonical include/v2_layout.inc value (pulled in with
+                                 ; vm_core/compiler by the tail); was a stale hardcoded $A33F
+TEST_V2_PACKAGE_LEN EQU $BE82   ; matches rom/exrom_v2_shell.asm's own
+                                 ; real V2_PACKAGE_LEN fixed RAM address
+
+MEM_FREE_BYTES:
+        ld hl,(VARS_START)
+        ld de,(ARRAYS_END)
+        or a
+        sbc hl,de
+        ret
+
+MEM_CLEAR_V2:
+        ld hl,(PROG_END)
+        ld (ARRAYS_END),hl
+        ld hl,TEST_V2_SOURCE_END
+        ld (VARS_START),hl
+        ld hl,0
+        ld (TEST_V2_PACKAGE_LEN),hl
+        ret
+
     DEVICE NOSLOT64K
     ORG $0000
     di
@@ -117,6 +151,11 @@ TEST_COLD_START:
     call BANK_PAGE_EXROM_IN     ; ONE unbalanced page-in, matching real
                                   ; V2_COLD_START -- see this file's own
                                   ; header. Never paged back out.
+    ld hl, PROG_AREA_START      ; R10.7 P2: the compile symbol table is placed
+    ld (PROG_END), hl           ; at PROG_END, so every test needs a sane one
+    ld (ARRAYS_END), hl         ; (cold RAM is undefined); custom tests that
+    ld hl, TEST_V2_SOURCE_END   ; set their own values simply overwrite these
+    ld (VARS_START), hl
     IFDEF TEST_V2_CUSTOM_CHECKS
     jp TEST_CUSTOM_MAIN
     ELSE

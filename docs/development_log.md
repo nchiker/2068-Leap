@@ -19,6 +19,7 @@ full design rationale and the complete bug-by-bug history, see
    stack init, border-cycle smoke test. No dependency on any other module —
    proves the boot chain works before anything is built on top of it. See
    "Testing Milestone 0" below.
+
 1. `kernel/memory` (all routines implemented and hand-traced — see
    `docs/programmers_reference.md` for exactly what's confirmed on real
    hardware vs. hand-traced-only; `MEM_LINE_STORE`/`MEM_LINE_DELETE_RANGE`
@@ -27,20 +28,24 @@ full design rationale and the complete bug-by-bug history, see
    (name -> program-position; replaces line-number addressing — see
    `docs/basic_language_reference.md`). Everything else in the editor
    depends on this.
+
 2. `kernel/io` (implemented — see `docs/programmers_reference.md`; scan
    primitives and CAPS SHIFT+digit cursor/delete combos both confirmed
    and implemented — see `docs/hardware_notes.md`; SHIFT+letter symbol
    combos and the BREAK key are still open)
+
 3. `kernel/editor` (single-line editing implemented and hand-traced —
    INSERT/DELETE/MOVE_CURSOR/REDRAW_SCREEN all working; new
    `EDITOR_REDRAW_HOOK` and `EDITOR_NAV_HOOK` let a caller like
    `basic/` fully replace default rendering and UP/DOWN handling — see
    `docs/programmers_reference.md`)
+
 4. `kernel/graphics` (text-mode subset implemented — see
    `docs/programmers_reference.md`; screen addressing verified
    numerically, font glyph shapes need visual confirmation, see
    "Testing kernel/graphics" below; new `GFX_PUTCHAR_BOLD` for
    synthesized bold text) — enough for `EDITOR_REDRAW_SCREEN`
+
 5. `kernel/math` (16-bit signed multiply/divide — Z80 has no hardware
    instructions for either; both algorithms verified via Python
    simulation against tens of thousands of cases before any Z80 code
@@ -48,6 +53,7 @@ full design rationale and the complete bug-by-bug history, see
    "Testing kernel/math" below) — built to support `basic/`'s
    expression evaluator, kept generic and reusable rather than
    BASIC-specific
+
 6. `basic/` (growing — tokenizer, REPL-style command loop with RUN as
    a real immediate command, variables, PRINT of strings/expressions,
    INPUT, **arithmetic expressions**: `+ - * /`, unary minus,
@@ -167,7 +173,7 @@ full design rationale and the complete bug-by-bug history, see
    programmers_reference.md`'s kernel/storage section), but it
    replaces the current program outright rather than merging into it;
    `MERGE` itself remains a genuinely separate, unbuilt command.
-
+   
    **Statement separator (`:`), the last item from this session's
    original list.** `x=1: y=2: PRINT x+y` runs all three on one line.
    Rather than teach every individual statement handler to track where
@@ -186,7 +192,7 @@ full design rationale and the complete bug-by-bug history, see
    untouched by this feature, not just tested). Live keyword bolding
    also only checks the very start of a line — `GOTO` after a colon
    won't render bold, though it executes correctly; purely cosmetic.
-
+   
    **This delivery is a merge of two separate, parallel conversations**
    — one building this statement-separator feature, the other
    rebuilding SAVE/LOAD from scratch (see `docs/programmers_
@@ -200,7 +206,7 @@ full design rationale and the complete bug-by-bug history, see
    untested against a real build (verified via Python simulation and
    static analysis only, same as always before first real use); the
    SAVE/LOAD side has its own, separately-confirmed test history.
-
+   
    **The navigation/delete/insert work was the largest, most
    interdependent set of changes made to this project so far** —
    genuinely higher risk of a bug surfacing in testing than the
@@ -221,7 +227,7 @@ full design rationale and the complete bug-by-bug history, see
    exact same validation logic the confirmed-working single-error path
    already uses, and both outcomes were hand-traced against the final
    code, but that's not a substitute for testing on hardware.
-
+   
    **Error display now shows in the status bar, with red-highlighted
    error lines on top of it — both confirmed working.** `"N ERRORS
    FOUND"` shows in the status bar rather than taking over the whole
@@ -241,7 +247,7 @@ full design rationale and the complete bug-by-bug history, see
    in code written after that exact lesson was already documented —
    fixed with one save/restore, then confirmed correct with a clean,
    controlled test sequence.
-
+   
    **`SYMBOL SHIFT+A`/`SYMBOL SHIFT+S` error navigation is confirmed
    working**, after a genuinely difficult debugging arc. The first
    several rounds of testing were chasing a bug that turned out not to
@@ -264,7 +270,7 @@ full design rationale and the complete bug-by-bug history, see
    already fully side-effect-free. Still planned, not yet built: running
    this same check automatically on every commit (`ENTER`), not just
    at `RUN`.
-
+   
    **Screen-flicker fix — built, one confirmed round of real bugs
    already found and fixed from the user's own testing.** The user
    proposed a separate "display subsystem" module first; discussed
@@ -283,7 +289,7 @@ full design rationale and the complete bug-by-bug history, see
    longer previous redraw (e.g. after deleting a statement). Needed
    `PROG_AREA_START` to move again to fit the new state (`$6030` →
    `$6090`), re-verified safe the same way as every previous move.
-
+   
    The very first real test — a screenshot of a black screen with just
    one gray bar at the top on cold boot — surfaced two real bugs at
    once, both the same underlying mistake in two places: removing the
@@ -295,6 +301,7 @@ full design rationale and the complete bug-by-bug history, see
    afterward skipped redrawing rows that clear had just wiped blank.
    Both fixed with `BASIC_RESET_ROW_SHADOW`, called once at cold boot
    and once right after `BASIC_RUN`'s own clear.
+
 7. Current expansion candidates: a user-facing program search command,
    procedures/functions, and the remaining structured-control forms.
    `IF`, `GOSUB`, `FOR`, graphics, sound, sprites, strings, arrays, and
@@ -379,7 +386,6 @@ most of the time (`SQR(2)` returning `1`, not an approximation of
 `1.4142`) — the concrete case this whole feature exists for.
 
 ## Testing Milestone 0
-
 
 ```
 sjasmplus rom/main.asm
@@ -511,6 +517,7 @@ directly with known arguments (`SQR(2)`, `SQR(9)`, `SQR(0)`, `SQR(-5)`,
 row, plus three cases through the REAL `BASIC_STMT_PRINT` statement
 (`PRINT SQR(2)`, `PRINT SIN(30)`, `PRINT SIN(45)+1`) to confirm the
 actual PRINT-time hook, not just the two routines in isolation. Expect:
+
 ```
 1.4142
 3.0000
@@ -528,6 +535,7 @@ actual PRINT-time hook, not just the two routines in isolation. Expect:
 0.4999
 1
 ```
+
 (`0.4999` instead of the "nicer" `0.5000` for `SIN(30)`/`SIN(-30)` is
 truncation showing a true float result landing infinitesimally under
 the round value, not a bug — this project's own established convention
@@ -620,16 +628,20 @@ immediately below, bold where a keyword was recognized), type `RUN` on
 its own, press ENTER (executes the WHOLE program so far and pauses on
 the output — press any key to continue to the next command). Try,
 across separate ENTER presses:
+
 ```
 x = 5
 PRINT x
 RUN            (shows "5" — stays on screen until you press a key)
 ```
+
 That's two statements accumulated and run together — try adding more:
+
 ```
 PRINT "HELLO"
 RUN            (now runs all three statements in order)
 ```
+
 Typing a recognized keyword in lowercase (`print`, `input`, `run`,
 `end`, `stop`) flips it to bold uppercase the moment you finish typing
 it (space, `=`, or ENTER right after) — try typing `print x` and watch
@@ -638,6 +650,7 @@ once a line is committed, not while you're still typing it — the
 actively-edited line always shows plain until ENTER. `INPUT` still
 works the same way as before, just as one more line in the growing
 program:
+
 ```
 INPUT y
 PRINT y
@@ -648,6 +661,7 @@ RUN            (prompts for a number, then shows it)
 expressions now, not just a bare literal or variable: `+ - * /`, unary
 minus, and parentheses, with normal precedence (`*`/`/` bind tighter
 than `+`/`-`). Try:
+
 ```
 x = 3 + 4 * 2
 PRINT x        (shows "11" — confirms * binds tighter than +)
@@ -661,6 +675,7 @@ PRINT x            (shows "12" — self-referential assignment reads the
 **Labels and GOTO** — a label is a statement that's entirely a bare
 name followed by `:`, nothing else on that line; both label names and
 GOTO references are case-insensitive. Try:
+
 ```
 x = 1
 loop:
@@ -681,6 +696,7 @@ RUN                 (prints 1, 2, 3, ... forever — no way to stop it
 single-line short form, `= <> < > <= >=` plus `AND`/`OR`/`NOT`
 (remember: no short-circuiting — both sides of `AND`/`OR` always
 evaluate). Try the block form, nested:
+
 ```
 x = 7
 IF x > 5 THEN
@@ -696,7 +712,9 @@ RUN                 (shows "1" — outer branch taken (7>5), inner
                     branch's condition false (7 is not >10), so its
                     ELSE runs instead)
 ```
+
 Try an ELSEIF chain:
+
 ```
 x = 2
 IF x = 1 THEN
@@ -708,7 +726,9 @@ PRINT 999
 END IF
 RUN                 (shows "222" — only the matching branch runs)
 ```
+
 Try the single-line short form (no END IF needed at all):
+
 ```
 x = 5
 IF x = 5 THEN PRINT x
@@ -717,7 +737,9 @@ RUN                 (shows "5" only — the second line's condition is
                     false, so nothing prints for it, and execution
                     just continues to whatever comes after)
 ```
+
 Try AND/OR/NOT:
+
 ```
 x = 5
 IF x > 0 AND x < 10 THEN PRINT 1
@@ -726,8 +748,10 @@ IF NOT x = 0 THEN PRINT 3
 RUN                 (shows "1" then "3" — the OR line's condition is
                     false, so it's skipped)
 ```
+
 Try the infinite-loop example above again, now with a real way to stop
 it:
+
 ```
 x = 1
 loop:
@@ -741,7 +765,9 @@ RUN                 (prints 1, 2, 3, 4, 5, then stops on its own —
                     confirms IF can finally give a GOTO loop a real
                     exit condition)
 ```
+
 Try the new error: an unterminated block.
+
 ```
 IF x = 1 THEN
 PRINT x
@@ -757,12 +783,14 @@ RUN                 (shows "IF WITHOUT END IF" — the static checker
 **Error reporting** — runtime errors now show a message plus the
 failing statement's text, then stop, instead of silently doing
 nothing. Try each as its own single-statement program:
+
 ```
 GOTO nowhere    RUN   (shows "LABEL NOT FOUND" + "GOTO nowhere")
 x = 5 / 0        RUN   (shows "DIVISION BY ZERO" + "x = 5 / 0")
 qqq               RUN   (shows "SYNTAX ERROR" + "qqq" — not a keyword,
                         not an assignment, not a label)
 ```
+
 A genuine label (`loop:`) should never trigger any of these — it's the
 one case that looks similarly "unrecognized" but is actually valid,
 and needed its own check (`BASIC_IS_LABEL_DEFINITION`) to keep working
@@ -771,6 +799,7 @@ correctly once the fallback started reporting real errors.
 **Whole-program check pass** — before any of that even runs, every
 statement gets checked first. Try a program with more than one
 problem:
+
 ```
 GOTO nowhere
 qqq
@@ -785,6 +814,7 @@ RUN                (goes straight back to the editor view — no wait,
                    keyword within them staying bold, same as always,
                    just bold-red instead of bold-black)
 ```
+
 The message stays in the status bar as you navigate UP/DOWN — it only
 clears once you commit a change (ENTER), since a fresh edit means the
 old check result may no longer apply. The red highlighting clears the
@@ -798,11 +828,13 @@ execution reaches it.
 
 **Error navigation** (confirmed working) — with the two errors above
 still showing, try:
+
 ```
 SYMBOL SHIFT+A   (jumps to "GOTO nowhere" — press again: wraps to
                  "qqq"; press again: wraps back to "GOTO nowhere")
 SYMBOL SHIFT+S   (same, in reverse — try it from either line)
 ```
+
 Lands you directly on each flagged line, cycling between just the two
 errors regardless of where else in the program you start from or how
 many other (valid) lines sit in between.
@@ -854,11 +886,13 @@ screen (row 23, shown in inverse video) shows `LINE n/m` for whichever
 statement you're editing, or `NEW LINE` when you're on the fresh line
 at the end — it disappears automatically once you `RUN`, since that's
 a completely separate screen. Try:
+
 ```
 x = 5
 PRINT x
 RUN            (shows "5")
 ```
+
 Then press UP twice to land back on `x = 5`, change the `5` to a
 different number, press ENTER (commits the change and moves down to
 `PRINT x`, same as a normal text editor), then `RUN` again — the new
@@ -889,12 +923,15 @@ operators. (This line previously listed only 18 characters, missing `/`
 and `*` — corrected alongside this update.)
 
 **CLS, REM, BORDER** — three new statements. Try:
+
 ```
 BORDER 2
 PRINT "HELLO"
 RUN            (border turns red, then "HELLO" prints as usual)
 ```
+
 Then try CLS mid-program:
+
 ```
 PRINT "ONE"
 CLS
@@ -903,13 +940,17 @@ RUN            ("ONE" flashes onto row 0, CLS wipes it immediately,
                then "TWO" prints at row 0 again — not row 1 — since
                CLS also resets where PRINT thinks it's writing)
 ```
+
 REM is a comment — anything after it is ignored, whatever it says:
+
 ```
 REM this line does nothing
 PRINT 1
 RUN            (shows "1" — the REM line above it never runs anything)
 ```
+
 A malformed BORDER should behave like any other malformed expression:
+
 ```
 BORDER
 RUN            (shows "SYNTAX ERROR" — BORDER with no value at all is
@@ -917,6 +958,7 @@ RUN            (shows "SYNTAX ERROR" — BORDER with no value at all is
 ```
 
 **NEW** — a second immediate command, alongside RUN. Try:
+
 ```
 x = 5
 PRINT x
@@ -932,6 +974,7 @@ RUN            (still shows "5" — NEW zeroed variables too, so this
 **INK, PAPER, FLASH, INVERSE** — set text-attribute state that actually
 changes what `PRINT` draws (unlike `BORDER`, which only touches the
 screen edge). Try:
+
 ```
 INK 2
 PAPER 5
@@ -939,8 +982,10 @@ PRINT "HELLO"
 RUN            (HELLO prints with red ink on cyan paper, not the
                default black-on-white)
 ```
+
 `INVERSE` swaps ink/paper at print time without changing the
 underlying `INK`/`PAPER` values:
+
 ```
 INK 2
 PAPER 5
@@ -951,12 +996,14 @@ PRINT "B"
 RUN            (A prints cyan-on-red — swapped; B prints back to
                red-on-cyan, since INVERSE 0 didn't touch INK/PAPER)
 ```
+
 `FLASH 1` sets the hardware flash bit on subsequently printed text
 (visible on real hardware/Fuse, not distinguishable from a static
 screenshot). `OVER 1` XOR-plots subsequent text, so printing the same
 glyph twice at the same position restores the original bitmap. `NEW`
 resets all five back to defaults (INK 0, PAPER 7,
 FLASH/INVERSE/OVER 0):
+
 ```
 INK 2
 NEW
@@ -965,12 +1012,15 @@ RUN            (back to default black-on-white, not leftover red ink)
 ```
 
 **AT, TAB** — position the next `PRINT`. Try:
+
 ```
 AT 10,5
 PRINT "HELLO"
 RUN            (HELLO appears at row 10, column 5 — not the top-left)
 ```
+
 Positioning only lasts for the one `PRINT` that follows it:
+
 ```
 AT 10,5
 PRINT "A"
@@ -978,7 +1028,9 @@ PRINT "B"
 RUN            (A appears at row 10 col 5; B appears at row 11 col 0
                — the next line resets to the left margin on its own)
 ```
+
 `TAB` moves the column only, same line:
+
 ```
 PRINT "X"
 AT 5,0
@@ -989,15 +1041,19 @@ RUN            (Y appears at row 5 col 0; Z appears at row 6 col 10 —
                TAB alone doesn't change the row, but PRINT still
                advances to a new row afterward the same as always)
 ```
+
 An out-of-range row silently clamps rather than erroring:
+
 ```
 AT 30,5
 PRINT "HELLO"
 RUN            (HELLO still appears — at row 23, the last valid row,
                not a SYNTAX ERROR)
 ```
+
 A malformed AT (missing the comma) behaves like any other malformed
 statement:
+
 ```
 AT 5
 RUN            (shows "SYNTAX ERROR")
@@ -1005,10 +1061,12 @@ RUN            (shows "SYNTAX ERROR")
 
 **LIST, EDIT, DELETE** — immediate commands, typed alone and pressed
 ENTER, same as `RUN`/`NEW`. Try building a short program, then:
+
 ```
 LIST           (jumps the view back to the top of the program — handy
                after scrolling or typing your way to the bottom)
 ```
+
 ```
 loop:
 PRINT "HI"
@@ -1016,8 +1074,10 @@ GOTO loop
 EDIT loop      (jumps straight to the "loop:" line, wherever it is —
                no need to scroll/navigate to find it by hand)
 ```
+
 Delete a range by 1-based line number (the first line typed is line
 1, matching how you'd read the listing top to bottom):
+
 ```
 PRINT "A"
 PRINT "B"
@@ -1026,6 +1086,7 @@ PRINT "D"
 DELETE 2,3     (removes lines B and C — LIST afterward shows just A
                and D)
 ```
+
 A single line can be deleted the same way with matching numbers
 (`DELETE 1,1` deletes just the first line), though CAPS SHIFT+1
 remains the faster one-keystroke way to delete whatever line you're
@@ -1033,14 +1094,17 @@ currently on. A typed `0`, or a malformed/out-of-range DELETE, leaves
 the program untouched and gets typed in as a (syntactically invalid)
 line instead — and now also shows **"INVALID RANGE"** in the status
 bar for a moment, right after pressing ENTER:
+
 ```
 DELETE 0,2     (there's no "line 0" — program unchanged; this text
                itself gets stored as a line, showing SYNTAX ERROR on
                RUN, but status bar briefly shows INVALID RANGE first)
 DELETE 5,2     (start > end — same outcome, unchanged + stored as text)
 ```
+
 Editing an *existing* line to read a command no longer executes it —
 it's always just text:
+
 ```
 PRINT "A"
 PRINT "B"
@@ -1050,8 +1114,10 @@ RUN            (shows SYNTAX ERROR — DELETE 1,1 was stored as an
                ordinary line, not executed; A and B are both still
                present in the listing above)
 ```
+
 A freshly-typed rejected command auto-removes itself once you
 navigate away, so it never becomes a permanent line at all:
+
 ```
 PRINT "A"
 PRINT "B"
@@ -1063,11 +1129,14 @@ UP             (navigate away — the DELETE 5,2 line silently
 ```
 
 **Statement separator (`:`)** — multiple statements on one line:
+
 ```
 x=1: y=2: PRINT x+y
 RUN            (prints 3 — all three statements ran, in order)
 ```
+
 A `:` inside a string or after REM is just text:
+
 ```
 PRINT "a:b": PRINT "c"
 RUN            (prints "a:b" then "c" on separate lines — the colon
@@ -1076,13 +1145,17 @@ REM this: is one comment: PRINT "never runs"
 RUN            (nothing prints — the whole line is one comment,
                colons included)
 ```
+
 Works inside single-line IF's THEN branch too:
+
 ```
 IF 1 THEN PRINT "yes": PRINT "both ran"
 RUN            (prints both lines — before this feature, only the
                first would have run)
 ```
+
 A label still can't share a line with anything else:
+
 ```
 loop: PRINT "hi"
 RUN            (shows SYNTAX ERROR on that line — "loop:" combined
@@ -1091,6 +1164,7 @@ RUN            (shows SYNTAX ERROR on that line — "loop:" combined
 
 **PEEK / POKE / FREE / USR / PAUSE** (2026-08-22) — raw memory access,
 free-space query, machine-code call, and frame-based delay:
+
 ```
 a = 50000: POKE a,42: PRINT PEEK(a)
 RUN            (prints 42 — POKE then PEEK round-trips through the
@@ -1103,6 +1177,7 @@ PAUSE 25: PRINT "half a second later"
 RUN            (pauses ~0.5s at 50Hz before printing — PAUSE 0 instead
                waits indefinitely for any keypress)
 ```
+
 `USR` needs real machine code POKEd in first to be meaningful — see
 `docs/programmers_reference.md`'s basic/ section ("PEEK/POKE/FREE/USR/
 PAUSE") for a full worked example, plus the real infinite-reboot bug
@@ -1114,6 +1189,7 @@ it.
 
 **RANDOMISE / PI / RAD / DEG** (2026-08-22) — explicit RNG reseeding
 plus three more "function-result float" built-ins alongside `SQR`/`SIN`:
+
 ```
 RANDOMISE 5: PRINT RND(1000)
 RUN            (prints some value 0-999)
@@ -1128,6 +1204,7 @@ RUN            (prints 1.5707 — 90 degrees in radians)
 PRINT DEG(1)
 RUN            (prints 57.2957 — 1 radian in degrees)
 ```
+
 Building these caught a real, previously-latent bug in `kernel/bank`'s
 EXROM paging (already affecting the shipped `SIN`, just never
 triggered before — its own prior testing bypassed the checker
@@ -1200,6 +1277,7 @@ HOOK` set by hand (normally `BASIC_COMMAND_LOOP`'s own job, which a
 **GOSUB / RETURN / CALL** (2026-08-22) — simplified "stored
 procedures": a procedure is just a label you `CALL` instead of
 `GOSUB`, no parameters or local variables:
+
 ```
 A = 0: GOSUB addone: PRINT A
 RUN            (prints 1)
@@ -1211,6 +1289,7 @@ addone:
 A = A + 1
 RETURN
 ```
+
 **Important — labels and identifiers cannot contain digits or
 underscores, letters only** (`A`-`Z`) — this is a genuine, pre-
 existing language constraint (`BASIC_PARSE_IDENTIFIER` silently stops
@@ -1229,6 +1308,7 @@ when bisecting) and a real edge case guarded against (`RETURN` when
 
 **INKEY$()** (2026-08-22) — non-blocking keypress read, scoped as a
 plain integer (this dialect has no strings yet):
+
 ```
 A = INKEY$()
 PRINT A
@@ -1246,6 +1326,7 @@ parameters are raw integers, `kernel/sound`'s `SOUND_BEEP`. `SOUND
 <register>,<data>` IS the authentic command (register 1-16 -> port
 `$F5`, data -> port `$F6`), EXROM-resident (`rom/exrom_sound.asm`) to
 save Home ROM budget:
+
 ```
 BORDER 2: BEEP 300,800: BORDER 4
 RUN            (green border — runs to completion; can't confirm the
@@ -1257,6 +1338,7 @@ RUN            (halts with "INVALID SOUND REGISTER" — register 0 is
                out of range; the valid SOUND 8,15 before it already
                ran)
 ```
+
 See `docs/programmers_reference.md`'s `kernel/sound` section and the
 basic/ "BEEP / SOUND" section for the full writeup, including a real
 cross-EXROM-boundary bug (an EXROM-resident error-message pointer that
@@ -1268,6 +1350,7 @@ assignment/`PRINT`/`=`/`<>` comparison. Real cost: ~364 bytes Home ROM
 (573 -> 209 bytes free) — concatenation and arrays are still in scope
 but didn't land in this pass; see the status report to the user for
 the real numbers this was gated on.
+
 ```
 A$ = "HI": B$ = "YO"
 IF A$ = B$ THEN GOTO bad
@@ -1277,6 +1360,7 @@ bad: BORDER 3: STOP
 good: PRINT A$: BORDER 4: STOP
 RUN            (prints "HI", green border)
 ```
+
 Two real bugs caught before either reached the emulator: `BASIC_EVAL_
 STR_PRIMARY` not skipping a leading space before the right-hand operand
 (`IF A$ = "HI" THEN` failed the checker outright until fixed), and
@@ -1292,11 +1376,13 @@ reference.md`'s "String scalars" section for the full incident.
 chains, anywhere a string expression is expected. Real cost: ~50 bytes
 Home ROM (209 -> 159 bytes free), confirming the ~40-60 byte estimate
 made once string scalars' own real cost was known:
+
 ```
 BORDER 2: A$ = "HI": B$ = A$ + "!"
 IF B$ = "HI!" THEN BORDER 4
 RUN            (green border)
 ```
+
 Checker wiring cost zero extra bytes — `rom/exrom_checker.asm`'s
 `BASIC_CHECK_STR_ASSIGNMENT` already called into Home via a KTAB slot
 for single-primary validation; retargeting that same slot at the new
@@ -1329,11 +1415,13 @@ SPRITE moved to EXROM" section for the full writeup.
 **Numeric arrays** (2026-08-22) — `DIM name(n)`, 0-based, dynamic
 region (grows after program text, reset each `RUN`), `name(i)` as both
 a read and an assignment target:
+
 ```
 DIM A(5): A(0) = 10: A(3) = 20
 PRINT A(0) + A(3)
 RUN            (prints 30)
 ```
+
 Real bug found and fixed: the first draft stashed the array's own
 letter in `CUR_VAR_LETTER` — shared scratch `BASIC_TRY_ASSIGNMENT`/
 `BASIC_STMT_DIM` also use — which a nested array read while parsing
@@ -1382,6 +1470,7 @@ dropped mid-implementation to fit Home ROM's own budget (`INSTR`'s own
 two-buffer argument parsing was the bulk of the overage). Four real
 bugs found and fixed, all only by live emulator testing (static review
 and hand-tracing missed every one):
+
 1. A nested-string-function-call clobbering bug — the first draft
    stashed the caller's destination/budget/pool-buffer address in
    shared sysvars, which a call like `UPPER$(LEFT$(A$,3))` recurses
@@ -1741,3 +1830,8 @@ this ROM's native program representation, so this is transport/tooling
 compatibility rather than stock Sinclair BASIC compatibility. See
 `docs/tape_compatibility.md` for the byte layout and state contract.
 
+## R10.7 — test target split (headless default)
+`make test` previously included the Fuse/X11 V1 tests. Now: `make test` = headless only
+(smoke ROMs, V2 standalone, production-ROM checks); `make test-legacy` = V1 Fuse tests
+(unchanged); `make test-all` = both; `make check` unchanged plus `tools/check_test_targets.sh`.
+See docs/v2/TESTING.md.

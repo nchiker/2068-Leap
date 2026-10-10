@@ -1,9 +1,33 @@
 ; ============================================================================
-; basic/basic.asm — the BASIC interpreter (growing)
+; basic/basic.asm — the pre-V2 ("V1") BASIC interpreter
 ;
-; Production BASIC implementation, assembled into rom/test_basic.asm and
-; covered by the automated Fuse regression suite. Historical implementation
-; notes remain near the routines they describe.
+; NON-PRODUCTION LEGACY/COMPONENT-TEST FIXTURE. This file is NOT the
+; implementation of BASIC used by the shipping ROM: rom/v2_home.asm and
+; rom/v2_exrom.asm (the real, production V2 BASIC — compiled-to-bytecode,
+; not this line interpreter) do not INCLUDE this file, directly or
+; transitively, at all. Confirmed by direct INCLUDE-chain trace; see
+; docs/v2/R10_7_DORMANT_ARCHITECTURE_AUDIT.md §2/§3 for the full
+; disposition and docs/v2/R9_CUTOVER_LEDGER.md for when/why it was
+; disconnected (the R9 production cutover).
+;
+; It contributes zero bytes to the shipping V2 ROM and must not drive
+; production architecture decisions — in particular, a test that only
+; builds through this file must never be used as justification for
+; restoring an obsolete service to the shared production kernel
+; (kernel/memory, kernel/io, etc.). It is kept, deliberately and
+; temporarily, only because a handful of legitimate component tests
+; (tools/run_editor_auto_test.sh, tools/run_storage_named_load_test.sh)
+; still exercise shared kernel/editor/storage primitives through this
+; old, simpler command loop. See basic/legacy_kernel_compat.asm for this
+; fixture's own copies of kernel routines that production has since
+; (correctly) removed. Eventual disposition for R11-adjacent housekeeping
+; is either (a) freeze this as a permanent fixture with an explicit
+; cross-build dead-code check, or (b) migrate the still-useful tests onto
+; the V2 standalone harness convention and retire this file entirely —
+; not decided here.
+;
+; Historical implementation notes below remain near the routines they
+; describe, from when this WAS the production implementation (pre-R9).
 ;
 ; Scope, deliberately bounded:
 ;   - BASIC_TOKENIZE_LINE: converts EDIT_LINE_BUF's raw null-terminated
@@ -37,6 +61,7 @@
     INCLUDE "include/hardware.inc"
     INCLUDE "include/sysvars.inc"
     INCLUDE "basic/editor_integration.asm"
+    INCLUDE "basic/legacy_kernel_compat.asm"
 
 ; ---- display constants ----
 ATTR_ERROR_RED  EQU $3A     ; PAPER 7 (white, matching the default
@@ -420,13 +445,19 @@ BASIC_COMMAND_LOOP:
     jr   .check_new_trailing
 
 .is_new:
-    call MEM_INIT                       ; program area + label table ->
-                                        ; empty (see kernel/memory) —
-                                        ; also resets VARS_START to
-                                        ; empty now (Phase 4), so the
-                                        ; separate VAR_TABLE zero-fill
-                                        ; this block used to do here is
-                                        ; gone, not just moved
+    call MEM_INIT                       ; program area -> empty (see
+                                        ; kernel/memory) — also resets
+                                        ; VARS_START to empty now
+                                        ; (Phase 4), so the separate
+                                        ; VAR_TABLE zero-fill this block
+                                        ; used to do here is gone, not
+                                        ; just moved
+    call MEM_LABEL_TABLE_CLEAR           ; production MEM_INIT no longer
+                                        ; tail-jumps here (R10.7 dormant-
+                                        ; ROM removal); this fixture
+                                        ; still owns the label table, so
+                                        ; it clears it explicitly — see
+                                        ; basic/legacy_kernel_compat.asm
 
     call BASIC_RESET_EDIT_STATE
     xor  a
@@ -2179,6 +2210,8 @@ BASIC_DO_LOAD:
     or   a
     jr   nz, .load_failed_clean
     call MEM_INIT
+    call MEM_LABEL_TABLE_CLEAR           ; see the NEW handler above for
+                                        ; why this is now explicit
     call BASIC_RESET_EDIT_STATE
     call BASIC_RESET_ROW_SHADOW
 .load_failed_clean:

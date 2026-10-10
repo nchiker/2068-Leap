@@ -32,6 +32,7 @@
     DEFINE TEST_V2_NEEDS_DECOMPILE
     DEFINE TEST_V2_CHECK_DECOMPILED_TEXT
     INCLUDE "rom/test_v2_harness_home_head.inc"
+    INCLUDE "rom/test_v2_symmacros.inc"
 
 SOURCE_TEXT:
     db "C=0:FOR I=1 TO 10 STEP 2:C=C+I:NEXT I:"
@@ -45,26 +46,26 @@ SOURCE_TEXT:
 ; VM_OUTPUT_ROW (must be 3 -- one line per PRINT).
 ; ============================================================================
 TEST_CHECK_RESULT:
-    ld   a, (SYMTAB_BASE + 0*3)     ; C's own tag
+    TSYM_LD8 0*3  ; C's own tag
     cp   0
     jr   nz, .fail
-    ld   hl, (SYMTAB_BASE + 0*3 + 1)
+    TSYM_LD16 0*3 + 1
     ld   de, 25
     or   a
     sbc  hl, de
     jr   nz, .fail
-    ld   a, (SYMTAB_BASE + 2*3)     ; D's own tag
+    TSYM_LD8 2*3  ; D's own tag
     cp   0
     jr   nz, .fail
-    ld   hl, (SYMTAB_BASE + 2*3 + 1)
+    TSYM_LD16 2*3 + 1
     ld   de, 22
     or   a
     sbc  hl, de
     jr   nz, .fail
-    ld   a, (SYMTAB_BASE + 4*3)     ; E's own tag
+    TSYM_LD8 4*3  ; E's own tag
     cp   0
     jr   nz, .fail
-    ld   hl, (SYMTAB_BASE + 4*3 + 1)
+    TSYM_LD16 4*3 + 1
     ld   de, 3
     or   a
     sbc  hl, de

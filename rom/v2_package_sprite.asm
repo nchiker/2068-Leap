@@ -1,5 +1,6 @@
 ; V2-native sprite loadable package at the RAM ABI address.
     INCLUDE "include/hardware.inc"
+    DEFINE V2_COMPACT_SYSVARS   ; R10.7 P5: drop V1-only sysvars (see include/sysvars.inc)
     INCLUDE "include/sysvars.inc"
     INCLUDE "build/v2_crossbank.inc"
     DEVICE NOSLOT64K

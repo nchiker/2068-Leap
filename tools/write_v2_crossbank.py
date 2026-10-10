@@ -36,6 +36,34 @@ NAMES = (
     "TAG_INT",
     "VM_CLAMP_Y191",
     "VM_COMPUTE_PRINT_ATTR",
+    # Dynamic Data Phase 2 -- array SAVE/LOAD (rom/exrom_v2_shell.asm).
+    # ARRSYM_LOOKUP/STRARRSYM_LOOKUP are the SAME compile-time name
+    # tables COMPILE_DIM/COMPILE_FACTOR already use (real RAM, not
+    # reset between the program's own last compile/RUN and a later
+    # SAVE/LOAD typed at the command line); ARENA_ALLOC_NUMERIC/STRING
+    # are OP_DIM/OP_DIM_STR's own extracted allocation cores (see their
+    # shared header comment in rom/exrom_v2_vm_core.asm); VM_ARR_ADDR/
+    # VM_STRARR_ADDR resolve an already-allocated element's own address
+    # the same way OP_ARR_LOAD/STORE do.
+    "ARRSYM_LOOKUP",
+    "STRARRSYM_LOOKUP",
+    "ARENA_ALLOC_NUMERIC",
+    "ARENA_ALLOC_STRING",
+    "VM_ARR_ADDR",
+    "VM_STRARR_ADDR",
+    "VM_ARR_INDEX_TMP",
+    "VM_ARR_ELEM_TMP",
+    "VM_STRARR_INDEX_TMP",
+    "ARR_SIZE_TMP",
+    "STRARR_SIZE_TMP",
+    "STRARR_WIDTH_TMP",
+    "ARR_DESC_DATA_OFF",
+    "STRARR_DESC_DATA_OFF",
+    "STRARR_DESC_WIDTH_OFF",
+    # R10.7 keyword rendering: V2_KW_DETECT_SPANS stops at REM.
+    "TOK_KW_REM",
+    # R10.7 P2: tagged compile symbol table (rom/exrom_v2_symtab.asm).
+    "SYM_RESET",
 )
 
 

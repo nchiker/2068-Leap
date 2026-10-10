@@ -109,7 +109,9 @@
 ; ============================================================================
 
     INCLUDE "include/hardware.inc"
+    DEFINE V2_COMPACT_SYSVARS   ; R10.7 P5: drop V1-only sysvars (see include/sysvars.inc)
     INCLUDE "include/sysvars.inc"
+    INCLUDE "rom/test_v2_symmacros.inc"
 
     DEVICE NOSLOT64K
 
@@ -213,11 +215,11 @@ TEST_SOURCE_TEXT:
 ; Out: carry clear = pass, carry set = fail
 ; ============================================================================
 CHECK_VM_RESULT:
-    ld   hl, SYMTAB_BASE + 1*SYM_REC_LEN
+    TSYM_ADDR 1*SYM_REC_LEN
     ld   de, 14
     call .check_one           ; B
     jr   c, .fail
-    ld   hl, SYMTAB_BASE + 2*SYM_REC_LEN
+    TSYM_ADDR 2*SYM_REC_LEN
     ld   de, 23
     call .check_one           ; C
     ret

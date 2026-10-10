@@ -42,6 +42,7 @@
     DEFINE TEST_V2_NEEDS_DECOMPILE
     DEFINE TEST_V2_CHECK_DECOMPILED_TEXT
     INCLUDE "rom/test_v2_harness_home_head.inc"
+    INCLUDE "rom/test_v2_symmacros.inc"
 
 SOURCE_TEXT:
     db 'A$="HELLO":B$=CHR$(65):C$=STR$(123):'
@@ -60,17 +61,17 @@ EXP_D: db 9, "mixedcase"
 ; CREATE): 0=J 1=K 2=L 3=M 4=N 5=O 6=P.
 ; ============================================================================
 TEST_CHECK_RESULT:
-    ld   hl, STRTAB_BASE + 1*32       ; B$ = CHR$(65) = "A"
+    TSTR_ADDR 1*32  ; B$ = CHR$(65) = "A"
     ld   de, EXP_B
     call CHECK_STR
     jp   c, .fail
 
-    ld   hl, STRTAB_BASE + 2*32       ; C$ = STR$(123) = "123"
+    TSTR_ADDR 2*32  ; C$ = STR$(123) = "123"
     ld   de, EXP_C
     call CHECK_STR
     jp   c, .fail
 
-    ld   hl, STRTAB_BASE + 3*32       ; D$ = LOWER$(UPPER$("mixedCase"))
+    TSTR_ADDR 3*32  ; D$ = LOWER$(UPPER$("mixedCase"))
     ld   de, EXP_D
     call CHECK_STR
     jp   c, .fail
@@ -152,7 +153,8 @@ CHECK_NUM3:
     ld   e, l
     add  hl, hl              ; *2
     add  hl, de               ; *3
-    ld   de, SYMTAB_BASE+1
+    ld   de, (RT_SYMTAB_PTR)
+    inc  de
     add  hl, de
     ld   a, (hl)
     cp   c

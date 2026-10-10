@@ -57,7 +57,9 @@
 ; ============================================================================
 
     INCLUDE "include/hardware.inc"
+    DEFINE V2_COMPACT_SYSVARS   ; R10.7 P5: drop V1-only sysvars (see include/sysvars.inc)
     INCLUDE "include/sysvars.inc"
+    INCLUDE "rom/test_v2_symmacros.inc"
 
     DEVICE NOSLOT64K
 
@@ -110,34 +112,34 @@ CHECK_RESULT:
     ld   a, (VM_ERROR_CODE)
     or   a
     jr   nz, .fail
-    ld   hl, SYMTAB_BASE + 0*SYM_REC_LEN
+    TSYM_ADDR 0*SYM_REC_LEN
     ld   de, 1
     call .check_num           ; F
     jr   c, .fail
-    ld   hl, SYMTAB_BASE + 1*SYM_REC_LEN
+    TSYM_ADDR 1*SYM_REC_LEN
     ld   de, 1
     call .check_num           ; G
     jr   c, .fail
-    ld   hl, SYMTAB_BASE + 2*SYM_REC_LEN
+    TSYM_ADDR 2*SYM_REC_LEN
     ld   de, 1
     call .check_num           ; H
     jr   c, .fail
-    ld   hl, STRTAB_BASE + 0*STR_REC_LEN
+    TSTR_ADDR 0*STR_REC_LEN
     ld   de, STR_APPLE
     ld   b, 5
     call .check_str           ; A$
     jr   c, .fail
-    ld   hl, STRTAB_BASE + 1*STR_REC_LEN
+    TSTR_ADDR 1*STR_REC_LEN
     ld   de, STR_BANANA
     ld   b, 6
     call .check_str           ; B$
     jr   c, .fail
-    ld   hl, STRTAB_BASE + 2*STR_REC_LEN
+    TSTR_ADDR 2*STR_REC_LEN
     ld   de, STR_APPLEBANANA
     ld   b, 11
     call .check_str           ; C$
     jr   c, .fail
-    ld   hl, STRTAB_BASE + 3*STR_REC_LEN
+    TSTR_ADDR 3*STR_REC_LEN
     ld   de, STR_APPLE
     ld   b, 5
     call .check_str           ; D$

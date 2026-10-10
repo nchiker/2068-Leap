@@ -30,6 +30,7 @@
 
     DEFINE TEST_V2_NEEDS_DECOMPILE
     INCLUDE "rom/test_v2_harness_home_head.inc"
+    INCLUDE "rom/test_v2_symmacros.inc"
 
 SOURCE_TEXT:
     db "PROC COUNT(N):IF N>0 THEN CALL COUNT(N-1) ENDIF:R=R+N:ENDP:"
@@ -47,20 +48,15 @@ SOURCE_TEXT:
 ; top-level "R=0" is ever reached) -> index 1.
 ; ============================================================================
 TEST_CHECK_RESULT:
-    ld   hl, (VM_CALL_SP)
-    ld   de, VM_CALL_STACK_TOP
+    ld   hl, (VM_CSP)
+    ld   de, (VARS_START)
     or   a
     sbc  hl, de
     jr   nz, .fail
-    ld   hl, (VM_PARAM_SAVE_SP)
-    ld   de, VM_PARAM_SAVE_STACK_TOP
-    or   a
-    sbc  hl, de
-    jr   nz, .fail
-    ld   a, (SYMTAB_BASE + 1*3)     ; R's own tag
+    TSYM_LD8 1*3  ; R's own tag
     cp   0
     jr   nz, .fail
-    ld   hl, (SYMTAB_BASE + 1*3 + 1)
+    TSYM_LD16 1*3 + 1
     ld   de, 6                       ; 0+1+2+3
     or   a
     sbc  hl, de

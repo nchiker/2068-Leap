@@ -53,7 +53,9 @@
 ; ============================================================================
 
     INCLUDE "include/hardware.inc"
+    DEFINE V2_COMPACT_SYSVARS   ; R10.7 P5: drop V1-only sysvars (see include/sysvars.inc)
     INCLUDE "include/sysvars.inc"
+    INCLUDE "rom/test_v2_symmacros.inc"
 
     DEVICE NOSLOT64K
 
@@ -105,23 +107,23 @@ CHECK_RESULT:
     ld   a, (VM_ERROR_CODE)
     or   a
     jr   nz, .fail
-    ld   hl, SYMTAB_BASE + 1*SYM_REC_LEN
+    TSYM_ADDR 1*SYM_REC_LEN
     ld   de, 42
     call .check_one           ; RESULT
     jr   c, .fail
-    ld   hl, SYMTAB_BASE + 2*SYM_REC_LEN
+    TSYM_ADDR 2*SYM_REC_LEN
     ld   de, 42
     call .check_one           ; ANSWER
     jr   c, .fail
-    ld   hl, SYMTAB_BASE + 3*SYM_REC_LEN
+    TSYM_ADDR 3*SYM_REC_LEN
     ld   de, 15
     call .check_one           ; RESULTB
     jr   c, .fail
-    ld   hl, SYMTAB_BASE + 4*SYM_REC_LEN
+    TSYM_ADDR 4*SYM_REC_LEN
     ld   de, 15
     call .check_one           ; ANSWERB
     jr   c, .fail
-    ld   hl, SYMTAB_BASE + 5*SYM_REC_LEN
+    TSYM_ADDR 5*SYM_REC_LEN
     ld   de, 1
     call .check_one           ; FINAL
     ret

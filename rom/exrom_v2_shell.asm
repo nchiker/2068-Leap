@@ -64,6 +64,31 @@ V2_STATUS_BUF EQU $BEA8
 ; ($BEA8 + 20 = $BEBC -- 28 bytes of the original 84-byte gap
 ; ($BE84-$BED7) remain free after all three R10 editor additions)
 
+; Dynamic Data Phase 2 -- SAVE/LOAD "name" ARRAY arrname. V2_PARSE_
+; NAME's own new ARRAY-qualifier branch sets these the same way its
+; existing EXT-qualifier branch already sets V2_REQUEST_TYPE. Placed in
+; the same $BEBC-$BED7 remaining free span noted above.
+V2_ARRAY_NAME_PTR EQU $BEBC
+V2_ARRAY_NAME_LEN EQU $BEBE
+V2_ARRAY_IS_STR   EQU $BEBF
+V2_ARRAY_INDEX    EQU $BEC0   ; V2_LOAD_ARRAY's own resolved compile-
+                                ; time array index, parked here across
+                                ; the destructive STORAGE_LOAD_NAME_BUF
+                                ; (== EDIT_LINE_BUF) filename-padding
+                                ; copy and the STORAGE_LOAD call itself
+V2_RECEIVE_DEST   EQU $BEC1   ; V2_LOAD_ARRAY's own copy of (ARRAYS_END)
+                                ; at receive time (2 bytes)
+V2_ARRAY_NAME_CANON EQU $BEC3 ; case-insensitivity: V2_SCAN_ARRAY_NAME's
+                                ; own uppercased copy of the typed array
+                                ; name (8 bytes) -- ARRSYM_LOOKUP/
+                                ; STRARRSYM_LOOKUP now store/compare
+                                ; canonical uppercase names (rom/exrom_
+                                ; v2_compiler.asm's own CANON_TOKEN_NAME),
+                                ; so the raw EDIT_LINE_BUF text (which
+                                ; stays exactly as typed, case included)
+                                ; must be folded before V2_ARRAY_NAME_PTR
+                                ; is used for a lookup
+
 V2_COMMAND_LOOP:
     xor a
     ld (CURRENT_INK),a
@@ -79,6 +104,14 @@ V2_COMMAND_LOOP:
     xor a
     call KTAB_GFX_SET_MODE
     call V2_RESET_EDIT
+    call STARTUP_CHIME          ; R10.7: one-time boot chime -- this is
+                                  ; V2_COMMAND_LOOP's own one-time head,
+                                  ; reached only from V2_EXROM_ENTRY, NOT
+                                  ; the .loop re-entry point below that
+                                  ; NEW/every return-to-editor actually
+                                  ; uses (see V2_EXROM_ENTRY's own single
+                                  ; caller, confirmed via `grep -n
+                                  ; V2_COMMAND_LOOP rom/*.asm`)
     IFDEF V2_AUTOLOAD_TEST
     ; Test-only entry: start the production loader immediately after the
     ; emulator's tape-insert reset, while the real pilot is still playing.
@@ -111,6 +144,8 @@ V2_COMMAND_LOOP:
     call V2_DISPATCH
     jr nc,.loop
 .store:
+    call V2_CLEAR_ARRAYS         ; a previous RUN lowered VARS_START (its run-time
+                                   ; tables); restore the ceiling before the fit check
     call V2_TOKENIZE
     ld hl,(CUR_EDIT_POS)
     ld a,h
@@ -120,6 +155,13 @@ V2_COMMAND_LOOP:
 .have_pos:
     ld de,TOKEN_BUF
     call KTAB_MEM_LINE_STORE
+    call V2_CLEAR_ARRAYS         ; R10.7 P0: the line store grows at PROG_END,
+                                   ; exactly where DIM'd arrays live. Discard
+                                   ; them AFTER the store (so ARRAYS_END ==
+                                   ; the new PROG_END); V2_CLEAR_ARRAYS keeps
+                                   ; the carry from the store intact
+                                   ; (docs/v2/R10_7_WORKSPACE_MANAGER_
+                                   ; FEASIBILITY.md s8)
     jr c,.no_space
     ld hl,(CUR_EDIT_POS)
     ld a,h
@@ -171,6 +213,103 @@ V2_TOKENIZE:
 .end:
     ld a,$0D
     ld (de),a
+    ret
+
+; ============================================================================
+; STARTUP_CHIME -- R10.7: one-time boot acknowledgement, ported verbatim
+; (same notes, same table, same values) from the sibling 2068-forth
+; project's own STARTUP_CHIME (~/2068-forth/rom/forth_boot.asm), which
+; already went through real live-audio (WAV/FFT) testing there: an old-
+; Mac-style C4/E4/G4 chord, staggered entrance per AY channel with a
+; volume ramp on attack/release so three square waves don't all snap on
+; (and off) at once -- that produces an audible click plus clashing
+; harmonics, not a clean chime (see 2068-forth's own header for the full
+; before/after story). Same AY clock/period formula, same table-driven
+; event walk. Two differences from the 2068-forth source, both just
+; plumbing, not design: SOUND_EXROM (already EXROM-resident here, 1-16
+; register range) in place of that project's SOUND_WRITE; and a direct
+; (FRAMES) read in CHIME_DELAY below in place of a cross-ROM
+; INT_GET_FRAMES call -- INT_GET_FRAMES itself lives in kernel/
+; interrupt.asm, which is Home-resident and not reachable from EXROM
+; without new KTAB plumbing, while FRAMES is a plain RAM sysvar already
+; read directly from EXROM elsewhere (rom/exrom_payload.asm), so no new
+; KTAB entry is needed for this.
+;
+; Channel A's tone-period FINE byte is chip register 0 -- SOUND_EXROM's
+; own 1-16 range check (same real-ROM-derived range as 2068-forth's
+; SOUND_WRITE) can never reach it, so it's written directly via OUT
+; here, same as the 2068-forth original -- boot code writing the chip
+; directly, not a violation of SOUND_EXROM's own public range contract.
+;
+; Called once from V2_COMMAND_LOOP's own one-time head (see that call
+; site's own comment) -- never from .loop, so this never replays on
+; NEW or any other return to the editor.
+; ============================================================================
+STARTUP_CHIME:
+    ld   a, 0                       ; Channel A tone period, fine --
+    out  (PORT_AY_REG), a           ; chip register 0, outside SOUND_
+    ld   a, 165                     ; EXROM's own 1-16 range -- written
+    out  (PORT_AY_DATA), a          ; directly instead
+
+    ld   hl, CHIME_TABLE
+.loop:
+    ld   a, (hl)
+    inc  hl
+    cp   $FE
+    ret  z
+    cp   $FF
+    jr   z, .delay
+    ld   b, a
+    ld   a, (hl)
+    inc  hl
+    ld   c, a
+    call SOUND_EXROM
+    jr   .loop
+.delay:
+    ld   a, (hl)
+    inc  hl
+    ld   b, a
+    push hl                         ; CHIME_DELAY destroys HL -- protect
+    call CHIME_DELAY                ; the table pointer across the call
+    pop  hl
+    jr   .loop
+
+CHIME_TABLE:
+    ; Channel A/B/C tone periods (C4/E4/G4, ~262/330/392 Hz); mixer (all
+    ; three tones on, all noise off); all three channels silent until
+    ; their own staggered attack below.
+    DB   1,1,  2,78,  3,1,  4,25,  5,1,  7,248,  8,0,  9,0,  10,0
+    ; staggered, ramped attack: A rolls in first, then B, then C, each
+    ; fading up over 3 steps instead of snapping to full volume
+    DB   8,4,  $FF,3,  8,8,  $FF,3,  8,12, $FF,3   ; gap before B enters
+    DB   9,4,  $FF,3,  9,8,  $FF,3,  9,12, $FF,3   ; gap before C enters
+    DB   10,4, $FF,3,  10,8, $FF,3,  10,12         ; full chord now sounding
+    DB   $FF,22                      ; hold the full chord ~440ms
+    ; release: all three fade down together
+    DB   8,8,  9,8,  10,8,  $FF,3
+    DB   8,4,  9,4,  10,4,  $FF,3
+    DB   8,0,  9,0,  10,0            ; the AY holds its last register
+                                     ; state indefinitely otherwise
+    DB   $FE,0                       ; end of table
+
+; CHIME_DELAY -- busy-waits until FRAMES has advanced by B ticks. Reads
+; the FRAMES sysvar directly (see STARTUP_CHIME's own header for why,
+; same as rom/exrom_payload.asm's existing precedent) instead of a
+; cross-ROM INT_GET_FRAMES call.
+; In: B = frame count. Destroys: AF, HL, DE
+CHIME_DELAY:
+    ld   h, 0
+    ld   l, b
+    ex   de, hl                     ; de = frame count to wait
+    ld   hl, (FRAMES)               ; hl = current frames
+    add  hl, de
+    ex   de, hl                     ; de = target frame count
+.wait:
+    ld   hl, (FRAMES)               ; only touches hl -- de (target)
+                                    ; survives across this loop
+    or   a
+    sbc  hl, de
+    jr   c, .wait                   ; current < target -- keep waiting
     ret
 
 V2_RESET_EDIT:
@@ -339,59 +478,22 @@ V2_NAV:
     jp V2_LOAD_EDIT
 V2_BLANK_RECORD: DB 1,0,$0D
 
-; Each stored line becomes one CR-separated segment in compiler input.
-; A 4096-byte stored program always produces less than 4096 staged bytes.
+; R10.7 source-staging-architecture change (docs/v2/R10_7_SOURCE_STAGING_
+; ARCHITECTURE_AUDIT.md): V2_BUILD_SOURCE no longer flattens the whole
+; stored program into V2_SOURCE_STAGE. It primes the small CHUNK_SIZE-byte
+; rolling window instead; the lexer (rom/exrom_v2_compiler.asm) refills it
+; one authoritative record at a time, via the HOME-resident CHUNK_REFILL,
+; as it consumes the buffer. This file is EXROM-resident, CHUNK_REFILL is
+; HOME-resident, hence the one new KTAB entry (KTAB_CHUNK_REFILL) for this
+; single priming call -- CHUNK_REFILL's other two call sites are inside
+; the lexer itself (same bank, direct, no trampoline needed).
 V2_BUILD_SOURCE:
     call KTAB_MEM_LINE_FIRST
-    ld de,V2_SOURCE_STAGE
-.next:
-    ld a,h
-    or l
-    jr z,.done
-    push hl
-    inc hl
-    inc hl
-.copy:
-    ld a,(hl)
-    cp $0D
-    jr z,.end_line
-    ld (de),a
-    inc de
-    inc hl
-    jr .copy
-.end_line:
-    ; A trailing colon already separates the next statement. Suppress the
-    ; extra CR in that case, including for a label definition on its own
-    ; source line. REM still consumes through the next actual line ending.
-    ld a,e
-    cp LOW V2_SOURCE_STAGE
-    jr nz,.check_last
-    ld a,d
-    cp HIGH V2_SOURCE_STAGE
-    jr z,.append_cr
-.check_last:
-    dec de
-    ld a,(de)
-    inc de
-    cp ':'
-    jr z,.next_record
-.append_cr:
-    ld a,$0D
-    ld (de),a
-    inc de
-.next_record:
-    pop hl
-    push de
-    call KTAB_MEM_LINE_NEXT
-    pop de
-    ld a,h
-    or l
-    jr z,.done
-    jr .next
-.done:
-    xor a
-    ld (de),a
-    ret
+    ld (CHUNK_NEXT_REC),hl
+    ld hl,CHUNK_BUF
+    ld (SRC_PTR),hl
+    ld (CHUNK_FILL_PTR),hl
+    jp KTAB_CHUNK_REFILL
 
 ; V2_JUMP_TO_ERROR_LINE -- R10 single-error return-to-line (an
 ; intentional V2 design DIFFERENT from V1: V1's static checker could
@@ -402,30 +504,26 @@ V2_BUILD_SOURCE:
 ; resynchronization/recovery -- deliberately deferred, not accidentally
 ; lost; not attempted here).
 ;
-; Input: SRC_PTR = wherever the just-failed COMPILE_PROGRAM's own
-; lexer stopped (V2_SOURCE_STAGE-relative). This is close to, not
-; always exactly at, the real failing token -- most of the compiler's
-; own "ld a,(COMPILE_ERROR_CODE) / or a / jp nz,<bail>" sites unwind
-; without a further LEX_NEXT_TOKEN call once the error is set, so
-; SRC_PTR is left at or just past the real error -- the same kind of
-; imprecision any line-based error system has, and good enough for
-; "return to the vicinity of the error," which is this routine's own
-; whole job.
-;
-; Mechanism: re-walks the line store with the SAME copy-length shape
-; V2_BUILD_SOURCE already uses, counting staged bytes until the running
-; total reaches SRC_PTR's own offset from V2_SOURCE_STAGE. Deliberately
-; NOT shared code with V2_BUILD_SOURCE (kept as one small, self-
-; contained routine instead) so a future multi-error redesign can
-; replace just this one routine without touching the staging-buffer
-; builder -- per this milestone's own instruction to keep the
-; implementation cleanly separable. One real simplification versus
-; V2_BUILD_SOURCE's own exact logic: this routine always counts a
-; line's own separator as 1 byte, even on the trailing-colon case where
-; V2_BUILD_SOURCE itself suppresses the extra CR -- a deliberate,
-; disclosed approximation (occasionally off by one stored line for
-; colon-joined continuations), not a bug, since exact recompilation-
-; equivalent accounting isn't needed for a best-effort jump.
+; R10.7 source-staging-architecture change (docs/v2/R10_7_SOURCE_STAGING_
+; ARCHITECTURE_AUDIT.md): previously re-walked the line store counting
+; staged bytes until the running total reached SRC_PTR's own offset from
+; V2_SOURCE_STAGE. That offset is no longer meaningful now that the
+; staging buffer only ever holds a small rolling window, not the whole
+; flattened program -- an old byte offset could point at a record long
+; since discarded from the buffer. Replaced with a direct pointer match:
+; CHUNK_CUR_REC_PTR (set by CHUNK_APPEND_ONE_RECORD every time a record is
+; pulled in) already names the authoritative record most recently loaded
+; -- at the moment a compile error is raised, this is always the record
+; SRC_PTR is at or very near, the same "close to, not always exactly at"
+; imprecision the old byte-counting version also had (most of the
+; compiler's own "ld a,(COMPILE_ERROR_CODE) / or a / jp nz,<bail>" sites
+; unwind without a further LEX_NEXT_TOKEN call once the error is set, so
+; the error is detected shortly after, not exactly at, the real failing
+; token -- unchanged by this rewrite). This version counts from
+; MEM_LINE_FIRST until the record pointer matches CHUNK_CUR_REC_PTR --
+; simpler than the old byte-counting walk, and unlike it, exact about
+; WHICH LINE (no colon-continuation off-by-one to document: there's
+; nothing to approximate when comparing whole-record pointers).
 ;
 ; Sets CUR_EDIT_INDEX/CUR_EDIT_POS to the located line via
 ; V2_SET_EDIT_FROM_INDEX -- the same mechanism arrow-key navigation
@@ -433,60 +531,33 @@ V2_BUILD_SOURCE:
 ; (see its own header) then brings the line into view on the very next
 ; redraw; no separate scrolling logic is needed here.
 ;
-; If SRC_PTR's own offset runs past the last stored line (a real,
-; if unusual, possibility -- e.g. an error reported at the implicit
-; end-of-program), CUR_EDIT_INDEX is simply left at the last index it
-; reached (the final line), not some undefined value.
+; If CHUNK_CUR_REC_PTR never matches any record (shouldn't happen -- it
+; always names a record MEM_LINE_FIRST/NEXT visited during this same
+; compile -- but defensively), CUR_EDIT_INDEX is simply left at the last
+; index reached, not some undefined value, same contract as before.
 ; Destroys: AF, DE, HL.
 V2_JUMP_TO_ERROR_LINE:
-    ld hl,(SRC_PTR)
-    ld de,V2_SOURCE_STAGE
-    or a
-    sbc hl,de
-    ld (V2_ERR_TARGET_OFS),hl
     ld hl,0
-    ld (V2_ERR_RUN_COUNT),hl
     ld (CUR_EDIT_INDEX),hl
     call KTAB_MEM_LINE_FIRST
 .next:
     ld a,h
     or l
     jr z,.done
+    ld de,(CHUNK_CUR_REC_PTR)
     push hl
-    inc hl
-    inc hl
-.measure:
-    ld a,(hl)
-    cp $0D
-    jr z,.measured
-    inc hl
-    ld de,(V2_ERR_RUN_COUNT)
-    inc de
-    ld (V2_ERR_RUN_COUNT),de
-    jr .measure
-.measured:
-    ld hl,(V2_ERR_TARGET_OFS)
-    ld de,(V2_ERR_RUN_COUNT)
     or a
     sbc hl,de
-    jr c,.found              ; target < running count -> this line
-    jr z,.found               ; target == running count -> this line
-    ld hl,(V2_ERR_RUN_COUNT)
-    inc hl                     ; account for the line's own separator
-    ld (V2_ERR_RUN_COUNT),hl
-    pop hl                      ; restore current record pointer
+    pop hl
+    jr z,.done
     call KTAB_MEM_LINE_NEXT
     ld a,h
     or l
     jr z,.done
-    push hl
-    ld hl,(CUR_EDIT_INDEX)
-    inc hl
-    ld (CUR_EDIT_INDEX),hl
-    pop hl
+    ld de,(CUR_EDIT_INDEX)
+    inc de
+    ld (CUR_EDIT_INDEX),de
     jr .next
-.found:
-    pop hl                     ; balance .next's own push hl
 .done:
     jp V2_SET_EDIT_FROM_INDEX
 
@@ -523,7 +594,8 @@ V2_COMPILE_RUN:
     jr z,.no_jump
     call V2_JUMP_TO_ERROR_LINE
 .no_jump:
-    ld hl,V2_MSG_SYNTAX
+    ld a,(COMPILE_ERROR_CODE)
+    call V2_COMPILE_MSG
     jp V2_SHOW_MESSAGE
 .compiled:
     call KTAB_VM_INIT
@@ -534,10 +606,50 @@ V2_COMPILE_RUN:
     ld a,(VM_ERROR_CODE)
     or a
     jr z,.finished
-    ld hl,V2_MSG_RUNTIME
+    call V2_RUNTIME_MSG
     jp V2_SHOW_MESSAGE
 .finished:
     jp KTAB_IO_READ_KEY
+
+; Error-message selection (R10.7 P0: memory exhaustion and name/nesting
+; limits are distinguishable from ordinary syntax/runtime errors).
+; V2_COMPILE_MSG: A = COMPILE_ERROR_CODE -> HL = message.
+; Compile codes: 60 nesting too deep, 61 identifier too long, 1/39 more than 255
+; symbols of a kind, and the capacity class {5,6,45,55,62} = out of memory.
+V2_COMPILE_MSG:
+    ld hl,V2_MSG_NAMELEN
+    cp 61
+    ret z
+    ld hl,V2_MSG_NEST
+    cp 60
+    ret z
+    ld hl,V2_MSG_TOOMANY
+    cp 1
+    ret z
+    cp 39
+    ret z
+    ld hl,V2_MEMCODES
+    ld bc,V2_MEMCODES_END-V2_MEMCODES
+    cpir
+    ld hl,V2_MSG_NOMEM
+    ret z
+    ld hl,V2_MSG_SYNTAX
+    ret
+V2_MEMCODES: DB 5,6,45,55,62
+V2_MEMCODES_END:
+; V2_RUNTIME_MSG: A = VM_ERROR_CODE -> HL = message. 2 and 6 are operand /
+; control stack overflow, 64 is array-arena exhaustion.
+V2_RUNTIME_MSG:
+    ld hl,V2_MSG_STACK
+    cp 2
+    ret z
+    cp 6
+    ret z
+    ld hl,V2_MSG_NOMEM
+    cp 64
+    ret z
+    ld hl,V2_MSG_RUNTIME
+    ret
 
 V2_DISPATCH:
     ld hl,EDIT_LINE_BUF
@@ -571,6 +683,13 @@ V2_DISPATCH:
     jr c,.not_save
     call V2_PARSE_NAME
     jr c,.bad_command
+    ld a,(V2_REQUEST_TYPE)
+    cp STORAGE_ARRAY_TYPE
+    jr nz,.save_plain
+    call V2_SAVE_ARRAY
+    or a
+    ret
+.save_plain:
     call V2_SAVE
     or a
     ret
@@ -581,10 +700,27 @@ V2_DISPATCH:
     jr c,.not_load
     call V2_PARSE_NAME
     jr c,.bad_command
+    ld a,(V2_REQUEST_TYPE)
+    cp STORAGE_ARRAY_TYPE
+    jr nz,.load_plain
+    call V2_LOAD_ARRAY
+    or a
+    ret
+.load_plain:
     call V2_LOAD
     or a
     ret
 .not_load:
+    ld hl,EDIT_LINE_BUF
+    ld de,V2_KW_VERIFY
+    call V2_MATCH_PREFIX
+    jr c,.not_verify
+    call V2_PARSE_NAME
+    jr c,.bad_command
+    call V2_VERIFY
+    or a
+    ret
+.not_verify:
     ld a,(EDIT_LINE_BUF)
     cp ':'
     jr nz,.unknown
@@ -601,10 +737,45 @@ V2_DISPATCH:
     ret
 
 ; EXROM can reset the generic line store without reaching the V1 ABI.
+; V2_CLEAR_ARRAYS -- R10.7 P0/P3. Discards every DIM'd array and the compile
+; symbol table (so "never DIM'd" is what SAVE/LOAD ... ARRAY see), and gives
+; the pool its full height back. Called whenever the line store changes (ENTER-store, LOAD, NEW,
+; CLEAR) so source text can never overwrite live array descriptors, and
+; SAVE/LOAD ... ARRAY can never read stale ones. The two tables are
+; contiguous (ASSERTed).
+V2_CLEAR_ARRAYS:
+    call SYM_RESET               ; the compile symbol table lives at PROG_END and
+                                   ; is invalidated by the same events
+    ld hl,(SYM_END_V)
+    inc hl                       ; first byte after the (empty) table
+    ld (ARRAYS_END),hl
+    ld hl,V2_SOURCE_END          ; R10.7 P3: a RUN carves its run-time tables from
+    ld (VARS_START),hl           ; the pool top (lowering VARS_START); any edit
+    ld hl,ARR2_BASE              ; R10.7 P5.4: segment 2 (always-visible RAM at
+    ld (ARR2_END),hl             ; $E000) is emptied with the main pool
+    ret                          ; discards them, so the source may grow again
+
 MEM_INIT_V2:
     ld hl,PROG_AREA_START
     ld (PROG_END),hl
-    ld (ARRAYS_END),hl
+    call V2_CLEAR_ARRAYS
+    ld hl,V2_SOURCE_END
+    ld (VARS_START),hl
+    call KTAB_EXT2_CLEAR_ALL
+    ld hl,0
+    ld (V2_PACKAGE_LEN),hl
+    ret
+
+; MEM_CLEAR_V2 -- CLEAR statement (R10.25 class B). Lighter sibling of
+; MEM_INIT_V2 above: resets scalar/array/extension state the same way
+; NEW does, but keeps the current program (PROG_END untouched) instead
+; of wiping it -- ARRAYS_END resets to the real PROG_END, not to
+; PROG_AREA_START, so no DIM'd array survives CLEAR but the program
+; text does. Called from HOME's OP_CLEAR (rom/exrom_v2_vm_core.asm) —
+; EXROM is already mapped in during ordinary VM execution (same
+; established pattern PRINT's own exrom_format.asm calls already use).
+MEM_CLEAR_V2:
+    call V2_CLEAR_ARRAYS
     ld hl,V2_SOURCE_END
     ld (VARS_START),hl
     call KTAB_EXT2_CLEAR_ALL
@@ -699,9 +870,104 @@ V2_PARSE_NAME:
 .qualifier:
     ld de,V2_KW_EXT
     call V2_MATCH_EXACT
-    jr c,.bad
+    jr c,.not_ext
     ld a,STORAGE_EXTENSION_TYPE
     ld (V2_REQUEST_TYPE),a
+    or a
+    ret
+.not_ext:
+    ld de,V2_KW_ARRAY
+    call V2_MATCH_PREFIX      ; leaves HL right after "ARRAY" (its own
+                                ; comparison loop advances HL per
+                                ; matched char, same as every other
+                                ; V2_MATCH_PREFIX call site)
+    jr c,.bad
+    call V2_SCAN_ARRAY_NAME
+    jr c,.bad
+    ld a,STORAGE_ARRAY_TYPE
+    ld (V2_REQUEST_TYPE),a
+    or a
+    ret
+.bad:
+    scf
+    ret
+
+; V2_SCAN_ARRAY_NAME -- HL follows "ARRAY" (pointing at the space
+; before the array name). Scans a bare array identifier: letters/
+; digits, up to 8 significant characters, optionally ending in '$'
+; (the SAME TOK_IDENT/TOK_STR_IDENT-by-trailing-'$' convention rom/
+; exrom_v2_compiler.asm's own lexer uses, reused here rather than
+; inventing a second way to spell "this is a string array"). Output:
+; carry clear + V2_ARRAY_NAME_PTR/LEN set (LEN excludes a trailing '$')
+; + V2_ARRAY_IS_STR = 0/1; carry set (bad command) if no valid name
+; follows. Destroys: AF, B, HL.
+V2_SCAN_ARRAY_NAME:
+    xor a
+    ld (V2_ARRAY_IS_STR),a
+.spaces:
+    ld a,(hl)
+    cp ' '
+    jr nz,.have_char
+    inc hl
+    jr .spaces
+.have_char:
+    cp 'A'
+    jr c,.bad
+    cp 'Z'+1
+    jr c,.start_ok
+    cp 'a'
+    jr c,.bad
+    cp 'z'+1
+    jr nc,.bad
+.start_ok:
+    ld (V2_ARRAY_NAME_PTR),hl
+    ld b,0
+.scan:
+    ld a,(hl)
+    or a
+    jr z,.done
+    cp ' '
+    jr z,.done
+    cp '$'
+    jr z,.dollar
+    inc hl
+    inc b
+    jr .scan
+.dollar:
+    ld a,1
+    ld (V2_ARRAY_IS_STR),a
+.done:
+    ld a,b
+    or a
+    jr z,.bad
+    cp 9
+    jr c,.len_ok
+    ld a,8
+.len_ok:
+    ld (V2_ARRAY_NAME_LEN),a
+    ; case-insensitivity: ARRSYM_LOOKUP/STRARRSYM_LOOKUP now fold case
+    ; on the fly during their own compare (rom/exrom_v2_compiler.asm's
+    ; FOLD_UPPER), but this raw EDIT_LINE_BUF text stays exactly as
+    ; typed -- fold a copy into V2_ARRAY_NAME_CANON and repoint
+    ; V2_ARRAY_NAME_PTR there too, so the two sides agree regardless of
+    ; which one's own fold logic changes later.
+    ld b,a
+    ld hl,(V2_ARRAY_NAME_PTR)
+    ld de,V2_ARRAY_NAME_CANON
+.fold_loop:
+    ld a,(hl)
+    cp 'a'
+    jr c,.fold_store
+    cp 'z'+1
+    jr nc,.fold_store
+    and $DF
+.fold_store:
+    ld (de),a
+    inc hl
+    inc de
+    djnz .fold_loop
+    ld hl,V2_ARRAY_NAME_CANON
+    ld (V2_ARRAY_NAME_PTR),hl
     or a
     ret
 .bad:
@@ -741,6 +1007,106 @@ V2_SAVE:
 .missing_package:
     ld hl,V2_MSG_NO_PACKAGE
     jp V2_SHOW_MESSAGE
+
+; ============================================================================
+; Dynamic Data Phase 2 -- array persistence. SAVE "name" ARRAY arrname /
+; LOAD "name" ARRAY arrname, reusing STORAGE_SAVE/STORAGE_LOAD's entire
+; transport/checksum/retry machinery exactly as-is (same "write RAM
+; verbatim" principle a saved program's own source text already uses).
+; The array's own compile-time index/declared size come from ARRSYMTAB/
+; STRARRSYMTAB -- the SAME real RAM the current program's own last
+; compile left behind (COMPILER_INIT only resets it on the NEXT compile,
+; not between a RUN finishing and a command typed afterward) -- reached
+; here via the build/v2_crossbank.inc binding to rom/exrom_v2_compiler.
+; asm's own ARRSYM_LOOKUP/STRARRSYM_LOOKUP, no new lookup logic
+; duplicated. See docs/v2/R10_7_CAPABILITY_RESTORATION.md for the full
+; design (stored object format, write-once LOAD policy).
+; ============================================================================
+
+; V2_SAVE_ARRAY -- entry: V2_NAME_PTR/LEN (tape filename) and V2_ARRAY_
+; NAME_PTR/LEN/IS_STR (target array) already set by V2_PARSE_NAME/V2_
+; SCAN_ARRAY_NAME.
+V2_SAVE_ARRAY:
+    ld a,(V2_ARRAY_IS_STR)
+    or a
+    jr nz,.string_array
+    ld hl,(V2_ARRAY_NAME_PTR)
+    ld a,(V2_ARRAY_NAME_LEN)
+    ld b,a
+    call ARRSYM_LOOKUP
+    jr c,.not_dimd
+    ld c,a
+    ld h,0
+    ld l,c
+    add hl,hl
+    ld de,(RT_ARRPTR_PTR)
+    add hl,de
+    ld e,(hl)
+    inc hl
+    ld d,(hl)             ; DE = descriptor address (0 = never DIM'd
+                            ; this run, even though compile-time known)
+    ld a,d
+    or e
+    jr z,.not_dimd
+    push de                ; descriptor address, saved for IX below
+    ld hl,(ARR_SIZE_TMP)
+    add hl,hl               ; count*2
+    ld de,ARR_DESC_DATA_OFF
+    add hl,de                ; HL = total descriptor length
+    jr .send
+.string_array:
+    ld hl,(V2_ARRAY_NAME_PTR)
+    ld a,(V2_ARRAY_NAME_LEN)
+    ld b,a
+    call STRARRSYM_LOOKUP
+    jr c,.not_dimd
+    ld c,a
+    ld h,0
+    ld l,c
+    add hl,hl
+    ld de,(RT_STRARRPTR_PTR)
+    add hl,de
+    ld e,(hl)
+    inc hl
+    ld d,(hl)             ; DE = descriptor address
+    ld a,d
+    or e
+    jr z,.not_dimd
+    push de
+    ld h,0
+    ld a,(STRARR_WIDTH_TMP)
+    ld l,a
+    ld de,(STRARR_SIZE_TMP)
+    call MATH_MULTIPLY16    ; HL = count*width
+    ld de,STRARR_DESC_DATA_OFF
+    add hl,de                ; HL = total descriptor length
+.send:
+    ex de,hl                ; DE = length
+    pop ix                   ; IX = descriptor address
+    ld hl,(V2_NAME_PTR)
+    ld a,(V2_NAME_LEN)
+    ld b,a
+    call STORAGE_SAVE
+    ei
+    ld hl,V2_MSG_SAVED
+    jp V2_SHOW_MESSAGE
+.not_dimd:
+    ld hl,V2_MSG_ARRAY_NOT_DIMD
+    jp V2_SHOW_MESSAGE
+
+; V2_VERIFY -- R10.25 class B item. VERIFY only ever applies to the
+; program itself (stock BASIC has no "VERIFY package" concept), so this
+; forces V2_REQUEST_TYPE=0 and reuses V2_LOAD's entire real name-parse/
+; STORAGE_LOAD-call path unchanged; only STORAGE_VERIFY_MODE (consulted
+; by STORAGE_LOAD's own data-block receive, and by V2_LOAD's own
+; success/failure message branches above) distinguishes this from a
+; real LOAD.
+V2_VERIFY:
+    xor a
+    ld (V2_REQUEST_TYPE),a
+    ld a,1
+    ld (STORAGE_VERIFY_MODE),a
+    jp V2_LOAD
 
 V2_LOAD:
     ld a,(V2_REQUEST_TYPE)
@@ -796,6 +1162,12 @@ V2_LOAD:
     call STORAGE_LOAD
     ei
     jr c,.failed
+    ld a,(STORAGE_VERIFY_MODE)
+    or a
+    jp nz,.verified          ; VERIFY never touches PROG_END/VARS_START/
+                               ; edit state -- V2_VERIFY already forced
+                               ; V2_REQUEST_TYPE=0 (program-only), so the
+                               ; package path below is never reached here
     ld a,(V2_REQUEST_TYPE)
     or a
     jr z,.program_loaded
@@ -821,6 +1193,7 @@ V2_LOAD:
     ld hl,PROG_AREA_START
     add hl,de
     ld (PROG_END),hl
+    call V2_CLEAR_ARRAYS
     ld hl,V2_SOURCE_END
     ld (VARS_START),hl
     call V2_RESET_EDIT
@@ -845,10 +1218,151 @@ V2_LOAD:
     call MEM_INIT_V2
     call V2_RESET_EDIT
 .clean_failure:
+    ld a,(STORAGE_VERIFY_MODE)
+    or a
+    jr z,.load_failed_msg
+    xor a
+    ld (STORAGE_VERIFY_MODE),a
+    ld hl,V2_MSG_VERIFY_FAILED
+    jp V2_SHOW_MESSAGE
+.load_failed_msg:
     ld hl,V2_MSG_LOAD_FAILED
     jp V2_SHOW_MESSAGE
 .missing_name:
     ld hl,V2_MSG_SYNTAX
+    jp V2_SHOW_MESSAGE
+.verified:
+    xor a
+    ld (STORAGE_VERIFY_MODE),a
+    ld hl,V2_MSG_VERIFIED
+    jp V2_SHOW_MESSAGE
+
+; V2_LOAD_ARRAY -- entry: V2_NAME_PTR/LEN (tape filename) and V2_ARRAY_
+; NAME_PTR/LEN/IS_STR (target array) already set. Write-once policy
+; (docs/v2/R10_7_ARRAY_ARCHITECTURE_AUDIT.md Part 2 item 5): the target
+; array must already be a known compile-time symbol (DIM'd somewhere in
+; the current program) but must NOT already be populated this run
+; (ARR_PTR_TABLE/STRARR_PTR_TABLE[index] still 0) -- LOAD allocates
+; fresh from the TAPE's own recorded size, it never resizes a live
+; array. Resolves the array name FIRST (reads V2_ARRAY_NAME_PTR, which
+; points into EDIT_LINE_BUF) before the filename gets padded into
+; STORAGE_LOAD_NAME_BUF (== EDIT_LINE_BUF, a real destructive overwrite
+; of the same buffer -- same ordering hazard V2_LOAD's own filename
+; copy already lives with, made explicit here since this routine reads
+; a SECOND field out of that same line).
+V2_LOAD_ARRAY:
+    ld a,(V2_ARRAY_IS_STR)
+    or a
+    jr nz,.string_array
+    ld hl,(V2_ARRAY_NAME_PTR)
+    ld a,(V2_ARRAY_NAME_LEN)
+    ld b,a
+    call ARRSYM_LOOKUP
+    jp c,.not_dimd
+    ld (V2_ARRAY_INDEX),a
+    ld h,0
+    ld l,a
+    add hl,hl
+    ld de,(RT_ARRPTR_PTR)
+    add hl,de
+    jr .check_empty
+.string_array:
+    ld hl,(V2_ARRAY_NAME_PTR)
+    ld a,(V2_ARRAY_NAME_LEN)
+    ld b,a
+    call STRARRSYM_LOOKUP
+    jp c,.not_dimd
+    ld (V2_ARRAY_INDEX),a
+    ld h,0
+    ld l,a
+    add hl,hl
+    ld de,(RT_STRARRPTR_PTR)
+    add hl,de
+.check_empty:
+    ld e,(hl)
+    inc hl
+    ld d,(hl)
+    ld a,d
+    or e
+    jr nz,.already_set
+    ; Safe from here on to destroy EDIT_LINE_BUF -- both the array name
+    ; and its kind have already been fully resolved above.
+    ld a,(V2_NAME_LEN)
+    ld b,a
+    ld hl,(V2_NAME_PTR)
+    ld de,STORAGE_LOAD_NAME_BUF
+    ld c,10
+.pad:
+    ld a,b
+    or a
+    jr z,.space
+    ld a,(hl)
+    inc hl
+    dec b
+    jr .write
+.space:
+    ld a,' '
+.write:
+    ld (de),a
+    inc de
+    dec c
+    jr nz,.pad
+    ld a,STORAGE_ARRAY_TYPE
+    ld (STORAGE_REQUEST_TYPE),a
+    ld hl,(ARRAYS_END)
+    ld (V2_RECEIVE_DEST),hl   ; ARENA_ALLOC_* re-reads (ARRAYS_END)
+                                ; itself for the real commit below, but
+                                ; STORAGE_LOAD's own IX param must be
+                                ; loaded fresh into IX, not left in HL
+    ld de,(ARRAYS_END)
+    ld hl,(VARS_START)
+    ld (VM_CSP),hl             ; R10.7 P4/P5.4: the allocator below bounds the
+                                 ; main pool by VM_CSP, which outside a RUN is
+                                 ; stale (0 after a cold boot) -- it is the
+                                 ; same as VARS_START here
+    or a
+    sbc hl,de                  ; HL = VARS_START-ARRAYS_END, the real
+                                 ; remaining arena headroom
+    ex de,hl                   ; DE = max allowed length
+    dec de                     ; the allocator needs ARRAYS_END+len < VM_CSP
+                                 ; strictly; never receive a length that would
+                                 ; push it into segment 2 away from the data
+    ld ix,(V2_RECEIVE_DEST)    ; IX = (ARRAYS_END), the receive dest
+    ld hl,STORAGE_LOAD_NAME_BUF
+    ld b,10
+    call STORAGE_LOAD
+    ei
+    jr c,.load_failed
+    ; Parse the just-received [dim_count:1][count:2][width:1 if string]
+    ; header directly from (ARRAYS_END) -- the real received bytes,
+    ; already sitting exactly where the real array data belongs.
+    ld hl,(V2_RECEIVE_DEST)
+    inc hl                      ; skip dim_count
+    ld e,(hl)
+    inc hl
+    ld d,(hl)                  ; DE = received count
+    inc hl
+    ld a,(V2_ARRAY_IS_STR)
+    or a
+    jr nz,.alloc_string
+    ld a,(V2_ARRAY_INDEX)
+    call ARENA_ALLOC_NUMERIC
+    jr .loaded
+.alloc_string:
+    ld c,(hl)                   ; C = received width
+    ld a,(V2_ARRAY_INDEX)
+    call ARENA_ALLOC_STRING
+.loaded:
+    ld hl,V2_MSG_LOADED
+    jp V2_SHOW_MESSAGE
+.load_failed:
+    ld hl,V2_MSG_LOAD_FAILED
+    jp V2_SHOW_MESSAGE
+.not_dimd:
+    ld hl,V2_MSG_ARRAY_NOT_DIMD
+    jp V2_SHOW_MESSAGE
+.already_set:
+    ld hl,V2_MSG_ARRAY_MISMATCH
     jp V2_SHOW_MESSAGE
 
 V2_LIST:
@@ -974,6 +1488,8 @@ V2_DRAW_TEXT:
     ld c,a
     ld a,e
     jr nc,.putchar_plain
+    and $DF                       ; keyword span: display uppercase (the
+                                    ; stored source keeps typed case)
     call KTAB_GFX_PUTCHAR_BOLD
     jr .char_done
 .putchar_plain:
@@ -1028,6 +1544,21 @@ V2_KW_DETECT_SPANS:
     ld a,(hl)
     or a
     ret z
+    cp '"'
+    jr nz,.notquote
+.string:
+    inc hl                  ; string contents are never keywords
+    ld a,(hl)
+    or a
+    ret z
+    cp '"'
+    jr nz,.string
+    jp .advance
+.notquote:
+    and $DF             ; case-insensitivity: fold a copy for this A-Z
+                         ; word-boundary test only -- (hl) itself (and
+                         ; the span offsets recorded below) still point
+                         ; at the real, as-typed source text
     cp 'A'
     jp c,.advance
     cp 'Z'+1
@@ -1036,12 +1567,22 @@ V2_KW_DETECT_SPANS:
 .wordlen:
     inc hl
     ld a,(hl)
+    cp '$'
+    jr nz,.not_dollar
+    inc hl                  ; string identifier suffix ("To$"): part of
+    jr .wordlen_done        ; the word, so it can never equal a keyword
+.not_dollar:
+    cp '0'
+    jr c,.wordlen_done
+    cp '9'+1
+    jr c,.wordlen           ; digits continue an identifier ("To1")
+    and $DF
     cp 'A'
     jr c,.wordlen_done
     cp 'Z'+1
     jr c,.wordlen
 .wordlen_done:
-    ld (V2_KW_SCAN_RESUME),hl        ; one past the word's last letter
+    ld (V2_KW_SCAN_RESUME),hl        ; one past the word's last char
     ld de,(V2_KW_WORD_START)
     or a
     sbc hl,de                         ; HL = word length
@@ -1070,6 +1611,9 @@ V2_KW_DETECT_SPANS:
     or a
     jr z,.cmp_match
     ld a,(de)
+    and $DF             ; case-insensitivity: KEYWORD_TABLE's own text is
+                         ; always uppercase; fold the as-typed word's copy
+                         ; to match without touching the source itself
     cp (hl)
     jr nz,.cmp_fail
     inc hl
@@ -1077,6 +1621,8 @@ V2_KW_DETECT_SPANS:
     dec b
     jr .cmp
 .cmp_match:
+    ld a,(hl)                               ; HL = matched token byte
+    ld (V2_KW_TMP_OFFSET),a
     pop hl                                  ; discard the saved entry-
                                               ; text pointer (not needed
                                               ; again — we matched)
@@ -1126,6 +1672,9 @@ V2_KW_DETECT_SPANS:
     ld a,(KW_SPAN_COUNT)
     inc a
     ld (KW_SPAN_COUNT),a
+    ld a,(V2_KW_TMP_OFFSET)
+    cp TOK_KW_REM
+    ret z                                          ; comment text follows
 .word_done:
     ld hl,(V2_KW_SCAN_RESUME)
     jp .scan
@@ -1288,11 +1837,18 @@ V2_DRAW_STATUS:
     xor a
     ld (de),a
     ld b,23
-    call KTAB_GFX_CLEAR_ROW
+    call KTAB_GFX_CLEAR_ROW_TEXT    ; R10.7: bitmap-only clear -- leaves
+                                      ; the status-bar attribute (set by
+                                      ; V2_STATUS_SET_BAR_ATTR below) in
+                                      ; place instead of resetting it to
+                                      ; ATTR_DEFAULT and back, same anti-
+                                      ; flicker reasoning as GFX_CLEAR_
+                                      ; ROW_TEXT's own header
     ld hl,V2_STATUS_BUF
     ld b,23
     ld c,0
-    jp KTAB_GFX_PRINT_STRING
+    call KTAB_GFX_PRINT_STRING
+    jp V2_STATUS_SET_BAR_ATTR
 
 ; Copies a null-terminated string at (hl) into (de), advancing de past
 ; the copied bytes (not including the terminator -- callers append
@@ -1308,6 +1864,73 @@ V2_STATUS_APPEND:
 
 V2_STATUS_PREFIX: DB "LINE ",0
 
+; Local aliases for kernel/graphics/graphics.asm's own canonical attribute
+; constants (ATTR_STATUS_BAR = $07, ATTR_SWATCH_RED/_GREEN/_BLUE) -- EXROM
+; doesn't INCLUDE graphics.asm (only Home does), so these values aren't
+; otherwise visible here. EQUs, not data -- zero byte cost, and values are
+; cross-checked against graphics.asm's own comments (PAPER/INK bit layout)
+; rather than re-derived.
+V2_ATTR_STATUS_BAR   EQU $07   ; PAPER 0 (black), INK 7 (white)
+V2_ATTR_SWATCH_RED   EQU $10   ; PAPER 2 (red),   INK 0
+V2_ATTR_SWATCH_GREEN EQU $20   ; PAPER 4 (green), INK 0
+V2_ATTR_SWATCH_BLUE  EQU $08   ; PAPER 1 (blue),  INK 0
+
+; ============================================================================
+; V2_STATUS_SET_BAR_ATTR -- R10.7: restores V1's persistent black/white
+; inverse status-bar treatment plus the three-cell RGB branding swatch
+; (echoing the real TS2068's "PERSONAL COLOR COMPUTER" logo) on top of
+; V2's own existing status/message routing (V2_DRAW_STATUS/V2_SHOW_
+; MESSAGE), per docs/v2/R10_7_UX_PARITY_INVESTIGATION.md's Option C.
+;
+; RGB design note (per that investigation's own preference order): a
+; single character cell has exactly ONE attribute byte -- PAPER and INK,
+; two colors total, confirmed from GFX_SET_ATTR/GFX_ATTR_SWAP's own bit
+; layout (kernel/graphics/graphics.asm) -- not three independent colors,
+; so a one-cell three-line red/green/blue mark is not something standard
+; TS2068 attribute hardware can show at all, cheaply or otherwise. A
+; thin-line multi-cell version would still need new font glyph bitmap
+; data (FONT_TABLE growth) for no functional gain over the original
+; design, which needs none -- V1's three solid-color blocks (PAPER-only
+; cells, applied to blank space characters already drawn by GFX_PUTCHAR/
+; GFX_CLEAR_ROW_TEXT) are already the cheapest option and are what's
+; restored here, unchanged, still columns 29-31, never more.
+;
+; Called from both V2_DRAW_STATUS and V2_SHOW_MESSAGE, always AFTER
+; their own GFX_CLEAR_ROW_TEXT (bitmap-only) + GFX_PRINT_STRING -- never
+; GFX_CLEAR_ROW, which would reset the attribute back to ATTR_DEFAULT
+; first, same anti-flicker ordering V1's own BASIC_PRINT_STATUS_TEXT
+; used. Idempotent and cheap enough to call unconditionally every time
+; rather than tracking whether it's already set.
+; In: none  Out: none  Destroys: AF, BC
+; ============================================================================
+V2_STATUS_SET_BAR_ATTR:
+    ld   c, 0
+.bar_loop:
+    push bc
+    ld   a, V2_ATTR_STATUS_BAR
+    ld   b, 23
+    call KTAB_GFX_SET_ATTR
+    pop  bc
+    inc  c
+    ld   a, c
+    cp   29
+    jr   c, .bar_loop
+    push bc
+    ld   a, V2_ATTR_SWATCH_RED
+    ld   b, 23
+    call KTAB_GFX_SET_ATTR
+    pop  bc
+    inc  c
+    push bc
+    ld   a, V2_ATTR_SWATCH_GREEN
+    ld   b, 23
+    call KTAB_GFX_SET_ATTR
+    pop  bc
+    inc  c
+    ld   a, V2_ATTR_SWATCH_BLUE
+    ld   b, 23
+    jp   KTAB_GFX_SET_ATTR
+
 ; R10 correction: previously cleared the WHOLE screen before showing an
 ; error/status message, hiding the program view (compile-time errors)
 ; or the program's own PRINT output (runtime errors) -- a regression
@@ -1322,11 +1945,18 @@ V2_STATUS_PREFIX: DB "LINE ",0
 V2_SHOW_MESSAGE:
     push hl
     ld b,23
-    call KTAB_GFX_CLEAR_ROW
+    call KTAB_GFX_CLEAR_ROW_TEXT    ; R10.7: bitmap-only, same reasoning
+                                      ; as V2_DRAW_STATUS's own comment --
+                                      ; preserves the status-bar attribute
+                                      ; instead of flashing back to
+                                      ; ATTR_DEFAULT first
     pop hl
     ld b,23
     ld c,0
     call KTAB_GFX_PRINT_STRING
+    call V2_STATUS_SET_BAR_ATTR      ; idempotent -- also covers the case
+                                      ; a message is shown before any
+                                      ; V2_DRAW_STATUS call has set it
     jp KTAB_IO_READ_KEY
 
 V2_KW_RUN: DB "RUN",0
@@ -1334,11 +1964,22 @@ V2_KW_LIST: DB "LIST",0
 V2_KW_NEW: DB "NEW",0
 V2_KW_SAVE: DB "SAVE",0
 V2_KW_LOAD: DB "LOAD",0
+V2_KW_VERIFY: DB "VERIFY",0
 V2_KW_EXT: DB "EXT",0
+V2_KW_ARRAY: DB "ARRAY",0
 V2_MSG_SYNTAX: DB "SYNTAX ERROR",0
 V2_MSG_RUNTIME: DB "RUNTIME ERROR",0
 V2_MSG_FULL: DB "PROGRAM FULL",0
+V2_MSG_NOMEM: DB "OUT OF MEMORY",0
+V2_MSG_STACK: DB "STACK OVERFLOW",0
+V2_MSG_NAMELEN: DB "NAME TOO LONG",0
+V2_MSG_NEST: DB "NESTING TOO DEEP",0
+V2_MSG_TOOMANY: DB "TOO MANY VARIABLES",0
 V2_MSG_SAVED: DB "SAVED",0
 V2_MSG_LOADED: DB "LOADED",0
 V2_MSG_LOAD_FAILED: DB "LOAD FAILED",0
 V2_MSG_NO_PACKAGE: DB "NO PACKAGE",0
+V2_MSG_ARRAY_NOT_DIMD: DB "ARRAY NOT DIMD",0
+V2_MSG_ARRAY_MISMATCH: DB "ARRAY ALREADY SET",0
+V2_MSG_VERIFIED: DB "VERIFIED",0
+V2_MSG_VERIFY_FAILED: DB "VERIFY FAILED",0

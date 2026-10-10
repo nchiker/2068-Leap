@@ -362,6 +362,16 @@ EXT2_LOOKUP_NAME:     equ $BEEC   ; (2 bytes)
 EXT2_LOOKUP_LEN:      equ $BEEE   ; (1 byte)
 EXT2_LOOKUP_SLOT:     equ $BEEF   ; (1 byte)
 
+; EXT2_FOLD_UPPER removed (R10.7 dormant-ROM audit, docs/v2/R10_7_
+; DORMANT_ROM_CONSOLIDATION_AUDIT.md): it was a byte-for-byte duplicate of
+; rom/exrom_v2_compiler.asm's own FOLD_UPPER, kept separate only because
+; this file is sometimes included WITHOUT exrom_v2_compiler.asm (rom/
+; test_v2_vm_milestone01.asm, a VM-only test). Every REAL production
+; build (rom/v2_home.asm) includes both files together, so this was a
+; genuine duplicate in the shipped image. EXT2_LOOKUP below now calls the
+; shared FOLD_UPPER directly; test_v2_vm_milestone01.asm got its own
+; local FOLD_UPPER stub to stay self-sufficient. 9 bytes recovered.
+
 ; ===========================================================================
 ; EXT2_LOOKUP — In: HL = name pointer, B = length (a compiler token's
 ; own (TOK_NAME,TOK_LEN) — NOT necessarily null-terminated, unlike
@@ -407,6 +417,20 @@ EXT2_LOOKUP:
         ld b,a
 .cmp_loop:
         ld a,(de)
+        call FOLD_UPPER           ; case-insensitivity: fold the as-typed
+                                  ; source byte; every EXT2_REGISTER
+                                  ; caller registers its own keyword text
+                                  ; already uppercase. MUST be the
+                                  ; conditional fold (rom/exrom_v2_
+                                  ; compiler.asm's own FOLD_UPPER), not a
+                                  ; blind "and $DF" -- some registered
+                                  ; names contain a literal '$' (e.g.
+                                  ; LPRINT's own internal "LPRINT$"
+                                  ; string-argument registration), and a
+                                  ; blind fold corrupts '$' (bit 5 set),
+                                  ; permanently breaking its own lookup
+                                  ; (a real regression this session's own
+                                  ; regression suite caught).
         cp (hl)
         jr nz,.next
         inc hl

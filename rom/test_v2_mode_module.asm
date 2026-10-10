@@ -203,18 +203,6 @@ GFX_CELL_ATTR_ADDR:
 ; MEM_FILL_ZERO to zero the registry table, so that one routine needs a
 ; real (not no-op) stub: fills BC bytes at HL with zero, matching its
 ; real In:HL=dest,BC=count contract exactly, not a fake pass-through.
-MEM_FILL_ZERO:
-    xor  a
-    ld   (hl), a
-    ld   d, h
-    ld   e, l
-    inc  de
-    dec  bc
-    ld   a, b
-    or   c
-    ret  z
-    ldir
-    ret
     INCLUDE "kernel/extensions/ext_registry.asm"
     INCLUDE "rom/exrom_format.asm"
 IO_READ_KEY_NONBLOCK:

@@ -241,21 +241,43 @@ VM_ERROR_CODE:      equ $B683   ; 0 = no error; see header for nonzero codes
 VM_HALTED:          equ $B684   ; nonzero once HALT (or an error-halt) executes
 VM_PUSH_VAL_TMP:    equ $B685   ; VM_PUSH scratch (2 bytes)
 VM_PUSH_TAG_TMP:    equ $B687   ; VM_PUSH scratch (1 byte)
-VM_FOR_LIMIT:       equ $B688   ; FOR_INIT/FOR_NEXT: remembered loop limit (2
+; R10.7 item 7 (re-attempted: see SYMTAB_BASE/CSYMTAB_MAX_ENTRIES's own
+; header comments for the original revert and the now-fixed, unrelated
+; VM_ARR_VALUE_TMP/VM_INPUT_COUNT collision that caused it): VM_CALL_STACK
+; grows from 6 to 12 entries. Its TOP stays fixed at $B6A0 (so nothing
+; above it — VM_STR_TEMP_NEXT and every string/float/ext/array/input
+; scratch cell through $B79D — needs to move); its FLOOR extends downward
+; from $B694 to $B688 instead, which is exactly the 12 bytes the 6 cells
+; below (VM_FOR_LIMIT/VM_FOR_NEXT_BRANCH/VM_FOR_NEXT_VALADDR/VM_FOR_NEXT_
+; NEWVAL/VM_CALL_PUSH_TMP/VM_CALL_SP) used to occupy. Those 6 cells are
+; relocated to $B79E-$B7A9 below (the confirmed-free 98-byte runtime gap
+; between VM_ARR_VALUE_TMP's own real end, $B79E, and CSYMTAB_BASE,
+; $B800) instead — no other runtime or compile-time cell moves.
+VM_FOR_LIMIT:       equ $B79E   ; FOR_INIT/FOR_NEXT: remembered loop limit (2
                                 ; bytes) — single active loop, R1 scope only
-VM_FOR_NEXT_BRANCH: equ $B68A  ; OP_FOR_NEXT scratch: branch target operand (2B)
-VM_FOR_NEXT_VALADDR: equ $B68C ; OP_FOR_NEXT scratch: loop var's value_lo addr (2B)
-VM_FOR_NEXT_NEWVAL: equ $B68E  ; OP_FOR_NEXT scratch: incremented value (2B)
-VM_CALL_PUSH_TMP:   equ $B690  ; VM_CALL_PUSH scratch (2 bytes)
-VM_CALL_SP:         equ $B692  ; VM call-stack pointer (2 bytes, grows down)
-VM_CALL_STACK_TOP:  equ $B6A0  ; call stack lives $B694-$B69F (6 return
-                                ; addresses deep — R1's own fixed, bounds-
-                                ; checked depth, not the Z80 hardware stack)
-VM_CALL_STACK_FLOOR: equ $B694
+VM_FOR_NEXT_BRANCH: equ $B7A0  ; OP_FOR_NEXT scratch: branch target operand (2B)
+VM_FOR_NEXT_VALADDR: equ $B7A2 ; OP_FOR_NEXT scratch: loop var's value_lo addr (2B)
+VM_FOR_NEXT_NEWVAL: equ $B7A4  ; OP_FOR_NEXT scratch: incremented value (2B)
+VM_CALL_PUSH_TMP:   equ $B7A6  ; VM_CALL_PUSH scratch (2 bytes)
+; R10.7 P4: the fixed call / param-save / FOR stacks are gone; all three are
+; frames on the unified typed control stack (VM_CSP, include/v2_layout.inc).
 
-SYMTAB_BASE:        equ $B700   ; symbol records: [tag:1][value_lo:1][value_hi:1]
 SYM_REC_LEN:        equ 3       ; 3 bytes/record (tag + 2-byte value; no name
                                 ; field at runtime at all — REWRITE_RAM_BUDGET.md's
+; R10.7 item 7 (re-attempted — see docs/v2/R10_7_CAPABILITY_RESTORATION.md
+; and docs/v2/R10_7_CAPACITY_ARCHITECTURE_AUDIT.md): numeric scalars widen
+; 16->32. The extra 16 slots (48B) are NOT placed by growing this table in
+; place (that cascaded into every table above it last time, which is how
+; the real-but-unrelated VM_ARR_VALUE_TMP/VM_INPUT_COUNT collision got
+; exposed) and NOT in general-purpose "free RAM" — they live in the V2
+; source-staging buffer ($9455-V2_CODE_BASE), reusing the audit's own
+; verified lifetime invariant: that buffer is written fresh by
+; V2_BUILD_SOURCE and read by the lexer only DURING COMPILE_PROGRAM, and
+; is provably idle for the entire execution phase (VM_INIT/VM_RUN never
+; read or write it). SYMTAB_OVERFLOW_BASE/STRTAB_OVERFLOW_BASE below are
+; valid ONLY from VM_INIT (after a successful compile) until the next
+; V2_BUILD_SOURCE call — do not read or write them during compilation,
+; and do not assume their contents survive past the next RUN.
 
 ; ---------------------------------------------------------------------------
 ; Post-R9 PROC/DEF-FN recursion-safety correction (docs/v2/
@@ -280,24 +302,27 @@ SYM_REC_LEN:        equ 3       ; 3 bytes/record (tag + 2-byte value; no name
 ; CSYMTAB_BASE=$B800 (checked directly against every other v2 file's own
 ; equ's before placing this).
 ; ---------------------------------------------------------------------------
-VM_PARAM_NEST_MAX:      equ 6      ; matches VM_CALL_STACK's own existing
-                                     ; 6-deep PROC/CALL nesting cap -- a
-                                     ; recursive call always consumes one
-                                     ; VM_CALL_STACK slot too, so this can
-                                     ; never need to be deeper
-VM_PARAM_SAVE_REC_LEN:  equ 8       ; [tag:1][value_lo:1][value_hi:1]
-                                     ; [floattab_raw:5]
-VM_PARAM_SAVE_SP:       equ $B730   ; grows down, mirrors VM_CALL_SP (2 bytes)
-VM_PARAM_SAVE_STACK_FLOOR: equ $B732
-VM_PARAM_SAVE_STACK_TOP: equ $B732 + VM_PARAM_NEST_MAX*VM_PARAM_SAVE_REC_LEN ; $B762
-VM_PARAM_SYM_ADDR_TMP:  equ $B762   ; OP_PARAM_BIND/UNBIND scratch (2 bytes):
-                                     ; the parameter's own SYMTAB record
-                                     ; address, parked before a call
-VM_PARAM_FLOAT_ADDR_TMP: equ $B764  ; (2 bytes): the parameter's own
-                                     ; dedicated FLOATTAB record address
-VM_PARAM_BIND_INDEX_TMP: equ $B766  ; (1 byte): the symbol index this
-                                     ; instruction's own operand names
-                                ; compiled-index design)
+; R10.7 item 7 (re-attempted — see VM_CALL_STACK_FLOOR's own header
+; comment above for the original revert/now-fixed collision this re-
+; attempt builds on): nesting depth 6->12, matching VM_CALL_STACK's own
+; R10.7 widening above. VM_PARAM_SAVE_STACK_FLOOR/SP stay exactly where
+; they were ($B730/$B732 — SYMTAB_BASE itself did NOT grow in place, see
+; its own header comment, so there is no pressure on this address from
+; below); only the TOP moves, growing upward by the formula below. The 3
+; small scratch cells that used to sit right after the old $B762 top
+; (VM_PARAM_SYM_ADDR_TMP/FLOAT_ADDR_TMP/BIND_INDEX_TMP) are relocated to
+; sit right after the NEW top instead, the same relative position they
+; always had — confirmed free up to VM_ARR_ADDR_TMP ($B798, unchanged).
+VM_PARAM_SYM_ADDR_TMP:  equ $B792  ; OP_PARAM_BIND/UNBIND
+                                     ; scratch (2 bytes): the parameter's
+                                     ; own SYMTAB record address, parked
+                                     ; before a call
+VM_PARAM_FLOAT_ADDR_TMP: equ VM_PARAM_SYM_ADDR_TMP+2 ; (2 bytes): the
+                                     ; parameter's own dedicated FLOATTAB
+                                     ; record address
+VM_PARAM_BIND_INDEX_TMP: equ VM_PARAM_FLOAT_ADDR_TMP+2 ; (1 byte): the
+                                     ; symbol index this instruction's own
+                                     ; operand names (compiled-index design)
 
 TAG_INT:            equ 0
 TAG_FLOAT:          equ 1
@@ -312,26 +337,71 @@ TAG_FLOAT:          equ 1
 ; statically sized (compile-time-constant DIM), flat 2-bytes/element
 ; storage -- no allocator, no per-element tag byte (a real, deliberate
 ; RAM saving over the scalar SYMTAB's own [tag][lo][hi] shape: an array
-; element's type never varies at runtime the way a bare variable's can,
-; since DIM commits to integer once). The original placement used the gap
-; between FLOATTAB and STRTAB. The relocated block preserves that spacing:
-; 4 arrays * 16 elements * 2 bytes = 128 bytes, $B460-$B4DF.
-ARRTAB_BASE:        equ $B460
-ARRAY_MAX_COUNT:    equ 4        ; MUST match rom/exrom_v2_compiler.asm's
-                                   ; own ARRSYMTAB_MAX_ENTRIES -- an array's
-                                   ; compile-time creation order IS its
-                                   ; runtime ARRTAB slot index
-ARRAY_MAX_ELEMS:    equ 16       ; MUST match rom/exrom_v2_compiler.asm's
-                                   ; own ARRAY_MAX_ELEMS (DIM's own upper
-                                   ; bound check); a power of 2 so the
-                                   ; slot*ARRAY_MAX_ELEMS multiply below is
-                                   ; four shifts, not a real multiply
+; R10.7 dynamic-array redesign: the old fixed 4x16 ARRTAB pool (128
+; bytes, always fully reserved regardless of real DIM'd size) is
+; removed. Arrays now live in a sequential arena growing from ARRAYS_
+; END up to VARS_START (include/sysvars.inc) -- real, already-existing,
+; already-correctly-reset-by-NEW/CLEAR/cold-boot sysvars that nothing
+; previously advanced past PROG_END. See docs/v2/R10_7_ARRAY_
+; ARCHITECTURE_AUDIT.md Part 2 for the full design.
+;
+; ARR_PTR_TABLE: one 2-byte runtime arena-address slot per possible
+; compile-time array index (0 = not yet DIM'd this run). This is now
+; the ONLY fixed-size runtime cost -- the array's own data is arena-
+; allocated, not pre-reserved here. Placed a little past the old freed
+; ARRTAB_BASE ($B460) rather than reusing it exactly, leaving a clean
+; margin before STRTAB_BASE ($B500).
+; STRARR_PTR_TABLE -- same idea, for string arrays (item 3), placed
+; right after ARR_PTR_TABLE (16*2=32 bytes, $B4B0-$B4CF).
 
-STRTAB_BASE:        equ $B500   ; string records: [len:1][content:31] = 32B
+; Arena descriptor shapes (in ARRAYS_END..VARS_START):
+;   numeric: [dim_count:1][count:2][data: count*2 bytes]
+;   string:  [dim_count:1][count:2][width:1][data: count*width bytes],
+;            each element [len:1][content:width-1]
+; dim_count is always 1 today -- reserved so a future 2-D DIM needs no
+; format migration for existing 1-D arrays (R10_7_ARRAY_ARCHITECTURE_
+; AUDIT.md Part 2 item 3).
+ARR_DESC_COUNT_OFF:  equ 1        ; offset of the 2-byte element count
+ARR_DESC_DATA_OFF:   equ 3        ; offset of the data (numeric)
+STRARR_DESC_WIDTH_OFF: equ 3      ; offset of the 1-byte element width
+STRARR_DESC_DATA_OFF:  equ 4      ; offset of the data (string)
+
+; R10.7 Dynamic Data Phase 2 -- string arrays (DIM A$(n[,w])). Runtime
+; scratch, placed in the real free 32-byte gap between STRARR_PTR_TABLE's
+; own end ($B4D0+8*2=$B4E0) and STRTAB_BASE ($B500) -- confirmed free by
+; direct address-collision grep before picking this span (same discipline
+; as every other hand-placed cell in this file).
+VM_STRARR_INDEX_TMP: equ $B4E0  ; OP_STRARR_LOAD/STORE/DIM_STR: the
+                                   ; operand-baked array slot (1 byte)
+VM_STRARR_COUNT_TMP: equ $B4E1  ; OP_STRARR_LOAD/STORE: the operand-baked
+                                   ; declared element count (2 bytes)
+                                   ; ($B4E3-$B4E4 deliberately left
+                                   ; unused here -- the element-index
+                                   ; scratch is VM_ARR_ELEM_TMP, shared
+                                   ; with the numeric array opcodes, see
+                                   ; VM_ARR_VALIDATE_INDEX's own header)
+VM_STRARR_WIDTH_TMP: equ $B4E5  ; VM_STRARR_ADDR's own resolved per-
+                                   ; element width, read from the arena
+                                   ; descriptor (1 byte) -- saved to memory
+                                   ; because the immediately-following
+                                   ; MATH_MULTIPLY16 call destroys A
+VM_STRARR_ADDR_TMP:  equ $B4E6  ; VM_STRARR_ADDR's own data-base address,
+                                   ; parked across MATH_MULTIPLY16 (which
+                                   ; destroys AF/BC/DE); OP_STRARR_STORE
+                                   ; also reuses this cell (its own use of
+                                   ; VM_STRARR_ADDR has already finished by
+                                   ; then) to park the resolved destination
+                                   ; address across the following
+                                   ; VM_STR_ADDR call (2 bytes)
+VM_STRARR_VALUE_IDX_TMP: equ $B4E8 ; OP_STRARR_STORE only: the popped
+                                   ; source string's own STRTAB index,
+                                   ; saved across the second VM_POP (the
+                                   ; array index) that follows it (1 byte)
+
 STR_REC_LEN:        equ 32
-STRTAB_MAX_VARS:    equ 4       ; named string-variable slots (indices 0-3)
-STRTAB_TEMP_COUNT:  equ 2       ; concatenation-result temp slots (4-5),
-                                 ; round-robin — no allocator, matching this
+STRTAB_TEMP_COUNT:  equ 2       ; concatenation-result temp slots (indices
+                                 ; 8-9 now, were 4-5), round-robin — no
+                                 ; allocator, matching this
                                  ; project's own "avoid inventing a general
                                  ; allocator" discipline; a temp is only
                                  ; ever live long enough to be immediately
@@ -391,32 +461,7 @@ BFN_STR_TMP:        equ $B6AE   ; R8.5 Group 6 (string-result functions)
 ; VM_PUSH; the actual 5 float bytes live in FLOATTAB, in the calculator's
 ; own native format (opaque to the VM — copied to/from CALC_STACK
 ; verbatim, never decoded here). ---
-FLOATTAB_BASE:      equ V2_FLOATTAB_BASE ; 5-byte calculator-float records
-                                 ; bytes each, opaque to the VM
 FLOAT_REC_LEN:      equ 5
-FLOATTAB_MAX_VARS:  equ 16      ; ONE dedicated slot per possible SYMTAB
-                                  ; index (matches the compiler's own
-                                  ; CSYMTAB_MAX_ENTRIES) — NOT a small
-                                  ; fixed pool like STRTAB_MAX_VARS. Real
-                                  ; design reason, found before this ever
-                                  ; shipped: unlike a string variable
-                                  ; (which has its OWN lexically-distinct
-                                  ; index space via STRSYMTAB, decoupled
-                                  ; from the numeric SYMTAB), a float
-                                  ; variable shares the SAME SYMTAB index
-                                  ; space as an int variable (either type
-                                  ; can be assigned to "X" at runtime) —
-                                  ; there is no separate "float variable
-                                  ; index" to allocate ahead of time, so a
-                                  ; variable's float content must live at
-                                  ; a slot keyed by its SYMTAB index
-                                  ; directly, not by a round-robin
-                                  ; allocation order (see OP_STORE_VAR's
-                                  ; own header note for why storing just
-                                  ; a temp's index instead of a real copy
-                                  ; was a real, caught design gap, not a
-                                  ; shipped bug — found and fixed before
-                                  ; this ever ran on real hardware)
 FLOATTAB_TEMP_COUNT: equ 2      ; arithmetic-result temp slots, indices
                                   ; FLOATTAB_MAX_VARS.. — round-robin, same
                                   ; "no allocator needed" reasoning as
@@ -482,17 +527,40 @@ VM_EXT_EXEC_PTR:    equ $BA5C    ; (2 bytes): preserve package target while
 ; CLS/PLOT/COMPUTE_PRINT_ATTR directly: depending on it here would just
 ; create a dependency R9 has to unwind later). A small, self-contained
 ; VM-owned equivalent instead. ---
-VM_ARR_INDEX_TMP:   equ $B6D0  ; R8.5 Group 4 -- OP_ARR_LOAD/STORE scratch
-VM_ARR_SIZE_TMP:    equ $B6D1   ; (1 byte each): the operand-baked array
-                                  ; slot and declared size, saved to memory
-                                  ; before VM_POP (which uses HL/DE
+VM_ARR_INDEX_TMP:   equ $B6D0  ; R8.5 Group 4 -- OP_ARR_LOAD/STORE scratch:
+                                  ; the operand-baked array slot, saved to
+                                  ; memory before VM_POP (which uses HL/DE
                                   ; internally, same "never keep a value in
                                   ; a register across a call" discipline
                                   ; this whole file already follows)
-VM_ARR_ELEM_TMP:    equ $B6D2   ; the popped, bounds-checked element index
+VM_ARR_SIZE_TMP:    equ $B6D1   ; R10.7 -- widened to 2 bytes (was 1): the
+                                  ; operand-baked declared element count,
+                                  ; now up to 65535 (arena-bounded, not a
+                                  ; fixed 16-element pool)
+VM_ARR_ELEM_TMP:    equ $B6D3   ; the popped, bounds-checked element index
                                   ; (2 bytes, though only the low byte is
                                   ; ever nonzero for a valid access)
-VM_ARR_VALUE_TMP:   equ $B6D4   ; OP_ARR_STORE only: the popped value,
+; VM_ARR_VALUE_TMP relocated to $B79C (below, with VM_ARR_ADDR_TMP/
+; VM_DIM_COUNT_TMP) -- widening it to 2 bytes at its original $B6D5
+; would have overlapped VM_INPUT_COUNT at $B6D6 by one byte (a real bug
+; caught here: documented in an earlier version of this comment but
+; never actually fixed until now -- OP_ARR_STORE was never exercised by
+; the test that first caught this, so the collision went unnoticed).
+; VM_ARR_ADDR_TMP/VM_DIM_COUNT_TMP: placed at $B798, NOT contiguous with
+; the cells above -- this whole $B6D0-$B6E1 span is fully packed
+; (VM_INPUT_* overlaps immediately after the old VM_ARR_VALUE_TMP),
+; confirmed by direct address-collision check before picking this spot. $B798 is
+; real free space: past VM_PARAM_BIND_INDEX_TMP's own widened end
+; ($B792 + 2 + 2 + 1 = $B797, once VM_PARAM_NEST_MAX is 12 -- see that
+; equ's own R10.7 update below) and before rom/exrom_v2_compiler.asm's
+; own CSYMTAB_BASE ($B800).
+VM_ARR_ADDR_TMP:    equ $B798   ; R10.7 -- VM_ARR_ADDR's own resolved
+                                  ; arena element address (2 bytes),
+                                  ; parked across VM_ERR_* calls
+VM_DIM_COUNT_TMP:   equ $B79A   ; R10.7 OP_DIM scratch (2 bytes): the
+                                  ; requested element count, saved across
+                                  ; the arena-bump arithmetic
+VM_ARR_VALUE_TMP:   equ $B79C   ; OP_ARR_STORE only: the popped value,
                                   ; saved across the second VM_POP (the
                                   ; index) that follows it (2 bytes)
 
@@ -560,21 +628,8 @@ VM_FOR_STEP:         equ $B6E2  ; R8.5 Group 5 -- FOR...STEP. Remembered
 ; gap between STRTAB_BASE+6*32=$B5C0 and VM_IP=$B600 (64 bytes; checked
 ; directly against every other v2 file's own equ's before placing this).
 ; ---------------------------------------------------------------------------
-VM_FOR_NEST_MAX:        equ 4
-VM_FOR_STACK_DEPTH:  equ $B5C0  ; number of currently-open FOR loops (1 byte)
-VM_FOR_STACK_BASE:   equ $B5C1  ; frames: [limit:2][step:2] = 4 bytes each,
-                                  ; VM_FOR_NEST_MAX*4 = 16 bytes, $B5C1-$B5D0
-
-; VM_FOR_STACK_FRAME_ADDR — A = depth index (0-based) -> HL = that frame's
-; address (VM_FOR_STACK_BASE + depth*4). Destroys: DE.
-VM_FOR_STACK_FRAME_ADDR:
-        ld l,a
-        ld h,0
-        add hl,hl               ; *2
-        add hl,hl               ; *4
-        ld de,VM_FOR_STACK_BASE
-        add hl,de
-        ret
+; R10.7 P4: the FOR frames live on the unified control stack (see
+; VM_CS_ALLOC); VM_FOR_LIMIT/STEP above remain the live innermost values.
 VM_OUTPUT_ROW:       equ $B6C9    ; current PRINT row, 0-23 (1 byte)
 VM_OUTPUT_COL:        equ $B6CA    ; unused after a PRINT (V1's own real
                                      ; PRINT always ends its own line --
@@ -601,40 +656,137 @@ BFN_ABS_IDX_TMP:      equ $B6CE    ; (2 bytes): R8.5 Group 1 -- BUILTIN_
 ; VM_INIT — call once before VM_RUN. Resets both stacks, error/halt flags.
 ; ---------------------------------------------------------------------------
 VM_INIT:
-        IFDEF V2_PRODUCTION
-        ; RUN starts with fresh runtime values while retaining the source
-        ; and compiler symbol names. This range covers FLOATTAB, ARRTAB,
-        ; STRTAB and their deliberate alignment gaps, but no extension
-        ; registry or bytecode bytes.
-        ld hl,FLOATTAB_BASE
-        ld bc,$1C0
-        call MEM_FILL_ZERO
-        ld hl,SYMTAB_BASE
-        ld bc,16*3
-        call MEM_FILL_ZERO
-        ENDIF
+        ld hl,(SYM_END_V)          ; R10.7 -- reset the array arena so a
+        inc hl                      ; second RUN of the same program
+        ld (ARRAYS_END),hl           ; doesn't allocate on top of the
+                                      ; first run's still-stale arena (NEW/
+                                      ; CLEAR do the same reset). P2: the arena
+                                      ; starts just past the compile symbol
+                                      ; table (which lives at PROG_END and
+                                      ; must survive the run for SAVE/LOAD ...
+                                      ; ARRAY); unconditional so the standalone
+                                      ; test builds get the same layout
         ld hl,VM_STACK_TOP
         ld (VM_SP),hl
-        ld hl,VM_CALL_STACK_TOP
-        ld (VM_CALL_SP),hl
-        ld hl,VM_PARAM_SAVE_STACK_TOP  ; post-R9 PROC/DEF-FN recursion
-        ld (VM_PARAM_SAVE_SP),hl        ; safety correction
         xor a
         ld (VM_ERROR_CODE),a
         ld (VM_HALTED),a
         ld (VM_TOS_TAG),a
         ld (VM_STR_TEMP_NEXT),a
         ld (VM_FLOAT_TEMP_NEXT),a
-        ld (VM_FOR_STACK_DEPTH),a  ; post-R9 nested FOR/NEXT -- a stale
-                                     ; depth from a previous RUN must not
-                                     ; survive into this one
         ld (VM_OUTPUT_ROW),a    ; R8.5 -- PRINT/LPRINT's own output cursor;
-        ld (VM_OUTPUT_COL),a     ; uninitialized RAM here previously
-                                   ; produced a garbage starting row (caught
-                                   ; via a real ZEsarUX run: the very first
-                                   ; PRINT called GFX_PRINT_STRING_ATTR with
-                                   ; B=23, not 0)
-        ret
+        ld (VM_OUTPUT_COL),a
+        ld (ARR2_SWAPPED),a      ; R10.7 P5.4: segment 2 starts empty
+        ld hl,ARR2_BASE
+        ld (ARR2_END),hl
+        jp VM_CARVE_TABLES       ; R10.7 P3: size the run-time tables
+
+; ---------------------------------------------------------------------------
+; VM_CARVE_TABLES -- R10.7 P3. The run-time tables are no longer fixed
+; reservations: they are carved, exactly sized, from the TOP of the pool (just
+; below the compile/run zone) from the counts the compiler produced:
+;
+;   table               bytes                              pointer
+;   SYMTAB              3 * N                              RT_SYMTAB_PTR
+;   FLOATTAB            5 * (N + FLOATTAB_TEMP_COUNT)      RT_FLOATTAB_PTR
+;   STRTAB              32 * (M + STRTAB_TEMP_COUNT)       RT_STRTAB_PTR
+;   array pointers      2 * A                              RT_ARRPTR_PTR
+;   string-arr pointers 2 * SA                             RT_STRARRPTR_PTR
+;   (N numeric, M string, A array, SA string-array symbols)
+;
+; Variable access stays direct and indexed (base pointer in RAM; the old tier
+; compare is gone, so it is no slower). The round-robin string and float temp
+; slots sit just above the program's own variables, so their indices start at
+; M / N; RT_STR_COUNT / RT_NUM_COUNT hold M / N for that. VARS_START becomes
+; the bottom of the carved block, which is exactly the ceiling the array arena
+; already checks, so FREE() stays VARS_START - ARRAYS_END. If the block does
+; not fit above ARRAYS_END (which starts just past the compile symbol table)
+; the run is refused with VM_ERR_ARRAY_SPACE (error 64, "OUT OF MEMORY").
+; The whole block is zeroed.
+; ---------------------------------------------------------------------------
+VM_CARVE_TABLES:
+        ld a,(CSYM_COUNT)
+        ld (RT_NUM_COUNT),a
+        ld a,(STRSYM_COUNT)
+        ld (RT_STR_COUNT),a
+        ld hl,V2_SOURCE_END
+        ld (VARS_START),hl
+        ld hl,VM_CARVE_DESC
+        ld b,5
+.table:
+        push bc
+        ld e,(hl)
+        inc hl
+        ld d,(hl)               ; DE = address of this table's count cell
+        inc hl
+        ld a,(de)
+        add a,(hl)              ; + the number of temp slots
+        inc hl
+        ld c,(hl)               ; C = bytes per slot
+        inc hl
+        ld e,(hl)
+        inc hl
+        ld d,(hl)               ; DE = this table's pointer cell
+        inc hl
+        push hl                 ; next descriptor
+        push de
+        ld b,a                  ; B = slots
+        ld hl,0
+        ld d,0
+        ld e,c
+        or a
+        jr z,.mulend            ; (a table can be empty: 0 symbols)
+.mul:
+        add hl,de               ; HL = slots * bytes-per-slot
+        djnz .mul
+.mulend:
+        ex de,hl                ; DE = size
+        ld hl,(VARS_START)
+        or a
+        sbc hl,de               ; HL = new base
+        ld (VARS_START),hl
+        pop de                  ; DE = pointer cell
+        ex de,hl
+        ld (hl),e
+        inc hl
+        ld (hl),d               ; pointer cell = new base
+        pop hl                  ; next descriptor
+        pop bc
+        djnz .table
+        ld hl,(VARS_START)
+        ld de,(ARRAYS_END)
+        or a
+        sbc hl,de
+        jp c,VM_ERR_ARRAY_SPACE ; the block does not fit
+        ld hl,(VARS_START)
+        ld (VM_CSP),hl          ; R10.7 P4: control stack starts empty at the
+                                ; carved block's bottom, grows down toward
+                                ; ARRAYS_END (arrays grow up toward VM_CSP)
+        ld hl,V2_SOURCE_END
+        ld de,(VARS_START)
+        or a
+        sbc hl,de               ; HL = block length (never 0: the temp slots)
+        ld b,h
+        ld c,l
+        ex de,hl                ; HL = block start
+        jp MEM_FILL_ZERO
+VM_CARVE_DESC:
+        dw STRARRSYM_COUNT
+        db 0, 2
+        dw RT_STRARRPTR_PTR
+        dw ARRSYM_COUNT
+        db 0, 2
+        dw RT_ARRPTR_PTR
+        dw STRSYM_COUNT
+        db STRTAB_TEMP_COUNT, 32
+        dw RT_STRTAB_PTR
+        dw CSYM_COUNT
+        db FLOATTAB_TEMP_COUNT, 5
+        dw RT_FLOATTAB_PTR
+        dw CSYM_COUNT
+        db 0, 3
+        dw RT_SYMTAB_PTR
+
 
 ; ---------------------------------------------------------------------------
 ; VM_RUN — dispatch loop. Entry: VM_IP already set by the caller. Returns
@@ -649,7 +801,7 @@ VM_RUN:
         ld a,(hl)               ; fetch opcode
         inc hl
         ld (VM_IP),hl
-        cp 58                   ; 58 opcodes defined (0-57, R8.5 adds
+        cp 67                   ; 67 opcodes defined (0-66, R8.5 adds
                                  ; 35-38: PRINT_NUM/STR, LPRINT_NUM/STR;
                                  ; 39: CALL_FN (Group 1); 40-43: CMP_LE/
                                  ; GT/GE/NE; 44-46: AND/OR/NOT; 47:
@@ -723,8 +875,10 @@ VM_OP_TABLE:
         dw OP_CALL_EXT                   ; 34 (R7.5)
         dw OP_PRINT_NUM                   ; 35 (R8.5)
         dw OP_PRINT_STR                    ; 36
-        dw VM_ERR_ILLEGAL_OPCODE             ; 37 (was OP_LPRINT_NUM)
-        dw VM_ERR_ILLEGAL_OPCODE              ; 38 (was OP_LPRINT_STR)
+        dw OP_FLASH                           ; 37 (was OP_LPRINT_NUM;
+                                                ; R10.7 attribute setter)
+        dw OP_BRIGHT                           ; 38 (was OP_LPRINT_STR;
+                                                ; R10.7 attribute setter)
         dw OP_CALL_FN                         ; 39 (R8.5 Group 1)
         dw OP_CMP_LE                           ; 40 (R8.5 Group 3)
         dw OP_CMP_GT                            ; 41
@@ -766,27 +920,44 @@ VM_OP_TABLE:
         dw OP_PARAM_UNBIND                                  ; 57  recursion safety)
         ; 52-54 (OP_MODE/OP_ULAPLUS/OP_PALETTE) removed -- now a
         ; loadable extension package, rom/ext_mode_module.asm
+        dw OP_OVER                                          ; 58 (R10.7 --
+        dw OP_INVERSE                                       ; 59  attribute
+                                                             ; setters, OP_
+                                                             ; FLASH/BRIGHT
+                                                             ; above reused
+                                                             ; 37-38)
+        dw OP_AT                                            ; 60 (R10.7 --
+        dw OP_TAB                                           ; 61  standalone
+                                                             ; cursor stmts)
+        dw OP_CLEAR                                         ; 62 (R10.7)
+        dw OP_DIM                                           ; 63 (R10.7
+                                                             ; dynamic arrays)
+        dw OP_DIM_STR                                       ; 64 (R10.7
+        dw OP_STRARR_LOAD                                   ; 65  Phase 2 --
+        dw OP_STRARR_STORE                                  ; 66  string arrays)
 
 ; ---------------------------------------------------------------------------
-; String-table access: index (A) -> HL = record address
-; (STRTAB_BASE + index*32). Same shape as VM_SYM_ADDR, separate table.
+; String-table access: index (A) -> HL = record address. Same shape as
+; VM_SYM_ADDR, separate table. R10.7 item 7: two-tier (BASE indices 0-3 /
+; OVERFLOW indices 4-9, which now includes both the 4 new named slots AND
+; the 2 round-robin temps — see STRTAB_MAX_VARS's own header comment for
+; why the temps relocated too). One extra compare+branch versus the old
+; flat formula; still a direct indexed access, never a name search, so
+; the project's standing "identifiers resolve to compact slot references
+; at compile time, runtime access stays O(1)" property is unchanged.
 ; ---------------------------------------------------------------------------
 VM_STR_ADDR:
         ld l,a
         ld h,0                  ; HL = index
-        ld d,h
-        ld e,l
         add hl,hl               ; *2
         add hl,hl               ; *4
         add hl,hl               ; *8
         add hl,hl               ; *16
         add hl,hl               ; *32
-        ld de,STRTAB_BASE
-        add hl,de
+        ld de,(RT_STRTAB_PTR)   ; R10.7 P3: flat table sized by the compiler's
+        add hl,de               ; counts (no tier); A is preserved
         ret
 
-; VM_STR_COPY — copies a whole 32-byte string record (length + content,
-; regardless of the actual length, for simplicity) from HL to DE.
 VM_STR_COPY:
         ld b,32
 .loop:
@@ -798,7 +969,11 @@ VM_STR_COPY:
         ret
 
 ; ---------------------------------------------------------------------------
-; Symbol access: index (A) -> HL = record address (SYMTAB_BASE + index*3).
+; Symbol access: index (A) -> HL = record address. R10.7 item 7: two-tier
+; (BASE indices 0-15 / OVERFLOW indices 16-31 — see SYMTAB_OVERFLOW_BASE's
+; own header comment for the lifetime invariant the overflow tier depends
+; on). Same "one extra compare, still O(1), never a name search"
+; discipline as VM_STR_ADDR above.
 ; ---------------------------------------------------------------------------
 VM_SYM_ADDR:
         ld l,a
@@ -807,9 +982,16 @@ VM_SYM_ADDR:
         ld e,l                  ; DE = index (copy)
         add hl,hl                ; HL = index*2
         add hl,de                ; HL = index*3
-        ld de,SYMTAB_BASE
+        ld de,(RT_SYMTAB_PTR)    ; R10.7 P3: flat table, base in RAM
         add hl,de
         ret
+
+VM_PUSH_STR_RESULT:
+        pop af
+        ld l,a
+        ld h,0
+        xor a
+        jr VM_PUSH
 
 ; ---------------------------------------------------------------------------
 ; Operand stack, WITH real bounds checking.
@@ -838,6 +1020,21 @@ VM_PUSH:                       ; input: HL = value, A = tag
         ld (VM_TOS_TAG),a
         ret
 
+; PUSH_INT_CONTINUE -- shared opcode-handler tail: push HL as a plain
+; TAG_INT value and continue the VM dispatch loop. Identical 3-
+; instruction, 7-byte sequence previously duplicated 21 times across
+; this file's own opcode handlers (R10.7 dormant-ROM audit, docs/v2/
+; R10_7_DORMANT_ROM_CONSOLIDATION_AUDIT.md). A pure tail-jump (never a
+; `call`) into VM_RUN.loop, which itself never returns here -- no stack
+; surgery of any kind, so every call site just becomes `jp
+; PUSH_INT_CONTINUE` with no change to the hardware stack at the jump.
+; In: HL = the plain integer result to push. Destroys: AF (and whatever
+; VM_RUN.loop's own dispatch destroys next).
+PUSH_INT_CONTINUE:
+        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
+        call VM_PUSH
+        jp VM_RUN.loop
+
 VM_POP:                        ; output: HL = value, A = tag
         ld hl,(VM_SP)
         ld de,VM_STACK_TOP
@@ -855,127 +1052,157 @@ VM_POP:                        ; output: HL = value, A = tag
         ex de,hl                ; HL = value; A still holds the tag
         ret
 
+; VM_POP_CHECK_INT -- shared "pop, then require a plain TAG_INT value"
+; tail used by OP_ARR_LOAD/STORE and OP_STRARR_LOAD/STORE's own array-
+; index/value operand fetches (identical `call VM_POP / cp TAG_INT / jp
+; nz,VM_ERR_ARRAY_TYPE` sequence previously duplicated 6 times; R10.7
+; dormant-ROM audit, docs/v2/R10_7_DORMANT_ROM_CONSOLIDATION_AUDIT.md).
+; Out: HL = value, A = TAG_INT (on success); jumps to VM_ERR_ARRAY_TYPE
+; directly otherwise, same as the inlined version did. Destroys: AF.
+VM_POP_CHECK_INT:
+        call VM_POP
+        cp TAG_INT
+        jp nz,VM_ERR_ARRAY_TYPE
+        ret
+
 ; ---------------------------------------------------------------------------
 ; VM call stack (bytecode return addresses only — separate from both the
 ; operand stack above and the Z80 hardware stack).
 ; ---------------------------------------------------------------------------
-VM_CALL_PUSH:                  ; input: HL = bytecode return address
-        ld (VM_CALL_PUSH_TMP),hl
-        ld hl,(VM_CALL_SP)
-        ld de,-2
-        add hl,de               ; HL = would-be new call SP
-        ld de,VM_CALL_STACK_FLOOR
+; ---------------------------------------------------------------------------
+; R10.7 P4 -- unified typed control stack. One memory-limited stack, growing
+; DOWN from VARS_START (the carved-table block's bottom) toward ARRAYS_END,
+; replaces the fixed 12-deep call, 12-deep param-save and 15-deep FOR stacks.
+; Frames (tag first, lowest address = top):
+;   T_FOR   [1][enclosing limit:2][enclosing step:2]            5 B
+;   T_CALL  [2][return address:2]                               3 B
+;   T_PARAM [3][SYMTAB record:3][FLOATTAB record:5]             9 B
+; RET / PARAM_UNBIND skip FOR frames above their owner (a GOTO out of a loop
+; leaks its FOR frame); the owner's pop then discards them. Exhaustion is the
+; same clean VM_ERR_CALL_STACK_OVERFLOW; the Z80 hardware stack is separate.
+; ---------------------------------------------------------------------------
+T_FOR:                  equ 1
+T_CALL:                 equ 2
+T_PARAM:                equ 3
+
+; VM_CS_ALLOC -- A = frame size. Out: HL = new frame, CSP lowered; carry set
+; (nothing changed) if it would run into ARRAYS_END. Destroys: AF, DE, HL.
+VM_CS_ALLOC:
+        ld e,a
+        ld d,0
+        ld hl,(VM_CSP)
         or a
         sbc hl,de
-        jp c,VM_ERR_CALL_STACK_OVERFLOW
-        ld hl,(VM_CALL_SP)
-        ld de,-2
+        ret c
+        ex de,hl                ; DE = new CSP
+        ld hl,(ARRAYS_END)
+        or a
+        sbc hl,de               ; arrays end - new
+        jr z,.ok
+        jr nc,.fail             ; the stack would run into the arrays
+.ok:
+        ld (VM_CSP),de
+        ex de,hl                ; HL = new frame
+        or a
+        ret
+.fail:
+        scf
+        ret
+
+; VM_CS_UNWIND -- Out: HL = topmost non-FOR frame, A = its tag; carry set if
+; the stack is empty. CSP is not changed.
+VM_CS_UNWIND:
+        ld hl,(VM_CSP)
+.next:
+        ld de,(VARS_START)
+        or a
+        sbc hl,de
+        jr z,.empty
         add hl,de
-        ld (VM_CALL_SP),hl      ; commit the new call SP
-        ld de,(VM_CALL_PUSH_TMP)
+        ld a,(hl)
+        cp T_FOR
+        ret nz                  ; carry clear
+        ld de,5
+        add hl,de
+        jr .next
+.empty:
+        scf
+        ret
+
+VM_CALL_PUSH:                  ; input: HL = bytecode return address
+        push hl
+        ld a,3
+        call VM_CS_ALLOC
+        pop de
+        jp c,VM_ERR_CALL_STACK_OVERFLOW
+        ld (hl),T_CALL
+        inc hl
         ld (hl),e
         inc hl
         ld (hl),d
         ret
 
 VM_CALL_POP:                   ; output: HL = bytecode return address
-        ld hl,(VM_CALL_SP)
-        ld de,VM_CALL_STACK_TOP
-        or a
-        sbc hl,de
-        jp z,VM_ERR_CALL_STACK_UNDERFLOW
-        ld hl,(VM_CALL_SP)
+        call VM_CS_UNWIND
+        jp c,VM_ERR_CALL_STACK_UNDERFLOW
+        cp T_CALL
+        jp nz,VM_ERR_CALL_STACK_UNDERFLOW
+        inc hl
         ld e,(hl)
         inc hl
         ld d,(hl)
         inc hl
-        ld (VM_CALL_SP),hl
+        ld (VM_CSP),hl
         ex de,hl
         ret
 
-; ---------------------------------------------------------------------------
-; Parameter-save stack (post-R9 PROC/DEF-FN recursion-safety correction,
-; see VM_PARAM_SAVE_SP's own header above). Reuses the identical
-; overflow/underflow error exits VM_CALL_PUSH/POP already use above --
-; both stacks share the same nesting-depth policy, not a coincidence.
-; ---------------------------------------------------------------------------
-
 ; VM_PARAM_SAVE_PUSH -- input: HL = source SYMTAB record address (3
 ; bytes), DE = source dedicated FLOATTAB record address (5 bytes).
-; Copies both onto a fresh frame. Destroys: AF, BC, DE, HL.
+; Destroys: AF, BC, DE, HL.
 VM_PARAM_SAVE_PUSH:
-        ld (VM_PARAM_SYM_ADDR_TMP),hl
-        ld (VM_PARAM_FLOAT_ADDR_TMP),de
-        ld hl,(VM_PARAM_SAVE_SP)
-        ld de,-VM_PARAM_SAVE_REC_LEN
-        add hl,de
-        ld de,VM_PARAM_SAVE_STACK_FLOOR
-        or a
-        sbc hl,de
-        jp c,VM_ERR_CALL_STACK_OVERFLOW
-        ld hl,(VM_PARAM_SAVE_SP)
-        ld de,-VM_PARAM_SAVE_REC_LEN
-        add hl,de
-        ld (VM_PARAM_SAVE_SP),hl   ; commit; HL = this new frame's address
-        ld de,(VM_PARAM_SYM_ADDR_TMP)
-        ld a,(de)
-        ld (hl),a
+        push de
+        push hl
+        ld a,9
+        call VM_CS_ALLOC
+        jr c,.fail
+        ld (hl),T_PARAM
         inc hl
-        inc de
-        ld a,(de)
-        ld (hl),a
-        inc hl
-        inc de
-        ld a,(de)
-        ld (hl),a
-        inc hl                      ; HL -> frame+3 (float area)
-        ld de,(VM_PARAM_FLOAT_ADDR_TMP)
-        ld b,FLOAT_REC_LEN
-.copy_float:
-        ld a,(de)
-        ld (hl),a
-        inc hl
-        inc de
-        djnz .copy_float
+        ex de,hl                ; DE = frame+1
+        pop hl                  ; HL = symbol record
+        ld bc,3
+        ldir
+        pop hl                  ; HL = float record
+        ld bc,5
+        ldir
         ret
+.fail:
+        pop hl
+        pop de
+        jp VM_ERR_CALL_STACK_OVERFLOW
 
 ; VM_PARAM_SAVE_POP -- input: HL = destination SYMTAB record address (3
 ; bytes), DE = destination dedicated FLOATTAB record address (5 bytes).
-; Restores both from the top frame. Destroys: AF, BC, DE, HL.
+; Destroys: AF, BC, DE, HL.
 VM_PARAM_SAVE_POP:
-        ld (VM_PARAM_SYM_ADDR_TMP),hl
-        ld (VM_PARAM_FLOAT_ADDR_TMP),de
-        ld hl,(VM_PARAM_SAVE_SP)
-        ld de,VM_PARAM_SAVE_STACK_TOP
-        or a
-        sbc hl,de
-        jp z,VM_ERR_CALL_STACK_UNDERFLOW
-        ld hl,(VM_PARAM_SAVE_SP)
-        ld de,(VM_PARAM_SYM_ADDR_TMP)
-        ld a,(hl)
-        ld (de),a
-        inc hl
-        inc de
-        ld a,(hl)
-        ld (de),a
-        inc hl
-        inc de
-        ld a,(hl)
-        ld (de),a
-        inc hl                       ; HL -> saved frame+3 (float area)
-        ld de,(VM_PARAM_FLOAT_ADDR_TMP)
-        ld b,FLOAT_REC_LEN
-.copy_float:
-        ld a,(hl)
-        ld (de),a
-        inc hl
-        inc de
-        djnz .copy_float
-        ld hl,(VM_PARAM_SAVE_SP)
-        ld de,VM_PARAM_SAVE_REC_LEN
-        add hl,de
-        ld (VM_PARAM_SAVE_SP),hl
+        push de
+        push hl
+        call VM_CS_UNWIND
+        jr c,.bad
+        cp T_PARAM
+        jr nz,.bad
+        inc hl                  ; -> saved record
+        pop de                  ; DE = symbol record
+        ld bc,3
+        ldir
+        pop de                  ; DE = float record
+        ld bc,5
+        ldir
+        ld (VM_CSP),hl          ; HL is just past the frame
         ret
+.bad:
+        pop hl
+        pop de
+        jp VM_ERR_CALL_STACK_UNDERFLOW
 
 ; ---------------------------------------------------------------------------
 ; Opcode handlers
@@ -996,9 +1223,7 @@ OP_PUSH_I8:
         jr z,.positive
         ld h,$FF                ; sign-extend
 .positive:
-        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
-        call VM_PUSH
-        jp VM_RUN.loop
+        jp PUSH_INT_CONTINUE
 
 OP_PUSH_I16:
         ld hl,(VM_IP)
@@ -1008,9 +1233,7 @@ OP_PUSH_I16:
         inc hl
         ld (VM_IP),hl
         ex de,hl
-        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
-        call VM_PUSH
-        jp VM_RUN.loop
+        jp PUSH_INT_CONTINUE
 
 OP_LOAD_VAR:
         ld hl,(VM_IP)
@@ -1144,7 +1367,7 @@ OP_PARAM_BIND:
         ld hl,(VM_PARAM_SYM_ADDR_TMP)   ; HL = sym addr
         call VM_PARAM_SAVE_PUSH
         ld a,(VM_PARAM_BIND_INDEX_TMP)
-        jp VM_STORE_VAR_BY_INDEX        ; pops the argument, stores it,
+        jr VM_STORE_VAR_BY_INDEX        ; pops the argument, stores it,
                                           ; falls through to VM_RUN.loop
 
 ; OP_PARAM_UNBIND -- restores the parameter symbol's OLD value (both
@@ -1168,32 +1391,63 @@ OP_PARAM_UNBIND:
         jp VM_RUN.loop
 
 ; ---------------------------------------------------------------------------
-; R8.5 Group 4 -- array element access. Both opcodes carry a 2-byte
-; operand baked in at compile time: [array_index:1][declared_size:1] --
-; the declared size travels WITH every access (not looked up from a
-; separate runtime table) so bounds-checking needs no extra memory beyond
-; ARRTAB itself, matching this whole rewrite's "resolve everything
-; possible at compile time" philosophy.
+; R10.7 dynamic-array redesign (R8.5 Group 4's own opcodes, rewired) --
+; array element access. Both opcodes carry a 3-byte operand baked in at
+; compile time: [array_index:1][declared_size:2] -- the declared size
+; still travels WITH every access for the bounds check (now 16-bit, no
+; longer capped at 255), but the array's own DATA now lives in the
+; arena (ARRAYS_END..VARS_START), reached via one extra indirection
+; through ARR_PTR_TABLE[array_index] -- see docs/v2/R10_7_
+; ARRAY_ARCHITECTURE_AUDIT.md Part 2 for the full design.
 ; ---------------------------------------------------------------------------
 
 ; VM_ARR_ADDR — input: VM_ARR_INDEX_TMP (array slot 0..ARRAY_MAX_COUNT-1),
 ; VM_ARR_ELEM_TMP (element index, already bounds-checked by the caller).
-; Output: HL = ARRTAB_BASE + (array_index*ARRAY_MAX_ELEMS + elem_index)*2.
+; Output: HL = (this array's own arena descriptor address) + ARR_DESC_
+; DATA_OFF + elem_index*2; carry set if the array was never DIM'd this
+; run (ARR_PTR_TABLE slot still 0) -- a real, distinct error, not a
+; silent wrap into address 0.
 ; Destroys: AF, DE, HL.
 VM_ARR_ADDR:
         ld a,(VM_ARR_INDEX_TMP)
-        ld h,0
         ld l,a
-        add hl,hl               ; *2
-        add hl,hl               ; *4
-        add hl,hl               ; *8
-        add hl,hl               ; *16 (ARRAY_MAX_ELEMS) -- HL = array's own
-                                  ; base element offset within the pool
-        ld de,(VM_ARR_ELEM_TMP)
-        add hl,de                ; + element index
-        add hl,hl                ; *2 -- element offset -> byte offset
-        ld de,ARRTAB_BASE
+        ld h,0
+        add hl,hl                ; *2 -- ARR_PTR_TABLE index -> byte offset
+        ld de,(RT_ARRPTR_PTR)
         add hl,de
+        ld e,(hl)
+        inc hl
+        ld d,(hl)                ; DE = this array's arena descriptor addr
+        ld a,d
+        or e
+        scf
+        ret z                     ; never DIM'd this run
+        ex de,hl                  ; HL = descriptor addr
+        ld de,ARR_DESC_DATA_OFF
+        add hl,de                 ; HL -> data[0]
+        ld de,(VM_ARR_ELEM_TMP)
+        add hl,de
+        add hl,de                 ; + elem_index*2
+        or a                      ; carry clear -- success
+        ret
+
+; VM_ARR_VALIDATE_INDEX — shared numeric/string array-index bounds check,
+; used by OP_ARR_LOAD/STORE and OP_STRARR_LOAD/STORE alike (identical
+; logic previously duplicated across all four -- factored out during the
+; Dynamic Data Phase 2 HOME-budget shrink pass; no behavior change, same
+; two error exits). Input: HL = popped index value (already TAG_INT-
+; checked by the caller), DE = this access's own declared element count.
+; Output: HL = the same index value, confirmed 0 <= HL < DE; jumps
+; directly to VM_ERR_ARRAY_BOUNDS on failure (never returns on failure).
+; Destroys: AF, DE.
+VM_ARR_VALIDATE_INDEX:
+        ld a,h
+        bit 7,a
+        jp nz,VM_ERR_ARRAY_BOUNDS   ; negative index
+        or a
+        sbc hl,de
+        jp nc,VM_ERR_ARRAY_BOUNDS    ; index >= declared count
+        add hl,de                    ; HL = index again
         ret
 
 OP_ARR_LOAD:
@@ -1201,61 +1455,414 @@ OP_ARR_LOAD:
         ld a,(hl)
         ld (VM_ARR_INDEX_TMP),a
         inc hl
-        ld a,(hl)
-        ld (VM_ARR_SIZE_TMP),a
+        ld e,(hl)
+        inc hl
+        ld d,(hl)
+        ld (VM_ARR_SIZE_TMP),de
         inc hl
         ld (VM_IP),hl
-        call VM_POP              ; HL = index value, A = tag
-        cp TAG_INT
-        jp nz,VM_ERR_ARRAY_TYPE
-        ld a,h
-        or a
-        jp nz,VM_ERR_ARRAY_BOUNDS  ; negative (or absurdly large) index
-        ld a,(VM_ARR_SIZE_TMP)
-        ld c,a
-        ld a,l
-        cp c
-        jp nc,VM_ERR_ARRAY_BOUNDS  ; index >= declared size
+        call VM_POP_CHECK_INT
+        ld de,(VM_ARR_SIZE_TMP)
+        call VM_ARR_VALIDATE_INDEX
         ld (VM_ARR_ELEM_TMP),hl
         call VM_ARR_ADDR
+        jp c,VM_ERR_ARRAY_BOUNDS  ; never DIM'd
         ld e,(hl)
         inc hl
         ld d,(hl)
         ex de,hl
-        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
-        call VM_PUSH
-        jp VM_RUN.loop
+        jp PUSH_INT_CONTINUE
 
 OP_ARR_STORE:
         ld hl,(VM_IP)
         ld a,(hl)
         ld (VM_ARR_INDEX_TMP),a
         inc hl
-        ld a,(hl)
-        ld (VM_ARR_SIZE_TMP),a
+        ld e,(hl)
+        inc hl
+        ld d,(hl)
+        ld (VM_ARR_SIZE_TMP),de
         inc hl
         ld (VM_IP),hl
-        call VM_POP              ; HL = value (top of stack), A = tag
-        cp TAG_INT
-        jp nz,VM_ERR_ARRAY_TYPE
+        call VM_POP_CHECK_INT
         ld (VM_ARR_VALUE_TMP),hl
-        call VM_POP              ; HL = index, A = tag
-        cp TAG_INT
-        jp nz,VM_ERR_ARRAY_TYPE
-        ld a,h
-        or a
-        jp nz,VM_ERR_ARRAY_BOUNDS
-        ld a,(VM_ARR_SIZE_TMP)
-        ld c,a
-        ld a,l
-        cp c
-        jp nc,VM_ERR_ARRAY_BOUNDS
+        call VM_POP_CHECK_INT
+        ld de,(VM_ARR_SIZE_TMP)
+        call VM_ARR_VALIDATE_INDEX
         ld (VM_ARR_ELEM_TMP),hl
         call VM_ARR_ADDR
+        jp c,VM_ERR_ARRAY_BOUNDS
         ld de,(VM_ARR_VALUE_TMP)
         ld (hl),e
         inc hl
         ld (hl),d
+        jp VM_RUN.loop
+
+; OP_DIM — R10.7, real runtime allocation (DIM used to do zero runtime
+; work; the size was purely a compile-time bound). Operand: [array_
+; index:1][count:2]. Writes a [dim_count:1][count:2][data...] descriptor
+; at the current ARRAYS_END, bumps ARRAYS_END past it, and records the
+; new descriptor's address in ARR_PTR_TABLE[array_index]. Sequential/
+; arena-only: no free(), matching this milestone's own "no fragmentation-
+; prone heap" requirement.
+; ARENA_ALLOC_NUMERIC -- shared numeric-array arena allocation core,
+; factored out of OP_DIM below so Dynamic Data Phase 2's array LOAD
+; (rom/exrom_v2_shell.asm, reached via the build/v2_crossbank.inc
+; cross-bank binding, the same mechanism MEM_CLEAR_V2 already uses) can
+; reuse the EXACT allocation logic OP_DIM itself uses, instead of a
+; second, parallel copy of it. Input: A = array index, DE = requested
+; element count. Output: on success, returns normally (ARR_PTR_TABLE
+; [array_index] already updated, ARRAYS_END already bumped) -- the
+; caller re-derives the new descriptor's data address via VM_ARR_ADDR
+; (element index 0) rather than this routine returning it directly, the
+; same lookup LOAD needs again anyway for every subsequent element. On
+; exhaustion, tail-jumps to VM_ERR_ARRAY_SPACE -- which itself ends in a
+; plain RET (VM_ERR_COMMON), so this ALSO returns normally to the
+; caller either way; an EXROM caller (LOAD) distinguishes the two by
+; checking VM_ERROR_CODE/VM_HALTED afterward instead of a carry flag
+; (cheaper here than threading a carry-based contract through, and
+; VM_INIT already clears both on the next real RUN regardless).
+; Destroys: AF, BC, DE, HL.
+ARENA_ALLOC_NUMERIC:
+        ld (VM_ARR_INDEX_TMP),a
+        ld (VM_DIM_COUNT_TMP),de  ; DE = requested element count
+        ; needed = 3 (header) + count*2
+        ld h,d
+        ld l,e
+        add hl,hl                 ; count*2
+        ld de,ARR_DESC_DATA_OFF
+        add hl,de                 ; + header -- HL = needed byte total
+        call VM_ARENA_FIT         ; main pool, else segment 2 (swapped in)
+        jp nc,VM_ERR_ARRAY_SPACE  ; fits neither
+        ; write the descriptor at the OLD ARRAYS_END
+        ld hl,(ARRAYS_END)
+        ld (hl),1                 ; dim_count=1 (R10.7 item 3: reserved
+                                     ; for a future 2-D DIM; every 1-D
+                                     ; array's own byte layout is
+                                     ; unaffected if that ever lands)
+        inc hl
+        ld de,(VM_DIM_COUNT_TMP)
+        ld (hl),e
+        inc hl
+        ld (hl),d
+        ; record this array's own descriptor address (the OLD ARRAYS_
+        ; END) in ARR_PTR_TABLE[array_index]
+        ld de,(ARRAYS_END)
+        ld a,(VM_ARR_INDEX_TMP)
+        ld l,a
+        ld h,0
+        add hl,hl
+        ld bc,(RT_ARRPTR_PTR)
+        add hl,bc
+        ld (hl),e
+        inc hl
+        ld (hl),d
+        ; bump ARRAYS_END past the whole descriptor
+        ld hl,(ARRAYS_END)
+        ld de,ARR_DESC_DATA_OFF
+        add hl,de
+        ld de,(VM_DIM_COUNT_TMP)
+        add hl,de
+        add hl,de                  ; + count*2
+        ld (ARRAYS_END),hl
+        jp VM_ARENA_DONE
+
+OP_DIM:
+        ld hl,(VM_IP)
+        ld a,(hl)
+        inc hl
+        ld e,(hl)
+        inc hl
+        ld d,(hl)
+        inc hl
+        ld (VM_IP),hl
+        call ARENA_ALLOC_NUMERIC
+        jp VM_RUN.loop
+
+; ---------------------------------------------------------------------------
+; R10.7 Dynamic Data Phase 2 -- string arrays, DIM A$(n[,w]). Same arena/
+; pointer-table/OP_DIM machinery as the numeric arrays above (docs/v2/
+; R10_7_ARRAY_ARCHITECTURE_AUDIT.md Part 2 item 2), reusing STRARR_PTR_
+; TABLE/STRARRAY_MAX_COUNT already reserved there. A string array element
+; is a fixed-width, length-prefixed [len:1][content:width-1] record --
+; the same shape STRTAB already uses, just at a caller-chosen width
+; instead of STRTAB's fixed 32 bytes. A string VALUE on the VM's own
+; operand stack is always a STRTAB index (see the R5 header note above),
+; so array LOAD copies the element's own content into a fresh STRTAB
+; temp slot and pushes that temp's index (the same "produce an ordinary
+; string value" contract every BUILTIN_FN_* string function already
+; follows, e.g. UPPER$/LOWER$'s own copy-skeleton below); array STORE
+; does the reverse, copying an already-resolved STRTAB record's content
+; into the arena, truncated to the array's own declared width.
+; ---------------------------------------------------------------------------
+
+; VM_STRARR_ADDR — input: VM_STRARR_INDEX_TMP (array slot), VM_STRARR_
+; ELEM_TMP (element index, already bounds-checked by the caller). Output:
+; HL = this element's own [len][content] record address; VM_STRARR_
+; WIDTH_TMP = this array's own per-element width (saved to memory, not
+; A, since the multiply below destroys A); carry set if the array was
+; never DIM'd this run. Destroys: AF, BC, DE, HL.
+VM_STRARR_ADDR:
+        ld a,(VM_STRARR_INDEX_TMP)
+        ld l,a
+        ld h,0
+        add hl,hl                ; *2 -- STRARR_PTR_TABLE index -> byte offset
+        ld de,(RT_STRARRPTR_PTR)
+        add hl,de
+        ld e,(hl)
+        inc hl
+        ld d,(hl)                ; DE = this array's arena descriptor addr
+        ld a,d
+        or e
+        scf
+        ret z                     ; never DIM'd this run
+        ex de,hl                  ; HL = descriptor addr
+        ld de,STRARR_DESC_WIDTH_OFF
+        add hl,de                 ; HL -> width byte
+        ld a,(hl)                 ; A = this array's own per-element width
+        ld (VM_STRARR_WIDTH_TMP),a
+        inc hl                    ; HL -> data[0] (WIDTH_OFF+1 == DATA_OFF)
+        ld (VM_STRARR_ADDR_TMP),hl ; park data-base across MATH_MULTIPLY16
+        ld h,0
+        ld l,a                    ; HL = width (zero-extended)
+        ld de,(VM_ARR_ELEM_TMP)
+        call MATH_MULTIPLY16       ; HL = elem_index * width
+        ld de,(VM_STRARR_ADDR_TMP)
+        add hl,de                  ; HL = data-base + elem_index*width
+        or a                       ; carry clear -- success
+        ret
+
+OP_STRARR_LOAD:
+        ld hl,(VM_IP)
+        ld a,(hl)
+        ld (VM_STRARR_INDEX_TMP),a
+        inc hl
+        ld e,(hl)
+        inc hl
+        ld d,(hl)
+        ld (VM_STRARR_COUNT_TMP),de
+        inc hl
+        ld (VM_IP),hl
+        call VM_POP_CHECK_INT
+        ld de,(VM_STRARR_COUNT_TMP)
+        call VM_ARR_VALIDATE_INDEX
+        ld (VM_ARR_ELEM_TMP),hl
+        call VM_STRARR_ADDR
+        jp c,VM_ERR_ARRAY_BOUNDS  ; never DIM'd
+        ; copy the element's own [len][content] record into a fresh
+        ; STRTAB temp, same copy-skeleton as BUILTIN_FN_UPPER/LOWER below
+        ld (VM_STR_SRC_ADDR_TMP),hl
+        call VM_STR_ALLOC_TEMP      ; HL -> dest record, A = new temp index
+        ld (VM_STR_DST_ADDR_TMP),hl
+        push af
+        ld hl,(VM_STR_SRC_ADDR_TMP)
+        ld a,(hl)                   ; source (element) length byte
+        inc hl
+        ld de,(VM_STR_DST_ADDR_TMP)
+        ld (de),a
+        inc de
+        ld b,a
+        or a
+        jr z,.load_done
+.load_copy:
+        ld a,(hl)
+        ld (de),a
+        inc hl
+        inc de
+        djnz .load_copy
+.load_done:
+        pop af                   ; NOTE: must stay a plain pop+VM_PUSH here,
+                                  ; NOT "call VM_PUSH_STR_RESULT" -- this site
+                                  ; falls through to "jp VM_RUN.loop" rather
+                                  ; than returning, so a `call` would push a
+                                  ; return address on top of this af first and
+                                  ; VM_PUSH_STR_RESULT's own `pop af` would
+                                  ; grab that return address instead (found by
+                                  ; regression: string_arrays FAIL, HOME-
+                                  ; budget shrink pass).
+        ld l,a
+        ld h,0
+        jp PUSH_INT_CONTINUE
+
+OP_STRARR_STORE:
+        ld hl,(VM_IP)
+        ld a,(hl)
+        ld (VM_STRARR_INDEX_TMP),a
+        inc hl
+        ld e,(hl)
+        inc hl
+        ld d,(hl)
+        ld (VM_STRARR_COUNT_TMP),de
+        inc hl
+        ld (VM_IP),hl
+        call VM_POP_CHECK_INT
+        ld a,l
+        ld (VM_STRARR_VALUE_IDX_TMP),a  ; STRTAB indices are always small
+        call VM_POP_CHECK_INT
+        ld de,(VM_STRARR_COUNT_TMP)
+        call VM_ARR_VALIDATE_INDEX
+        ld (VM_ARR_ELEM_TMP),hl
+        call VM_STRARR_ADDR
+        jp c,VM_ERR_ARRAY_BOUNDS
+        ld (VM_STRARR_ADDR_TMP),hl      ; dest element address, parked
+                                           ; across the VM_STR_ADDR call
+                                           ; below (VM_STRARR_ADDR's own
+                                           ; use of this cell has already
+                                           ; finished by this point)
+        ld a,(VM_STRARR_VALUE_IDX_TMP)
+        call VM_STR_ADDR          ; HL -> source STRTAB record
+        ld a,(hl)                 ; source length
+        inc hl                    ; HL -> source content
+        ld c,a                    ; C = source length, clamped next
+        ld a,(VM_STRARR_WIDTH_TMP)
+        dec a                     ; A = max content bytes (width-1)
+        cp c
+        jr nc,.store_len_ok
+        ld c,a                    ; clamp to this array's own element width
+.store_len_ok:
+        ld de,(VM_STRARR_ADDR_TMP)
+        ld a,c
+        ld (de),a                 ; dest length byte = clamped length
+        inc de
+        ld b,c
+        ld a,b
+        or a
+        jr z,.store_done
+.store_copy:
+        ld a,(hl)
+        ld (de),a
+        inc hl
+        inc de
+        djnz .store_copy
+.store_done:
+        jp VM_RUN.loop
+
+; OP_DIM_STR -- DIM A$(n,w)'s own runtime allocation, mirroring OP_DIM
+; exactly (same arena/exhaustion-check/pointer-table shape) with one
+; extra operand byte (the per-element width) and a 1-byte-wider header
+; ([dim_count:1][count:2][width:1][data...], STRARR_DESC_DATA_OFF=4
+; instead of ARR_DESC_DATA_OFF=3). Operand: [array_index:1][count:2]
+; [width:1].
+; ARENA_ALLOC_STRING -- shared string-array arena allocation core,
+; factored out of OP_DIM_STR below for the same reason ARENA_ALLOC_
+; NUMERIC was (Dynamic Data Phase 2 array SAVE/LOAD reuses it via
+; cross-bank binding). Input: A = array index, DE = requested element
+; count, C = per-element width. Output/error-handling: same "tail-jumps
+; to VM_ERR_ARRAY_SPACE, which itself returns normally either way"
+; contract ARENA_ALLOC_NUMERIC's own header explains in full. Destroys:
+; AF, BC, DE, HL.
+ARENA_ALLOC_STRING:
+        ld (VM_STRARR_INDEX_TMP),a
+        ld (VM_STRARR_COUNT_TMP),de  ; DE = requested element count
+        ld a,c
+        ld (VM_STRARR_WIDTH_TMP),a    ; A = requested per-element width
+                                        ; (kept in memory, not on the Z80
+                                        ; stack, across the space-check
+                                        ; exit below -- a stack push left
+                                        ; unbalanced on the exhaustion
+                                        ; exit path would be a real bug,
+                                        ; same "balance every exit path"
+                                        ; discipline this codebase
+                                        ; already applies elsewhere)
+        ; needed = 4 (header) + count*width -- count*width computed ONCE
+        ; here and cached in VM_STRARR_ADDR_TMP (free at this point; its
+        ; own use by VM_STRARR_ADDR/OP_STRARR_STORE happens on a later,
+        ; separate opcode dispatch), reused below for the arena bump
+        ; instead of calling MATH_MULTIPLY16 a second time.
+        ld h,0
+        ld l,a                        ; HL = width
+        ld de,(VM_STRARR_COUNT_TMP)
+        call MATH_MULTIPLY16            ; HL = count*width
+        ld (VM_STRARR_ADDR_TMP),hl
+        ld de,STRARR_DESC_DATA_OFF
+        add hl,de                       ; + header -- HL = needed byte total
+        call VM_ARENA_FIT                ; main pool, else segment 2 (swapped in)
+        jp nc,VM_ERR_ARRAY_SPACE           ; fits neither
+        ; write the descriptor at the OLD ARRAYS_END
+        ld hl,(ARRAYS_END)
+        ld (hl),1                         ; dim_count=1 (reserved, same as
+                                             ; numeric OP_DIM)
+        inc hl
+        ld de,(VM_STRARR_COUNT_TMP)
+        ld (hl),e
+        inc hl
+        ld (hl),d
+        inc hl
+        ld a,(VM_STRARR_WIDTH_TMP)
+        ld (hl),a
+        ; record this array's own descriptor address (the OLD ARRAYS_
+        ; END) in STRARR_PTR_TABLE[array_index]
+        ld de,(ARRAYS_END)
+        ld a,(VM_STRARR_INDEX_TMP)
+        ld l,a
+        ld h,0
+        add hl,hl
+        ld bc,(RT_STRARRPTR_PTR)
+        add hl,bc
+        ld (hl),e
+        inc hl
+        ld (hl),d
+        ; bump ARRAYS_END past the whole descriptor
+        ld hl,(ARRAYS_END)
+        ld de,STRARR_DESC_DATA_OFF
+        add hl,de
+        ld de,(VM_STRARR_ADDR_TMP)        ; count*width, cached above
+        add hl,de
+        ld (ARRAYS_END),hl
+        jp VM_ARENA_DONE
+
+; VM_ARENA_FIT -- R10.7 P5.4. HL = bytes needed. Carry SET if they fit: first in
+; the main pool (ARRAYS_END + needed < VM_CSP), else in segment 2, in which case
+; ARRAYS_END and ARR2_END are exchanged so the allocator's unchanged code
+; allocates there; VM_ARENA_DONE exchanges them back. Carry clear: fits neither.
+VM_ARENA_FIT:
+        push hl
+        ld de,(ARRAYS_END)
+        add hl,de
+        ld de,(VM_CSP)
+        or a
+        sbc hl,de
+        pop hl
+        ret c
+        ld de,(ARR2_END)
+        add hl,de
+        ld de,ARR2_LIMIT
+        or a
+        sbc hl,de               ; (end of segment is exclusive: equal is full)
+        ret nc
+        ld a,1
+        ld (ARR2_SWAPPED),a
+        call VM_ARENA_SWAP
+        scf
+        ret
+
+VM_ARENA_DONE:
+        ld a,(ARR2_SWAPPED)
+        or a
+        ret z
+        xor a
+        ld (ARR2_SWAPPED),a
+VM_ARENA_SWAP:
+        ld hl,(ARRAYS_END)
+        ld de,(ARR2_END)
+        ld (ARRAYS_END),de
+        ld (ARR2_END),hl
+        ret
+
+OP_DIM_STR:
+        ld hl,(VM_IP)
+        ld b,(hl)          ; B = array index (temp -- A is needed free
+                              ; for the (hl)-addressed fetches below)
+        inc hl
+        ld e,(hl)
+        inc hl
+        ld d,(hl)          ; DE = count
+        inc hl
+        ld c,(hl)          ; C = width
+        inc hl
+        ld (VM_IP),hl
+        ld a,b             ; A = array index
+        call ARENA_ALLOC_STRING
         jp VM_RUN.loop
 
 ; ---------------------------------------------------------------------------
@@ -1512,9 +2119,7 @@ OP_ADD:
                                  ; integer fast path this whole architecture
                                  ; exists to preserve. Untouched by R6:
                                  ; reached only when BOTH operands are INT.
-        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
-        call VM_PUSH
-        jp VM_RUN.loop
+        jp PUSH_INT_CONTINUE
 .float_path:
         ld hl,VM_CALC_ADD_STUB
         jr VM_FLOAT_BINARY_COMMON
@@ -1538,9 +2143,7 @@ OP_SUB:
         ld de,(VM_FLOAT_B_VAL)
         or a
         sbc hl,de               ; HL = a - b
-        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
-        call VM_PUSH
-        jp VM_RUN.loop
+        jp PUSH_INT_CONTINUE
 .float_path:
         ld hl,VM_CALC_SUB_STUB
         jr VM_FLOAT_BINARY_COMMON
@@ -1561,9 +2164,7 @@ OP_MUL:
                                  ; float arithmetic when a value is
                                  ; ALREADY float-tagged, not auto-promoting
                                  ; on integer overflow)
-        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
-        call VM_PUSH
-        jp VM_RUN.loop
+        jp PUSH_INT_CONTINUE
 .float_path:
         ld hl,VM_CALC_MUL_STUB
         jp VM_FLOAT_BINARY_COMMON
@@ -1601,9 +2202,7 @@ OP_DIV:
         sbc hl,de
         jr nz,.inexact           ; quotient*divisor != dividend -> inexact
         ld hl,(VM_DIV_QUOTIENT_TMP)
-        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
-        call VM_PUSH
-        jp VM_RUN.loop
+        jp PUSH_INT_CONTINUE
 .inexact:
         jp VM_DIV_VIA_FLOAT
 .float_path:
@@ -1626,9 +2225,7 @@ OP_CMP_LT:
         jr nz,.not_less
         inc l                   ; HL = 1 (true)
 .not_less:
-        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
-        call VM_PUSH
-        jp VM_RUN.loop
+        jp PUSH_INT_CONTINUE
 
 OP_CMP_EQ:
         call VM_CMP_DISPATCH     ; A = 0 if a=b
@@ -1637,9 +2234,7 @@ OP_CMP_EQ:
         jr nz,.not_equal
         inc l                   ; HL = 1 (true)
 .not_equal:
-        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
-        call VM_PUSH
-        jp VM_RUN.loop
+        jp PUSH_INT_CONTINUE
 
 ; ===========================================================================
 ; R8.5 Group 3 -- the remaining relops (<=, >, >=, <>) OP_CMP_LT/EQ never
@@ -1656,9 +2251,7 @@ OP_CMP_LE:
         jr z,.not_le            ; true unless a>b
         inc l
 .not_le:
-        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
-        call VM_PUSH
-        jp VM_RUN.loop
+        jp PUSH_INT_CONTINUE
 
 OP_CMP_GT:
         call VM_CMP_DISPATCH
@@ -1667,9 +2260,7 @@ OP_CMP_GT:
         jr nz,.not_gt
         inc l
 .not_gt:
-        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
-        call VM_PUSH
-        jp VM_RUN.loop
+        jp PUSH_INT_CONTINUE
 
 OP_CMP_GE:
         call VM_CMP_DISPATCH
@@ -1678,9 +2269,7 @@ OP_CMP_GE:
         jr z,.not_ge             ; true unless a<b
         inc l
 .not_ge:
-        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
-        call VM_PUSH
-        jp VM_RUN.loop
+        jp PUSH_INT_CONTINUE
 
 OP_CMP_NE:
         call VM_CMP_DISPATCH
@@ -1689,9 +2278,7 @@ OP_CMP_NE:
         jr z,.not_ne
         inc l
 .not_ne:
-        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
-        call VM_PUSH
-        jp VM_RUN.loop
+        jp PUSH_INT_CONTINUE
 
 OP_AND:
         call VM_POP             ; HL = b, A = tag_b
@@ -1712,9 +2299,7 @@ OP_AND:
 .false:
         ld hl,0
 .push:
-        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
-        call VM_PUSH
-        jp VM_RUN.loop
+        jp PUSH_INT_CONTINUE
 
 OP_OR:
         call VM_POP
@@ -1735,9 +2320,7 @@ OP_OR:
 .true:
         ld hl,1
 .push:
-        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
-        call VM_PUSH
-        jp VM_RUN.loop
+        jp PUSH_INT_CONTINUE
 
 OP_NOT:
         call VM_POP              ; HL = value, A = tag
@@ -1751,9 +2334,7 @@ OP_NOT:
 .false:
         ld hl,0
 .push:
-        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
-        call VM_PUSH
-        jp VM_RUN.loop
+        jp PUSH_INT_CONTINUE
 
 OP_JMPZ:
         call VM_POP             ; HL = condition value, A = tag (not
@@ -1788,22 +2369,24 @@ OP_FOR_INIT:
                                   ; by COMPILE_FOR, so popped first; a
                                   ; STEP-less FOR's own literal PUSH_I8 1
                                   ; lands here exactly the same way)
-        push hl                  ; park the new step across the frame-push
-                                  ; below (post-R9 nesting)
-        ld a,(VM_FOR_STACK_DEPTH)
-        call VM_FOR_STACK_FRAME_ADDR  ; HL = new frame for depth A
+        push hl                  ; park the new step across the frame push
+        ld a,5
+        call VM_CS_ALLOC         ; HL = new FOR frame (C survives)
+        jr nc,.frame
+        pop hl                   ; balance the hardware stack, then fail
+        jp VM_ERR_CALL_STACK_OVERFLOW
+.frame:
+        ld (hl),T_FOR
+        inc hl
         ld de,(VM_FOR_LIMIT)
         ld (hl),e
         inc hl
-        ld (hl),d                ; frame+0,+1 = enclosing loop's limit
+        ld (hl),d                ; enclosing loop's limit
         inc hl
         ld de,(VM_FOR_STEP)
         ld (hl),e
         inc hl
-        ld (hl),d                ; frame+2,+3 = enclosing loop's step
-        ld a,(VM_FOR_STACK_DEPTH)
-        inc a
-        ld (VM_FOR_STACK_DEPTH),a  ; commit the push
+        ld (hl),d                ; enclosing loop's step
         pop hl                   ; HL = step (restored)
         ld (VM_FOR_STEP),hl
         call VM_POP             ; HL = limit
@@ -1879,10 +2462,11 @@ OP_FOR_NEXT:
 ; compiler.asm's COMPILE_NEXT), so the frame is popped exactly once
 ; regardless of which path exits the loop.
 OP_FOR_POP:
-        ld a,(VM_FOR_STACK_DEPTH)
-        dec a
-        ld (VM_FOR_STACK_DEPTH),a
-        call VM_FOR_STACK_FRAME_ADDR  ; HL = the frame being popped
+        ld hl,(VM_CSP)
+        ld a,(hl)
+        cp T_FOR
+        jp nz,VM_ERR_CALL_STACK_UNDERFLOW
+        inc hl
         ld e,(hl)
         inc hl
         ld d,(hl)
@@ -1892,6 +2476,8 @@ OP_FOR_POP:
         inc hl
         ld d,(hl)
         ld (VM_FOR_STEP),de
+        inc hl
+        ld (VM_CSP),hl
         jp VM_RUN.loop
 
 OP_CALL:
@@ -1954,7 +2540,8 @@ OP_PUSH_STR_LIT:
         ld (VM_STR_LIT_LEN_TMP),a
         ld a,(VM_STR_TEMP_NEXT)
         ld (VM_STR_LIT_TEMPIDX_TMP),a
-        add a,STRTAB_MAX_VARS
+        ld hl,RT_STR_COUNT       ; temp slots follow the program's own string
+        add a,(hl)               ; variables (R10.7 P3: count is per program)
         call VM_STR_ADDR        ; HL -> dest record
         ld a,(VM_STR_LIT_LEN_TMP)
         ld (hl),a               ; write length byte
@@ -1996,12 +2583,11 @@ OP_PUSH_STR_LIT:
 .no_wrap:
         ld (VM_STR_TEMP_NEXT),a
         ld a,(VM_STR_LIT_TEMPIDX_TMP)
-        add a,STRTAB_MAX_VARS
+        ld hl,RT_STR_COUNT       ; temp slots follow the program's own string
+        add a,(hl)               ; variables (R10.7 P3: count is per program)
         ld l,a
         ld h,0
-        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
-        call VM_PUSH
-        jp VM_RUN.loop
+        jp PUSH_INT_CONTINUE
 
 OP_STORE_STR_VAR:
         ld hl,(VM_IP)
@@ -2032,7 +2618,8 @@ OP_STR_CONCAT:
         ld (VM_STR_SRC_ADDR_TMP),hl
         ld a,(VM_STR_TEMP_NEXT)
         ld (VM_STR_LIT_TEMPIDX_TMP),a
-        add a,STRTAB_MAX_VARS
+        ld hl,RT_STR_COUNT       ; temp slots follow the program's own string
+        add a,(hl)               ; variables (R10.7 P3: count is per program)
         call VM_STR_ADDR        ; HL -> dest record
         ld (VM_STR_DST_ADDR_TMP),hl
         ld hl,(VM_STR_SRC_ADDR_TMP)
@@ -2090,12 +2677,11 @@ OP_STR_CONCAT:
 .no_wrap:
         ld (VM_STR_TEMP_NEXT),a
         ld a,(VM_STR_LIT_TEMPIDX_TMP)
-        add a,STRTAB_MAX_VARS
+        ld hl,RT_STR_COUNT       ; temp slots follow the program's own string
+        add a,(hl)               ; variables (R10.7 P3: count is per program)
         ld l,a
         ld h,0
-        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
-        call VM_PUSH
-        jp VM_RUN.loop
+        jp PUSH_INT_CONTINUE
 
 OP_STR_CMP_LT:
         call VM_POP             ; HL = b's index
@@ -2118,9 +2704,7 @@ OP_STR_CMP_LT:
         jr nz,.not_less
         inc l
 .not_less:
-        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
-        call VM_PUSH
-        jp VM_RUN.loop
+        jp PUSH_INT_CONTINUE
 
 OP_STR_CMP_EQ:
         call VM_POP             ; HL = b's index
@@ -2137,9 +2721,7 @@ OP_STR_CMP_EQ:
         jr nz,.not_equal
         inc l
 .not_equal:
-        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
-        call VM_PUSH
-        jp VM_RUN.loop
+        jp PUSH_INT_CONTINUE
 
 ; VM_STR_COMPARE — input: HL = a's record address, DE = b's record address.
 ; Output: A = 0 if equal, 1 if a>b, $FF if a<b (matches MATH_COMPARE16's
@@ -2231,7 +2813,7 @@ VM_FLOAT_ADDR:
         add hl,hl               ; *2
         add hl,hl               ; *4
         add hl,de               ; *5
-        ld de,FLOATTAB_BASE
+        ld de,(RT_FLOATTAB_PTR)
         add hl,de
         ret
 
@@ -2244,8 +2826,7 @@ VM_FLOAT_PUSH_OPERAND:
         cp TAG_FLOAT
         jr z,.is_float
         ld hl,(VM_FLOAT_OPERAND_VAL)
-        call CALC_INT_TO_FP
-        ret
+        jp CALC_INT_TO_FP
 .is_float:
         ; BUG FOUND (real hardware, R6): holding the source address in HL
         ; across the CALC_SP_TO_NEXT_FREE_PTR call below silently corrupted
@@ -2285,7 +2866,8 @@ VM_FLOAT_PUSH_OPERAND:
 VM_FLOAT_STORE_RESULT:
         ld a,(VM_FLOAT_TEMP_NEXT)
         ld (VM_FLOAT_TEMPIDX_TMP),a
-        add a,FLOATTAB_MAX_VARS
+        ld hl,RT_NUM_COUNT       ; float temps follow the program's own numeric
+        add a,(hl)               ; variables
         call VM_FLOAT_ADDR       ; HL -> dest temp slot
         ex de,hl                  ; DE = dest
         ld hl,CALC_STACK
@@ -2299,12 +2881,12 @@ VM_FLOAT_STORE_RESULT:
 .no_wrap:
         ld (VM_FLOAT_TEMP_NEXT),a
         ld a,(VM_FLOAT_TEMPIDX_TMP)
-        add a,FLOATTAB_MAX_VARS
+        ld hl,RT_NUM_COUNT       ; float temps follow the program's own numeric
+        add a,(hl)               ; variables
         ld l,a
         ld h,0
         ld a,TAG_FLOAT
-        call VM_PUSH
-        ret
+        jp VM_PUSH
 
 ; VM_CALC_ADD_STUB/SUB/MUL/DIV — invoke the real calculator's own
 ; already-wired ADD/SUB/MUL/DIV literals (NUMERIC_DESIGN.md, VERIFIED:
@@ -2613,6 +3195,80 @@ OP_PAPER:
         ld a,l
         and $07
         ld (CURRENT_PAPER),a
+        jp VM_RUN.loop
+
+; OP_FLASH/OP_BRIGHT/OP_OVER/OP_INVERSE (R10.7, opcodes 37/38/58/59) --
+; same shape as OP_INK/OP_PAPER above, cloned per R10.25's own finding;
+; each is boolean (real Sinclair BASIC's own "any nonzero odd value
+; means on" convention, basic/basic.asm's own BASIC_STMT_FLASH/BRIGHT/
+; INVERSE/OVER — AND $01, not $07).
+OP_FLASH:
+        call VM_POP_COERCE_INT
+        ld a,l
+        and $01
+        ld (CURRENT_FLASH),a
+        jp VM_RUN.loop
+
+OP_BRIGHT:
+        call VM_POP_COERCE_INT
+        ld a,l
+        and $01
+        ld (CURRENT_BRIGHT),a
+        jp VM_RUN.loop
+
+OP_OVER:
+        call VM_POP_COERCE_INT
+        ld a,l
+        and $01
+        ld (CURRENT_OVER),a
+        jp VM_RUN.loop
+
+OP_INVERSE:
+        call VM_POP_COERCE_INT
+        ld a,l
+        and $01
+        ld (CURRENT_INVERSE),a
+        jp VM_RUN.loop
+
+; OP_AT (opcode 60) -- standalone "AT row,col" statement (R10.7).
+; Compiler pushes row then col (COMPILE_EXPECT_COMMA_EXPR's own
+; established order, same as PLOT/LINE); VM_POP is LIFO so col comes
+; off first. Row clamped into 0-23 (GFX_ROWS, not a power of 2 --
+; basic/basic.asm's own BASIC_STMT_AT precedent); col masked with $1F
+; (GFX_COLS=32, a clean power of 2). Only PRINT AT <item-list> embedding
+; remains out of reach (needs item-list grammar) -- this is the
+; standalone-statement form only, matching R10.25's own B-class scope.
+OP_AT:
+        call VM_POP_COERCE_INT   ; HL = col
+        ld a,l
+        and $1F
+        ld (VM_OUTPUT_COL),a
+        call VM_POP_COERCE_INT   ; HL = row
+        ld a,l
+        cp 24
+        jr c,.row_ok
+        ld a,23
+.row_ok:
+        ld (VM_OUTPUT_ROW),a
+        jp VM_RUN.loop
+
+; OP_TAB (opcode 61) -- standalone "TAB col" statement (R10.7). Sets
+; VM_OUTPUT_COL only, row untouched -- same masked-1-arg shape as
+; OP_BORDER/OP_INK/OP_PAPER.
+OP_TAB:
+        call VM_POP_COERCE_INT
+        ld a,l
+        and $1F
+        ld (VM_OUTPUT_COL),a
+        jp VM_RUN.loop
+
+; OP_CLEAR (opcode 62) -- CLEAR statement (R10.7, class B). Thin call
+; into EXROM's own MEM_CLEAR_V2 (rom/exrom_v2_shell.asm) -- EXROM is
+; already mapped in during ordinary VM execution, same established
+; pattern PRINT's own exrom_format.asm calls already use (no BANK_PAGE_
+; EXROM_OUT/IN needed, unlike OP_CALL_EXT's package-window case).
+OP_CLEAR:
+        call MEM_CLEAR_V2
         jp VM_RUN.loop
 
 ; OP_PLOT — pops y then x (compiler pushes x, then y, matching "PLOT
@@ -3131,6 +3787,11 @@ BUILTIN_FN_JUMP_TABLE:
         dw BUILTIN_FN_RAD       ; fn_index 22
         dw BUILTIN_FN_DEG       ; fn_index 23
         dw BUILTIN_FN_SIN       ; fn_index 24
+        dw BUILTIN_FN_FREE      ; fn_index 25
+        dw BUILTIN_FN_COS       ; fn_index 26
+        dw BUILTIN_FN_TAN       ; fn_index 27
+        dw BUILTIN_FN_MID       ; fn_index 28
+        dw BUILTIN_FN_FREE_N    ; fn_index 29
 
 ; BUILTIN_FN_ABS — ABS(x). Pops one value (either tag), pushes its
 ; magnitude. Int path: plain two's-complement negate (always safe, the
@@ -3185,8 +3846,8 @@ BUILTIN_FN_ABS:
         ld (VM_FLOAT_OPERAND_VAL),hl
         call VM_FLOAT_PUSH_OPERAND    ; push the real value
         call VM_CALC_SUB_STUB
-        call VM_FLOAT_STORE_RESULT     ; fresh temp slot + VM_PUSH, no
-        ret                              ; aliasing risk
+        jp VM_FLOAT_STORE_RESULT        ; fresh temp slot + VM_PUSH, no
+                                           ; aliasing risk
 .float_positive:
         ld hl,(BFN_ABS_IDX_TMP)
         ld a,TAG_FLOAT
@@ -3547,7 +4208,8 @@ BUILTIN_FN_VAL:
 VM_STR_ALLOC_TEMP:
         ld a,(VM_STR_TEMP_NEXT)
         ld (VM_STR_LIT_TEMPIDX_TMP),a
-        add a,STRTAB_MAX_VARS
+        ld hl,RT_STR_COUNT       ; temp slots follow the program's own string
+        add a,(hl)               ; variables (R10.7 P3: count is per program)
         call VM_STR_ADDR          ; HL -> dest record
         push hl
         ld a,(VM_STR_LIT_TEMPIDX_TMP)
@@ -3558,7 +4220,8 @@ VM_STR_ALLOC_TEMP:
 .no_wrap:
         ld (VM_STR_TEMP_NEXT),a
         ld a,(VM_STR_LIT_TEMPIDX_TMP)
-        add a,STRTAB_MAX_VARS
+        ld hl,RT_STR_COUNT       ; temp slots follow the program's own string
+        add a,(hl)               ; variables (R10.7 P3: count is per program)
         pop hl
         ret
 
@@ -3583,11 +4246,7 @@ BUILTIN_FN_CHR:
         inc hl
         ld a,(BFN_STR_TMP)
         ld (hl),a
-        pop af
-        ld l,a
-        ld h,0
-        xor a                       ; TAG_INT=0
-        jp VM_PUSH
+        jp VM_PUSH_STR_RESULT
 .chr_range_err:
         ld a,15
         jp VM_ERR_COMMON
@@ -3627,11 +4286,7 @@ BUILTIN_FN_STR:
 .str_done:
         ld hl,(VM_STR_DST_ADDR_TMP)
         ld (hl),b
-        pop af
-        ld l,a
-        ld h,0
-        xor a
-        jp VM_PUSH
+        jp VM_PUSH_STR_RESULT
 
 ; UPPER$(s) -- case-convert, byte for byte. Result length always equals
 ; the source length.
@@ -3665,11 +4320,7 @@ BUILTIN_FN_UPPER:
         inc de
         djnz .upper_loop
 .upper_done:
-        pop af
-        ld l,a
-        ld h,0
-        xor a
-        jp VM_PUSH
+        jp VM_PUSH_STR_RESULT
 
 ; LOWER$(s) -- case-convert, byte for byte. Mirrors UPPER$ exactly with
 ; the fold direction reversed.
@@ -3703,11 +4354,7 @@ BUILTIN_FN_LOWER:
         inc de
         djnz .lower_loop
 .lower_done:
-        pop af
-        ld l,a
-        ld h,0
-        xor a
-        jp VM_PUSH
+        jp VM_PUSH_STR_RESULT
 
 ; LEFT$(s,n) -- the first n characters of s (clamped to the real source
 ; length; n<0 -> 0 characters). Compiled left-to-right (s then n), so
@@ -3765,11 +4412,7 @@ BUILTIN_FN_LEFT:
         inc de
         djnz .left_loop
 .left_done:
-        pop af
-        ld l,a
-        ld h,0
-        xor a
-        jp VM_PUSH
+        jp VM_PUSH_STR_RESULT
 
 ; RIGHT$(s,n) -- the last n characters of s. Same n-resolution as
 ; LEFT$'s own; differs only in the source content's own start offset.
@@ -3830,11 +4473,90 @@ BUILTIN_FN_RIGHT:
         inc de
         djnz .right_loop
 .right_done:
-        pop af
-        ld l,a
-        ld h,0
+        jp VM_PUSH_STR_RESULT
+
+; MID$(s$, start, len) -- R10.7, R10.25 class C. Same LEFT$/RIGHT$
+; skeleton (VM_STR_ADDR -> clamp -> VM_STR_ALLOC_TEMP -> copy loop);
+; only the start offset differs (LEFT$ fixed at 0, RIGHT$ derived as
+; srclen-n, MID$ an arbitrary caller-supplied 1-based start, clamped
+; the same forgiving way real Sinclair BASIC's own MID$ does: start<1
+; clamps to 1, start past the end yields an empty string, and a
+; requested length longer than what remains is clamped to what
+; remains -- no error raised for any of these, matching LEFT$/RIGHT$'s
+; own precedent of forgiving-clamp over hard error).
+BUILTIN_FN_MID:
+        call VM_POP                 ; HL = len
+        ld a,h
+        bit 7,a
+        jr nz,.mid_len_neg
+        or a
+        jr nz,.mid_use_srclen       ; h<>0, len>=0 -> definitely more
+                                       ; than any real source length
+        ld a,l
+        jr .mid_have_len
+.mid_len_neg:
         xor a
-        jp VM_PUSH
+        jr .mid_have_len
+.mid_use_srclen:
+        ld a,255                     ; sentinel "at least the whole
+                                        ; remainder" -- clamped below
+.mid_have_len:
+        ld (BFN_STR_TMP),a           ; requested len (pre-clamp)
+        call VM_POP                  ; HL = start (1-based)
+        ld a,l
+        or a
+        jr nz,.mid_start_ok
+        inc a                        ; start<=0 clamps to 1
+.mid_start_ok:
+        dec a                        ; convert to a 0-based offset
+        ld (BFN_MID_START_TMP),a
+        call VM_POP                  ; HL = string index (s)
+        ld a,l
+        call VM_STR_ADDR             ; HL -> src record
+        ld (VM_STR_SRC_ADDR_TMP),hl
+        ld a,(hl)                    ; source length
+        ld b,a                       ; B = srclen
+        ld a,(BFN_MID_START_TMP)
+        cp b
+        jr c,.mid_start_in_range
+        ld a,b                       ; start past the end -> offset=
+                                        ; srclen (0 chars remain)
+.mid_start_in_range:
+        ld (BFN_MID_START_TMP),a     ; final 0-based start offset (<=srclen)
+        ld c,a
+        ld a,b
+        sub c                        ; A = srclen - start = chars available
+        ld d,a
+        ld a,(BFN_STR_TMP)
+        cp d
+        jr c,.mid_len_clamped
+        ld a,d
+.mid_len_clamped:
+        ld (BFN_STR_TMP),a           ; final copy_len
+        call VM_STR_ALLOC_TEMP        ; HL -> dest record, A = new index
+        ld (VM_STR_DST_ADDR_TMP),hl
+        push af
+        ld hl,(VM_STR_SRC_ADDR_TMP)
+        inc hl                        ; HL -> src content start
+        ld a,(BFN_MID_START_TMP)
+        ld e,a
+        ld d,0
+        add hl,de                    ; HL -> src content + start offset
+        ld de,(VM_STR_DST_ADDR_TMP)
+        ld a,(BFN_STR_TMP)
+        ld (de),a                    ; dest length byte
+        inc de
+        ld b,a
+        or a
+        jr z,.mid_done
+.mid_loop:
+        ld a,(hl)
+        ld (de),a
+        inc hl
+        inc de
+        djnz .mid_loop
+.mid_done:
+        jp VM_PUSH_STR_RESULT
 
 ; INKEY$() -- one keypress, as a 0- or 1-character string. Never
 ; blocks: kernel/io/io.asm's own IO_READ_KEY_NONBLOCK returns 0
@@ -3852,11 +4574,7 @@ BUILTIN_FN_INKEY:
         inc hl
         ld a,(BFN_STR_TMP)
         ld (hl),a
-        pop af
-        ld l,a
-        ld h,0
-        xor a
-        jp VM_PUSH
+        jp VM_PUSH_STR_RESULT
 .inkey_empty:
         call VM_STR_ALLOC_TEMP        ; HL -> dest record, A = new index
                                           ; (an empty string is still a
@@ -3912,15 +4630,13 @@ BUILTIN_FN_SQR:
         db $05,$38                           ; divide -> new x_k
         pop bc
         djnz .sqr_loop
-        call VM_FLOAT_STORE_RESULT
-        ret
+        jp VM_FLOAT_STORE_RESULT
 .sqr_zero:
         xor a
         ld (CALC_SP),a
         ld hl,0
         call CALC_INT_TO_FP
-        call VM_FLOAT_STORE_RESULT
-        ret
+        jp VM_FLOAT_STORE_RESULT
 
 ; PI() -- the constant pi, via the real calculator's own already-wired
 ; CALC_PUSH_PI literal (rom/exrom_calc.asm; that file's own header
@@ -3929,8 +4645,7 @@ BUILTIN_FN_PI:
         xor a
         ld (CALC_SP),a
         call CALC_PUSH_PI
-        call VM_FLOAT_STORE_RESULT
-        ret
+        jp VM_FLOAT_STORE_RESULT
 
 ; RAD(x) -- degrees to radians (x*pi/180). DEG(x) -- radians to degrees
 ; (x*180/pi). Int-only argument (matching V1's own real RAD/DEG
@@ -3953,8 +4668,7 @@ BUILTIN_FN_RAD:
         ld hl,180
         call CALC_INT_TO_FP            ; push 180
         call VM_CALC_DIV_STUB            ; (x*pi)/180
-        call VM_FLOAT_STORE_RESULT
-        ret
+        jp VM_FLOAT_STORE_RESULT
 
 ; SIN_PEEK_POP -- copies the calculator's current top-of-stack (5
 ; bytes) to (DE), then pops it (CALC_SP -= 1). Same real "CALC_STACK/
@@ -4172,10 +4886,111 @@ BUILTIN_FN_SIN:
         call CALC_PUSH_FP_RAW                       ; push acc: [0,acc]
         call VM_CALC_SUB_STUB                         ; [0-acc] = [-acc]
 .sin_done:
-        call VM_FLOAT_STORE_RESULT
-        ret
+        jp VM_FLOAT_STORE_RESULT
 
 SIN_DIVISOR_TABLE: dw 6, 20, 42, 72
+
+; COS(x) -- R10.7, R10.25 class C. COS(x) = SIN(x+90); reuses SIN's own
+; degree-reduction/Taylor-series body entirely (BUILTIN_FN_SIN.sin_have_
+; int, same cross-scope local-label reference this file's own decompiler
+; sibling already establishes as a precedent) -- only the +90 shift
+; before entry is new. Int-only argument (matching RAD/DEG's own
+; contract), but a FLOAT argument is still accepted and truncated first
+; (same tolerance SIN itself already extends), matching R10.25's own
+; audit note.
+BUILTIN_FN_COS:
+        call VM_POP                  ; HL = value, A = tag
+        cp TAG_FLOAT
+        jr nz,.cos_int
+        ld (VM_FLOAT_OPERAND_TAG),a
+        ld (VM_FLOAT_OPERAND_VAL),hl
+        xor a
+        ld (CALC_SP),a
+        call VM_FLOAT_PUSH_OPERAND
+        call CALC_FP_TO_INT           ; HL = truncated int
+.cos_int:
+        ld de,90
+        add hl,de
+        jp BUILTIN_FN_SIN.sin_have_int
+
+; TAN(x) -- R10.7, R10.25 class C. TAN(x) = SIN(x)/COS(x) via the
+; existing calculator division primitive, with a divide-by-zero guard
+; (COS(x)=0 at x=90+180n) -- the calculator itself already raises
+; overflow on divide-by-zero (VM_CALC_DIV_STUB's own callers elsewhere
+; in this file rely on the same behavior), so no new error path is
+; invented here.
+BUILTIN_FN_TAN:
+        call VM_POP                  ; HL = value, A = tag -- held on the
+                                        ; Z80 stack across both SIN/COS
+                                        ; calls below (each of which pops
+                                        ; its OWN copy from the VM
+                                        ; operand stack, so the same
+                                        ; degrees value must be pushed
+                                        ; back twice)
+        push af
+        push hl
+        call VM_PUSH                  ; push a copy for SIN
+        call BUILTIN_FN_SIN           ; -> SIN(x), FLOAT-tagged, VM-pushed
+        pop hl
+        pop af
+        push hl                        ; keep the ORIGINAL degrees value
+        push af                         ; a second time, for COS below
+        call VM_PUSH
+        call BUILTIN_FN_COS            ; -> COS(x), FLOAT-tagged, VM-pushed
+        pop af
+        pop hl                          ; balances the two pushes above;
+                                          ; both values are unused now
+        ; VM operand stack now holds [..., SIN(x), COS(x)] (SIN pushed
+        ; first, COS on top) -- VM_PREPARE_BINARY_OPERANDS pops COS into
+        ; the B slot, SIN into the A slot, exactly TAN = A/B = SIN/COS.
+        ; Both are always FLOAT-tagged (SIN/COS never return INT), so
+        ; the int-fast-path Z flag this shares with OP_ADD/SUB/MUL/DIV
+        ; is always NZ here; falls straight through to the float divide.
+        call VM_PREPARE_BINARY_OPERANDS
+        ld a,(VM_FLOAT_B_TAG)
+        ld hl,(VM_FLOAT_B_VAL)
+        call VM_FLOAT_TEST_ZERO        ; COS(x)=0 at x=90+180n
+        jr z,VM_ERR_DIVIDE_BY_ZERO
+        xor a
+        ld (CALC_SP),a
+        ld a,(VM_FLOAT_A_TAG)
+        ld (VM_FLOAT_OPERAND_TAG),a
+        ld hl,(VM_FLOAT_A_VAL)
+        ld (VM_FLOAT_OPERAND_VAL),hl
+        call VM_FLOAT_PUSH_OPERAND
+        ld a,(VM_FLOAT_B_TAG)
+        ld (VM_FLOAT_OPERAND_TAG),a
+        ld hl,(VM_FLOAT_B_VAL)
+        ld (VM_FLOAT_OPERAND_VAL),hl
+        call VM_FLOAT_PUSH_OPERAND
+        call VM_CALC_DIV_STUB
+        jp VM_FLOAT_STORE_RESULT
+
+; FREE() -- 0 args, always a real int. R10.25 class B item: a thin
+; wrapper over kernel/memory/memory.asm's own MEM_FREE_BYTES, which
+; already computes and is already labeled "Backs BASIC's FREE()".
+BUILTIN_FN_FREE:
+        ld hl,(VM_CSP)           ; R10.7 P4: the gap between the arrays and
+        ld de,(ARRAYS_END)       ; the control stack is what is really free
+        or a
+        sbc hl,de
+        xor a                     ; TAG_INT=0
+        jp VM_PUSH
+
+; FREE(n) -- R10.7 P5.5. FREE(1) = bytes free in array segment 2 ($E000-$E7FF);
+; any other argument behaves as FREE() (the main pool, up to the control stack).
+BUILTIN_FN_FREE_N:
+        call VM_POP_COERCE_INT   ; HL = n
+        dec hl
+        ld a,h
+        or l
+        jr nz,BUILTIN_FN_FREE
+        ld hl,ARR2_LIMIT
+        ld de,(ARR2_END)
+        or a
+        sbc hl,de
+        xor a                    ; TAG_INT
+        jp VM_PUSH
 
 BUILTIN_FN_DEG:
         call VM_POP_COERCE_INT   ; HL = x (FLOAT truncated)
@@ -4187,8 +5002,7 @@ BUILTIN_FN_DEG:
         call VM_CALC_MUL_STUB        ; x*180
         call CALC_PUSH_PI              ; push pi
         call VM_CALC_DIV_STUB            ; (x*180)/pi
-        call VM_FLOAT_STORE_RESULT
-        ret
+        jp VM_FLOAT_STORE_RESULT
 
 ; ---------------------------------------------------------------------------
 ; Error exits — each sets VM_ERROR_CODE and VM_HALTED, then returns to the
@@ -4237,6 +5051,14 @@ VM_ERR_ARRAY_BOUNDS:
 VM_ERR_ARRAY_TYPE:
         ld a,11
         jr VM_ERR_COMMON
+
+; VM_ERR_ARRAY_SPACE -- R10.7 dynamic-array redesign: OP_DIM's own
+; arena-exhaustion guard (ARRAYS_END+needed would reach/exceed VARS_
+; START). The clean, caught error the fixed-pool design never needed
+; ("memory exhaustion produces a clean error" requirement).
+VM_ERR_ARRAY_SPACE:
+        ld a,64                 ; R10.7 P0: was 16, which collided with the
+        jr VM_ERR_COMMON        ; SPRITE package's own range error (16)
 
 ; VM_ERR_CHR_RANGE -- R8.5 Group 6: CHR$'s argument was outside 0-255.
 ; Reached inline via BUILTIN_FN_CHR's own "jp VM_ERR_COMMON" (no

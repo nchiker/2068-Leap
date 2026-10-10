@@ -479,6 +479,10 @@ COLD_START:
     out  (PORT_SCLD), a
 
     call MEM_INIT
+    call MEM_LABEL_TABLE_CLEAR        ; production MEM_INIT no longer
+                                     ; does this itself (R10.7 dormant-
+                                     ; ROM removal) — see basic/
+                                     ; legacy_kernel_compat.asm
     call KBD_ISR_INIT                ; kernel/interrupt — must run
                                      ; before the EI below, so RST_38
                                      ; never fires against

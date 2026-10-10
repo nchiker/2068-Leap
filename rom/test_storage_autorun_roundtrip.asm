@@ -28,6 +28,11 @@ STORAGE_TEST_CAPTURE_HEADER EQU $E000
 COLD_START:
     ld   sp, $FF00
     call MEM_INIT
+    call MEM_LABEL_TABLE_CLEAR   ; see rom/test_storage_named_load.asm's
+                                ; own comment on this same line
+    xor  a
+    ld   (STORAGE_VERIFY_MODE), a  ; see rom/test_storage_named_load.asm's
+                                 ; own comment on this same line
     ld   hl, TEST_PROGRESS_HOOK
     ld   (STORAGE_PROGRESS_HOOK), hl
 

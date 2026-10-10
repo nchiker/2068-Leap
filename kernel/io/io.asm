@@ -155,31 +155,10 @@ IO_KEY_SCAN_ALL:
     ld   hl, IO_SCAN_TABLE
     ret
 
-; ============================================================================
-; IO_ANY_KEY_DOWN
-; Checks whether any key anywhere on the keyboard is currently pressed.
-; Convenience wrapper around IO_KEY_SCAN_ALL for simple polling (e.g. the
-; interactive test in rom/test_io.asm).
-; In:  none
-; Out: carry set if at least one key is down, carry clear if none are
-; Destroys: AF, BC, HL
-; ============================================================================
-IO_ANY_KEY_DOWN:
-    call IO_KEY_SCAN_ALL          ; HL = IO_SCAN_TABLE
-    ld   b, KEY_ROW_COUNT
-.check_loop:
-    ld   a, (hl)
-    and  $1F                       ; only bits 0-4 are meaningful
-    cp   $1F                        ; all 5 bits set = nothing pressed
-                                   ; in this row
-    jr   nz, .found
-    inc  hl
-    djnz .check_loop
-    or   a                          ; clear carry: nothing found
-    ret
-.found:
-    scf
-    ret
+; IO_ANY_KEY_DOWN removed (R10.7 dormant-ROM audit, docs/v2/R10_7_DORMANT_
+; ROM_CONSOLIDATION_AUDIT.md): its own header said it existed only "for
+; the interactive test in rom/test_io.asm" -- confirmed that was its one
+; real consumer; inlined there as TEST_ANY_KEY_DOWN instead of kept here.
 
 ; ============================================================================
 ; IO_FIND_KEY
@@ -545,57 +524,13 @@ IO_READ_KEY_NONBLOCK:
     ret  z                              ; nothing latched — A already 0
     jr   IO_LATCH_AND_CLEAR
 
-; ============================================================================
-; STICK_READ
-; Reads a joystick's state through the AY-3-8912's I/O port A —
-; confirmed from the real ROM disassembly's own STICK command routine
-; (M28F8/READ-STICK): register 14 ($0E) selected via PORT_AY_REG, then
-; read back via PORT_AY_DATA. Real hardware detail, not a design
-; choice: only stick 1 gets a full 4-bit direction nibble; stick 2
-; reports a single bit — the asymmetry is exactly what the real ROM's
-; own bit-decode does (RLCA + AND $01 for stick 2 vs. AND $0F for
-; stick 1), not something invented here.
-; In:  HL = device (1 or 2 — caller's own job to validate; this
-;      routine trusts it)
-; Out: HL = stick value (device 1: 0-15, one bit per direction; device
-;      2: 0 or 1)
-; Destroys: AF, BC, HL
-; ============================================================================
-STICK_READ:
-    ld   a, l
-    ld   d, a                          ; D = device (1 or 2)
-    ld   a, $0E
-    out  (PORT_AY_REG), a               ; select AY register 14 (I/O
-                                        ; port A)
-    ld   c, PORT_AY_DATA
-    in   a, (c)                          ; A = raw joystick lines
-    cpl                                   ; active-low -> active-high
-    ld   b, d                             ; B = device, DJNZ's own
-                                          ; counter — decrements once;
-                                          ; device 1 hits zero (falls
-                                          ; through), device 2 doesn't
-                                          ; (jumps to .stick2)
-    djnz .stick2
-    and  $0F                              ; stick 1: low nibble = the
-                                          ; four direction bits
-    cp   $0F
-    jr   c, .done                         ; not all four bits set —
-                                          ; keep the value as-is
-    xor  a                                 ; all bits set (the real
-                                           ; ROM's own "no real input"
-                                           ; edge case) -> force 0
-    jr   .done
-.stick2:
-    rlca                                   ; stick 2: only bit 7
-                                           ; (rotated into bit 0) is
-                                           ; meaningful — real hardware
-                                           ; asymmetry, see this
-                                           ; routine's own header
-    and  $01
-.done:
-    ld   l, a
-    ld   h, 0
-    ret
+; STICK_READ removed (R10.7 dormant-ROM audit, docs/v2/R10_7_DORMANT_ROM_
+; CONSOLIDATION_AUDIT.md): read a joystick's state via the AY-3-8912's I/O
+; port A. V2 never grew a STICK/joystick BASIC feature -- confirmed zero
+; callers in the real V2 build (rom/v2_home.asm/rom/v2_exrom.asm's own
+; INCLUDE chains); its only callers were V1's basic/basic.asm (unbuilt)
+; and the old include/kernel_api.inc jumptable (unbuilt). 30 bytes
+; recovered.
 
 ; ---- row select bytes, in the order IO_SCAN_TABLE stores them ----
 ROW_TABLE:
@@ -712,33 +647,10 @@ KEY_ASCII_TABLE_SYMBOL:
     ; B='*' confirmed (needed for basic/'s multiplication operator)
     DB   0, 0, ".", ",", "*"
 
-; ============================================================================
-; IO_CHECK_BREAK
-; Non-blocking check for the BREAK combo (CAPS SHIFT+SPACE — see
-; KEY_BREAK in include/keys.inc) currently being held down. Unlike
-; IO_READ_KEY, this never blocks waiting for a key — meant to be
-; polled once per statement from inside a running program's own
-; execution loop (basic/'s BASIC_RUN) without slowing or freezing
-; execution on every other keystroke. Does its own scan; the caller
-; does not need to have called IO_KEY_SCAN_ALL first.
-; In:  none
-; Out: carry set if BREAK is currently held, carry clear otherwise
-; Destroys: AF, BC, DE, HL
-; ============================================================================
-IO_CHECK_BREAK:
-    call IO_KEY_SCAN_ALL
-    call IO_FIND_KEY
-    ret  nc                       ; zero, or 2+, non-modifier keys down —
-                                  ; can't be an exact CAPS SHIFT+SPACE
-                                  ; combo (IO_FIND_KEY's own "ambiguous
-                                  ; rollover" scope decision, see its
-                                  ; header — same tradeoff applies here)
-    call IO_DECODE_KEY            ; B/C = the one non-modifier key found;
-                                  ; checks CAPS SHIFT state itself
-    cp   KEY_BREAK
-    jr   z, .found
-    or   a                        ; some other key/combo — clear carry
-    ret
-.found:
-    scf
-    ret
+; IO_CHECK_BREAK removed (R10.7 dormant-ROM audit, docs/v2/R10_7_DORMANT_
+; ROM_CONSOLIDATION_AUDIT.md): non-blocking BREAK-combo check meant to be
+; polled from inside a running program's own execution loop -- V1's basic/
+; basic.asm (unbuilt) was its only real caller; confirmed zero callers in
+; the real V2 build (rom/v2_home.asm/rom/v2_exrom.asm's own INCLUDE
+; chains). IO_FIND_KEY/IO_DECODE_KEY themselves remain live (used by
+; IO_READ_KEY). 18 bytes recovered.

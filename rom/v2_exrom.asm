@@ -1,5 +1,6 @@
 ; R9 production EXROM: retained platform services and V2 interactive shell.
     INCLUDE "include/hardware.inc"
+    DEFINE V2_COMPACT_SYSVARS   ; R10.7 P5: drop V1-only sysvars (see include/sysvars.inc)
     INCLUDE "include/sysvars.inc"
     INCLUDE "include/v2_layout.inc"
     INCLUDE "build/v2_crossbank.inc"
@@ -86,6 +87,11 @@ V2_VERIFY_KTAB:
     ret z
 .mismatch:
     jr .mismatch
+
+    ORG V2_EXROM_CLEAR_ADDR
+V2_EXROM_CLEAR:
+    call V2_VERIFY_KTAB
+    jp MEM_CLEAR_V2
 
     INCLUDE "kernel/storage/storage.asm"
     IFDEF STORAGE_TEST_FAKE_RECEIVE

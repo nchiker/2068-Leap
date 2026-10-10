@@ -53,7 +53,9 @@
 ; ============================================================================
 
     INCLUDE "include/hardware.inc"
+    DEFINE V2_COMPACT_SYSVARS   ; R10.7 P5: drop V1-only sysvars (see include/sysvars.inc)
     INCLUDE "include/sysvars.inc"
+    INCLUDE "rom/test_v2_symmacros.inc"
 
     DEVICE NOSLOT64K
 
@@ -105,19 +107,19 @@ CHECK_RESULT:
     ld   a, (VM_ERROR_CODE)
     or   a
     jr   nz, .fail
-    ld   hl, SYMTAB_BASE + 0*SYM_REC_LEN
+    TSYM_ADDR 0*SYM_REC_LEN
     ld   de, 15
     call .check_one           ; TOTAL
     jr   c, .fail
-    ld   hl, SYMTAB_BASE + 2*SYM_REC_LEN
+    TSYM_ADDR 2*SYM_REC_LEN
     ld   de, 0
     call .check_one           ; BOGUS -- the real GOTO-skip negative test
     jr   c, .fail
-    ld   hl, SYMTAB_BASE + 3*SYM_REC_LEN
+    TSYM_ADDR 3*SYM_REC_LEN
     ld   de, 14
     call .check_one           ; SQUARE
     jr   c, .fail
-    ld   hl, SYMTAB_BASE + 5*SYM_REC_LEN
+    TSYM_ADDR 5*SYM_REC_LEN
     ld   de, 29
     call .check_one           ; RESULT
     ret

@@ -1,5 +1,6 @@
 ; V2-native LPRINT/LLIST package. LLIST prints authoritative source.
     INCLUDE "include/hardware.inc"
+    DEFINE V2_COMPACT_SYSVARS   ; R10.7 P5: drop V1-only sysvars (see include/sysvars.inc)
     INCLUDE "include/sysvars.inc"
     INCLUDE "build/v2_crossbank.inc"
     DEFINE V2_PRODUCTION

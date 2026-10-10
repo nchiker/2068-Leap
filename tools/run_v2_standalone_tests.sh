@@ -34,24 +34,34 @@ cd "$(dirname "$0")/.."
 migrated_names=(
     arrays block_if decompiler for_nested for_step group6_math input
     mode_module printer_module proc_recursion relational save_load
-    sqr_decomp strfuncs
+    sqr_decomp strfuncs shapes_circle graphics_module dynamic_arrays
+    string_arrays ext_demo array_save_load case_insensitive
+    identifier_length scalar_capacity32 recursion_depth12
+    for_recursion_guard control_stack builtin_roundtrip identifier_toolong nesting_guard label_capacity
 )
 
 # Migrated tests that also need the real calculator (TEST_V2_NEEDS_CALC),
 # paired with a separate shared EXROM build below instead of the plain
 # TEST_V2_NEEDS_DECOMPILE-only one every other migrated test uses.
 calc_migrated_names=(
-    r10_numeric
+    r10_numeric run_tables
 )
 
 # ---------------------------------------------------------------------------
-# These three still fit the original flat-16K single-bank convention
+# These two still fit the original flat-16K single-bank convention
 # (concatenated with the real production build/exrom.bin purely to pad to
 # ZEsarUX's expected memory size -- their own test bodies never call into
-# the real EXROM's own code) and did not need migration.
+# the real EXROM's own code) and did not need migration. ext_demo was a
+# third member of this group until the Dynamic Data Phase 2 string-array
+# work grew vm_core+compiler enough to overflow its own flat image (190
+# bytes over, zero TRIADD-relevant content to show for it) -- migrated
+# onto the shared two-bank harness above, same as rom/test_v2_shapes_
+# circle.asm/rom/test_v2_graphics_module.asm already were for the same
+# EXT2-registry-needing reason.
 # ---------------------------------------------------------------------------
 legacy_names=(
-    deffn ext_demo vm_milestone01
+    deffn vm_milestone01
+    chunk_refill_boundary chunk_boundary_values for_first_token chunk_array_reads
 )
 
 out_dir=build/smoke/v2-standalone

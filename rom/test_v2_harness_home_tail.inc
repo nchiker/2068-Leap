@@ -17,6 +17,21 @@
 ; the full production-shaped 16K to work with, rather than re-litigate
 ; per test which MATH_* routines are safe to stub.
 ; ============================================================================
+; MEM_FILL_ZERO -- R10.7 P3: VM_INIT now zeroes the carved run-time tables in every
+; build (it used to do so only in production), so every test image needs the
+; kernel routine (copied narrowly where kernel/memory is not linked).
+MEM_FILL_ZERO:
+    xor  a
+    ld   (hl), a
+    ld   d, h
+    ld   e, l
+    inc  de
+    dec  bc
+    ld   a, b
+    or   c
+    ret  z
+    ldir
+    ret
     INCLUDE "kernel/bank/bank.asm"
     INCLUDE "kernel/math/math.asm"
     INCLUDE "rom/exrom_v2_vm_core.asm"

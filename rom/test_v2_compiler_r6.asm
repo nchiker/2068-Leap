@@ -68,7 +68,9 @@
 ; ============================================================================
 
     INCLUDE "include/hardware.inc"
+    DEFINE V2_COMPACT_SYSVARS   ; R10.7 P5: drop V1-only sysvars (see include/sysvars.inc)
     INCLUDE "include/sysvars.inc"
+    INCLUDE "rom/test_v2_symmacros.inc"
 
     DEVICE NOSLOT64K
 
@@ -140,40 +142,40 @@ CHECK_RESULT:
     ld   a, (VM_ERROR_CODE)
     or   a
     jr   nz, .fail
-    ld   hl, SYMTAB_BASE + 0*SYM_REC_LEN
+    TSYM_ADDR 0*SYM_REC_LEN
     ld   de, 21                ; X = 10.5 -> *2 = 21
     call .check_float
     jr   c, .fail
-    ld   hl, SYMTAB_BASE + 1*SYM_REC_LEN
+    TSYM_ADDR 1*SYM_REC_LEN
     ld   de, 3
     call .check_num           ; A
     jr   c, .fail
-    ld   hl, SYMTAB_BASE + 2*SYM_REC_LEN
+    TSYM_ADDR 2*SYM_REC_LEN
     ld   de, 7                 ; Y = 3.5 -> *2 = 7
     call .check_float
     jr   c, .fail
-    ld   hl, SYMTAB_BASE + 3*SYM_REC_LEN
+    TSYM_ADDR 3*SYM_REC_LEN
     ld   de, 5                 ; Z = 2.5 -> *2 = 5
     call .check_float
     jr   c, .fail
-    ld   hl, SYMTAB_BASE + 4*SYM_REC_LEN
+    TSYM_ADDR 4*SYM_REC_LEN
     ld   de, 3
     call .check_num           ; W (exact 6/2 -> stays INT, fast path)
     jr   c, .fail
-    ld   hl, SYMTAB_BASE + 5*SYM_REC_LEN
+    TSYM_ADDR 5*SYM_REC_LEN
     ld   de, 5                 ; V = A-0.5 = 2.5 -> *2 = 5 (OP_SUB float_path)
     call .check_float
     jr   c, .fail
-    ld   hl, SYMTAB_BASE + 6*SYM_REC_LEN
+    TSYM_ADDR 6*SYM_REC_LEN
     ld   de, 16                ; Q = 8.0 -> *2 = 16 (plain float literal)
     call .check_float
     jr   c, .fail
-    ld   hl, SYMTAB_BASE + 7*SYM_REC_LEN
+    TSYM_ADDR 7*SYM_REC_LEN
     ld   de, 8                 ; U = Q/2 = 4.0 -> *2 = 8 (OP_DIV float_path,
                                  ; dividend already FLOAT-tagged)
     call .check_float
     jr   c, .fail
-    ld   hl, SYMTAB_BASE + 8*SYM_REC_LEN
+    TSYM_ADDR 8*SYM_REC_LEN
     ld   de, 42                ; T = X*2 = 21.0 -> *2 = 42 (OP_MUL float_path)
     call .check_float
     ret

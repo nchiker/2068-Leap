@@ -30,7 +30,20 @@
 COLD_START:
     ld   sp, $FF00
     call MEM_INIT
+    call MEM_LABEL_TABLE_CLEAR   ; production MEM_INIT no longer does
+                                ; this itself (R10.7 dormant-ROM
+                                ; removal) — this legacy fixture still
+                                ; owns the label table, see basic/
+                                ; legacy_kernel_compat.asm
     xor  a
+    ld   (STORAGE_VERIFY_MODE), a  ; this old V1-style harness never
+                                 ; calls MEM_COLD_INIT (real hardware/
+                                 ; accuracy-oriented emulators do not
+                                 ; guarantee zeroed RAM at power-on --
+                                 ; see that routine's own header) --
+                                 ; R10.7's STORAGE_LOAD now reads this
+                                 ; cell unconditionally, so it must be
+                                 ; explicit here, not assumed zero
     ld   (TEST_TRANSITIONS), a
     ld   hl, TEST_PROGRESS_HOOK
     ld   (STORAGE_PROGRESS_HOOK), hl

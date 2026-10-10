@@ -3,8 +3,11 @@
 ;
 ; Tests everything currently implemented in kernel/memory/memory.asm:
 ; MEM_INIT, MEM_FILL_ZERO/MEM_FILL, MEM_LINE_FIRST on an empty program,
-; and MEM_SHIFT_UP/MEM_SHIFT_DOWN. MEM_LABEL_*, MEM_LINE_STORE, and
-; MEM_LINE_DELETE_RANGE are still stubs — nothing real to test there yet.
+; MEM_SHIFT_UP/MEM_SHIFT_DOWN, MEM_LINE_STORE, MEM_LINE_INSERT, and
+; MEM_LINE_DELETE_RANGE. MEM_LABEL_* was removed from kernel/memory/
+; memory.asm as dead production code (R10.7 dormant-ROM audit) along with
+; this file's own former MEM_LABEL_ROUNDTRIP test -- see that removal's
+; own comment further down for why.
 ;
 ; IMPORTANT — fixed a real bug in this file's own first draft: all
 ; mutable test buffers below live in RAM (EQU addresses in the $8000s),
@@ -79,8 +82,6 @@ COLD_START:
     call TEST_MEM_SHIFT_UP
     jr   c, FAIL
     call TEST_MEM_SHIFT_DOWN
-    jr   c, FAIL
-    call TEST_MEM_LABEL_ROUNDTRIP
     jr   c, FAIL
     call TEST_MEM_LINE_STORE
     jr   c, FAIL
@@ -250,86 +251,18 @@ SHIFT_PATTERN_LEN EQU 5
 SHIFT_PATTERN:
     DB   $11, $22, $33, $44, $55
 
-; ============================================================================
-; TEST_MEM_LABEL_ROUNDTRIP
-; Adds two labels ("LOOP", "DONE"), looks both up and checks their
-; positions, removes "LOOP", then verifies "LOOP" is gone but "DONE" is
-; still found with its original position unchanged — exercises
-; MEM_LABEL_ADD, MEM_LABEL_LOOKUP, and MEM_LABEL_REMOVE together, not
-; just in isolation, since REMOVE's shift-and-close-the-gap logic only
-; has something real to verify when there's a second entry to disturb.
-; Out: carry clear = pass, carry set = fail
-; ============================================================================
-TEST_MEM_LABEL_ROUNDTRIP:
-    ld   hl, NAME_LOOP
-    ld   b, NAME_LOOP_LEN
-    ld   de, $1234
-    call MEM_LABEL_ADD
-    jr   c, .fail
-
-    ld   hl, NAME_DONE
-    ld   b, NAME_DONE_LEN
-    ld   de, $5678
-    call MEM_LABEL_ADD
-    jr   c, .fail
-
-    ; look both up, check positions
-    ld   hl, NAME_LOOP
-    ld   b, NAME_LOOP_LEN
-    call MEM_LABEL_LOOKUP
-    jr   c, .fail
-    ld   hl, $1234
-    or   a
-    sbc  hl, de
-    jr   nz, .fail
-
-    ld   hl, NAME_DONE
-    ld   b, NAME_DONE_LEN
-    call MEM_LABEL_LOOKUP
-    jr   c, .fail
-    ld   hl, $5678
-    or   a
-    sbc  hl, de
-    jr   nz, .fail
-
-    ; remove LOOP, confirm it's gone
-    ld   hl, NAME_LOOP
-    ld   b, NAME_LOOP_LEN
-    call MEM_LABEL_REMOVE
-    jr   c, .fail
-
-    ld   hl, NAME_LOOP
-    ld   b, NAME_LOOP_LEN
-    call MEM_LABEL_LOOKUP
-    jr   nc, .fail             ; should NOT be found now — carry clear
-                              ; here (found) means REMOVE didn't work
-
-    ; DONE should still be there, at its original position — this is
-    ; the part that actually exercises REMOVE's shift-down, since DONE
-    ; was added after LOOP and only survives correctly if the gap
-    ; closed without corrupting what came after it
-    ld   hl, NAME_DONE
-    ld   b, NAME_DONE_LEN
-    call MEM_LABEL_LOOKUP
-    jr   c, .fail
-    ld   hl, $5678
-    or   a
-    sbc  hl, de
-    jr   nz, .fail
-
-    or   a
-    ret
-.fail:
-    scf
-    ret
-
-; ---- read-only test data ----
-NAME_LOOP_LEN EQU 4
-NAME_LOOP:
-    DB   "LOOP"
-NAME_DONE_LEN EQU 4
-NAME_DONE:
-    DB   "DONE"
+; TEST_MEM_LABEL_ROUNDTRIP (MEM_LABEL_ADD/LOOKUP/REMOVE) removed: it tested
+; V1's own runtime line-position label table (editor-level "label replaces
+; line number" rewriting), which V2 never uses at all — V2 has its own,
+; completely separate, compile-time-only LABELTAB in rom/exrom_v2_compiler.
+; asm (serving GOTO/PROC/DEF FN), already covered by rom/test_v2_*.asm
+; (proc_recursion, deffn, relational, etc.). MEM_LABEL_FIND/LOOKUP/ADD/
+; REMOVE themselves were removed from kernel/memory/memory.asm as dead
+; production code (R10.7 dormant-ROM audit, docs/v2/R10_7_DORMANT_ROM_
+; CONSOLIDATION_AUDIT.md) — confirmed zero callers in the real V2 build
+; (rom/v2_home.asm/rom/v2_exrom.asm's own INCLUDE chains); this test was
+; their only other consumer, and it verified an obsolete V1 mechanism with
+; no V2-equivalent capability to preserve, not a regression risk.
 
 ; ============================================================================
 ; TEST_MEM_LINE_STORE

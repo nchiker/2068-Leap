@@ -36,6 +36,7 @@
     DEFINE TEST_V2_NEEDS_DECOMPILE
     DEFINE TEST_V2_CHECK_DECOMPILED_TEXT
     INCLUDE "rom/test_v2_harness_home_head.inc"
+    INCLUDE "rom/test_v2_symmacros.inc"
 
 SOURCE_TEXT:
     db "A=5:B=3:C=0:D=0:E=0:"
@@ -54,15 +55,15 @@ TEST_CHECK_RESULT:
     ld   a, (VM_OUTPUT_ROW)
     cp   3
     jr   nz, .fail
-    ld   hl, SYMTAB_BASE + 2*SYM_REC_LEN
+    TSYM_ADDR 2*SYM_REC_LEN
     ld   de, 1
     call CHECK_SYM               ; C == 1
     jr   c, .fail
-    ld   hl, SYMTAB_BASE + 3*SYM_REC_LEN
+    TSYM_ADDR 3*SYM_REC_LEN
     ld   de, 2
     call CHECK_SYM               ; D == 2
     jr   c, .fail
-    ld   hl, SYMTAB_BASE + 4*SYM_REC_LEN
+    TSYM_ADDR 4*SYM_REC_LEN
     ld   de, 3
     call CHECK_SYM               ; E == 3
     ret

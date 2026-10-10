@@ -126,18 +126,14 @@ BANK_PAGE_EXROM_OUT:
     ei
     ret
 
-; ============================================================================
-; BANK_CALL_EXROM
-; Convenience wrapper: pages chunk 6 in, calls its fixed entry point
-; ($C000), pages back out. The EXROM payload itself runs with
-; interrupts enabled throughout — see this file's header.
-; In:  none
-; Out: whatever the EXROM payload's own contract defines
-; Destroys: whatever the EXROM payload's own contract defines, plus AF
-; ============================================================================
-BANK_CALL_EXROM:
-    call BANK_PAGE_EXROM_IN
-    call $C000
-    jr BANK_PAGE_EXROM_OUT
+; BANK_CALL_EXROM removed (R10.7 dormant-ROM audit, docs/v2/R10_7_DORMANT_
+; ROM_CONSOLIDATION_AUDIT.md): a convenience wrapper (page in / call fixed
+; $C000 entry / page out) whose only caller was rom/test_exrom_isolation.
+; asm, an orphaned early isolation test not wired into any Makefile target
+; or test script (not part of the automated suite). The real production
+; dispatch never calls a fixed $C000 entry point generically -- it goes
+; through specific KTAB-routed calls instead. Inlined into that one test
+; instead of deleted, so it still assembles standalone if ever rebuilt.
+; 8 bytes recovered.
 
     ENDIF

@@ -50,8 +50,8 @@ def main() -> int:
         f"{source_end-program_start} bytes"
     )
     print(
-        f"Staging:  {stage_start:#06x}-{stage_start+(source_end-program_start)-1:#06x}, "
-        f"{source_end-program_start} bytes"
+        f"Zone:     {stage_start:#06x}-{code_start-1:#06x}, "
+        f"{code_start-stage_start} bytes (chunk buffer / run-only tiers)"
     )
     print(f"Bytecode: {code_start:#06x}-{code_end-1:#06x}, {code_end-code_start} bytes")
     print(f"Fixed V2: {code_end:#06x}-{fixed_end-1:#06x}, {fixed_end-code_end} bytes")

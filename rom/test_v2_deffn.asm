@@ -47,7 +47,9 @@
 ; ============================================================================
 
     INCLUDE "include/hardware.inc"
+    DEFINE V2_COMPACT_SYSVARS   ; R10.7 P5: drop V1-only sysvars (see include/sysvars.inc)
     INCLUDE "include/sysvars.inc"
+    INCLUDE "rom/test_v2_symmacros.inc"
 
 
     DEVICE NOSLOT64K
@@ -69,6 +71,9 @@ RST_00:
 
 COLD_START:
     ld   sp, $FF00
+    ld   hl, PROG_AREA_START      ; R10.7 P2: the compile symbol table is placed
+    ld   (PROG_END), hl           ; at PROG_END, which cold RAM leaves undefined
+    ld   (ARRAYS_END), hl
 
     call COMPILER_INIT
     ld   hl, SOURCE_TEXT
@@ -128,26 +133,26 @@ SOURCE_TEXT:
 ; parameter, a distinct name) -> 1; A -> 2; B -> 3; C -> 4.
 ; ============================================================================
 CHECK_RESULT:
-    ld   a, (SYMTAB_BASE + 2*3)     ; A's own tag
+    TSYM_LD8 2*3  ; A's own tag
     cp   0
     jr   nz, .fail
-    ld   hl, (SYMTAB_BASE + 2*3 + 1)
+    TSYM_LD16 2*3 + 1
     ld   de, 25
     or   a
     sbc  hl, de
     jr   nz, .fail
-    ld   a, (SYMTAB_BASE + 3*3)     ; B's own tag
+    TSYM_LD8 3*3  ; B's own tag
     cp   0
     jr   nz, .fail
-    ld   hl, (SYMTAB_BASE + 3*3 + 1)
+    TSYM_LD16 3*3 + 1
     ld   de, 16
     or   a
     sbc  hl, de
     jr   nz, .fail
-    ld   a, (SYMTAB_BASE + 4*3)     ; C's own tag
+    TSYM_LD8 4*3  ; C's own tag
     cp   0
     jr   nz, .fail
-    ld   hl, (SYMTAB_BASE + 4*3 + 1)
+    TSYM_LD16 4*3 + 1
     ld   de, 3
     or   a
     sbc  hl, de
@@ -232,15 +237,35 @@ GFX_READ_PIXEL:
 GFX_CELL_ATTR_ADDR:
     scf
     ret
-; kernel/memory/memory.asm is NOT included here -- checked directly:
-; neither rom/exrom_v2_vm_core.asm/compiler.asm/decompiler.asm reference
-; any MEM_*/PROG_END/PROG_AREA_START/ARRAYS_END/VARS_START symbol, and
-; this test never touches the real editor engine.
+; kernel/memory/memory.asm is NOT included here (this test never
+; touches the real editor engine) -- R10.7 adds two direct references
+; from rom/exrom_v2_vm_core.asm (MEM_FREE_BYTES/MEM_CLEAR_V2, backing
+; FREE()/CLEAR), stubbed here since this test never exercises either.
+MEM_FREE_BYTES:
+    ld hl,0
+    ret
+MEM_CLEAR_V2:
+    ret
     INCLUDE "rom/exrom_format.asm"
 IO_READ_KEY_NONBLOCK:
         xor a
         ret
 
+    IFNDEF MEM_FILL_ZERO
+; MEM_FILL_ZERO -- R10.7 P3: VM_INIT zeroes the carved tables in every build now.
+MEM_FILL_ZERO:
+    xor  a
+    ld   (hl), a
+    ld   d, h
+    ld   e, l
+    inc  de
+    dec  bc
+    ld   a, b
+    or   c
+    ret  z
+    ldir
+    ret
+    ENDIF
     INCLUDE "rom/exrom_v2_vm_core.asm"
     INCLUDE "rom/exrom_v2_compiler.asm"
 ; rom/exrom_v2_decompiler.asm (3500+ real lines) is NOT included here:

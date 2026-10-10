@@ -86,7 +86,9 @@
 ; ============================================================================
 
     INCLUDE "include/hardware.inc"
+    DEFINE V2_COMPACT_SYSVARS   ; R10.7 P5: drop V1-only sysvars (see include/sysvars.inc)
     INCLUDE "include/sysvars.inc"
+    INCLUDE "rom/test_v2_symmacros.inc"
 
     DEVICE NOSLOT64K
 
@@ -129,36 +131,36 @@ COLD_START:
     jp   nz, FAIL
 
     ; A (idx 0): SQR(4) = 2
-    ld   hl, SYMTAB_BASE + 0*3
+    TSYM_ADDR 0*3
     call CHECK_FLOAT_VAR
     jp   c, FAIL
 
     ; B (idx 1): SQR(2) = 1.4142135...
-    ld   hl, SYMTAB_BASE + 1*3
+    TSYM_ADDR 1*3
     ld   de, EXP_B
     call CHECK_FLOAT_VAR2
     jp   c, FAIL
 
     ; C (idx 2): SQR(0) = 0
-    ld   hl, SYMTAB_BASE + 2*3
+    TSYM_ADDR 2*3
     ld   de, EXP_C
     call CHECK_FLOAT_VAR2
     jp   c, FAIL
 
     ; D (idx 3): PI() = 3.14159...
-    ld   hl, SYMTAB_BASE + 3*3
+    TSYM_ADDR 3*3
     ld   de, EXP_D
     call CHECK_FLOAT_VAR2
     jp   c, FAIL
 
     ; E (idx 4): RAD(90) = pi/2 = 1.5708
-    ld   hl, SYMTAB_BASE + 4*3
+    TSYM_ADDR 4*3
     ld   de, EXP_E
     call CHECK_FLOAT_VAR2
     jp   c, FAIL
 
     ; F (idx 5): DEG(1) = 180/pi = 57.2958
-    ld   hl, SYMTAB_BASE + 5*3
+    TSYM_ADDR 5*3
     ld   de, EXP_F
     call CHECK_FLOAT_VAR2
     jp   c, FAIL
@@ -166,52 +168,52 @@ COLD_START:
     ; G-P: SIN's own test matrix -- see this file's own header for the
     ; full case list (0, +/-, ~90/180/270/360, range reduction,
     ; symmetry, float argument, nested expression).
-    ld   hl, SYMTAB_BASE + 6*3
+    TSYM_ADDR 6*3
     ld   de, EXP_G
     call CHECK_FLOAT_VAR2
     jp   c, FAIL
 
-    ld   hl, SYMTAB_BASE + 7*3
+    TSYM_ADDR 7*3
     ld   de, EXP_H
     call CHECK_FLOAT_VAR2
     jp   c, FAIL
 
-    ld   hl, SYMTAB_BASE + 8*3
+    TSYM_ADDR 8*3
     ld   de, EXP_I
     call CHECK_FLOAT_VAR2
     jp   c, FAIL
 
-    ld   hl, SYMTAB_BASE + 9*3
+    TSYM_ADDR 9*3
     ld   de, EXP_J
     call CHECK_FLOAT_VAR2
     jp   c, FAIL
 
-    ld   hl, SYMTAB_BASE + 10*3
+    TSYM_ADDR 10*3
     ld   de, EXP_K
     call CHECK_FLOAT_VAR2
     jp   c, FAIL
 
-    ld   hl, SYMTAB_BASE + 11*3
+    TSYM_ADDR 11*3
     ld   de, EXP_L
     call CHECK_FLOAT_VAR2
     jp   c, FAIL
 
-    ld   hl, SYMTAB_BASE + 12*3
+    TSYM_ADDR 12*3
     ld   de, EXP_M
     call CHECK_FLOAT_VAR2
     jp   c, FAIL
 
-    ld   hl, SYMTAB_BASE + 13*3
+    TSYM_ADDR 13*3
     ld   de, EXP_N
     call CHECK_FLOAT_VAR2
     jp   c, FAIL
 
-    ld   hl, SYMTAB_BASE + 14*3
+    TSYM_ADDR 14*3
     ld   de, EXP_O
     call CHECK_FLOAT_VAR2
     jp   c, FAIL
 
-    ld   hl, SYMTAB_BASE + 15*3
+    TSYM_ADDR 15*3
     ld   de, EXP_P
     call CHECK_FLOAT_VAR2
     jp   c, FAIL
