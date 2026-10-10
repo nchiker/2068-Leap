@@ -6,6 +6,8 @@
     DEFINE V2_PRODUCTION
     DEFINE V2_KTAB_HOME
     INCLUDE "include/v2_ktab.inc"
+    DEFINE PKG_ABI_HOME          ; R10.9: emit the package service table / assert the pins
+    INCLUDE "include/v2_package_abi.inc"
     DEVICE NOSLOT64K
     ORG $0000
     di
@@ -21,6 +23,32 @@ V2_RST_38:
     V2_KTAB_LIST
     ASSERT $ == V2_KTAB_END
     DB V2_KTAB_MAGIC
+; R10.9 Phase 1: versioned package service table (docs/v2/PACKAGE_ABI.md), in what used
+; to be unused $FF padding -- zero HOME-budget cost.  Header, 16 `jp` slots, room for 14
+; more slots (append-only), then the one slot that needs a few bytes of code of its own.
+    ASSERT $ == PKG_SVC_HEADER
+    DB PKG_SVC_MAGIC, PKG_ABI_MAJOR, PKG_ABI_MINOR, PKG_SVC_COUNT
+    ASSERT $ == PKG_SVC_ENTRIES
+    PKG_SVC_LIST
+    ASSERT PKG_SVC_INDEX == PKG_SVC_COUNT
+    ASSERT $ == PKG_SVC_ENTRIES + 3*PKG_SVC_COUNT
+    ASSERT $ <= PKG_SVC_MAX_END
+    DS PKG_SVC_CODE - $, $FF
+    ASSERT $ == PKG_SVC_CODE
+; VM_NUM_TO_TEXT ends in a jump to EXROM code (BASIC_NUM_TO_STRING_EXROM, $C09C), but a
+; package runs with chunk 6 paged to RAM (OP_CALL_EXT), so calling it directly executes
+; whatever RAM is at $C09C.  This slot pages EXROM in around the call (nest-safe: BANK_*
+; keep a depth count) and restores the caller's view.  In/Out as VM_NUM_TO_TEXT.
+PKG_NUM_TO_TEXT_SAFE:
+    push af
+    call BANK_PAGE_EXROM_IN
+    pop af
+    call VM_NUM_TO_TEXT
+    push hl
+    call BANK_PAGE_EXROM_OUT
+    pop hl
+    ret
+    ASSERT $ <= $0100
     DS $0100 - $, $FF
 
 V2_COLD_START:
@@ -70,5 +98,9 @@ MEM_CLEAR_V2 EQU V2_EXROM_CLEAR_ADDR
     INCLUDE "kernel/extensions/ext_registry.asm"
     INCLUDE "rom/exrom_v2_vm_core.asm"
     INCLUDE "rom/exrom_v2_compiler.asm"
+; R10.9: the package ABI pins -- every package-visible sysvar / constant must still live
+; where include/v2_package_abi.inc says (a mismatch fails the build).
+    PKG_CONST_LIST
+    PKG_PIN_LIST
     DS V2_HOME_IMAGE_END - $, $FF
     SAVEBIN "v2_home.bin", $0000, V2_HOME_IMAGE_END

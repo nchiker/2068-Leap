@@ -119,6 +119,9 @@ STORAGE_HEADER_LENGTH_OFF    EQU 11
 STORAGE_HEADER_AUTOSTART_OFF EQU 13
 STORAGE_HEADER_PROGLEN_OFF   EQU 15
 STORAGE_HEADER_PAYLOAD_LEN   EQU 17
+STORAGE_LOAD_BAD_VERSION     EQU $FE     ; R10.9 failure return marker: the header's
+                                         ; version word is not this ROM's; nothing was
+                                         ; written (a clean failure, like A = 0)
 STORAGE_LOAD_DATA_TOUCHED    EQU $FF     ; failure return marker: at least
                                          ; one destination byte was written
 STORAGE_NO_AUTOSTART         EQU $8000
@@ -581,6 +584,23 @@ STORAGE_RECEIVE_BLOCK:
     ret
     ENDIF
 
+    IFDEF STORAGE_VERSIONED
+; ============================================================================
+; STORAGE_VERSION_WORD (R10.9)
+; Out: DE = the V2 tape version word for STORAGE_REQUEST_TYPE -- the package ABI
+;      word for extension (package) tapes, the program/array format word otherwise.
+;      include/v2_package_abi.inc defines both.
+; Destroys: AF, DE (HL, BC, IX preserved)
+; ============================================================================
+STORAGE_VERSION_WORD:
+    ld   a, (STORAGE_REQUEST_TYPE)
+    ld   de, V2_FORMAT_WORD
+    cp   STORAGE_EXTENSION_TYPE
+    ret  nz
+    ld   de, PKG_ABI_WORD
+    ret
+    ENDIF
+
 ; ============================================================================
 ; STORAGE_SAVE
 ; In:  HL = filename pointer, B = filename length, IX = data pointer,
@@ -639,11 +659,17 @@ STORAGE_SAVE:
 .len_set:
     ld   hl, (STORAGE_SEND_LEN)
     ld   (STORAGE_HEADER_BUF + STORAGE_HEADER_LENGTH_OFF), hl
+    IFDEF STORAGE_VERSIONED
+    ; R10.9: every V2 header carries a version word in the autostart field
+    ; (docs/v2/PACKAGE_ABI.md s6) -- program/array format or package ABI.
+    call STORAGE_VERSION_WORD             ; DE = word for STORAGE_REQUEST_TYPE
+    ELSE
     ld   a, (STORAGE_REQUEST_TYPE)
     cp   STORAGE_EXTENSION_TYPE
     ld   de, (STORAGE_HEADER_BUF + STORAGE_HEADER_AUTOSTART_OFF)
     jr   nz, .autostart_ready
     ld   de, EXT_SERVICE_ABI_VERSION
+    ENDIF
 .autostart_ready:
     ld   (STORAGE_HEADER_BUF + STORAGE_HEADER_AUTOSTART_OFF), de
     ; The stock BASIC header's second parameter is the program portion
@@ -829,6 +855,20 @@ STORAGE_LOAD:
     jp   .total_failure
 
 .name_ok:
+    IFDEF STORAGE_VERSIONED
+    ; R10.9: reject a header whose version word is not ours BEFORE any byte is
+    ; received, so a stock/unversioned/future tape can never overwrite the program
+    ; or the package window.  Rule: tag bit and major must match exactly, the
+    ; tape's minor must not exceed ours.  Clean failure (A = STORAGE_LOAD_BAD_VERSION).
+    ld   hl, (STORAGE_HEADER_BUF + STORAGE_HEADER_AUTOSTART_OFF)
+    call STORAGE_VERSION_WORD             ; DE = expected word (IX/HL preserved)
+    ld   a, h
+    cp   d
+    jp   nz, .bad_version                 ; JP: out of JR range
+    ld   a, e
+    cp   l                                ; carry if our minor < the tape's
+    jp   c, .bad_version
+    ENDIF
     ld   hl, (STORAGE_HEADER_BUF + STORAGE_HEADER_LENGTH_OFF)
     ld   de, (STORAGE_MAX_LEN)
     or   a
@@ -927,6 +967,11 @@ STORAGE_LOAD:
     xor  a                               ; clean failure: no program bytes
                                          ; were written
     jr   .report_failure
+    IFDEF STORAGE_VERSIONED
+.bad_version:
+    ld   a, STORAGE_LOAD_BAD_VERSION     ; clean failure, distinguishable
+    jr   .report_failure
+    ENDIF
 .data_touched:
     ld   a, STORAGE_LOAD_DATA_TOUCHED
 .report_failure:

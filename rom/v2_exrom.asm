@@ -6,6 +6,8 @@
     INCLUDE "build/v2_crossbank.inc"
     INCLUDE "include/keys.inc"
     INCLUDE "include/v2_ktab.inc"
+    INCLUDE "include/v2_package_abi.inc"   ; R10.9: version words (macros are not expanded here)
+    DEFINE STORAGE_VERSIONED               ; R10.9: stamp and check the tape version word
     V2_KTAB_LIST
     DEVICE NOSLOT64K
     ORG V2_EXROM_ENTRY_ADDR

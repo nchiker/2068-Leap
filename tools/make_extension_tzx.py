@@ -6,6 +6,9 @@ from operator import xor
 from pathlib import Path
 import sys
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import v2_abi  # noqa: E402  (R10.9: the ABI version word comes from include/v2_package_abi.inc)
+
 SAMPLE_TSTATES = 80
 PILOT_SAMPLES = 27
 SYNC_SAMPLES = (8, 9)
@@ -63,10 +66,14 @@ def pack(bits: list[int]) -> tuple[bytes, int]:
 
 
 def main() -> int:
-    if len(sys.argv) != 4:
-        print("usage: make_extension_tzx.py OUTPUT.tzx NAME MODULE.bin", file=sys.stderr)
+    args = [a for a in sys.argv[1:] if a != "--v2"]
+    v2 = len(args) != len(sys.argv) - 1
+    if len(args) != 3:
+        print("usage: make_extension_tzx.py OUTPUT.tzx NAME MODULE.bin [--v2]\n"
+              "  --v2: stamp the V2 package ABI word from include/v2_package_abi.inc "
+              "(default: the legacy V1 value 1)", file=sys.stderr)
         return 2
-    output, name, module_path = Path(sys.argv[1]), sys.argv[2], Path(sys.argv[3])
+    output, name, module_path = Path(args[0]), args[1], Path(args[2])
     module = module_path.read_bytes()
     if len(module) > MODULE_WINDOW_MAX:
         raise ValueError(f"module is {len(module)} bytes; limit is {MODULE_WINDOW_MAX}")
@@ -74,7 +81,7 @@ def main() -> int:
     tape_name = name.upper().encode("ascii")[:10].ljust(10, b" ")
     header_payload = (
         bytes([4]) + tape_name + module_size.to_bytes(2, "little")
-        + (1).to_bytes(2, "little") + module_size.to_bytes(2, "little")
+        + (v2_abi.load().pkg_word if v2 else 1).to_bytes(2, "little") + module_size.to_bytes(2, "little")
     )
     bits: list[int] = []
     level = append_block(bits, framed(0x00, header_payload), 0)

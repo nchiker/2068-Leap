@@ -1,8 +1,9 @@
 ; V2-native GRAPHICS (CPLOT/BLOCK/FRAME/INVERT) loadable package at the RAM ABI address.
     INCLUDE "include/hardware.inc"
-    DEFINE V2_COMPACT_SYSVARS   ; R10.7 P5: drop V1-only sysvars (see include/sysvars.inc)
-    INCLUDE "include/sysvars.inc"
-    INCLUDE "build/v2_crossbank.inc"
+    INCLUDE "include/v2_package_abi.inc"   ; R10.9: the ONLY HOME interface a package may use
+    PKG_SVC_LIST
+    PKG_CONST_LIST
+    PKG_PIN_LIST
     DEVICE NOSLOT64K
     ORG EXTENSION_MODULE_BASE
     jp GRAPHICS_INSTALL

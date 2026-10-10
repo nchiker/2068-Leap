@@ -1,5 +1,5 @@
 """Shared helpers for headless production-ROM checks (ts2068-debug / ZEsarUX)."""
-import json, struct, subprocess, sys
+import json, os, struct, subprocess, sys
 
 def D(*a, t=300):
     r = subprocess.run(["ts2068-debug", "--json", *a], capture_output=True, text=True, timeout=t)
@@ -26,7 +26,8 @@ def sym(name): return SYM.get(name) or HSYM[name]
 
 def start():
     D("stop")
-    D("start", "--rom", "build/ts2068rom_zesarux.bin", "--symbols", "build/exrom.sym")
+    port = ["--port", os.environ["TS2068_V2_PORT"]] if os.environ.get("TS2068_V2_PORT") else []
+    D("start", "--rom", "build/ts2068rom_zesarux.bin", "--symbols", "build/exrom.sym", *port)
     D("reset")
     D("run", "--until", "V2_COMMAND_LOOP.loop", "--max-instructions", "80000000")
     D("pause")

@@ -1,4 +1,4 @@
-.PHONY: all build check smoke-build test test-legacy test-all budget audit-basic manual clean cplot-extension block-extension frame-extension invert-extension ayreg-extension out-extension sprite-extension shapes-extension v2-packages v2-standalone-test release-assets
+.PHONY: all build check smoke-build test test-prod test-legacy test-all budget audit-basic manual clean cplot-extension block-extension frame-extension invert-extension ayreg-extension out-extension sprite-extension shapes-extension v2-packages v2-standalone-test release-assets
 
 all: check build
 
@@ -16,6 +16,7 @@ check: build
 	python3 tools/check_asm.py
 	python3 tools/check_docs.py
 	python3 tools/check_ram_aliases.py build/test_basic.sym
+	python3 tools/check_package_abi.py
 	python3 tools/check_storage_contract.py
 	python3 tools/check_tape_fixture.py
 	python3 tools/check_commit_validation.py
@@ -49,7 +50,9 @@ smoke-build:
 # TEST TARGETS -- read before changing.
 #   make test         DEFAULT. Fully headless (ts2068-debug / ZEsarUX, no X11, no
 #                     Fuse window): kernel smoke ROMs, the V2 standalone component
-#                     tests, and the production-ROM checks. This is what to run.
+#                     tests, the production-ROM checks, and (R10.9) the production-ROM
+#                     regression gate + strict known-defect suite. This is what to run.
+#   make test-prod    Just the last two (tools/run_v2_prod_tests.sh).
 #   make test-legacy  The V1 tests that drive a real Fuse window under X11
 #                     (editor_auto, storage named-load family). Kept in full; they
 #                     are NOT part of `make test`.
@@ -57,11 +60,17 @@ smoke-build:
 # `make check` is unchanged (assemble/lint only; it launches no emulator).
 # `make -n test | grep -i fuse` must print nothing (see docs/v2/TESTING.md).
 # ---------------------------------------------------------------------------
-test: all
+test: all v2-packages
 	tools/run_smoke_rom_tests.sh
 	tools/run_v2_standalone_tests.sh
 	python3 tools/v2_production_checks.py
 	python3 tools/v2_fill_check.py
+	tools/run_v2_prod_tests.sh
+
+# R10.9 Phase 1: only the production-ROM regression gate + the strict known-defect suite
+# (editor keys, real tape receiver fed an EAR stream, packages, package ABI). Headless.
+test-prod: build v2-packages
+	tools/run_v2_prod_tests.sh
 
 test-legacy: all
 	tools/run_editor_auto_test.sh
@@ -94,11 +103,11 @@ v2-packages: build
 	tools/sjasmplus_strict.sh rom/v2_package_printer.asm
 	tools/sjasmplus_strict.sh rom/v2_package_shapes.asm
 	tools/sjasmplus_strict.sh rom/v2_package_graphics.asm
-	python3 tools/make_extension_tzx.py build/extensions/v2_mode.tzx MODE build/v2_package_mode.bin
-	python3 tools/make_extension_tzx.py build/extensions/v2_sprite.tzx SPRITE build/v2_package_sprite.bin
-	python3 tools/make_extension_tzx.py build/extensions/v2_printer.tzx PRINTER build/v2_package_printer.bin
-	python3 tools/make_extension_tzx.py build/extensions/v2_shapes.tzx SHAPES build/v2_package_shapes.bin
-	python3 tools/make_extension_tzx.py build/extensions/v2_graphics.tzx GRAPHICS build/v2_package_graphics.bin
+	python3 tools/make_extension_tzx.py build/extensions/v2_mode.tzx MODE build/v2_package_mode.bin --v2
+	python3 tools/make_extension_tzx.py build/extensions/v2_sprite.tzx SPRITE build/v2_package_sprite.bin --v2
+	python3 tools/make_extension_tzx.py build/extensions/v2_printer.tzx PRINTER build/v2_package_printer.bin --v2
+	python3 tools/make_extension_tzx.py build/extensions/v2_shapes.tzx SHAPES build/v2_package_shapes.bin --v2
+	python3 tools/make_extension_tzx.py build/extensions/v2_graphics.tzx GRAPHICS build/v2_package_graphics.bin --v2
 
 cplot-extension: build
 	mkdir -p build/extensions

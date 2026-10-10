@@ -14,7 +14,7 @@ V2_NAME_LEN EQU $BE7E
 V2_ACTIVE_ROW EQU BASIC_ACTIVE_ROW
 V2_REQUEST_TYPE EQU $BE81
 V2_PACKAGE_LEN EQU $BE82
-V2_PACKAGE_ABI_VERSION EQU 1
+; R10.9: the package ABI / tape format versions live in include/v2_package_abi.inc.
 ; R10 correction: single-error return-to-line (docs/v2/POST_R9_
 ; SEMANTIC_MILESTONE.md's own editor-audit findings). Placed in the
 ; $BE84-$BED7 reserved gap (R9_CUTOVER_LEDGER.md's RAM table) -- fixed
@@ -1172,14 +1172,9 @@ V2_LOAD:
     or a
     jr z,.program_loaded
     ld (V2_PACKAGE_LEN),de
-    ld hl,(STORAGE_HEADER_BUF+STORAGE_HEADER_AUTOSTART_OFF)
-    ld a,h
-    or a
-    jr nz,.invalid_package
-    ld a,l
-    cp V2_PACKAGE_ABI_VERSION
-    jr nz,.invalid_package
-    call EXTENSION_MODULE_BASE
+    call EXTENSION_MODULE_BASE   ; R10.9: the ABI version word was already checked by
+                                   ; STORAGE_LOAD against the header, before any byte of
+                                   ; the package reached the window (docs/v2/PACKAGE_ABI.md s6)
     jr c,.invalid_package
     ld hl,V2_MSG_LOADED
     jp V2_SHOW_MESSAGE
@@ -1210,9 +1205,13 @@ V2_LOAD:
     ld hl,0
     ld (V2_PACKAGE_LEN),hl
     pop af
+    cp STORAGE_LOAD_BAD_VERSION
+    jr z,.bad_version
     jr .clean_failure
 .program_failed:
     pop af
+    cp STORAGE_LOAD_BAD_VERSION
+    jr z,.bad_version
     inc a
     jr nz,.clean_failure
     call MEM_INIT_V2
@@ -1230,6 +1229,11 @@ V2_LOAD:
     jp V2_SHOW_MESSAGE
 .missing_name:
     ld hl,V2_MSG_SYNTAX
+    jp V2_SHOW_MESSAGE
+.bad_version:                ; R10.9: header version word not ours; nothing was touched
+    xor a
+    ld (STORAGE_VERIFY_MODE),a
+    ld hl,V2_MSG_BAD_VERSION
     jp V2_SHOW_MESSAGE
 .verified:
     xor a
@@ -1983,3 +1987,4 @@ V2_MSG_ARRAY_NOT_DIMD: DB "ARRAY NOT DIMD",0
 V2_MSG_ARRAY_MISMATCH: DB "ARRAY ALREADY SET",0
 V2_MSG_VERIFIED: DB "VERIFIED",0
 V2_MSG_VERIFY_FAILED: DB "VERIFY FAILED",0
+V2_MSG_BAD_VERSION: DB "BAD TAPE VERSION",0

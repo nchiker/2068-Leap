@@ -6,15 +6,20 @@ bitmap into screen RAM, calls the package's real SHAPES_GFX_FILL, and compares
 the resulting bitmap with an independent 4-connected flood fill. Also reports
 the fill-stack high-water mark (stack area pre-filled with $EE).
 Usage: python3 tools/v2_fill_check.py   (after `make build` and building the package)
+
+The module is importable (R10.9 Phase 1): tools/v2_known_defects.py reuses `run`,
+`flood`, `blank` and friends for the adversarial D7 scenarios.  This file's own
+10-scenario gate is unchanged.
 """
 import sys, struct
 sys.path.insert(0, __import__('os').path.dirname(__file__))
 from v2_headless import *
 
 import os, subprocess
-subprocess.run(["sjasmplus", "--sym=build/v2_package_shapes.sym", "rom/v2_package_shapes.asm"],
-               check=True, capture_output=True)       # also refreshes build/v2_package_shapes.bin
-if os.path.exists("v2_package_shapes.bin"): os.remove("v2_package_shapes.bin")
+if not os.environ.get("V2_FILL_NO_REBUILD"):          # tools/run_v2_prod_tests.sh builds it once, up front
+    subprocess.run(["sjasmplus", "--sym=build/v2_package_shapes.sym", "rom/v2_package_shapes.asm"],
+                   check=True, capture_output=True)   # also refreshes build/v2_package_shapes.bin
+    if os.path.exists("v2_package_shapes.bin"): os.remove("v2_package_shapes.bin")
 PKG = syms("build/v2_package_shapes.sym")
 BASE = HSYM["EXTENSION_MODULE_BASE"]
 STK, STK_END = HSYM["GFX_FILL_STACK"], HSYM["GFX_FILL_STACK_END"]
@@ -111,13 +116,18 @@ def run(img, sx, sy):
     D("stop")
     return got, used
 
-fails = 0
-for name, (img, sx, sy) in scenarios().items():
-    got, used = run(img, sx, sy)
-    want = flood(img, sx, sy)
-    diff = sum(got[y][x] != want[y][x] for y in range(192) for x in range(256))
-    ok = diff == 0
-    fails += not ok
-    print(f"{'PASS' if ok else 'FAIL'} {name}: differing pixels={diff} fill-stack high-water={used} B")
-print("FAILURES:", fails)
-sys.exit(1 if fails else 0)
+def main():
+    fails = 0
+    for name, (img, sx, sy) in scenarios().items():
+        got, used = run(img, sx, sy)
+        want = flood(img, sx, sy)
+        diff = sum(got[y][x] != want[y][x] for y in range(192) for x in range(256))
+        ok = diff == 0
+        fails += not ok
+        print(f"{'PASS' if ok else 'FAIL'} {name}: differing pixels={diff} fill-stack high-water={used} B")
+    print("FAILURES:", fails)
+    sys.exit(1 if fails else 0)
+
+
+if __name__ == "__main__":
+    main()
