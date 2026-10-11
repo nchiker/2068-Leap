@@ -898,19 +898,9 @@ LEX_SCAN_NUMBER:
         inc hl
         ld (SRC_PTR),hl
         sub '0'
-        push af
-        ld h,d
-        ld l,e
-        add hl,hl
-        add hl,hl
-        add hl,de
-        add hl,hl
-        pop af
-        ld c,a
-        ld b,0
-        add hl,bc
-        ex de,hl
-        jr .int_digit_loop
+        call LEX_ACCUM_DIGIT     ; STUDY (D11): shared, range-checked accumulate
+        jr nc,.int_digit_loop
+        jr LEX_NUMBER_TOO_BIG
 .check_dot:
         ld hl,(SRC_PTR)
         ld a,(hl)
@@ -928,18 +918,8 @@ LEX_SCAN_NUMBER:
         inc hl
         ld (SRC_PTR),hl
         sub '0'
-        push af
-        ld h,d
-        ld l,e
-        add hl,hl
-        add hl,hl
-        add hl,de
-        add hl,hl
-        pop af
-        ld c,a
-        ld b,0
-        add hl,bc
-        ex de,hl
+        call LEX_ACCUM_DIGIT
+        jr c,LEX_NUMBER_TOO_BIG
         ld hl,(CNUM_DIVISOR_TMP)
         ld b,h
         ld c,l
@@ -962,10 +942,45 @@ LEX_SCAN_NUMBER:
         ld (TOK_TYPE),a
         ret
 .is_float:
+        bit 7,d                  ; STUDY: a decimal mantissa >= 32768 would become negative
+        jr nz,LEX_NUMBER_TOO_BIG
         ld (TOK_FLOAT_DIVISOR),hl
         ld a,TOK_FLOAT_NUMBER
         ld (TOK_TYPE),a
         ret
+
+; STUDY (D11, literal policy L-A): DE = DE*10 + A (A = digit 0-9).  Carry set = the value would exceed 65535
+; (the literal no longer fits the 16-bit TOK_VAL: before, it wrapped modulo 65536 without a word).
+; 32768..65535 stay accepted as 16-bit address patterns (POKE 65000,... / USR(61440) keep working);
+; a decimal literal's mantissa is limited to 32767 in LEX_SCAN_NUMBER (it is divided as a SIGNED INT16).
+; Destroys AF BC HL.
+LEX_ACCUM_DIGIT:
+        ld c,a
+        ld hl,6554
+        or a
+        sbc hl,de               ; DE >= 6554 -> x10 cannot fit
+        jr c,.ovf
+        jr z,.ovf
+        ld h,d
+        ld l,e
+        add hl,hl
+        add hl,hl
+        add hl,de
+        add hl,hl               ; HL = DE*10 (<= 65530)
+        ld b,0
+        add hl,bc
+        jr c,.ovf
+        ex de,hl
+        or a
+        ret
+.ovf:
+        scf
+        ret
+; The oversized literal is reported where it is: an unexpected token, error 64, on its own line.
+LEX_NUMBER_TOO_BIG:
+        ld a,TOK_UNKNOWN
+        ld (TOK_TYPE),a
+        jp ERR_UNEXPECTED_TOKEN
 
 ; R8 identifier cleanup: a leading letter, then any mix of letters and
 ; DIGITS (classic BASIC's own convention -- "A1", "TOTAL2", "P3" are

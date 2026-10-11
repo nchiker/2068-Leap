@@ -2087,7 +2087,10 @@ OP_ADD:
         jr nz,.float_path        ; either operand is FLOAT (R6)
         ld hl,(VM_FLOAT_A_VAL)
         ld de,(VM_FLOAT_B_VAL)
-        add hl,de               ; HL = a+b — native 16-bit Z80 add, the
+        or a
+        adc hl,de               ; STUDY (D11): ADC sets P/V = signed overflow
+        jp pe,.float_path       ; promote: the operands are still in VM_FLOAT_A/B_VAL
+        ;                         HL = a+b — native 16-bit Z80 add, the
                                  ; integer fast path this whole architecture
                                  ; exists to preserve. Untouched by R6:
                                  ; reached only when BOTH operands are INT.
@@ -2115,6 +2118,7 @@ OP_SUB:
         ld de,(VM_FLOAT_B_VAL)
         or a
         sbc hl,de               ; HL = a - b
+        jp pe,.float_path       ; STUDY (D11): promote on signed overflow
         jp PUSH_INT_CONTINUE
 .float_path:
         ld hl,VM_CALC_SUB_STUB
@@ -2125,7 +2129,10 @@ OP_MUL:
         jr nz,.float_path
         ld hl,(VM_FLOAT_A_VAL)
         ld de,(VM_FLOAT_B_VAL)
-        call MATH_MULTIPLY16    ; existing, already-verified platform
+        call VM_MUL_CHECKED     ; STUDY (D11): MATH_MULTIPLY16 with overflow detection
+        jp c,.float_path        ; promote
+        jp PUSH_INT_CONTINUE
+        ; (old text) existing, already-verified platform
                                  ; primitive (kernel/math/math.asm) — reused,
                                  ; not reimplemented. Overflow silently
                                  ; truncates here, same as the primitive's
@@ -2393,8 +2400,10 @@ OP_FOR_NEXT:
         inc hl
         ld d,(hl)               ; DE = current value
         ld hl,(VM_FOR_STEP)
-        add hl,de                ; HL = new current value (R8.5 Group 5 --
+        or a
+        adc hl,de                ; HL = new current value (R8.5 Group 5 --
                                    ; was a fixed `inc de`/STEP=1 before)
+        jp pe,.past_limit        ; STUDY (D11): the counter would wrap -> the loop is over
         ld (VM_FOR_NEXT_NEWVAL),hl
         ld de,(VM_FOR_LIMIT)
         call MATH_COMPARE16     ; A = 0 if equal, 1 if HL(new)>DE(limit),
@@ -5045,6 +5054,49 @@ VM_ERR_ARRAY_SPACE:
 ; dead code now that OP_MODE/OP_ULAPLUS/OP_PALETTE no longer exist here.
 ; The loadable ext_mode_module.asm owns its own error codes/reporting,
 ; same as ext_sprite_module.asm already does.
+
+; STUDY (D11): signed 16x16 multiply with overflow detection, built on MATH_SIGN_PREP / MATH_APPLY_SIGN.
+; In: HL = a, DE = b.  Out: HL = product, carry clear; carry SET = |a*b| does not fit INT16.
+VM_MUL_CHECKED:
+        call MATH_SIGN_PREP     ; HL = |a|, DE = |b|, (MATH_SIGN) = $80 when the result is negative
+        ld b,d
+        ld c,e                  ; BC = |b| (multiplier)
+        ex de,hl                ; DE = |a| (multiplicand)
+        ld hl,0
+.loop:
+        ld a,b
+        or c
+        jr z,.done              ; multiplier exhausted
+        srl b
+        rr c
+        jr nc,.shift
+        add hl,de
+        jr c,.ovf               ; partial sum >= 65536
+.shift:
+        sla e
+        rl d
+        jr nc,.loop
+        ld a,b
+        or c
+        jr z,.loop              ; the lost bit would only be multiplied by 0
+        jr .ovf                 ; a set multiplier bit remains: product >= 65536
+.done:
+        bit 7,h
+        jr z,.fits              ; 0..32767
+        ld a,(MATH_SIGN)
+        or a
+        jr z,.ovf               ; positive result >= 32768
+        ld a,h
+        xor $80
+        or l
+        jr nz,.ovf              ; negative result: only exactly -32768 fits
+.fits:
+        call MATH_APPLY_SIGN    ; (the negate path leaves carry set)
+        or a
+        ret
+.ovf:
+        scf
+        ret
 
 VM_ERR_COMMON:
         ld (VM_ERROR_CODE),a
