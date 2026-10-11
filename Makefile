@@ -1,4 +1,4 @@
-.PHONY: all build check smoke-build test qual test-prod test-legacy test-all budget audit-basic manual clean cplot-extension block-extension frame-extension invert-extension ayreg-extension out-extension sprite-extension shapes-extension v2-packages v2-standalone-test release-assets
+.PHONY: all build check smoke-build test qual rc-assets test-prod test-legacy test-all budget audit-basic manual clean cplot-extension block-extension frame-extension invert-extension ayreg-extension out-extension sprite-extension shapes-extension v2-packages v2-standalone-test release-assets
 
 all: check build
 
@@ -199,6 +199,11 @@ release-assets: build v2-packages manual
 	cp patches/0001-Add-ULAplus-support-for-Timex-machines.patch patches/0001-zesarux-mirror-ts2068-exrom.patch build/release/patches/
 	cd build/release && sha256sum roms/* extensions/* > SHA256SUMS.txt
 	cd build/release && zip -qrFS ../2068-Leap-Release-1-Beta.zip .
+# RC: the V2 release-candidate artifacts (ROM images, packages, V2 docs, SHA256SUMS, BUILD_INFO) in
+# build/release-v2-rc/ -- see docs/v2/V2_HARDWARE_CHECKLIST.md.
+rc-assets: build v2-packages
+	python3 tools/make_rc_assets.py
+
 audit-basic: build
 	python3 tools/report_basic_routines.py basic/basic.asm build/test_basic.sym
 

@@ -1,5 +1,9 @@
 # 2068-Leap — User's Manual
 
+> **This is the manual of the V1 "Release 1 Beta" ROM.** For the V2 ROM (release candidate) see
+> `docs/v2/V2_USER_MANUAL.md` and `docs/v2/V2_LANGUAGE_REFERENCE.md`; much of this manual does not
+> apply to V2 (single-letter variables, GOSUB, single-line IF, ELSEIF, INSTR, ...).
+
 **Release 1 Beta**
 
 > **Production transition note (R9):** the current production build boots the

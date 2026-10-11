@@ -270,6 +270,10 @@ T("fn.abs.min", "fn.ABS", ["PRINT ABS(-32767-1)"], Num(32768, "num"), known=D11X
 T("fn.div.min_m1", "fn.DIV", ["PRINT DIV(-32767-1,-1)"], Num(32768), known=D11X,
   note="cost study: still wraps in both variants. RC oracle correction: 32768 is not an INT, so its correct display is 32768.0000 (was OkOrErr('32768'))")
 T("fn.int.big", "fn.INT", ["PRINT INT(30000*3+0.5)"], Num(90000), known=D11X)
+T("fn.int.neg_trunc", "fn.INT", ["PRINT INT(-3.5)"], Num(-3, "int"),
+  note="V2 design (R10.8 L6): INT truncates toward zero; stock Sinclair BASIC floors (-4)")
+T("fn.mod.neg_trunc", "fn.MOD", ["PRINT MOD(-7,3)"], Num(-1, "int"), note="V2 design (R10.8 L6): truncated division")
+T("fn.div.neg_trunc", "fn.DIV", ["PRINT DIV(-7,2)"], Num(-3, "int"), note="V2 design (R10.8 L6): truncated division")
 T("fn.mod.zero", "fn.MOD", ["PRINT MOD(5,0)"], RErr(5), note="manual: DIVISION BY ZERO for /, MOD, DIV")
 T("fn.div.zero", "fn.DIV", ["PRINT DIV(5,0)"], RErr(5))
 T("fn.sqr.neg", "fn.SQR", ["PRINT SQR(-4)"], AnyErr(), note="square root of a negative number")

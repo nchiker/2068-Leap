@@ -1,0 +1,88 @@
+# V2 defect register (release candidate)
+
+Branch `integration/v2-final-rom`. Severity as found; **Status** is the state in the release
+candidate: **Fixed** (the corpus case now passes on the corrected expectation), **Decided** (a
+documented V2 design choice; the corpus case expects it), **Doc** (the documentation was wrong and
+is corrected), **Open** (still reproduced: the corpus keeps the case as XFAIL). Evidence = corpus
+case ids (`tools/qual/corpus.py`) or suite case names. Source of the Q-/D-/L-/N- entries:
+`tools/qual/defects.py` (qualification study and owner-decision review).
+
+## Open
+
+| Id | Sev | Defect | Why open | Evidence |
+|---|---|---|---|---|
+| Q-24 | LOW | `CALL` of a plain label (not a `PROC`) is accepted: it jumps there, and the code runs on without returning | deferred: needs a label-kind check in the compiler; no ROM reserve | `proc.goto_label` (XFAIL) |
+| Q-26 | LOW | `[ \ ] ^ \` { | } ~` print as blanks (no glyphs in the ROM font) | deferred: 9 glyphs cost ~72-90 bytes of HOME | `print.font_brackets` (XFAIL) |
+| RC-O1 | LOW | A literal beyond the float range (~1.7E38) is compile error 64, whose message reads "UNEXPECTED TOKEN" | cosmetic; a "NUMBER TOO BIG" message costs ~20 bytes | `lit.float.too_big` (passes on the code) |
+| RC-O2 | LIMIT | `SAVE ... ALL` refuses (`OUT OF MEMORY`) when bytecode + segment 2 + 53 bytes exceed the bytecode area plus free memory | the in-place layout must end at `V2_CODE_LIMIT` | `sa-no-room` |
+| RC-O3 | LIMIT | A `SAVE ... ALL` tape restores its variables only on the exact ROM build that wrote it (another build: program only, `NO VARIABLES`) | by design: the image includes bytecode and layout | `sa-other-rom` |
+| RC-O4 | LIMIT | Numeric array elements are 16-bit integers: storing a float or a value outside -32768..32767 is runtime error 11 | V2 array format | `arr.float_value` (OkOrErr) |
+| RC-O5 | RESERVE | ROM reserve below the provisional 200 (HOME) / 150 (EXROM) target: 65 / 25 bytes free | SAVE ALL and the language fixes used the space; see `V2_ROM_RAM_BUDGET.md` for options | `make budget` |
+| T-3 | TEST | 15 legacy component-test sources (`call_fn`, the `compiler_r2` to `compiler_r7` series, `decompiler_phase2`, `editor_integration`, `ext_concurrent`, `graphics_module_ram`, `graphics_pixel`, `print`, `sprite_module`, `sqr`) are in no runner | test debt, unchanged from the study | `tools/run_v2_standalone_tests.sh` |
+
+## Fixed or decided in the release candidate
+
+| Id | Sev | Defect | Status | Evidence |
+|---|---|---|---|---|
+| Q-01 | CRITICAL | string comparison compared lengths only | Fixed (qualification branch, merged) | `str.cmp_*` |
+| Q-02 | CRITICAL | temporaries reused while live | Fixed | `strrec.*`, Q-02 cases |
+| Q-03 | CRITICAL | AND/OR with a float jumped to the value | Fixed | `crash.and_float`, `log.float` |
+| Q-04 | CRITICAL | DIM > 8 KB wrapped and overwrote the stack | Fixed (error 64) | `dim.big*` |
+| Q-05 | MEDIUM | -32768 printed +32768.0000 | Fixed | `lit.int.neg32768` |
+| Q-06 | HIGH | IF tested a float's slot index | Fixed | `if.float_cond` |
+| Q-07 | HIGH | FOR ran once when already past the limit | Fixed | `for.zero_trip*` |
+| Q-08 | HIGH | float FOR used slot indexes / hung | Fixed (owner decision 1, variant D) | `for.float_*`, `ffor.*` |
+| Q-09 | MEDIUM | 5+ fractional digits overflowed silently | Fixed (exact float literals) | `lit.dec.*` |
+| Q-10 | HIGH | float arguments of SGN/SQR/RAD/DEG/SIN/COS/TAN/MOD/DIV truncated | Fixed | `fn.abs.f`, `fn.sin.f`, `fn.sqr.f`, `fn.mod.float` |
+| Q-11 | MEDIUM | PROC/DEF FN inside a PROC corrupted it | Fixed | `proc.nested_def` |
+| Q-12 | LOW | duplicate label accepted | Fixed (error 57) | `label.dup` |
+| Q-13 | MEDIUM | MOD/DIV by zero returned 0 | Fixed (error 5) | `fn.mod.zero` |
+| Q-14 | LOW | CLS kept the PRINT position | Fixed | `print.cls` |
+| Q-15/Q-16 | MEDIUM | INPUT ignored '.', wrapped above 32767 | Fixed (shared number parser) | `input.*` |
+| Q-17 | LOW | VAL skipped non-digits, wrapped | Fixed | `str.val_*` |
+| Q-18 | CRITICAL | out-of-range array stores still wrote | Fixed | `mem.*` |
+| Q-19 | MEDIUM | NEXT without its FOR looped forever | Fixed (error) | `for.goto_into` |
+| Q-20 | HIGH | GOTO out of an inner FOR broke the outer | Fixed | `for.goto_out_inner*` |
+| Q-21 | LOW | CLEAR inside FOR never ended | Fixed (CLEAR ends loops; NEXT = error 7) | `clear.loop` |
+| Q-22 | LOW | SQR of a negative returned 0 | Fixed (error 15) | `fn.sqr.neg` |
+| Q-23 | LOW | STICK(n) out of range returned a value | Fixed (error 15) | `hw.stick_bad` |
+| Q-25 | LOW | string comparison not usable in AND/OR | Fixed | `str.cmp_and` |
+| Q-27 | HIGH | PRINT of a string-function result showed a stale tail | Fixed | `strrec.stale_tail*` |
+| Q-28 | CRITICAL | 31-character strings corrupted array 0 | Fixed | `strrec.31_*` |
+| Q-29 | HIGH | SPRITE MOVE garbage (package) | Fixed | sprite package checks |
+| Q-30 | HIGH | float arguments of CHR$/LEFT$/RIGHT$/MID$/PAUSE/BORDER were slot indexes | Fixed | Q-30 cases |
+| Q-31 | LOW | MID$ start used its low byte | Fixed (clamped) | `str.mid_*` |
+| Q-32 | CRITICAL | addresses above 32767 saturated (POKE wrote the wrong byte) | Fixed | `lit.addr.*`, `hw.*` |
+| Q-33 | HIGH | package float arguments were slot indexes | Fixed | package cases |
+| D10 | MEDIUM | float display truncated the 4th decimal | Fixed (exact formatter, rounded) | `arith.f.*`, `print.multi_float` |
+| D11 / D11-EXT / D11-DISP | HIGH..LOW | 16-bit overflow wrapped; edge cases; big-float display | Fixed (promotion, exact display) | `arith.*`, `lit.*` |
+| L-A | DECISION | literal rule | Superseded by **L-C** (owner decision 3): 32768..65535 are positive floats, addresses still work | `lit.int.*` |
+| L3 | LOW | string literal > 31 cut silently | Fixed (compile error 70) | `lit.str.32` |
+| L-STR | MEDIUM | no string <> > <= >= | Fixed | `str.cmp_*` |
+| L-SC | LOW | AND/OR did not short-circuit | Fixed (opcodes 72/73) | `log.shortcircuit` |
+| L-NEXT | LOW | bare NEXT rejected | Fixed | `for.bare_next` |
+| N-4 | LOW | scalar beside an array of the same name needed '(' | Fixed | N-4 cases |
+| DEC-PLOT | DECISION | PLOT/POINT coordinates wrapped | Decided: clamped to the screen | `gfx.plot_clamp` |
+| L-INSTR | LOW | INSTR documented, absent | **Decided**: not in V2 (no ROM room); manual entry withdrawn | `str.instr` (expects the compile error) |
+| L-ELIF | LOW | ELSEIF documented, absent | **Decided**: not in V2; `ELSE` + nested `IF` | `if.elseif_kw`, `if.else_if_nested` |
+| DD-1 | DOC | manual: string array elements hold 31 characters | **Doc**: V2's design is 16-byte (15-character) elements by default; manual corrected | `arr.str_default_width` |
+| T-1, T-2 | TEST | component-test images silently truncated / over size | Fixed (strict builds) | standalone runner |
+| T-4 | TEST | test decompiler gaps | Fixed for opcodes 71-73 (string `>`, short-circuit AND/OR); 70 (5-byte float literal) is not decompiled | `relational` |
+
+## Found during the release-candidate work
+
+| Id | Sev | Defect | Status | Commit |
+|---|---|---|---|---|
+| RC-1 | HIGH | float results beyond ~1.7E38 were silently wrong (4294967296^4 printed 2^96; a 41-digit literal printed 9.0000) -- the VM ignored the calculator's overflow flag | Fixed: runtime error 67; literal: compile error 64 | `85d59ee` |
+| RC-2 | HIGH | (introduced by the session work, caught by the gates) a line that did not fit was dropped without PROGRAM FULL | Fixed before release (flag-neutral session reset) | `d404b57` |
+| RC-3 | HIGH | (introduced, caught by the Array Store gate) error 65 at RUN unwound into a reused stack slot | Fixed (call at VM_INIT's level) | `d404b57` |
+| RC-4 | MEDIUM | (introduced, caught by new tests) an immediate `DIM` mismatching a stored array made every later immediate statement fail with 65 | Fixed (`ARR_RUN_CHECK` before the re-carve) | `d404b57` |
+| RC-5 | HIGH | (introduced, caught by the gates) the check-only bind entry never cleared its flag, so binding was skipped after the first check | Fixed (2-byte skip) | `07616e7` |
+| RC-6 | HIGH | (introduced during the space work, caught by the lifecycle test before commit) relocating a fall-through target (`VM_STORE_VAR_LOOP`) stopped every program after its first store | Fixed before commit (left in place) | `07616e7` |
+| RC-7 | MEDIUM | the first SAVE ALL design copied the session into free memory, so any session with segment-2 arrays could never be saved | Fixed: in-place layout | `07616e7` |
+| RC-8 | TEST | `make test` ran stale smoke images (no `smoke-build` dependency) | Fixed | `7d2d59d` |
+
+## Hardware
+
+Nothing in this register has been checked on a physical TS2068 (all evidence is ZEsarUX); see
+`V2_HARDWARE_CHECKLIST.md` (HARDWARE PENDING).

@@ -1,0 +1,153 @@
+diff -ruN a/skills/audit-z80/references/asm-abi.md b/skills/audit-z80/references/asm-abi.md
+--- a/skills/audit-z80/references/asm-abi.md	2026-10-11 17:09:30.864630392 -0400
++++ b/skills/audit-z80/references/asm-abi.md	2026-10-11 17:09:30.867383116 -0400
+@@ -68,3 +68,22 @@
+ - Parameter width or packing
+ - Return-value width
+ - Relative branches or fall-through in the hot spots you inspected
++
++## Contracts that inserted code breaks silently (2068-Leap V2, 2026-10)
++
++Each of these was introduced by a correct-looking change and caught only by a regression suite:
++
++- **Saved-SP unwinding.** If an error path restores SP from a value saved at a routine's entry
++  (`ld sp,(SAVED_SP) : ret`), every routine that can raise must be *called* at the stack depth the
++  save expects. Replacing `call X : ret` by a tail `jp X` leaves the unwind slot to be overwritten
++  (the unwind then "returns" to a pushed data word).
++- **Flag pass-through contracts.** Comments such as "keeps carry" / "flags preserved" on a tail
++  `jp` are part of the contract: an inserted `xor a`, `or a`, `and n` or `cp n` breaks it. Prefer
++  `ld a,0` / `ld (nn),a` sequences or move the new work to a flag-neutral place.
++- **Skip tricks.** `db $FE` (`cp n`) swallows ONE following byte, `db $01`/`$11`/`$21` (`ld rr,nn`)
++  swallow TWO: match the skipped instruction's length and the clobbered register.
++- **Library status outputs.** A library that reports failure through a status cell (e.g. a
++  calculator's error code) must have that cell checked at every call site that can fail; an
++  ignored overflow flag produced silently wrong results.
++- **Relocated code and fall-through.** Before moving a routine, check that the instruction before
++  it is an unconditional transfer.
+diff -ruN a/skills/shrink-z80/references/high-impact.md b/skills/shrink-z80/references/high-impact.md
+--- a/skills/shrink-z80/references/high-impact.md	2026-10-11 17:09:30.863657874 -0400
++++ b/skills/shrink-z80/references/high-impact.md	2026-10-11 17:09:30.866200879 -0400
+@@ -83,3 +83,29 @@
+ 
+ After SAFE categories, use `external-research.md` only for evidence-selected
+ questions. Keep notable rejected ideas; do not emit a fixed folklore checklist.
++
++## Multi-image / banked ROM sets (lessons from 2068-Leap V2, 2026-10)
++
++Measured on a 16K HOME + 8K EXROM pair; each item paid off more than the micro passes:
++
++- **Production-only reachability.** A routine referenced only by legacy or test builds that share a
++  source file is dead in the shipped image. Build the call graph from the *production listings*
++  (entry roots: vectors, cross-bank slot tables, opcode/dispatch tables, package service tables)
++  with **precise fall-through** (a label falls into the next only when its last instruction is not
++  an unconditional transfer) -- `scripts/production_reachability.py`. Exclude by a production
++  define, not by deleting (the other builds keep them).
++- **Cross-bank slot tables.** Fixed-address jump slots between images accumulate dead slots and
++  padding (`ORG`-placed stubs with gaps). Pack the used slots behind computed `EQU`s with an
++  `ASSERT` per slot; grep tests/tools for hard-coded slot addresses first.
++- **Indirection made redundant by full linking.** A jump table that existed so one image need not
++  know the other's addresses is pure cost once the second image is linked against the first's
++  symbols; keep only the version/magic check.
++- **RST tail calls.** If `rst n` = `call X`, a tail `jp X` becomes `rst n : ret` (-1 byte each).
++- **Dispatch return in IY/IX.** VM handlers ending `jp loop` -> `jp (iy)` (-1 byte, faster) when
++  IY is otherwise unused; audit every path that runs foreign code (plug-ins, user machine code)
++  and reload or preserve IY there; document "destroys IY" on the interpreter entry.
++- **Padding reuse.** Small routines can live in RST-slot padding -- **only** if no code falls
++  through into them (check the instruction before each one; a fall-through target that moves
++  silently changes control flow).
++- **jp -> jr to a fixed point.** Each pass shortens code and brings more targets into range; repeat
++  until no candidate is left.
+diff -ruN a/skills/shrink-z80/scripts/production_reachability.py b/skills/shrink-z80/scripts/production_reachability.py
+--- a/skills/shrink-z80/scripts/production_reachability.py	1969-12-31 19:00:00.000000000 -0500
++++ b/skills/shrink-z80/scripts/production_reachability.py	2026-10-11 17:09:46.782538396 -0400
+@@ -0,0 +1,90 @@
++#!/usr/bin/env python3
++"""Production-image reachability over sjasmplus listings (candidate generator, not proof).
++
++  python3 production_reachability.py HOME.lst EXROM.lst [ROOT_PREFIX ...]
++
++Builds a label graph from the listings of the images that ship (references in each global label's
++code, plus precise fall-through: a label falls into the next only if its last instruction is not an
++unconditional transfer), walks it from the roots (addresses < $0100 in the first image, and labels
++starting with the given prefixes), and prints the unreachable global labels with their sizes.
++EQU aliases of labels are followed; purely numeric addresses (a slot address written as a number)
++are not: verify every candidate by hand.
++Found ~170 bytes of legacy-only routines in the 2068-Leap V2 images (2026-10).
++"""
++import re, sys
++IDENT = re.compile(r"(?<![A-Za-z0-9_.$])([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)?)")
++labels = {}   # name -> (image, addr)
++order = {}    # image -> list of (addr, name)
++refs = {}     # name -> set(names)
++lastins = {}  # name -> last instruction text in its region
++def parse(lst, image):
++    cur = None
++    seq = []
++    for raw in open(lst, errors="replace"):
++        line = raw.rstrip("\n")
++        m = re.match(r"\s*\d+\+*\s+([0-9A-F]{4})", line)
++        if not m: continue
++        ap = m.start(1)
++        addr = int(m.group(1), 16)
++        bts = [x for x in line[ap+5:ap+17].split() if re.fullmatch(r"[0-9A-F]{2}", x)]
++        src = line[ap+18:]
++        code = src.split(";")[0]
++        lm = re.match(r"^([A-Za-z_][A-Za-z0-9_]*):?(\s|$)", code) if code and not code[0].isspace() else None
++        if lm and not code.startswith("."):
++            nm = lm.group(1)
++            rest = code[len(lm.group(0)):].strip()
++            up = rest.split()[0].upper() if rest else ""
++            if up in ("EQU", "DEFL", "="):
++                # an alias (X EQU Y): an edge X -> Y, so references through it are followed
++                for r in IDENT.findall(rest[len(up):]):
++                    refs.setdefault(nm, set()).add(r.split(".")[0])
++                continue
++            if up in ("MACRO", "ENDM"): continue
++            if nm.upper() in ("IFDEF","IFNDEF","ENDIF","ELSE","INCLUDE","DEFINE","ORG","ASSERT","DS","DB","DW","MACRO","ENDM","DEVICE","SAVEBIN","IF"): 
++                lm = None
++            else:
++                cur = nm
++                labels[nm] = (image, addr)
++                seq.append((addr, nm))
++                code = rest
++        if cur and bts and code.strip():
++            lastins[cur] = code.strip().lower()
++        if cur and bts or (cur and code.strip()):
++            for r in IDENT.findall(code):
++                g = r.split(".")[0]
++                refs.setdefault(cur, set()).add(g)
++    order[image] = seq
++parse(sys.argv[1], "home")
++parse(sys.argv[2], "exrom")
++# fall-through: label -> next label in address order (same image)
++for im, seq in order.items():
++    seq.sort()
++    for (a, n), (b, n2) in zip(seq, seq[1:]):
++        li = lastins.get(n, "")
++        term = re.match(r"^(ret|reti|retn|jp\s+\(|jp\s+[a-z_.$0-9]+$|jr\s+[a-z_.$0-9]+$|jr\s+\$$|halt)", li) and not re.match(r"^(jp|jr)\s+(z|nz|c|nc|po|pe|p|m)\s*,", li) and not re.match(r"^ret\s+(z|nz|c|nc|po|pe|p|m)$", li)
++        if not term:
++            refs.setdefault(n, set()).add(n2)
++roots = set()
++for n, (im, a) in labels.items():
++    if im == "home" and a < 0x0100: roots.add(n)
++    if n.startswith(tuple(sys.argv[3:]) or ("V2_EXROM_", "PKG_SVC", "V2_COLD_START", "V2_KTAB", "V2_RST", "KTAB_", "VM_OP_TABLE")): roots.add(n)
++# package service table entries are in the HOME listing region after KTAB: they reference targets via jp -> caught if the table label is a root
++seen = set(); stack = list(roots)
++while stack:
++    n = stack.pop()
++    if n in seen: continue
++    seen.add(n)
++    for r in refs.get(n, ()):
++        if r in labels and r not in seen: stack.append(r)
++dead = []
++for im, seq in order.items():
++    seq.sort()
++    end = 0x4000 if im == "home" else 0xE000
++    for i, (a, n) in enumerate(seq):
++        nxt = seq[i+1][0] if i+1 < len(seq) else a
++        if n not in seen: dead.append((im, a, n, nxt - a))
++tot = {}
++for im, a, n, sz in sorted(dead):
++    tot[im] = tot.get(im, 0) + sz
++    print("%-5s %04X %-40s %d" % (im, a, n, sz))
++print(tot)
