@@ -903,3 +903,92 @@ for _cid, _q in (("tag.chr_float", "Q-30"), ("tag.pause_frames", "Q-30"), ("tag.
     for cfg in _c.only:
         _c.known.setdefault(cfg, _q)
 [c for c in CASES if c.cid == "ns.return"][0].known.setdefault("baseline", "N-2")
+
+# =====================================================================================
+# 22. Floating-point FOR (owner decision 1, 2026-10-11). Documented behaviour to implement:
+# FOR stores the start like an assignment; NEXT adds the step with the VM's own ADD rules (INT + INT
+# stays INT, promoting on overflow; any FLOAT gives FLOAT) and compares with the limit like the
+# relational operators; the loop ends when the variable is past the limit in the step's direction;
+# STEP 0 counts as ascending (manual: an intentional infinite loop). Expected values are exact.
+# These cases are marked Q-08 on every configuration where they fail (decision 1 not implemented).
+# =====================================================================================
+def _cnt(a, b, s):
+    a, b, s = Fr(a), Fr(b), Fr(s)
+    n = 0
+    v = a
+    while (v <= b) if s >= 0 else (v >= b):
+        n += 1
+        v += s
+    return n, v
+
+
+for _a, _b, _s in (("0", "1", "0.1"), ("1", "0", "-0.1"), ("0", "0.3", "0.1"), ("0", "2", "0.2"), ("0", "10", "0.25"),
+                   ("-1", "1", "0.1"), ("0", "6.3", "0.7"), ("2", "0", "-0.2"), ("0", "5", "0.1")):
+    _n, _ = _cnt(_a, _b, _s)
+    T("ffor.count.%s_%s_%s" % (_a, _b, _s), "stmt.FOR.float", ["n = 0", "FOR i = %s TO %s STEP %s" % (_a, _b, _s), "n = n + 1", "NEXT i", "PRINT n"],
+      Lines(I(_n)), note="iteration count = the exact mathematical count (accumulated step)")
+T("ffor.count.long", "stmt.FOR.float", ["n = 0", "FOR i = 0 TO 10 STEP 0.01", "n = n + 1", "NEXT i", "PRINT n"], Lines(I(1001)), maxi=400_000_000,
+  note="1000 accumulated additions of 0.01")
+T("ffor.values.down_quarter", "stmt.FOR.float", ["FOR x = 1 TO 0 STEP -0.25", "PRINT x", "NEXT x"],
+  Lines(I(1), F(Fr(3, 4)), F(Fr(1, 2)), F(Fr(1, 4)), F(0)), note="INT start; FLOAT values after the first NEXT")
+T("ffor.values.int_limit_float", "stmt.FOR.float", ["FOR i = 1 TO 2.5", "PRINT i", "NEXT i"], Lines(I(1), I(2)),
+  note="INT start and step stay INT; only the limit is FLOAT")
+T("ffor.values.float_start_int_step", "stmt.FOR.float", ["FOR i = 0.5 TO 3", "PRINT i", "NEXT i"], Lines(F(Fr(1, 2)), F(Fr(3, 2)), F(Fr(5, 2))))
+T("ffor.values.down_float_step", "stmt.FOR.float", ["FOR i = 10 TO 1 STEP -2.5", "PRINT i", "NEXT i"], Lines(I(10), F(Fr(15, 2)), F(5), F(Fr(5, 2))))
+T("ffor.values.promote", "stmt.FOR.float", ["m = 32767 + 3", "FOR i = 32760 TO m STEP 4", "PRINT i", "NEXT i"],
+  Lines(I(32760), I(32764), F(32768)), note="the INT variable promotes past 32767 (D11) and keeps going to a FLOAT limit")
+T("ffor.values.big_steps", "stmt.FOR.float", ["m = 25000 * 4", "FOR i = 32766 TO m STEP 16384", "PRINT i", "NEXT i"],
+  Lines(I(32766), F(49150), F(65534), F(81918), F(98302)),
+  note="oracle correction: the first version used 50000 * 2, but under L-A the literal 50000 is the pattern -15536 (zero-trip is correct)")
+T("ffor.after.float", "stmt.FOR.float", ["FOR i = 0.5 TO 2", "NEXT i", "PRINT i"], Lines(F(Fr(5, 2))), note="after the loop: one step past the limit")
+T("ffor.after.int", "stmt.FOR.float", ["FOR i = 1 TO 3", "NEXT i", "PRINT i"], Lines(I(4)))
+T("ffor.nested", "stmt.FOR.float", ["FOR i = 1 TO 2", "FOR j = 0.5 TO 1 STEP 0.5", "PRINT i * 10 + j", "NEXT j", "NEXT i"],
+  Lines(F(Fr(21, 2)), F(11), F(Fr(41, 2)), F(21)))
+T("ffor.exit", "stmt.FOR.float", ["FOR i = 0.5 TO 9", "IF i > 2 THEN", "EXIT FOR", "ENDIF", "NEXT i", "PRINT i"], Lines(F(Fr(5, 2))))
+T("ffor.goto_out", "stmt.FOR.float", ["FOR i = 0.5 TO 9", "IF i > 2 THEN", "GOTO done", "ENDIF", "NEXT i", "done:", "FOR k = 1 TO 2", "PRINT k", "NEXT k"],
+  Lines(I(1), I(2)), note="an abandoned float frame must not disturb a later loop")
+T("ffor.body_assign", "stmt.FOR.float", ["FOR i = 1 TO 10", "i = i + 2.5", "PRINT i", "NEXT i"], Lines(F(Fr(7, 2)), F(7), F(Fr(21, 2))),
+  note="the body makes an INT loop variable FLOAT; NEXT continues with the FLOAT value")
+T("ffor.reuse_var", "stmt.FOR.float", ["x = 1.5", "FOR x = 1 TO 2", "PRINT x", "NEXT x"], Lines(I(1), I(2)), note="the start assignment retypes the variable")
+T("ffor.zero_trip", "stmt.FOR.float", ["FOR i = 2.5 TO 1", "PRINT i", "NEXT i", 'PRINT "z"'], Out("z"))
+T("ffor.zero_trip_down", "stmt.FOR.float", ["FOR i = 0.5 TO 1 STEP -0.5", "PRINT i", "NEXT i", 'PRINT "z"'], Out("z"))
+T("ffor.step0.int", "stmt.FOR.float", ["n = 0", "FOR i = 1 TO 2 STEP 0", "n = n + 1", "IF n > 5 THEN", "EXIT FOR", "ENDIF", "NEXT i", "PRINT n"], Lines(I(6)),
+  note="manual: STEP 0 never advances (BREAK or EXIT FOR ends it)")
+T("ffor.step0.float", "stmt.FOR.float", ["n = 0", "FOR i = 1.5 TO 2 STEP 0.0", "n = n + 1", "IF n > 5 THEN", "EXIT FOR", "ENDIF", "NEXT i", "PRINT n"], Lines(I(6)))
+T("ffor.step0.past", "stmt.FOR.float", ["n = 0", "FOR i = 3 TO 2 STEP 0", "n = n + 1", "NEXT i", "PRINT n"], Lines(I(0)), note="STEP 0 counts as ascending")
+T("ffor.expr_bounds", "stmt.FOR.float", ["a = 1 / 4", "b = 3 / 4", "s = 1 / 4", "FOR i = a TO b STEP s", "PRINT i", "NEXT i"],
+  Lines(F(Fr(1, 4)), F(Fr(1, 2)), F(Fr(3, 4))))
+T("ffor.in_proc", "stmt.FOR.float", ["CALL p(1)", "END", "PROC p(a):", "FOR i = a TO a + 1 STEP 0.5", "PRINT i", "NEXT i", "ENDP"],
+  Lines(I(1), F(Fr(3, 2)), F(2)))
+for _c in CASES:
+    if _c.cid.startswith("ffor.") and _c.cid not in ("ffor.after.int", "ffor.goto_out", "ffor.reuse_var", "ffor.step0.int"):
+        for cfg in CFGS:
+            _c.known.setdefault(cfg, "Q-07" if _c.cid == "ffor.step0.past" else "Q-08")
+
+# =====================================================================================
+# 23. Found during the owner-decision review (2026-10-11)
+# Q-32: D11 promotion makes address arithmetic above 32767 a FLOAT, and POKE/PEEK/USR/IN/OUT saturated
+#       it to 32767 (Essential/Enhanced; the baseline's wrap happened to give the right address).
+#       Byte 33370 ($825A, PROG_AREA_START in every build) is the first line's length + 1.
+# Q-33: package statement arguments ignore the FLOAT tag (OP_CALL_EXT pops raw): the slot index arrives.
+# =====================================================================================
+T("addr.promoted_peek", "fn.PEEK", ["a = 30000", "b = a + 3370", "PRINT PEEK(b)"], Num(10, "int"),
+  note="the address 33370 is a FLOAT after D11 promotion; it must not become 32767")
+T("addr.promoted_poke", "stmt.POKE", ["a = 30000", "POKE a + 3370, 77", "PRINT PEEK(33370)"], Num(77, "int"),
+  note="POKE to a promoted address wrote to 32767")
+T("addr.usr_unsigned", "fn.USR", ["POKE 61440,33", "POKE 61441,64", "POKE 61442,156", "POKE 61443,201", "PRINT USR(61440)"], Num(40000),
+  known=LA, note="ld hl,40000 / ret (V2's USR returns HL): mathematically 40000 (L-A returns the 16-bit pattern -25536). "
+                 "Oracle correction: the first version loaded BC")
+T("pkg.shapes.float_radius", "pkg.SHAPES", ["r = 33 / 2", "CIRCLE 128,96,r", "p = POINT(144,96)", "CLS", "PRINT p"], Num(1, "int"),
+  packages=("shapes",), note="radius 16.5 truncates to 16: the circle passes through (144,96)")
+for _cid in ("addr.promoted_peek", "addr.promoted_poke"):
+    _c = [c for c in CASES if c.cid == _cid][0]
+    for cfg in ("essential", "enhanced"):
+        _c.known.setdefault(cfg, "Q-32")
+[c for c in CASES if c.cid == "pkg.shapes.float_radius"][0].known.update({c: "Q-33" for c in CFGS})
+for _v in (32769, 40000):
+    T("lit.int.neg%d" % _v, "literal.integer.large", ["PRINT -%d" % _v], Num(-_v), known=LA,
+      decision="literal rule L-A/L-C",
+      note="L-A: 0 - <the 16-bit pattern> prints a positive number (-40000 -> 25536); L-C: the value")
+T("lit.int.pattern_arith", "literal.integer.large", ["x = 40000", "PRINT x + 1"], Num(40001), known=LA,
+  decision="literal rule L-A/L-C", note="L-A: pattern arithmetic, -25535")

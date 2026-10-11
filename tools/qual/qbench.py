@@ -7,6 +7,10 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from qharness import Machine
 PROGS = {
     "int_loop": ["s = 0", "FOR i = 1 TO 2000", "s = s + i * 3 - 1", "NEXT i"],
+    "for_empty": ["FOR i = 1 TO 3000", "NEXT i"],
+    "for_nested": ["FOR i = 1 TO 60", "FOR j = 1 TO 50", "NEXT j", "NEXT i"],
+    "for_float_step": ["FOR i = 0 TO 1500 STEP 0.5", "NEXT i"],
+    "for_int_3001": ["FOR i = 0 TO 3000", "NEXT i"],
     "float_loop": ["x = 0", "FOR i = 1 TO 200", "x = x + 0.5 * 1.5", "NEXT i"],
     "strings": ['a$ = ""', "FOR i = 1 TO 200", 'a$ = LEFT$(a$ + "x", 20)', "NEXT i"],
     "builtins": ["s = 0", "FOR i = 1 TO 500", "s = s + ABS(-i) + MOD(i,7) + SGN(i)", "NEXT i"],

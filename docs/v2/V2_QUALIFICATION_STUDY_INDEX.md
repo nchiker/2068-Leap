@@ -14,6 +14,7 @@ Emulator evidence only (headless ZEsarUX through `tools/qual/`); nothing is hard
 | 5 | Test tools | `tools/qual/` on `study/qualification-a` (harness, 619-case corpus, runners, merge, coverage, gate and study-tool battery scripts) |
 | 5 | Measured prototype branches | below |
 | 6 | Next step | below |
+| 7 | **Owner-decision review (2026-10-11)**: float `FOR`, L-C, program + variables, ROM reserve; Q-32/Q-33; final measured budgets | `docs/v2/V2_OWNER_DECISIONS_REVIEW.md`, `docs/v2/V2_DECISIONS_CASES.csv` (on `study/decisions-review`) |
 
 ## Study branches (all local, worktrees under `~/2068-Leap-study/`)
 

@@ -1,5 +1,11 @@
 # 2068-Leap V2 — Independent Z80 audit and shrink review (qualification study, Phase B)
 
+> **Addendum (2026-10-11, owner-decision review — `docs/v2/V2_OWNER_DECISIONS_REVIEW.md`).** Two more defects were found after this report.
+> **Q-32** (CRITICAL, Essential/Enhanced): an address computed above 32767 is saturated to 32767 by `POKE/PEEK/USR/IN/OUT`. It was **introduced by
+> the overnight D11 promotion prototype**, so this report's statement that no defect came from the prototypes no longer holds.
+> **Q-33** (HIGH, all configurations): a FLOAT package-statement argument arrives as its slot index. Both are fixed on `study/proto-lc`.
+> The report as delivered is unchanged on `study/qualification-a`.
+
 **Status:** complete for the scope in §1; nothing here is integrated. Branches: `study/qualification-a` (this report, tools),
 `study/qualification-costs` (measured correctness fixes), `study/qualification-shrink` (measured shrink prototype),
 `study/qualification-final` (fixes + shrink together), `study/qualification-b` (test infrastructure). `~/2068-Leap` / `v2-development` (`7ae0599`) untouched; nothing pushed.
