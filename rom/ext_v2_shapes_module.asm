@@ -275,8 +275,11 @@ SHAPES_GFX_FILL_PUSH:
     ld   de, GFX_FILL_STACK_END
     or   a
     sbc  hl, de
-    ret  nc
-
+    jr   c, .room
+    ld   a, 1                    ; STUDY (D7): a dropped seed is recorded; SHAPES_RESCAN recovers it
+    ld   (SHAPES_OVF), a
+    ret
+.room:
     ld   hl, (GFX_FILL_SP)
     ld   (hl), b
     inc  hl
@@ -408,6 +411,10 @@ SHAPES_FILL_ROW:
     jr   .x
 
 SHAPES_GFX_FILL:
+    xor  a
+    ld   (SHAPES_OVF), a
+    ld   (SHAPES_DIRTY), a
+    ld   (SHAPES_SCANNING), a
     ld   hl, GFX_FILL_STACK
     ld   (GFX_FILL_SP), hl
 
@@ -432,7 +439,7 @@ SHAPES_GFX_FILL:
 
 .loop:
     call SHAPES_GFX_FILL_POP
-    ret  c
+    jr   c, .dry
     ld   a, c
     ld   (SHAPES_Y), a
     call SHAPES_FILLABLE
@@ -495,7 +502,133 @@ SHAPES_GFX_FILL:
     call SHAPES_FILL_ROW
     jr   .loop
 
+; STUDY (D7): the seed stack ran dry.  A push dropped during a drain (SHAPES_OVF) means an unfilled region
+; may touch the painted area, so SWEEP: walk the visited bitmap in row-major order and seed every fillable
+; 4-neighbour of every visited pixel.  The sweep is resumable (cursor SHAPES_RX/RY): when a seed does not fit
+; it stops at that pixel, the stack is drained, and the sweep resumes there.  A drop during a drain marks the
+; sweep dirty -> one more sweep from the top.  Done when a whole sweep seeds nothing and nothing was dropped.
+.dry:
+    ld   a, (SHAPES_OVF)
+    or   a
+    jr   z, .dry_clean
+    xor  a
+    ld   (SHAPES_OVF), a
+    inc  a
+    ld   (SHAPES_DIRTY), a
+.dry_clean:
+    ld   a, (SHAPES_SCANNING)
+    or   a
+    jr   nz, .sweep
+    ld   a, (SHAPES_DIRTY)
+    or   a
+    ret  z
+    xor  a
+    ld   (SHAPES_DIRTY), a
+    ld   (SHAPES_RX), a
+    ld   (SHAPES_RY), a
+    inc  a
+    ld   (SHAPES_SCANNING), a
+.sweep:
+    xor  a
+    ld   (SHAPES_PUSHED), a
+    ld   a, (SHAPES_RX)
+    ld   b, a
+    ld   a, (SHAPES_RY)
+    ld   c, a
+.rs_px:
+    push bc
+    call SHAPES_VISITED_ADDR
+    ld   a, (hl)
+    pop  bc
+    or   a
+    jr   nz, .rs_byte
+    ld   a, b                    ; empty byte: skip to the next one
+    or   7
+    inc  a
+    ld   b, a
+    jr   nz, .rs_px
+    jr   .rs_nextrow
+.rs_byte:
+    push bc
+    call SHAPES_VISITED_ADDR     ; E = mask of this pixel
+    ld   a, (hl)
+    pop  bc
+    and  e
+    jr   z, .rs_adv
+    call SHAPES_NEIGHBOURS
+    ld   a, (SHAPES_OVF)
+    or   a
+    jr   z, .rs_adv
+    xor  a                       ; the stack is full: resume at this pixel after the drain
+    ld   (SHAPES_OVF), a
+    ld   a, b
+    ld   (SHAPES_RX), a
+    ld   a, c
+    ld   (SHAPES_RY), a
+    jp   .loop
+.rs_adv:
+    inc  b
+    jr   nz, .rs_px
+.rs_nextrow:
+    inc  c
+    ld   a, c
+    cp   192
+    jr   c, .rs_px_row
+    xor  a                       ; sweep complete
+    ld   (SHAPES_SCANNING), a
+    ld   a, (SHAPES_PUSHED)
+    or   a
+    jp   nz, .loop               ; drain what this last stretch seeded
+    jp   .dry_clean              ; dirty? -> a new sweep, else done
+.rs_px_row:
+    ld   b, 0
+    jr   .rs_px
+
+; SHAPES_NEIGHBOURS -- B,C = a visited pixel; seed each fillable 4-neighbour. Preserves BC.
+SHAPES_NEIGHBOURS:
+    ld   a, b
+    or   a
+    jr   z, .nl
+    dec  b
+    call SHAPES_SEED
+    inc  b
+.nl:
+    ld   a, b
+    inc  a
+    jr   z, .nr
+    inc  b
+    call SHAPES_SEED
+    dec  b
+.nr:
+    ld   a, c
+    or   a
+    jr   z, .nu
+    dec  c
+    call SHAPES_SEED
+    inc  c
+.nu:
+    ld   a, c
+    cp   191
+    ret  nc
+    inc  c
+    call SHAPES_SEED
+    dec  c
+    ret
+
+SHAPES_SEED:
+    call SHAPES_FILLABLE
+    ret  c
+    ld   a, 1
+    ld   (SHAPES_PUSHED), a
+    jp   SHAPES_GFX_FILL_PUSH
+
 ; span-fill scratch (the package image lives in RAM)
+SHAPES_OVF:    DB 0
+SHAPES_PUSHED: DB 0
+SHAPES_DIRTY:  DB 0
+SHAPES_SCANNING: DB 0
+SHAPES_RX:     DB 0
+SHAPES_RY:     DB 0
 SHAPES_XL:   DB 0
 SHAPES_XR:   DB 0
 SHAPES_Y:    DB 0
