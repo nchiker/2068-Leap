@@ -1543,6 +1543,16 @@ KEYWORD_TABLE:
 ; ===========================================================================
 ; BYTECODE EMITTER
 ; ===========================================================================
+; RC shrink: CHK_ERR -- return from the CALLER when a compile error is pending (A = the code, NZ),
+; exactly as the inline `ld a,(COMPILE_ERROR_CODE) / or a / ret nz` it replaces (15 sites).
+CHK_ERR:
+        ld a,(COMPILE_ERROR_CODE)
+        or a
+        ret z
+        inc sp
+        inc sp                  ; drop our own return address (A and the flags survive)
+        ret
+
 EMIT_BYTE:
         IFDEF V2_PRODUCTION
         ; Stop at the first byte beyond the reserved bytecode region.
@@ -1850,9 +1860,7 @@ COMPILE_FACTOR:
         xor a
         rst $20                  ; push literal 0
         call COMPILE_FACTOR      ; the operand -X applies to
-        ld a,(COMPILE_ERROR_CODE)
-        or a
-        ret nz
+        call CHK_ERR           ; RC shrink: return if a compile error is pending
         ld a,7        ; QUAL shrink: inlined EMIT_OP_SUB (tail)
         jp EMIT_BYTE
 .paren:
@@ -2053,9 +2061,7 @@ COMPILE_FACTOR:
         ld a,d
         ld (CFN_INDEX),a
 .fn_arg_done:
-        ld a,(COMPILE_ERROR_CODE)
-        or a
-        ret nz
+        call CHK_ERR           ; RC shrink: return if a compile error is pending
         ld a,(CFN_REMAINING)
         dec a
         ld (CFN_REMAINING),a
@@ -2123,9 +2129,7 @@ COMPILE_FACTOR:
         ; STASH_IDENT_AND_PEEK overwrites that same fixed buffer. Parked/
         ; restored as a whole-buffer block copy (see below).
         call COMPILE_EXPR_KEEPNAME ; argument -> VM operand stack (stashed name preserved)
-        ld a,(COMPILE_ERROR_CODE)
-        or a
-        ret nz
+        call CHK_ERR           ; RC shrink: return if a compile error is pending
         ld a,(TOK_TYPE)
         cp TOK_RPAREN
         jr z,.udf_have_rparen
@@ -2193,9 +2197,7 @@ COMPILE_ARR_READ_COMMON:
         call COMPILE_EXPR
         pop de
         pop bc
-        ld a,(COMPILE_ERROR_CODE)
-        or a
-        ret nz
+        call CHK_ERR           ; RC shrink: return if a compile error is pending
         ld a,(TOK_TYPE)
         cp TOK_RPAREN
         jr z,.have_rparen
@@ -3457,9 +3459,7 @@ COMPILE_2ARG_STMT:
         call COMPILE_EXPR       ; first argument
         call COMPILE_EXPECT_COMMA_EXPR  ; second argument
         pop bc                  ; B = the opcode
-        ld a,(COMPILE_ERROR_CODE)
-        or a
-        ret nz
+        call CHK_ERR           ; RC shrink: return if a compile error is pending
         ld a,b
         jp EMIT_BYTE
 
@@ -3585,9 +3585,7 @@ COMPILE_PRINT:
         cp TOK_STR_IDENT
         jr z,.str_arg
         call COMPILE_EXPR
-        ld a,(COMPILE_ERROR_CODE)
-        or a
-        ret nz
+        call CHK_ERR           ; RC shrink: return if a compile error is pending
         ld a,35        ; QUAL shrink: inlined EMIT_OP_PRINT_NUM
         rst $20
         jr .sep
@@ -3711,9 +3709,7 @@ COMPILE_LPRINT_RESOLVE_SLOT:
 ; ext's existing generic decompile path needs no LPRINT-specific code
 ; at all.
 COMPILE_LPRINT_EMIT:
-        ld a,(COMPILE_ERROR_CODE)
-        or a
-        ret nz
+        call CHK_ERR           ; RC shrink: return if a compile error is pending
         jp COMPILE_EXT_CALL.emit  ; CEXT_SLOT/CEXT_GEN/CEXT_ARGCOUNT
                                      ; already set (COMPILE_LPRINT_
                                      ; RESOLVE_SLOT above) -- reuses the
@@ -4441,9 +4437,7 @@ COMPILE_STATEMENT_LIST:
         ld a,(STMT_IDENT_NAME_LEN)
         ld b,a
         call LABEL_DEFINE
-        ld a,(COMPILE_ERROR_CODE)
-        or a
-        ret nz
+        call CHK_ERR           ; RC shrink: return if a compile error is pending
         rst $08                    ; consume the ':', fetch the next
                                     ; statement's first token
         jp .loop
@@ -4468,9 +4462,7 @@ COMPILE_STATEMENT_LIST:
 .def_fn:
         call COMPILE_DEF_FN
 .after_stmt:
-        ld a,(COMPILE_ERROR_CODE)
-        or a
-        ret nz
+        call CHK_ERR           ; RC shrink: return if a compile error is pending
         ld a,(TOK_TYPE)
         cp TOK_COLON
         jr nz,.not_colon
@@ -4513,9 +4505,7 @@ COMPILE_STATEMENT_LIST:
 COMPILE_PROGRAM:
         rst $08
         call COMPILE_STATEMENT_LIST
-        ld a,(COMPILE_ERROR_CODE)
-        or a
-        ret nz
+        call CHK_ERR           ; RC shrink: return if a compile error is pending
         ; R10.9 2D (defect D3): the list may only stop at end of source. A stray
         ; ENDP / ELSE / ENDIF closes nothing, and a FOR frame still open means
         ; its NEXT never came.
@@ -4619,9 +4609,7 @@ COMPILE_PROC:
         ld a,(STMT_IDENT_NAME_LEN)
         ld b,a
         call LABEL_DEFINE
-        ld a,(COMPILE_ERROR_CODE)
-        or a
-        ret nz
+        call CHK_ERR           ; RC shrink: return if a compile error is pending
         ; post-R9 PROC/DEF-FN recursion-safety correction (docs/v2/
         ; V2_SEMANTIC_CAPABILITY_AUDIT.md S11): OP_PARAM_BIND replaces
         ; the plain OP_STORE_VAR that used to bind the parameter here --
@@ -4642,9 +4630,7 @@ COMPILE_PROC:
         ld (PROC_PARAM_INDEX_TMP),a
         pop hl
         ld (PROC_SKIP_PATCH_TMP),hl
-        ld a,(COMPILE_ERROR_CODE)
-        or a
-        ret nz
+        call CHK_ERR           ; RC shrink: return if a compile error is pending
         ld a,(TOK_TYPE)
         cp TOK_KW_ENDP
         jr z,.have_endp
@@ -4806,9 +4792,7 @@ COMPILE_DEF_FN:
         ld a,(STMT_IDENT_NAME_LEN)
         ld b,a
         call LABEL_DEFINE
-        ld a,(COMPILE_ERROR_CODE)
-        or a
-        ret nz
+        call CHK_ERR           ; RC shrink: return if a compile error is pending
         ld a,56        ; QUAL shrink: inlined EMIT_OP_PARAM_BIND
         rst $20
         ld a,(PROC_PARAM_INDEX_TMP)
@@ -4818,9 +4802,7 @@ COMPILE_DEF_FN:
         call COMPILE_EXPR       ; body -> result left on the VM operand
                                   ; stack, on purpose (RET_DEFFN pops
                                   ; nothing else)
-        ld a,(COMPILE_ERROR_CODE)
-        or a
-        ret nz
+        call CHK_ERR           ; RC shrink: return if a compile error is pending
         ld a,57        ; QUAL shrink: inlined EMIT_OP_PARAM_UNBIND
         rst $20
         ld a,(PROC_PARAM_INDEX_TMP)
@@ -4902,9 +4884,7 @@ COMPILE_EXT_CALL:
 .arg_numeric:
         call COMPILE_EXPR
 .arg_checked:
-        ld a,(COMPILE_ERROR_CODE)
-        or a
-        ret nz
+        call CHK_ERR           ; RC shrink: return if a compile error is pending
         ld a,(CEXT_REMAINING)
         dec a
         ld (CEXT_REMAINING),a

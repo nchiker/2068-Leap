@@ -676,7 +676,6 @@ VM_INIT:
         xor a
         ld (VM_ERROR_CODE),a
         ld (VM_HALTED),a
-        ld (VM_TOS_TAG),a
         ld (VM_OUTPUT_ROW),a    ; R8.5 -- PRINT/LPRINT's own output cursor;
         ld (VM_OUTPUT_COL),a
         ld (ARR2_SWAPPED),a      ; R10.7 P5.4: segment 2 starts empty
@@ -1008,6 +1007,8 @@ VM_PUSH_STR_RESULT:
 ; ---------------------------------------------------------------------------
 ; Operand stack, WITH real bounds checking.
 ; ---------------------------------------------------------------------------
+VM_PUSH_INT:                   ; RC shrink: push HL as an INT
+        xor a                   ; TAG_INT
 VM_PUSH:                       ; input: HL = value, A = tag
         ld (VM_PUSH_VAL_TMP),hl
         ld (VM_PUSH_TAG_TMP),a
@@ -1029,7 +1030,6 @@ VM_PUSH:                       ; input: HL = value, A = tag
         inc hl
         ld a,(VM_PUSH_TAG_TMP)
         ld (hl),a
-        ld (VM_TOS_TAG),a
         ret
 
 ; PUSH_INT_CONTINUE -- shared opcode-handler tail: push HL as a plain
@@ -3290,8 +3290,7 @@ NUM_PUSH_CALC:
         db $31,$38               ; duplicate
         call CALC_FP_TO_INT      ; HL; carry = not an INT
         jp c,VM_FLOAT_STORE_RESULT
-        xor a
-        jp VM_PUSH
+        jp VM_PUSH_INT          ; RC shrink: TAG_INT + VM_PUSH
 
 ; OP_PUSH_FLOAT5 (opcode 70) -- RC: a literal as its 5-byte calculator value (operand: 5 bytes).
 OP_PUSH_FLOAT5:
@@ -4115,8 +4114,7 @@ BUILTIN_FN_ABS:
         ld h,a
         jp m,VM_PUSH_U16         ; QUAL (D11-EXT): ABS(-32768) = 32768, a FLOAT
 .int_push:
-        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
-        jp VM_PUSH
+        jp VM_PUSH_INT          ; RC shrink: TAG_INT + VM_PUSH
 .float:
         ld (BFN_ABS_IDX_TMP),hl
         ld a,l
@@ -4231,8 +4229,7 @@ BUILTIN_FN_DIV:
         call VM_DIV16_CHECKED
         jp c,VM_PUSH_U16        ; QUAL (D11-EXT): DIV(-32768,-1) = 32768 (HL is still -32768 = $8000)
 BFN_PUSH_INT_RESULT:
-        xor a                    ; TAG_INT
-        jp VM_PUSH
+        jp VM_PUSH_INT          ; RC shrink: TAG_INT + VM_PUSH
 
 ; QUAL (Q-10): NC = both INT: HL = dividend, DE = divisor (error if 0). C = a FLOAT is involved: the
 ; operands are in VM_FLOAT_A/B_* and CALC_STACK[0] = a/b (error if b = 0).
@@ -4320,8 +4317,7 @@ FP_TRUNC:
 BUILTIN_FN_RND:
         rst $18                 ; HL = value (FLOAT truncated)
         call MATH_RND16
-        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
-        jp VM_PUSH
+        jp VM_PUSH_INT          ; RC shrink: TAG_INT + VM_PUSH
 
 ; POINT(x,y) -- confirmed via basic.asm's own .call_point: a thin
 ; adapter onto GFX_READ_PIXEL's own B=x/C=y -> A=0/1 contract (not the
@@ -4341,8 +4337,7 @@ BUILTIN_FN_POINT:
         call GFX_READ_PIXEL     ; A = 0 or 1
         ld l,a
         ld h,0
-        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
-        jp VM_PUSH
+        jp VM_PUSH_INT          ; RC shrink: TAG_INT + VM_PUSH
 
 ; ATTR(row,col) -- confirmed via basic.asm's own .call_attr: reads the
 ; normal 32x24 attribute grid via GFX_CELL_ATTR_ADDR. Invalid
@@ -4365,12 +4360,10 @@ BUILTIN_FN_ATTR:
         ld a,(hl)
         ld l,a
         ld h,0
-        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
-        jp VM_PUSH
+        jp VM_PUSH_INT          ; RC shrink: TAG_INT + VM_PUSH
 .attr_zero:
         ld hl,0
-        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
-        jp VM_PUSH
+        jp VM_PUSH_INT          ; RC shrink: TAG_INT + VM_PUSH
 
 ; INT(x) -- under V2's hybrid INT/FLOAT numeric model this is no longer
 ; V1's true no-op (V1 was pure-integer, so every value already was its
@@ -4395,8 +4388,7 @@ BUILTIN_FN_PEEK:
         ld a,(hl)
         ld l,a
         ld h,0
-        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
-        jp VM_PUSH
+        jp VM_PUSH_INT          ; RC shrink: TAG_INT + VM_PUSH
 
 ; USR(addr) -- confirmed via basic.asm's own .call_usr/BASIC_CALL_USR:
 ; tail-jumps into the caller-supplied machine code address via `jp
@@ -4412,8 +4404,7 @@ BUILTIN_FN_USR:
         call VM_CALL_USR_TRAMPOLINE
         bit 7,h
         jp nz,VM_PUSH_U16        ; QUAL (L-C): BC is unsigned, 0..65535
-        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
-        jp VM_PUSH
+        jp VM_PUSH_INT          ; RC shrink: TAG_INT + VM_PUSH
 
 ; STUDY: IN(port) -- the FULL 16-bit port address goes to BC (`in a,(c)` drives A15-A8 from B), so
 ; IN(65278) reads keyboard half-row 0 ($FEFE) and IN(63486) half-row 1 ($F7FE), unlike a low-byte-only IN.
@@ -4424,8 +4415,7 @@ BUILTIN_FN_IN:
         in a,(c)
         ld l,a
         ld h,0
-        xor a                    ; TAG_INT
-        jp VM_PUSH
+        jp VM_PUSH_INT          ; RC shrink: TAG_INT + VM_PUSH
 
 ; STUDY: STICK(n) -- Timex joystick through AY register 14 (I/O port A), the removed V1 STICK_READ
 ; algorithm: stick 1 = low nibble (direction bits, active high), stick 2 = one bit (hardware asymmetry).
@@ -4457,8 +4447,7 @@ BUILTIN_FN_STICK:
 .done:
         ld l,a
         ld h,0
-        xor a                    ; TAG_INT
-        jp VM_PUSH
+        jp VM_PUSH_INT          ; RC shrink: TAG_INT + VM_PUSH
 
 ; STUDY: OUT port,value -- pops value then port (compiler pushed port,value, like POKE).
 OP_OUT:
@@ -4494,8 +4483,7 @@ BUILTIN_FN_LEN:
         ld a,(hl)
         ld l,a
         ld h,0
-        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
-        jp VM_PUSH
+        jp VM_PUSH_INT          ; RC shrink: TAG_INT + VM_PUSH
 
 ; CODE(a$) -- the ASCII code of the first character, or 0 for an empty
 ; string (V1's own real .str_arg_code behavior, matched exactly).
@@ -4510,12 +4498,10 @@ BUILTIN_FN_CODE:
         ld a,(hl)               ; first content byte
         ld l,a
         ld h,0
-        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
-        jp VM_PUSH
+        jp VM_PUSH_INT          ; RC shrink: TAG_INT + VM_PUSH
 .code_empty:
         ld hl,0
-        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
-        jp VM_PUSH
+        jp VM_PUSH_INT          ; RC shrink: TAG_INT + VM_PUSH
 
 ; VAL(a$) -- parses the string's own content as a signed decimal
 ; integer, reusing the REAL digit-accumulation math OP_INPUT_NUM's own
@@ -4742,25 +4728,8 @@ BUILTIN_FN_LOWER:
 ; length; n<0 -> 0 characters). Compiled left-to-right (s then n), so
 ; the operand stack has n on top (popped first).
 BUILTIN_FN_LEFT:
-        rst $18                     ; HL = n (QUAL Q-30)
-        ld a,h
-        bit 7,a
-        jr nz,.left_n_neg
-        or a
-        jr nz,.left_use_srclen       ; h<>0, n>=0 -> n>=256, definitely
-                                        ; more than any real source
-                                        ; length (max 31)
-        ld a,l
-        jr .left_have_n
-.left_n_neg:
-        xor a
-        jr .left_have_n
-.left_use_srclen:
-        ld a,255                     ; sentinel "at least the whole
-                                        ; source" -- clamped against the
-                                        ; real source length below either
-                                        ; way
-.left_have_n:
+        rst $18                     ; HL = the count (QUAL Q-30)
+        call VM_CLAMP_COORD         ; RC shrink: A = count clamped to 0..255 (negative 0)
         ld (BFN_STR_TMP),a
         rst $10                      ; HL = string index (s)
         ld a,l
@@ -4799,20 +4768,8 @@ BUILTIN_FN_LEFT:
 ; RIGHT$(s,n) -- the last n characters of s. Same n-resolution as
 ; LEFT$'s own; differs only in the source content's own start offset.
 BUILTIN_FN_RIGHT:
-        rst $18                      ; HL = n (QUAL Q-30)
-        ld a,h
-        bit 7,a
-        jr nz,.right_n_neg
-        or a
-        jr nz,.right_use_srclen
-        ld a,l
-        jr .right_have_n
-.right_n_neg:
-        xor a
-        jr .right_have_n
-.right_use_srclen:
-        ld a,255
-.right_have_n:
+        rst $18                     ; HL = the count (QUAL Q-30)
+        call VM_CLAMP_COORD         ; RC shrink: A = count clamped to 0..255 (negative 0)
         ld (BFN_STR_TMP),a
         rst $10                       ; HL = string index (s)
         ld a,l
@@ -4867,35 +4824,12 @@ BUILTIN_FN_RIGHT:
 ; remains -- no error raised for any of these, matching LEFT$/RIGHT$'s
 ; own precedent of forgiving-clamp over hard error).
 BUILTIN_FN_MID:
-        rst $18                     ; HL = len (QUAL Q-30)
-        ld a,h
-        bit 7,a
-        jr nz,.mid_len_neg
-        or a
-        jr nz,.mid_use_srclen       ; h<>0, len>=0 -> definitely more
-                                       ; than any real source length
-        ld a,l
-        jr .mid_have_len
-.mid_len_neg:
-        xor a
-        jr .mid_have_len
-.mid_use_srclen:
-        ld a,255                     ; sentinel "at least the whole
-                                        ; remainder" -- clamped below
-.mid_have_len:
-        ld (BFN_STR_TMP),a           ; requested len (pre-clamp)
+        rst $18                     ; HL = the count (QUAL Q-30)
+        call VM_CLAMP_COORD         ; RC shrink: A = count clamped to 0..255 (negative 0)
+        ld (BFN_STR_TMP),a
         rst $18                      ; HL = start (1-based) (QUAL Q-30)
-        ld a,h                       ; QUAL Q-31: the whole 16-bit start, not
-        or a                         ; its low byte (257 meant 1, -256 meant 1)
-        jr z,.mid_start_lo
-        rla                          ; C = sign
-        ld a,1                       ; negative -> 1 (as start<=0 below)
-        jr c,.mid_start_ok
-        xor a                        ; >=256 -> offset 255: past any end
-        jr .mid_start_ok
-.mid_start_lo:
-        ld a,l
-        or a
+        call VM_CLAMP_COORD          ; RC shrink (Q-31 kept): the whole 16-bit start: negative -> 0,
+        or a                         ; above 255 -> 255 (offset 254: past the end of any string)
         jr nz,.mid_start_ok
         inc a                        ; start<=0 clamps to 1
 .mid_start_ok:
@@ -5409,8 +5343,7 @@ BUILTIN_FN_FREE:
         ld de,(ARRAYS_END)       ; the control stack is what is really free
         or a
         sbc hl,de
-        xor a                     ; TAG_INT=0
-        jp VM_PUSH
+        jp VM_PUSH_INT          ; RC shrink: TAG_INT + VM_PUSH
 
 ; FREE(n) -- R10.7 P5.5. FREE(1) = bytes free in array segment 2 ($E000-$E7FF);
 ; any other argument behaves as FREE() (the main pool, up to the control stack).
@@ -5424,8 +5357,7 @@ BUILTIN_FN_FREE_N:
         ld de,(ARR2_END)
         or a
         sbc hl,de
-        xor a                    ; TAG_INT
-        jp VM_PUSH
+        jp VM_PUSH_INT          ; RC shrink: TAG_INT + VM_PUSH
 
 BUILTIN_FN_DEG:
         rst $10                  ; QUAL (Q-10): x as it is (was truncated)
