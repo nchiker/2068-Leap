@@ -751,15 +751,15 @@ def _post_store_intact(m, r):
     return pe > m.sym("PROG_AREA_START"), "PROG_END=%04X (program store %s)" % (pe, "kept" if pe > m.sym("PROG_AREA_START") else "EMPTIED")
 
 
-T("crash.and_float", "expr.logical.float", ["x = 0.5", "IF x AND 1 THEN", 'PRINT "y"', "ENDIF"], OkOrErr("y"), post=_post_store_intact,
-  note="AND with a float operand: an error is acceptable, a reset is not")
-T("crash.or_float", "expr.logical.float", ["IF 0.5 OR 0 THEN", 'PRINT "y"', "ENDIF"], OkOrErr("y"), post=_post_store_intact)
-T("crash.and_float_rhs", "expr.logical.float", ["PRINT 1 AND 2.5"], OkOrErr("1"), post=_post_store_intact)
-T("crash.not_float", "expr.logical.float", ["PRINT NOT 2.5"], OkOrErr("0"), post=_post_store_intact)
+T("crash.and_float", "expr.logical.float", ["x = 0.5", "IF x AND 1 THEN", 'PRINT "y"', "ENDIF"], Lines("y"), post=_post_store_intact,
+  note="AND with a float operand: nonzero is true (V2_LANGUAGE_REFERENCE); never a reset")
+T("crash.or_float", "expr.logical.float", ["IF 0.5 OR 0 THEN", 'PRINT "y"', "ENDIF"], Lines("y"), post=_post_store_intact)
+T("crash.and_float_rhs", "expr.logical.float", ["PRINT 1 AND 2.5"], Num(1, "int"), post=_post_store_intact)
+T("crash.not_float", "expr.logical.float", ["PRINT NOT 2.5"], Num(0, "int"), post=_post_store_intact)
 # RC (2026-10-11): the four crash.* logical cases above accepted only "an error" -- the safe outcome
-# while a FLOAT operand of AND/OR crashed the machine (Q-03). AND/OR/NOT now treat a FLOAT as a truth
-# value (nonzero = true); the expectation is that value OR a clean error, with the program kept. A
-# wrong value still fails.
+# while a FLOAT operand of AND/OR crashed the machine (Q-03) and V2 had no rule for a FLOAT truth
+# value. The V2 rule is now specified (any nonzero number is true; AND/OR/NOT give 0/1), so each case
+# expects exactly that value, with the program kept; an error or a wrong value fails.
 for n in (8000, 16000, 16500, 20000, 32767):
     T("dim.big.%d" % n, "array.dim.capacity", ["DIM a(%d)" % n, "a(%d) = 7" % (n - 1), "PRINT a(%d)" % (n - 1)], OkOrErr("7"),
       post=_post_store_intact, maxi=20_000_000, note="large DIM: OUT OF MEMORY or success, never corruption")

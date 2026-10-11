@@ -14,8 +14,10 @@
 ;
 ; Include this file once, after rom/exrom_v2_vm_core.asm.
 ; ============================================================================
-V2_EXROM_ARR_DIM_ADDR     EQU OP_DIM
-V2_EXROM_ARR_DIM_STR_ADDR EQU OP_DIM_STR
+; (The two slot names are bound at the END of this file: an EQU placed before OP_DIM is a
+; forward reference that lags one assembler pass, so where OP_DIM moves between passes 1 and 2
+; the opcode table's dw kept the stale address -- RC: test_v2_vm_milestone01 had its DIM slots
+; 128 bytes off, "Label has different value in pass 3".)
 
 OP_DIM:
         ld hl,(VM_IP)
@@ -77,3 +79,6 @@ LOCAL_DIM_FILL:                   ; A = index, HL = pointer table, DE = header, 
         add hl,de                 ; HL = first data byte
         call MEM_FILL_ZERO        ; D12: DIM zero-fills
         jp VM_RUN.loop
+
+V2_EXROM_ARR_DIM_ADDR     EQU OP_DIM
+V2_EXROM_ARR_DIM_STR_ADDR EQU OP_DIM_STR
