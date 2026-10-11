@@ -297,7 +297,7 @@ TEST_CHECK_DECOMPILED:
     ret
 
 EXPECTED_TEXT:
-    db "V0 = SGN((0-5))",13
+    db "V0 = SGN(-5)",13       ; QUAL: -5 is folded at compile time (Q-05)
     db "V1 = SGN(0)",13
     db "V2 = SGN(5)",13
     db "V3 = MOD(17,5)",13
