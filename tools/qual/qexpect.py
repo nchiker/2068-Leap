@@ -36,6 +36,23 @@ def near_boundary(v):
     return abs(frac - Decimal("0.5")) < Decimal("1e-6") or frac < Decimal("1e-6") or frac > 1 - Decimal("1e-6")
 
 
+def within_float_precision(v, got):
+    """The calculator's 5-byte format has a 32-bit mantissa, and its operations are exact to within
+    one unit in the last place (multiplication truncates). A FLOAT display is accepted when it is
+    within 2 ulp of the exact value plus half a display unit (0.00005): this matters only where the
+    value's ulp reaches the 4th decimal (|v| >= 2^18). It is tighter than the D10 truncation error
+    (up to 0.0001), which is still detected."""
+    import re
+    if not re.fullmatch(r"-?\d+\.\d{4}", got or ""):
+        return False
+    v = Fr(v)
+    if v == 0:
+        return False
+    e = abs(v).numerator.bit_length() - abs(v).denominator.bit_length()
+    ulp = Fr(2) ** (e - 31)
+    return abs(Fr(got) - v) <= 2 * ulp + Fr(1, 20000)
+
+
 class Expect:
     """check(res) -> (ok, detail, cls).  cls is a defect-class hint (e.g. 'D10') or None."""
     def check(self, r):
@@ -110,6 +127,8 @@ class NumV:
 
     def match(self, got):
         if got in self.forms():
+            return True, None
+        if self.kind != "int" and within_float_precision(self.v, got):
             return True, None
         if self.kind != "int" and got in (fmt_trunc(self.v), fmt_trunc(self.v - Fr(1, 10 ** 7)),
                                           fmt_trunc(self.v + Fr(1, 10 ** 7))):

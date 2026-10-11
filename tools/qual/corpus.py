@@ -258,7 +258,8 @@ for cid, expr, val, kind in (
         ("sin.f", "SIN(30.5)", Fr(50754, 100000), "float")):
     T("fn." + cid, "fn." + cid.split(".")[0].upper(), ["PRINT " + expr], Num(val, kind))
 T("fn.abs.min", "fn.ABS", ["PRINT ABS(-32767-1)"], Num(32768, "num"), known=D11X, note="cost study: still wraps in both variants")
-T("fn.div.min_m1", "fn.DIV", ["PRINT DIV(-32767-1,-1)"], OkOrErr("32768"), known=D11X, note="cost study: still wraps in both variants")
+T("fn.div.min_m1", "fn.DIV", ["PRINT DIV(-32767-1,-1)"], Num(32768), known=D11X,
+  note="cost study: still wraps in both variants. RC oracle correction: 32768 is not an INT, so its correct display is 32768.0000 (was OkOrErr('32768'))")
 T("fn.int.big", "fn.INT", ["PRINT INT(30000*3+0.5)"], Num(90000), known=D11X)
 T("fn.mod.zero", "fn.MOD", ["PRINT MOD(5,0)"], RErr(5), note="manual: DIVISION BY ZERO for /, MOD, DIV")
 T("fn.div.zero", "fn.DIV", ["PRINT DIV(5,0)"], RErr(5))
@@ -733,11 +734,15 @@ def _post_store_intact(m, r):
     return pe > m.sym("PROG_AREA_START"), "PROG_END=%04X (program store %s)" % (pe, "kept" if pe > m.sym("PROG_AREA_START") else "EMPTIED")
 
 
-T("crash.and_float", "expr.logical.float", ["x = 0.5", "IF x AND 1 THEN", 'PRINT "y"', "ENDIF"], AnyErr(), post=_post_store_intact,
+T("crash.and_float", "expr.logical.float", ["x = 0.5", "IF x AND 1 THEN", 'PRINT "y"', "ENDIF"], OkOrErr("y"), post=_post_store_intact,
   note="AND with a float operand: an error is acceptable, a reset is not")
-T("crash.or_float", "expr.logical.float", ["IF 0.5 OR 0 THEN", 'PRINT "y"', "ENDIF"], AnyErr(), post=_post_store_intact)
-T("crash.and_float_rhs", "expr.logical.float", ["PRINT 1 AND 2.5"], AnyErr(), post=_post_store_intact)
-T("crash.not_float", "expr.logical.float", ["PRINT NOT 2.5"], AnyErr(), post=_post_store_intact)
+T("crash.or_float", "expr.logical.float", ["IF 0.5 OR 0 THEN", 'PRINT "y"', "ENDIF"], OkOrErr("y"), post=_post_store_intact)
+T("crash.and_float_rhs", "expr.logical.float", ["PRINT 1 AND 2.5"], OkOrErr("1"), post=_post_store_intact)
+T("crash.not_float", "expr.logical.float", ["PRINT NOT 2.5"], OkOrErr("0"), post=_post_store_intact)
+# RC (2026-10-11): the four crash.* logical cases above accepted only "an error" -- the safe outcome
+# while a FLOAT operand of AND/OR crashed the machine (Q-03). AND/OR/NOT now treat a FLOAT as a truth
+# value (nonzero = true); the expectation is that value OR a clean error, with the program kept. A
+# wrong value still fails.
 for n in (8000, 16000, 16500, 20000, 32767):
     T("dim.big.%d" % n, "array.dim.capacity", ["DIM a(%d)" % n, "a(%d) = 7" % (n - 1), "PRINT a(%d)" % (n - 1)], OkOrErr("7"),
       post=_post_store_intact, maxi=20_000_000, note="large DIM: OUT OF MEMORY or success, never corruption")
