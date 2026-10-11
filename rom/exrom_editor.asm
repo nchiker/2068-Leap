@@ -130,8 +130,10 @@ EDITOR_LOOP:
     jp   z, .next_error
     cp   KEY_PREV_ERROR
     jp   z, .prev_error
-    or   a
-    jp   z, EDITOR_LOOP            ; A=0: IO_READ_KEY saw a key it
+    cp   $20
+    jp   c, EDITOR_LOOP            ; STUDY (D5b): was `or a / jp z` (A=0 only); every
+                                   ; code < $20 that has no handler above (BREAK $10 ...)
+                                   ; is ignored. A=0: IO_READ_KEY saw a key it
                                    ; doesn't have a mapping for yet
                                    ; (e.g. SYMBOL SHIFT alone) — ignore
                                    ; it rather than insert a NUL

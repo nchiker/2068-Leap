@@ -3385,6 +3385,9 @@ OP_PAUSE:
         add hl,de                 ; HL = target = current + n
         ex de,hl                  ; DE = target
 .wait_loop:
+        ld a,(VM_HALTED)          ; STUDY (D5): BREAK (set by the ISR) ends a long PAUSE
+        or a
+        jp nz,VM_RUN.loop
         call INT_GET_FRAMES       ; HL = current (DE survives, per
                                     ; INT_GET_FRAMES's own "Destroys: HL"
                                     ; only contract)
