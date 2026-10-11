@@ -341,6 +341,40 @@ V2_FIND_INDEX:
     ld hl,$FFFF
     ret
 
+; V2_JUMP_TO_ERROR_LINE -- R10 single-error return-to-line (an
+; intentional V2 design DIFFERENT from V1: V1's static checker could
+; collect and let the user browse up to 16 compile-time errors
+; (CHECK_ERROR_LIST); V2's compiler stops at the first error, same as
+; before, and this routine returns the cursor directly to that one
+; source line. Full multi-error collection would need real compiler
+; resynchronization/recovery -- deliberately deferred, not accidentally
+; lost; not attempted here).
+;
+; R10.9 Phase 2D (defect D4): the lexer now counts source lines itself
+; (LEX_LINE: one per CR token or LF continuation marker, see LEX_COUNT_LINE
+; in rom/exrom_v2_compiler.asm), so the failing line is simply that count --
+; no walk of the line store to match a record pointer. (R10.7 compared against
+; CHUNK_CUR_REC_PTR, the most recently *appended* record, which runs up to the
+; 128-byte chunk margin ahead of the failing token: the cursor landed on a
+; later line, or on the last one.) Bit 15 of LEX_LINE is the lexer's "CR not
+; counted yet" flag and is masked off. An error raised at end of source (an
+; unterminated PROC, block IF or FOR; an undefined label, which is only checked
+; there) leaves the count equal to the number of lines: the cursor lands on the
+; empty line after the last one, where the missing NEXT / ENDIF / ENDP / label
+; would be typed (V2_FIND_INDEX answers $FFFF = "the append position").
+;
+; Sets CUR_EDIT_INDEX/CUR_EDIT_POS to the located line via
+; V2_SET_EDIT_FROM_INDEX -- the same mechanism arrow-key navigation
+; already uses. V2_REDRAW's own existing VIEW_TOP_INDEX auto-scroll
+; (see its own header) then brings the line into view on the very next
+; redraw; no separate scrolling logic is needed here.
+; Destroys: AF, DE, HL.
+V2_JUMP_TO_ERROR_LINE:
+    ld hl,(LEX_LINE)
+    res 7,h
+    ld (CUR_EDIT_INDEX),hl
+    ; falls through into V2_SET_EDIT_FROM_INDEX (kept adjacent on purpose)
+
 V2_SET_EDIT_FROM_INDEX:
     ld de,(CUR_EDIT_INDEX)
     call V2_FIND_INDEX
@@ -480,72 +514,6 @@ V2_BUILD_SOURCE:
     ld (CHUNK_FILL_PTR),hl
     jp KTAB_CHUNK_REFILL
 
-; V2_JUMP_TO_ERROR_LINE -- R10 single-error return-to-line (an
-; intentional V2 design DIFFERENT from V1: V1's static checker could
-; collect and let the user browse up to 16 compile-time errors
-; (CHECK_ERROR_LIST); V2's compiler stops at the first error, same as
-; before, and this routine returns the cursor directly to that one
-; source line. Full multi-error collection would need real compiler
-; resynchronization/recovery -- deliberately deferred, not accidentally
-; lost; not attempted here).
-;
-; R10.7 source-staging-architecture change (docs/v2/R10_7_SOURCE_STAGING_
-; ARCHITECTURE_AUDIT.md): previously re-walked the line store counting
-; staged bytes until the running total reached SRC_PTR's own offset from
-; V2_SOURCE_STAGE. That offset is no longer meaningful now that the
-; staging buffer only ever holds a small rolling window, not the whole
-; flattened program -- an old byte offset could point at a record long
-; since discarded from the buffer. Replaced with a direct pointer match:
-; CHUNK_CUR_REC_PTR (set by CHUNK_APPEND_ONE_RECORD every time a record is
-; pulled in) already names the authoritative record most recently loaded
-; -- at the moment a compile error is raised, this is always the record
-; SRC_PTR is at or very near, the same "close to, not always exactly at"
-; imprecision the old byte-counting version also had (most of the
-; compiler's own "ld a,(COMPILE_ERROR_CODE) / or a / jp nz,<bail>" sites
-; unwind without a further LEX_NEXT_TOKEN call once the error is set, so
-; the error is detected shortly after, not exactly at, the real failing
-; token -- unchanged by this rewrite). This version counts from
-; MEM_LINE_FIRST until the record pointer matches CHUNK_CUR_REC_PTR --
-; simpler than the old byte-counting walk, and unlike it, exact about
-; WHICH LINE (no colon-continuation off-by-one to document: there's
-; nothing to approximate when comparing whole-record pointers).
-;
-; Sets CUR_EDIT_INDEX/CUR_EDIT_POS to the located line via
-; V2_SET_EDIT_FROM_INDEX -- the same mechanism arrow-key navigation
-; already uses. V2_REDRAW's own existing VIEW_TOP_INDEX auto-scroll
-; (see its own header) then brings the line into view on the very next
-; redraw; no separate scrolling logic is needed here.
-;
-; If CHUNK_CUR_REC_PTR never matches any record (shouldn't happen -- it
-; always names a record MEM_LINE_FIRST/NEXT visited during this same
-; compile -- but defensively), CUR_EDIT_INDEX is simply left at the last
-; index reached, not some undefined value, same contract as before.
-; Destroys: AF, DE, HL.
-V2_JUMP_TO_ERROR_LINE:
-    ld hl,0
-    ld (CUR_EDIT_INDEX),hl
-    call KTAB_MEM_LINE_FIRST
-.next:
-    ld a,h
-    or l
-    jr z,.done
-    ld de,(CHUNK_CUR_REC_PTR)
-    push hl
-    or a
-    sbc hl,de
-    pop hl
-    jr z,.done
-    call KTAB_MEM_LINE_NEXT
-    ld a,h
-    or l
-    jr z,.done
-    ld de,(CUR_EDIT_INDEX)
-    inc de
-    ld (CUR_EDIT_INDEX),de
-    jr .next
-.done:
-    jp V2_SET_EDIT_FROM_INDEX
-
 V2_RUN_STORED:
     call V2_BUILD_SOURCE
     ld hl,V2_SOURCE_STAGE
@@ -600,7 +568,7 @@ V2_COMPILE_RUN:
 ; Error-message selection (R10.7 P0: memory exhaustion and name/nesting
 ; limits are distinguishable from ordinary syntax/runtime errors).
 ; V2_COMPILE_MSG: A = COMPILE_ERROR_CODE -> HL = message.
-; Compile codes: 60 nesting too deep, 61 identifier too long, 1/39 more than 255
+; Compile codes: 60 nesting too deep, 61 identifier too long, 64 unexpected token, 1/39 more than 255
 ; symbols of a kind, and the capacity class {5,6,45,55,62} = out of memory.
 V2_COMPILE_MSG:
     ld hl,V2_MSG_NAMELEN
@@ -608,6 +576,9 @@ V2_COMPILE_MSG:
     ret z
     ld hl,V2_MSG_NEST
     cp 60
+    ret z
+    ld hl,V2_MSG_UNEXPECTED
+    cp 64                        ; R10.9 2D: unexpected token
     ret z
     ld hl,V2_MSG_TOOMANY
     cp 1
@@ -1829,6 +1800,7 @@ V2_MSG_NOMEM: DB "OUT OF MEMORY",0
 V2_MSG_STACK: DB "STACK OVERFLOW",0
 V2_MSG_NAMELEN: DB "NAME TOO LONG",0
 V2_MSG_NEST: DB "NESTING TOO DEEP",0
+V2_MSG_UNEXPECTED: DB "UNEXPECTED TOKEN",0
 V2_MSG_TOOMANY: DB "TOO MANY VARIABLES",0
 V2_MSG_SAVED: DB "SAVED",0
 V2_MSG_LOADED: DB "LOADED",0

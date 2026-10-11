@@ -165,6 +165,14 @@
 ;   46 = expected '(' after DIMN (R8.5 Group 6)
 ;   47 = DIMN's argument is not a DIM'd array name
 ;   48 = expected ')' to close DIMN
+;   (50-63: see the individual COMPILE_RAISE_ERROR sites; 55, 60-62 are the
+;    capacity/nesting/name-length classes shown by V2_COMPILE_MSG)
+;   64 = unexpected token (R10.9 2D): something that is neither a statement nor
+;        the ':' / end of line / closer that must follow one -- stray ENDIF/
+;        ELSE/ENDP/THEN/TO/')', trailing junk, a missing ':', an unterminated
+;        string literal. Message UNEXPECTED TOKEN.
+;   65 = FOR without NEXT (R10.9 2D): a FOR frame was still open at end of source
+;   66 = expected ')' to close a parenthesised expression (R10.9 2D)
 ; ============================================================================
 
 ; ---------------------------------------------------------------------------
@@ -591,18 +599,39 @@ TOK_KW_CLEAR:       equ 64   ; R10.7
 COMPILER_INIT:
         xor a
         ld (COMPILE_ERROR_CODE),a
+        ld h,a                   ; R10.9 2D: restart the source-line counter
+        ld l,a
+        ld (LEX_LINE),hl
         call SYM_RESET           ; R10.7 P2: empty tagged symbol table at PROG_END
         ret
 
 ; ===========================================================================
 ; LEXER
 ; ===========================================================================
+; LEX_SKIP_SPACES -- skips spaces and LF ($0A). R10.9 2D (defect D4): CHUNK_APPEND_ONE_RECORD
+; writes an LF where a record that ends in ':' would have had its CR; it is white space to the
+; lexer but it still ends a source line, so it raises LEX_NEWLINE_PENDING.
+;
+; LEX_LINE (bits 0-14) is the zero-based index of the source line the lexer is on, which is the
+; line-store index of the line responsible for an error raised while the current token is on it
+; (V2_JUMP_TO_ERROR_LINE). Bit 15, LEX_NEWLINE_PENDING, means "a line end was consumed and not
+; yet counted": a CR token sets it, LEX_NEXT_TOKEN_CORE applies it when the NEXT token is
+; fetched. So while the CR itself is the current token -- "x = 1 +" cut off at its end of line --
+; LEX_LINE still names its own line. (A CR and an LF can never be adjacent, so one flag is enough.)
+LEX_NEWLINE_PENDING: equ 7       ; bit number, in the high byte of LEX_LINE
 LEX_SKIP_SPACES:
         ld hl,(SRC_PTR)
 .loop:
         ld a,(hl)
         cp ' '
+        jr z,.next
+        cp $0A
         jr nz,.done
+        push hl
+        ld hl,LEX_LINE+1
+        set LEX_NEWLINE_PENDING,(hl)
+        pop hl
+.next:
         inc hl
         jr .loop
 .done:
@@ -674,6 +703,13 @@ LEX_NEXT_TOKEN_CORE:
         call CHUNK_REFILL
 .no_refill_check:
         call LEX_SKIP_SPACES
+        ld hl,(LEX_LINE)         ; R10.9 2D: count the line end (CR token or LF) just consumed
+        bit LEX_NEWLINE_PENDING,h
+        jr z,.no_pending
+        res LEX_NEWLINE_PENDING,h
+        inc hl
+        ld (LEX_LINE),hl
+.no_pending:
         ld hl,(SRC_PTR)
         ld a,(hl)
         or a
@@ -681,7 +717,7 @@ LEX_NEXT_TOKEN_CORE:
         cp ':'
         jr z,.single1
         cp $0D
-        jr z,.single1
+        jp z,.newline
         cp '='
         jr z,.single2
         cp '+'
@@ -701,7 +737,7 @@ LEX_NEXT_TOKEN_CORE:
         cp '>'
         jr z,.gt_start
         cp ','
-        jr z,.single10
+        jp z,.single10
         cp '"'
         jr z,.string_lit
         cp '0'
@@ -754,6 +790,9 @@ LEX_NEXT_TOKEN_CORE:
         ld a,TOK_EOF
         ld (TOK_TYPE),a
         ret
+.newline:
+        ld hl,LEX_LINE+1         ; R10.9 2D: a CR is a ':' token that also ends a line
+        set LEX_NEWLINE_PENDING,(hl)
 .single1:
         ld a,TOK_COLON
         jp .advance1
@@ -1091,94 +1130,44 @@ LEX_SCAN_IDENT:
 
 ; LEX_SCAN_STRING — a "quoted" string literal (R5 addition). No escape
 ; sequences (a documented happy-path gap, matching this project's own
-; established scope discipline for every milestone so far). An
-; unterminated string (EOF before a closing '"') stops at EOF rather than
-; consuming past it — a real, deliberate bounds check, not an oversight.
+; established scope discipline for every milestone so far).
+;
+; R10.9 Phase 2D (defect D3): a string never spans a source line. A control
+; character (NUL = end of source, CR / LF = end of line) before the closing '"'
+; makes the token TOK_UNKNOWN, left unconsumed, and raises error 64 at once, so an
+; unterminated string is a compile error on its own line instead of silently
+; swallowing the following lines (the pre-2D behaviour, which also made line
+; counting impossible).
+; Because a string now lies inside one record, and records are appended to the
+; chunk buffer whole, the scan can never run off the loaded data: the mid-scan
+; CHUNK_REFILL logic R10.7 needed for multi-record strings is gone.
 LEX_SCAN_STRING:
         ld hl,(SRC_PTR)
         inc hl                   ; skip the opening '"'
         ld (TOK_NAME),hl
         ld b,0
-        ; R10.7 source-staging-architecture change: is this string being
-        ; scanned out of the chunk buffer at all? Shared bounds check
-        ; (HL_OUTSIDE_CHUNK_BUF, same one LEX_NEXT_TOKEN's own refill
-        ; gate uses), checked once here, not every iteration -- if not
-        ; chunked (immediate mode, or any standalone test's own
-        ; SOURCE_TEXT buffer), .loop below is byte-for-byte the
-        ; original, with zero added overhead.
-        call HL_OUTSIDE_CHUNK_BUF
-        jr c,.loop
-        jr .loop_chunked
-.loop_chunked:
-        ld de,(CHUNK_FILL_PTR)
-        ld a,l
-        cp e
-        jr nz,.chunked_char
-        ld a,h
-        cp d
-        jr nz,.chunked_char
-        ; HL has reached the end of currently-loaded data. If that byte
-        ; is the true EOF $00, or there is genuinely nothing left to pull
-        ; in, fall through to the ordinary terminator check (same as the
-        ; pre-chunking behavior: stop at EOF, don't consume past it).
-        ; Otherwise more authoritative source remains beyond what's
-        ; loaded -- refill, anchored at this string's own start (TOK_NAME,
-        ; not the stale mid-scan SRC_PTR), which keeps the partially-
-        ; scanned string's bytes intact and contiguous across the shift
-        ; (the one case in this whole mechanism where a refill happens
-        ; mid-token, preserving the pre-existing behavior that an
-        ; unterminated string may already span multiple authoritative
-        ; records before this change).
-        ld a,(hl)
-        or a
-        jr z,.chunked_char
-        ld de,(CHUNK_NEXT_REC)
-        ld a,d
-        or e
-        jr z,.chunked_char
-        push bc
-        ld hl,(TOK_NAME)
-        ld (SRC_PTR),hl
-        call CHUNK_REFILL
-        pop bc
-        ld hl,CHUNK_BUF
-        ld (TOK_NAME),hl
-        ld a,b
-        add a,l
-        ld l,a
-        jr nc,.loop_chunked
-        inc h
-        jr .loop_chunked
-.chunked_char:
-        ld a,(hl)
-        cp '"'
-        jr z,.done
-        or a
-        jr z,.done
-        inc hl
-        inc b
-        jr .loop_chunked
 .loop:
         ld a,(hl)
         cp '"'
-        jr z,.done
-        or a
-        jr z,.done               ; unterminated: stop at EOF, don't consume it
+        jr z,.closed
+        cp ' '
+        jr c,.unterminated
         inc hl
         inc b
         jr .loop
-.done:
-        ld a,(hl)
-        cp '"'
-        jr nz,.no_skip           ; stopped at EOF, not a real closing quote
-        inc hl
-.no_skip:
+.closed:
+        inc hl                   ; consume the closing quote
         ld (SRC_PTR),hl
         ld a,b
         ld (TOK_LEN),a
         ld a,TOK_STRING
         ld (TOK_TYPE),a
         ret
+.unterminated:
+        ld (SRC_PTR),hl
+        ld a,TOK_UNKNOWN
+        ld (TOK_TYPE),a
+        jp ERR_UNEXPECTED_TOKEN
 
 ; ============================================================================
 ; CHUNK_APPEND_ONE_RECORD -- R10.7 source-staging-architecture change
@@ -1191,8 +1180,10 @@ LEX_SCAN_STRING:
 ; has been written yet at all -- this second case only arises for a
 ; genuinely empty-content record, not "is this chunk's first record",
 ; since CHUNK_FILL_PTR can equal CHUNK_BUF after a mid-program compaction
-; too). Advances CHUNK_FILL_PTR, records which authoritative record this
-; was (CHUNK_CUR_REC_PTR -- used by V2_JUMP_TO_ERROR_LINE), and advances
+; too). R10.9 2D: a suppressed CR is replaced by an LF ($0A), which the
+; lexer skips as white space but counts as a line end (LEX_LINE), so
+; every record contributes exactly one terminator and the lexer's line
+; count is the line-store index. Advances CHUNK_FILL_PTR and advances
 ; CHUNK_NEXT_REC to its successor. If that successor is 0 (no more
 ; records), appends the true EOF $00 sentinel immediately.
 ; In:  none (reads CHUNK_NEXT_REC/CHUNK_FILL_PTR)
@@ -1201,7 +1192,6 @@ LEX_SCAN_STRING:
 ; ============================================================================
 CHUNK_APPEND_ONE_RECORD:
         ld hl,(CHUNK_NEXT_REC)
-        ld (CHUNK_CUR_REC_PTR),hl
         push hl
         inc hl
         inc hl
@@ -1226,9 +1216,11 @@ CHUNK_APPEND_ONE_RECORD:
         ld a,(de)
         inc de
         cp ':'
-        jr z,.next_record
+        ld a,$0A                 ; a record ending in ':' continues the statement
+        jr z,.store_end
 .append_cr:
         ld a,$0D
+.store_end:
         ld (de),a
         inc de
 .next_record:
@@ -1836,14 +1828,11 @@ COMPILE_FACTOR:
 .paren:
         call LEX_NEXT_TOKEN
         call COMPILE_EXPR
-        call LEX_NEXT_TOKEN     ; consume ')' (not separately verified in
-                                 ; this R2 scope; a malformed program simply
-                                 ; compiles something else, caught later by
-                                 ; the real checker once one exists in a
-                                 ; later milestone — R2's own scope is the
-                                 ; happy path, per its "callable standalone"
-                                 ; framing in the implementation plan)
-        ret
+        ld a,(TOK_TYPE)         ; R10.9 2D (defect D3): ')' is now required
+        cp TOK_RPAREN
+        jp z,LEX_NEXT_TOKEN     ; consume ')'
+        ld a,66                 ; expected ')' to close a parenthesised expression
+        jp COMPILE_RAISE_ERROR
 .number:
         call COMPILE_NUMBER_LITERAL
         jp LEX_NEXT_TOKEN
@@ -2797,6 +2786,7 @@ EMIT_IDX_COUNT:
 ERR_DIM_EXPECTED_NUMBER: ld a,34 : jp COMPILE_RAISE_ERROR
 ERR_DIM_EXPECTED_SEP:    ld a,37 : jp COMPILE_RAISE_ERROR
 ERR_EXPECTED_ASSIGN:     ld a,2  : jp COMPILE_RAISE_ERROR
+ERR_UNEXPECTED_TOKEN:    ld a,64 : jp COMPILE_RAISE_ERROR   ; R10.9 2D
 
 ; COMPILE_ARRAY_ASSIGN — entry: STMT_IDENT_NAME_PTR/LEN describe the
 ; array name (already consumed); TOK_TYPE is already TOK_LPAREN (already
@@ -4114,9 +4104,10 @@ COMPILE_STATEMENT_LIST:
         jp z,.ident_stmt
         cp TOK_STR_IDENT
         jp z,.str_ident_stmt
-        jp .done                  ; anything else ends compilation cleanly
-                                   ; in this scope (no error-recovery exists
-                                   ; yet — a later milestone's job)
+        jp ERR_UNEXPECTED_TOKEN   ; R10.9 2D (defect D3): anything else is not a
+                                   ; statement. It used to end compilation
+                                   ; "cleanly" and silently drop the rest of
+                                   ; the program.
 .skip_separator:
         call LEX_NEXT_TOKEN
         jp .loop
@@ -4202,12 +4193,16 @@ COMPILE_STATEMENT_LIST:
         jr z,.rem_done
         cp $0D
         jr z,.rem_done
+        cp $0A                   ; R10.9 2D: end of a line that ends in ':'
+        jr z,.rem_done
         inc hl
         jr .rem_scan
 .rem_done:
         ld (SRC_PTR),hl
         call LEX_NEXT_TOKEN
-        jp .after_stmt
+        jp .loop                 ; R10.9 2D: not .after_stmt -- a comment that ends at
+                                  ; an LF is followed by the next line's first token
+                                  ; with no ':' between them
 .str_ident_stmt:
         call COMPILE_STR_IDENT_STMT
         jp .after_stmt
@@ -4292,9 +4287,21 @@ COMPILE_STATEMENT_LIST:
         ret nz
         ld a,(TOK_TYPE)
         cp TOK_COLON
-        jr nz,.done
+        jr nz,.not_colon
         call LEX_NEXT_TOKEN
         jp .loop
+.not_colon:
+        ; R10.9 2D (defect D3): a statement must be followed by ':' / end of
+        ; line, or by the token that closes the enclosing list (end of source,
+        ; ENDP, ELSE, ENDIF). Anything else is trailing junk or a missing ':'.
+        or a                      ; TOK_EOF
+        ret z
+        cp TOK_KW_ENDP
+        ret z
+        sub TOK_KW_ELSE           ; TOK_KW_ELSE, TOK_KW_ENDIF are adjacent
+        cp 2
+        ret c
+        jp ERR_UNEXPECTED_TOKEN
 .done:
         ret
 
@@ -4323,6 +4330,15 @@ COMPILE_PROGRAM:
         ld a,(COMPILE_ERROR_CODE)
         or a
         ret nz
+        ; R10.9 2D (defect D3): the list may only stop at end of source. A stray
+        ; ENDP / ELSE / ENDIF closes nothing, and a FOR frame still open means
+        ; its NEXT never came.
+        ld a,(TOK_TYPE)
+        or a                      ; TOK_EOF
+        jp nz,ERR_UNEXPECTED_TOKEN
+        call CSTK_TOP
+        ld a,65                   ; FOR without NEXT
+        jp nz,COMPILE_RAISE_ERROR
         call EMIT_OP_HALT
         call LABEL_CHECK_ALL
         ld hl,(EMIT_PTR)

@@ -44,11 +44,18 @@ CHUNK_NEXT_REC      EQU CHUNK_BUF + CHUNK_SIZE        ; 2B: next record to
 CHUNK_FILL_PTR      EQU CHUNK_NEXT_REC + 2             ; 2B: buffer addr up
                                                        ; to which data is
                                                        ; currently valid
-CHUNK_CUR_REC_PTR   EQU CHUNK_FILL_PTR + 2             ; 2B: authoritative
-                                                       ; pointer of the
-                                                       ; most-recently-
-                                                       ; appended record
-                                                       ; (error-line lookup)
+LEX_LINE            EQU CHUNK_FILL_PTR + 2             ; 2B: R10.9 2D -- zero-based
+                                                       ; count of source-line
+                                                       ; terminators the lexer
+                                                       ; has consumed (a CR
+                                                       ; token or an LF
+                                                       ; continuation marker);
+                                                       ; reset by COMPILER_INIT
+                                                       ; (error-line lookup).
+                                                       ; Replaces R10.7's
+                                                       ; CHUNK_CUR_REC_PTR, which
+                                                       ; named the look-ahead
+                                                       ; record (defect D4)
 
 ; STASH_IDENT_AND_PEEK (rom/exrom_v2_compiler.asm) used to stash only a
 ; POINTER into the live buffer (STMT_IDENT_NAME_PTR). That pointer could
@@ -63,7 +70,7 @@ CHUNK_CUR_REC_PTR   EQU CHUNK_FILL_PTR + 2             ; 2B: authoritative
 ; matching CLAMP_LEN8's own already-established "identifiers significant
 ; to 8 characters" convention used by every symbol-table FIND_OR_CREATE/
 ; LOOKUP call site, so no behavior beyond this bug fix changes.
-STMT_IDENT_NAME_BUF EQU CHUNK_CUR_REC_PTR + 2          ; 8B: see above
+STMT_IDENT_NAME_BUF EQU LEX_LINE + 2          ; 8B: see above
     ASSERT STMT_IDENT_NAME_BUF + STMT_IDENT_NAME_BUF_LEN == V2_CODE_BASE    ; zone ends exactly at the code
 
 ; R10.7 P2 -- tagged compile symbol table state (see rom/exrom_v2_symtab.asm).
