@@ -1269,6 +1269,8 @@ V2_LIST:
     cp 23
     jr c,.next
     call KTAB_IO_READ_KEY
+    cp KEY_BREAK                 ; STUDY (ED5): BREAK ends the listing at a page end
+    ret z
     call KTAB_GFX_CLS
     xor a
     ld (V2_DRAW_ROW),a
