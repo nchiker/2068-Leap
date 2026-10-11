@@ -801,7 +801,8 @@ VM_RUN:
         ld a,(hl)               ; fetch opcode
         inc hl
         ld (VM_IP),hl
-        cp 67                   ; 67 opcodes defined (0-66, R8.5 adds
+        cp 69                   ; STUDY: 69 opcodes (NL = 67, PRINT_COMMA = 68)
+                                 ; (was: 67 opcodes defined (0-66, R8.5 adds
                                  ; 35-38: PRINT_NUM/STR, LPRINT_NUM/STR;
                                  ; 39: CALL_FN (Group 1); 40-43: CMP_LE/
                                  ; GT/GE/NE; 44-46: AND/OR/NOT; 47:
@@ -935,6 +936,8 @@ VM_OP_TABLE:
         dw V2_EXROM_ARR_DIM_STR_ADDR                        ; 64 (R10.9: EXROM-owned DIM$
         dw OP_STRARR_LOAD                                   ; 65  Phase 2 --
         dw OP_STRARR_STORE                                  ; 66  string arrays)
+        dw OP_NL                                            ; 67  STUDY
+        dw OP_PRINT_COMMA                                   ; 68  STUDY
 
 ; ---------------------------------------------------------------------------
 ; String-table access: index (A) -> HL = record address. Same shape as
@@ -3669,10 +3672,27 @@ VM_PRINT_COMMON:
                                         ; scrolled for a long string)
         ld a,b
         ld (VM_OUTPUT_ROW),a
-        call VM_ADVANCE_OUTPUT_ROW     ; the implicit newline every real
-                                         ; V1 PRINT/LPRINT statement ends
-                                         ; with -- no ";"-suppressed form
-                                         ; exists in this dialect
+        ld a,c                         ; STUDY: the column survives -- OP_NL ends the line,
+        ld (VM_OUTPUT_COL),a           ; a trailing ';' leaves the cursor here
+        jp VM_RUN.loop
+
+; STUDY: end of a PRINT line (the implicit newline every PRINT statement ends with, unless it
+; ended in ';' or ',').
+OP_NL:
+        call VM_ADVANCE_OUTPUT_ROW
+        jp VM_RUN.loop
+
+; STUDY: ',' in a PRINT list -- the next 16-column zone; from the right-hand zone, the next line.
+OP_PRINT_COMMA:
+        ld a,(VM_OUTPUT_COL)
+        or 15
+        inc a
+        cp 32
+        jr nc,.next_line
+        ld (VM_OUTPUT_COL),a
+        jp VM_RUN.loop
+.next_line:
+        call VM_ADVANCE_OUTPUT_ROW
         jp VM_RUN.loop
 
 ; VM_ADVANCE_OUTPUT_ROW — a small, self-contained VM-owned equivalent of

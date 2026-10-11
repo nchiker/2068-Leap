@@ -592,6 +592,7 @@ TOK_KW_INVERSE:     equ 61
 TOK_KW_AT:          equ 62   ; R10.7 standalone cursor statements
 TOK_KW_TAB:         equ 63
 TOK_KW_CLEAR:       equ 64   ; R10.7
+TOK_SEMI:           equ 65   ; STUDY: ';' (PRINT/INPUT separator)
 
 ; ---------------------------------------------------------------------------
 ; COMPILER_INIT — call once before COMPILE_PROGRAM.
@@ -738,6 +739,8 @@ LEX_NEXT_TOKEN_CORE:
         jr z,.gt_start
         cp ','
         jp z,.single10
+        cp ';'
+        jp z,.semi
         cp '"'
         jr z,.string_lit
         cp '0'
@@ -852,6 +855,9 @@ LEX_NEXT_TOKEN_CORE:
         jp .advance2
 .single10:
         ld a,TOK_COMMA
+        jp .advance1
+.semi:
+        ld a,TOK_SEMI
         jp .advance1
 .number:
         jr LEX_SCAN_NUMBER
@@ -1616,6 +1622,8 @@ EMIT_OP_DIM:               ld a,63 : jp EMIT_BYTE  ; R10.7 dynamic arrays
 EMIT_OP_DIM_STR:            ld a,64 : jp EMIT_BYTE  ; Dynamic Data Phase 2
 EMIT_OP_STRARR_LOAD:         ld a,65 : jp EMIT_BYTE  ; -- string arrays
 EMIT_OP_STRARR_STORE:         ld a,66 : jp EMIT_BYTE
+EMIT_OP_NL:                   ld a,67 : jp EMIT_BYTE  ; STUDY: end the PRINT line
+EMIT_OP_PRINT_COMMA:          ld a,68 : jp EMIT_BYTE  ; STUDY: tab to the next 16-column zone
 
 ; COMPILE_RELATIVE_OFFSET — R10.5 shrink: factors out the "current
 ; bytecode position, relative to VM_CODE_BASE" computation duplicated at
@@ -2963,6 +2971,21 @@ DIMN_KEYWORD_TEXT: db "DIMN"
 COMPILE_INPUT:
         call LEX_NEXT_TOKEN       ; consume INPUT, fetch the target token
         ld a,(TOK_TYPE)
+        cp TOK_STRING             ; STUDY: INPUT "prompt"; v  /  INPUT "prompt", v
+        jr nz,.no_prompt
+        call COMPILE_STR_EXPR
+        call EMIT_OP_PRINT_STR    ; the prompt: printed without a newline, INPUT echoes after it
+        ld a,(TOK_TYPE)
+        cp TOK_SEMI
+        jr z,.prompt_sep
+        cp TOK_COMMA
+        jr z,.prompt_sep
+        ld a,22                   ; expected ';' or ',' after the prompt
+        jp COMPILE_RAISE_ERROR
+.prompt_sep:
+        call LEX_NEXT_TOKEN
+.no_prompt:
+        ld a,(TOK_TYPE)
         cp TOK_IDENT
         jr z,.numeric
         cp TOK_STR_IDENT
@@ -3440,6 +3463,17 @@ COMPILE_RANDOMISE:
 ; ===========================================================================
 COMPILE_PRINT:
         call LEX_NEXT_TOKEN     ; consume PRINT
+.item:
+        ld a,(TOK_TYPE)
+        or a
+        jr z,.nl                ; end of source
+        cp TOK_COLON
+        jr z,.nl                ; end of statement / line
+        cp TOK_KW_ENDP
+        jr z,.nl
+        sub TOK_KW_ELSE
+        cp 2
+        jr c,.nl                ; ELSE / ENDIF
         ld a,(TOK_TYPE)
         cp TOK_STRING
         jr z,.str_arg
@@ -3449,10 +3483,36 @@ COMPILE_PRINT:
         ld a,(COMPILE_ERROR_CODE)
         or a
         ret nz
-        jp EMIT_OP_PRINT_NUM
+        call EMIT_OP_PRINT_NUM
+        jr .sep
 .str_arg:
         call COMPILE_STR_EXPR
-        jp EMIT_OP_PRINT_STR
+        call EMIT_OP_PRINT_STR
+.sep:
+        ld a,(TOK_TYPE)
+        cp TOK_COMMA
+        jr z,.comma
+        cp TOK_SEMI
+        jr nz,.nl               ; no separator: the item ends the line
+        call LEX_NEXT_TOKEN
+        jr .after_sep
+.comma:
+        call LEX_NEXT_TOKEN
+        call EMIT_OP_PRINT_COMMA
+.after_sep:
+        ld a,(TOK_TYPE)         ; a trailing separator ends the statement WITHOUT a newline
+        or a
+        ret z
+        cp TOK_COLON
+        ret z
+        cp TOK_KW_ENDP
+        ret z
+        sub TOK_KW_ELSE
+        cp 2
+        ret c
+        jr .item
+.nl:
+        jp EMIT_OP_NL
 
 ; COMPILE_LPRINT -- printer-package ROM reconciliation: LPRINT is no
 ; longer a resident opcode. Its own real body (rom/exrom_printer.asm's
