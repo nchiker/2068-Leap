@@ -211,6 +211,11 @@ EDITOR_LOOP:
 .move_down:
     ld   a, EDIR_DOWN
 .do_nav:
+    IFDEF V2_FAST_REDRAW
+    ld   b, 2
+    ld   hl, V2_REDRAW_SCOPE
+    ld   (hl), b                   ; STUDY: UP/DOWN -> the redraw hook may take the cursor-only /
+    ENDIF                          ; two-line path (it verifies the geometry itself)
     push af                       ; save direction across the hook check
     ld   hl, (EDITOR_NAV_HOOK)
     ld   a, h

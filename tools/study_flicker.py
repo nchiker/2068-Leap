@@ -44,6 +44,14 @@ SCENARIOS = {
     "lr-10lines":     (prog(10), 5, [RIGHT] * 6 + [LEFT] * 6),
     "updown-10lines": (prog(10), 5, [DOWN, DOWN, UP, UP, UP, DOWN]),
     "updown-20lines": (prog(20), 10, [DOWN, DOWN, UP, UP, UP, DOWN]),
+    # edge cases for the differential oracle
+    "updown-ends":    (prog(6), 0, [UP, DOWN, DOWN, DOWN, DOWN, DOWN, DOWN, DOWN, UP, UP, UP, UP, UP, UP, UP, UP]),
+    "updown-wrapped": (["short", "x = 'a very long line that is going to wrap onto the second screen row and then a third one maybe'",
+                        "mid line", "y = 'another long one: padding padding padding padding padding padding'", "end"], 0,
+                       [DOWN, DOWN, DOWN, DOWN, DOWN, UP, UP, UP, UP, UP, UP, DOWN, RIGHT, RIGHT, DOWN, DOWN, UP]),
+    "updown-typed":   (prog(8), 3, seq("zz") + [DOWN, UP, UP] + seq("q") + [DOWN]),
+    "updown-deep":    (prog(26), 18, [DOWN, DOWN, DOWN, DOWN, UP, UP, UP, UP, UP]),
+    "mixed-session":  (prog(10), 4, seq("a") + [UP, DOWN] + seq("bb") + [DEL, LEFT, DOWN, RIGHT] + seq("c") + [UP, UP, DOWN]),
 }
 
 

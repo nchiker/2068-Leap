@@ -1545,10 +1545,17 @@ V2_REDRAW:
     ld a,(V2_REDRAW_SCOPE)       ; STUDY (flicker): typing/backspace only changed the active line
     or a
     jr z,.full
+    ld b,a
     xor a
     ld (V2_REDRAW_SCOPE),a
+    dec b
+    jr nz,.nav
     call V2_REDRAW_ACTIVE
     ret nc                       ; done, carry clear
+    jr .full
+.nav:
+    call V2_REDRAW_NAV
+    ret nc
 .full:
     call KTAB_GFX_CLS
     ld a,22
@@ -1633,8 +1640,10 @@ V2_REDRAW:
                                ; this block takes
     ld hl,EDIT_LINE_BUF
     call EDITOR_WRAP_CALC
-    ld a,(EDIT_WRAP_COUNT)       ; STUDY: remembered for the selective path's geometry check
+    ld a,(EDIT_WRAP_COUNT)       ; STUDY: remembered for the selective paths' geometry checks
     ld (V2_RD_WRAPS),a
+    ld hl,(CUR_EDIT_INDEX)
+    ld (V2_RD_INDEX),hl
     call EDITOR_WRAP_OFFSET_TO_ROWCOL
     ld a,(V2_ACTIVE_ROW)
     add a,b
@@ -1643,32 +1652,26 @@ V2_REDRAW:
     ld b,a
     jp KTAB_GFX_INVERT_ATTR
 
-; STUDY (flicker, audit I1): the active line changed and nothing else did (same record, same view, same
-; row geometry): clear and redraw just its rows, restore their attributes, move the cursor.  No CLS, no
-; other line, no status.  Out: carry clear = done; carry set = the number of wrapped rows changed (the lines
-; below would move) -> the caller does the full redraw.
-V2_REDRAW_ACTIVE:
-    ld hl,EDIT_LINE_BUF
-    call EDITOR_WRAP_CALC
-    ld a,(EDIT_WRAP_COUNT)
-    ld hl,V2_RD_WRAPS
-    cp (hl)
-    scf
-    ret nz
-    ld c,a                       ; C = rows to redo
+; ---- STUDY (flicker, audit I1/I2): selective redraw -------------------------------------------------
+; Cache kept by every redraw: V2_ACTIVE_ROW (first row of the active line), V2_RD_WRAPS (its row count),
+; V2_RD_INDEX (its index).  The editor sets V2_REDRAW_SCOPE: 1 = text of the active line changed (typing,
+; backspace); 2 = UP/DOWN.  Each selective routine checks the geometry itself and returns carry SET when it
+; cannot prove that nothing else on the screen moves -> V2_REDRAW then does the full redraw.
+
+; In: A = first row, C = number of rows.  Clears each row < 23 (bitmap) and restores the text attribute
+; $38 (this also removes the inverted cursor cell).  Destroys AF BC DE HL.
+V2_RD_CLEAR_ROWS:
 .row:
-    ld a,(V2_ACTIVE_ROW)
-    add a,c
-    dec a
     cp 23
-    jr nc,.next                  ; below the text area
+    ret nc
+    push af
     push bc
     ld b,a
-    call KTAB_GFX_CLEAR_ROW_TEXT ; bitmap only
+    call KTAB_GFX_CLEAR_ROW_TEXT
     pop bc
-    ld a,(V2_ACTIVE_ROW)
-    add a,c
-    dec a
+    pop af
+    push af
+    push bc
     ld l,a
     ld h,0
     add hl,hl
@@ -1681,28 +1684,157 @@ V2_REDRAW_ACTIVE:
     ld d,h
     ld e,l
     inc de
-    ld (hl),%00111000            ; the editor's own text attribute (clears the old cursor cell too)
-    push bc
+    ld (hl),%00111000
     ld bc,31
     ldir
     pop bc
-.next:
+    pop af
+    inc a
     dec c
     jr nz,.row
+    ret
+
+; Draw EDIT_LINE_BUF plain at V2_ACTIVE_ROW and put the cursor on it.  Out: carry clear.
+V2_RD_DRAW_ACTIVE:
     xor a
     ld (V2_DRAW_BOLD_ENABLE),a   ; the active row is always drawn plain
     ld hl,EDIT_LINE_BUF
     ld a,(V2_ACTIVE_ROW)
     ld b,a
     call V2_DRAW_TEXT
+    ld hl,(CUR_EDIT_INDEX)
+    ld (V2_RD_INDEX),hl
+    call V2_RD_CURSOR
+    or a
+    ret
+
+; Cursor cell of the active line (inverted attribute), if it is on screen.
+V2_RD_CURSOR:
+    ld hl,EDIT_LINE_BUF
+    call EDITOR_WRAP_CALC
     call EDITOR_WRAP_OFFSET_TO_ROWCOL
     ld a,(V2_ACTIVE_ROW)
     add a,b
     cp 23
-    ret nc                       ; carry set here too?  see below
+    ret nc
     ld b,a
-    call KTAB_GFX_INVERT_ATTR
+    jp KTAB_GFX_INVERT_ATTR
+
+; Typing / backspace: same record, same view, same row count -> redo only the active line's rows.
+V2_REDRAW_ACTIVE:
+    ld hl,EDIT_LINE_BUF
+    call EDITOR_WRAP_CALC
+    ld a,(EDIT_WRAP_COUNT)
+    ld hl,V2_RD_WRAPS
+    cp (hl)
+    scf
+    ret nz                       ; the rows below would move
+.redo_active:
+    ld c,a
+    ld a,(V2_ACTIVE_ROW)
+    call V2_RD_CLEAR_ROWS
+    jr V2_RD_DRAW_ACTIVE
+
+; UP/DOWN.  (a) same record (cursor moved between wrapped rows): the cursor only.  (b) the neighbouring
+; record while both indices are <= 20 (the view top stays 0) and neither line changes height: redraw the
+; old line as a settled (keyword-bold) line, the new one as the active line, the status, the cursor.
+V2_REDRAW_NAV:
+    ld hl,(CUR_EDIT_INDEX)
+    ld de,(V2_RD_INDEX)
     or a
+    sbc hl,de                    ; HL = new - old
+    jr nz,.moved
+    ld a,(V2_RD_WRAPS)           ; (a): the cursor only
+    jr V2_REDRAW_ACTIVE.redo_active   ; (rows are redone too: text unchanged, so the identical picture)
+.moved:
+    ld b,0                       ; B = 0 for DOWN, 1 for UP
+    dec hl
+    ld a,h
+    or l
+    jr z,.dir
+    inc hl
+    inc hl                       ; HL = new - old + 1
+    ld a,h
+    or l
+    jp nz,.full
+    inc b
+.dir:
+    ld hl,(CUR_EDIT_INDEX)
+    ld de,21
+    or a
+    sbc hl,de
+    jp nc,.full                  ; new index > 20: the view may scroll
+    ld hl,(V2_RD_INDEX)
+    ld de,21
+    or a
+    sbc hl,de
+    jp nc,.full
+    push bc                      ; B = direction
+    ld de,(V2_RD_INDEX)
+    call V2_FIND_INDEX           ; HL = the OLD record, or $FFFF = it was the append line
+    ld (V2_CMD_PTR),hl
+    ld a,h
+    and l
+    inc a
+    jr z,.old_blank
+    call V2_COPY_RECORD          ; DETOK_BUF = its text
+    ld hl,DETOK_BUF
+    call EDITOR_WRAP_CALC
+    ld a,(EDIT_WRAP_COUNT)
+    ld hl,V2_RD_WRAPS
+    cp (hl)
+    jp nz,.full_pop              ; the old line is not drawn the way the record would be
+.old_blank:
+    ld hl,EDIT_LINE_BUF
+    call EDITOR_WRAP_CALC        ; the NEW line's height
+    ld a,(EDIT_WRAP_COUNT)
+    ld (V2_RD_NEWH),a
+    pop bc
+    ld a,(V2_ACTIVE_ROW)
+    dec b
+    jr z,.up
+    ld hl,V2_RD_WRAPS            ; DOWN: new row = old row + old height
+    add a,(hl)
+    cp 23
+    jp nc,.full
+    jr .rows
+.up:
+    ld hl,V2_RD_NEWH             ; UP: new row = old row - new height
+    sub (hl)
+    jp c,.full
+.rows:
+    ld (V2_RD_NEWROW),a
+    ld a,(V2_ACTIVE_ROW)         ; the old line: clear its rows, redraw it settled
+    ld hl,V2_RD_WRAPS
+    ld c,(hl)
+    call V2_RD_CLEAR_ROWS
+    ld hl,(V2_CMD_PTR)
+    ld a,h
+    and l
+    inc a
+    jr z,.new                    ; the old line was the empty append line: nothing to draw
+    ld hl,DETOK_BUF              ; (a record: DETOK_BUF still holds its text)
+    call V2_KW_DETECT_SPANS
+    ld a,1
+    ld (V2_DRAW_BOLD_ENABLE),a
+    ld hl,DETOK_BUF
+    ld a,(V2_ACTIVE_ROW)
+    ld b,a
+    call V2_DRAW_TEXT
+.new:
+    ld a,(V2_RD_NEWROW)
+    ld (V2_ACTIVE_ROW),a
+    ld a,(V2_RD_NEWH)
+    ld (V2_RD_WRAPS),a
+    ld c,a
+    ld a,(V2_ACTIVE_ROW)
+    call V2_RD_CLEAR_ROWS
+    call V2_DRAW_STATUS          ; "LINE n/m": n changed (m cannot: UP/DOWN do not add or remove lines)
+    jp V2_RD_DRAW_ACTIVE
+.full_pop:
+    pop bc
+.full:
+    scf
     ret
 
 ; V2_DRAW_STATUS -- R10 addition. Composes "LINE n/m" (n = 1-based
