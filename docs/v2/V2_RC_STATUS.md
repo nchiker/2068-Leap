@@ -67,7 +67,7 @@ single-line `IF ... THEN stmt` (only `THEN GOTO`), line numbers -- see `V2_FEATU
 | `roms/leap_v2_home.bin` | HOME ROM, 16384 bytes, SHA-256 `dddd4cbba2e74e4d260be517499759d9e5d32d016d36644c50b0972549e40dca` |
 | `roms/leap_v2_exrom.bin` | EXROM, 8192 bytes, SHA-256 `c180464120cb94af517ae5448c47c86806cb746fdabc83deb73679afb291b527` |
 | `roms/leap_v2_zesarux.bin` | both concatenated, for ZEsarUX `--romfile` only, SHA-256 `8c10453dbc5d78896d7c7cb0fa9b8480f53065e0e7e3e1ca2c094ffea839ef20` |
-| `packages/v2_{mode,sprite,printer,shapes,graphics}.{bin,tzx}` | the five packages and their tapes |
+| `packages/v2_package_{mode,sprite,printer,shapes,graphics}.bin`, `packages/v2_{mode,sprite,printer,shapes,graphics}.tzx` | the five packages and their tapes |
 | `docs/` | the V2 documents |
 | `SHA256SUMS`, `BUILD_INFO.txt` | hashes; commit, budget, identity CRC |
 
