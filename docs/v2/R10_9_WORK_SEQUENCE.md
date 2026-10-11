@@ -1,10 +1,14 @@
 # R10.9 — Updated work sequence (after Phase 1)
 
-**Status:** proposal for owner review. Supersedes §3 "R10.9" of
+**Status:** owner-approved sequence, updated after each phase. Supersedes §3 "R10.9" of
 [`R10_8_PRE_R11_PLAN.md`](R10_8_PRE_R11_PLAN.md); the R10.8 audit documents themselves are not edited.
-Phase 1 (regression infrastructure + ABI foundation) is implemented in the working tree and
-described in [`R10_9_PHASE1_REPORT.md`](R10_9_PHASE1_REPORT.md). **Nothing below Phase 1 has been
-started.** Budgets are *measured* for Phase 1 and **[E]** (estimated, not assembled) for the rest.
+**Completed (emulator-tested; nothing here is hardware-qualified):** Phase 1 (regression infrastructure + ABI foundation,
+[`R10_9_PHASE1_REPORT.md`](R10_9_PHASE1_REPORT.md)); Phase 2A (cassette integrity, step 2.3,
+[`R10_9_PHASE2A_REPORT.md`](R10_9_PHASE2A_REPORT.md)); Phase 2B (Array Store architecture investigation,
+[`R10_9_PHASE2B_REPORT.md`](R10_9_PHASE2B_REPORT.md)); Phase 2C (persistent Array Store and `CLEAR`, steps 2.5 and 2.6,
+[`R10_9_PHASE2C_REPORT.md`](R10_9_PHASE2C_REPORT.md)); **Phase 2D (strict compilation and exact error-line reporting, step 2.1,
+[`R10_9_PHASE2D_REPORT.md`](R10_9_PHASE2D_REPORT.md))**. **Not started:** steps 2.2, 2.4, 2.7, 2.8, 2.9. Budgets are *measured* for the completed
+phases and **[E]** (estimated, not assembled) for the rest.
 
 ## 0. Approved decisions this sequence follows
 
@@ -39,11 +43,11 @@ started.** Budgets are *measured* for Phase 1 and **[E]** (estimated, not assemb
 | Step | Items | Scope | Gate (all headless unless noted) | Budget [E] |
 |---|---|---|---|---|
 | **2.0** | owner review of Phase 1 — **done**; both policy questions decided (§4) | — | Phase 1 approved with corrections | — |
-| **2.1** | **M-2 → M-3** strict compile + exact error line (D3, D4) | `COMPILE_PROGRAM`/`.after_stmt` terminator check, `)` required, open `FOR` at EOF; lexer line counter; delete the chain walk. New error code "unexpected token" | all 18 `D3-*` cases and the `D4-*` matrix flip XFAIL→PASS (marker removal in the same change); 38/38 + 19/19 + `D3-ok-*` unchanged | HOME +35…+60, EXROM −20…−25 net |
+| **2.1** | **M-2 → M-3** strict compile + exact error line (D3, D4) — **done in Phase 2D** ([`R10_9_PHASE2D_REPORT.md`](R10_9_PHASE2D_REPORT.md); HOME +20 B used, EXROM 14 B freed (measured: 585→565 and 788→802 B free); all 18 `D3-*` and 15 `D4-*` cases are production gate cases) | `COMPILE_PROGRAM`/`.after_stmt` terminator check, `)` required, open `FOR` at EOF; lexer line counter; delete the chain walk. New error code "unexpected token" | all 18 `D3-*` cases and the `D4-*` matrix flip XFAIL→PASS (marker removal in the same change); 38/38 + 19/19 + `D3-ok-*` unchanged | HOME +35…+60, EXROM −20…−25 net |
 | **2.2** | **M-4 + D5b, M-8** BREAK, edit preservation (D5, D5b, D9) | `VM_BREAK` set by the ISR, polled on backward branches / `PAUSE`; ignore codes < `$20` in `EDITOR_LOOP`; commit-on-navigate; keep buffer on `PROGRAM FULL`. **Pins:** any new sysvar goes in the `$BE84–$BED7` gap — the ABI asserts will fail the build otherwise | `D5*`, `D9*` flip; BREAK test needs no hardware. Physical: BREAK keycap matrix position | HOME +20…+35, EXROM +20…+40 |
 | **2.3** | **M-1** tape failure semantics (D1, D2) — **done in Phase 2A** ([`R10_9_PHASE2A_REPORT.md`](R10_9_PHASE2A_REPORT.md); EXROM +62 B measured, HOME 0; physical round trip still owed) | `STORAGE_RECEIVE_BLOCK` success = carry set convention or `scf` at the four failure exits; `V2_LOAD.failed` must not wipe on VERIFY. **Interacts with Phase 1:** keep `STORAGE_LOAD_BAD_VERSION` ($FE) distinct from "touched" ($FF) | `D1-*`, `D2-*` flip; `tape-*`, `abi-*` stay green. **Owner, physical:** SAVE→LOAD→VERIFY of a small and a ≈ 6 KB program on a real recorder, deliberate dropout, SPACE abort, wrong-name tape, a package tape | HOME 0, EXROM −4…+10 |
 | **2.4** | **M-9** FILL completeness (D7) | package-only: overflow flag + rescan | the five failing `D7-*` flip; `v2_fill_check.py` 10/10 | package +60…+100 of 229 B spare |
-| **2.5** | **Array persistence — architecture-first repair** (D6). *Audit approved (A2); Phase 2A cassette integrity done; **Phase 2B** (HOME-minimal architecture comparison, assembled prototypes) done — [`R10_9_PHASE2B_REPORT.md`](R10_9_PHASE2B_REPORT.md): recommends an EXROM-owned service with eager bind (HOME +39 B free, EXROM −514 B); owner decisions given (architecture C, fail-fast bind at `RUN`, 31-character string-element cap); **Phase 2C implemented** — [`R10_9_PHASE2C_REPORT.md`](R10_9_PHASE2C_REPORT.md).* | **Preceded by a separate read-only architecture audit** (not started, not part of Phase 1): establish which of the three storage modes (program alone / program + current variables / array data independently) exist today, what the intended lifetime of a loaded array is across `RUN`, immediate statements and edits, and what the tape formats must carry. The audit produces the design; only then is a repair planned. No removal of array code is proposed. Header type 8 and its version word stay | the audit document; afterwards `D6-array-load-survives-run` flips (or is replaced by cases the audit defines); `array_save_load` standalone test stays | **not estimated** — depends on the audit |
+| **2.5** | **Array persistence — architecture-first repair** (D6) — **done**. The read-only architecture audit ([`R10_9_ARRAY_PERSISTENCE_AUDIT.md`](R10_9_ARRAY_PERSISTENCE_AUDIT.md)) was approved (A2); Phase 2A repaired cassette integrity; **Phase 2B** (HOME-minimal architecture comparison, assembled prototypes) — [`R10_9_PHASE2B_REPORT.md`](R10_9_PHASE2B_REPORT.md) — recommended an EXROM-owned service with eager bind; owner decisions followed (architecture C, fail-fast bind at `RUN`, 31-character string-element cap); **Phase 2C implemented it** — [`R10_9_PHASE2C_REPORT.md`](R10_9_PHASE2C_REPORT.md) (HOME 585 B free, EXROM 788 B free after 2C). | What the audit established: which of the three storage modes (program alone / program + current variables / array data independently) exist, the lifetime of a loaded array across `RUN`, immediate statements and edits, and what the tape formats carry. No removal of array code was made. Header type 8 and its version word stay | `D6-*` and the 98-case Array Store gate (`tools/v2_prod_arrays.py`); `array_save_load` standalone test stays | measured in the Phase 2C report |
 | **2.6** | **S-1** `CLEAR` (D8) — **done in Phase 2C** (designed together with the Array Store, as the audit required; see the Phase 2C report §5) | zero the carved variable/array-pointer block, reset `ARRAYS_END`, **stop clearing packages** | both `D8-*` cases flip | HOME 0…+10, EXROM −6…0 |
 | **2.7** | **Decision 2 — study first**: overflow → float promotion (D11) | measure `+ - *` promotion cost on the existing float path and the literal rule (> 32767 → float literal); prove with an exhaustive 16-bit boundary oracle against an exact reference; report cost. **Implement only if the cost fits the floor below and correctness is demonstrated** | `D11-*` cases flip only when implemented | HOME +20…+40, EXROM +10…+20 (to be measured) |
 | **2.8** | **Decision 7**: multi-item `PRINT` / prompted `INPUT` assessment | document only: minimal grammar, bytecode/VM cost, interaction with strict compile (2.1 already turns today's silent truncation into an error) | none (no code) | — |
@@ -59,20 +63,20 @@ deliberately a study: decision 2 conditions the change on demonstrated cost and 
 ## 2a. Projected headroom (measured vs estimated)
 
 The earlier projection assumed −430…−470 B of EXROM from deleting array support. **That saving is
-removed** — array persistence stays. Nothing below includes any array-repair cost: step 2.5's size is
-unknown until its audit.
+removed** — array persistence stays. Nothing below includes the (now measured, Phase 2C) array-repair cost.
 
-**Measured (Phase 1, `make budget`):** HOME 546 B free (unchanged from the R10.7 baseline); EXROM 1,340 B free
-(baseline 1,385; Phase 1 cost 45 B).
+**Measured (`make budget`):** after Phase 1 HOME 546 B free (unchanged from the R10.7 baseline), EXROM 1,340 B free (baseline 1,385; Phase 1 cost 45 B).
+After Phase 2C: HOME 585 / EXROM 788. After Phase 2D: HOME 565 / EXROM 802 (§2.1 above and the Phase 2D report §7). The estimates in the table below
+predate 2A–2D and are kept for the *remaining* steps only.
 
 **Estimated [E] — R10.8 plan figures, not assembled; "use" is bytes added (negative = frees):**
 
 | Step | HOME use | EXROM use |
 |---|---:|---:|
-| 2.1 strict compile + error line | +35…+60 | −25…−20 |
+| 2.1 strict compile + error line — *done: measured HOME +20, EXROM −14 (see Phase 2D report)* | +35…+60 | −25…−20 |
 | 2.2 BREAK, edit preservation | +20…+35 | +20…+40 |
-| 2.3 tape failure semantics | 0 | −4…+10 |
-| 2.6 `CLEAR` | 0…+10 | −6…0 |
+| 2.3 tape failure semantics — *done (Phase 2A)* | 0 | −4…+10 |
+| 2.6 `CLEAR` — *done (Phase 2C)* | 0…+10 | −6…0 |
 | 2.9 display reset | 0 | +15…+25 |
 | **Subtotal (excluding 2.5, 2.7)** | **+55…+105** | **0…+55** |
 | 2.7 overflow promotion, *if* the study approves it | +20…+40 | +10…+20 |
@@ -83,7 +87,10 @@ unknown until its audit.
 | without 2.7 | 441…491 | 1,285…1,340 |
 | with 2.7 | 401…471 | 1,265…1,330 |
 
-Both stay above the proposed R10.9 close floors (HOME ≥ 350, EXROM ≥ 800) *before* the unknown 2.5 cost.
+That projection started from Phase 1's 546 / 1,340 and is **superseded** by the measured position, which already includes 2.1, 2.3, 2.5 and 2.6 (HOME 565 / EXROM 802 after Phase 2D). Re-based on it, using the
+same [E] figures for the steps still to do (2.2: HOME +20…+35, EXROM +20…+40; 2.9: EXROM +15…+25; 2.7 if approved: HOME +20…+40, EXROM +10…+20): **without 2.7 about HOME 530…545 / EXROM 737…767; with 2.7 about
+HOME 490…525 / EXROM 717…757**. HOME stays above its close floor (≥ 350); **EXROM would end below the ≥ 800 reserve target** unless the remaining steps come in at their cheaper estimates or
+savings are found. The floors are engineering reserves, not physical limits, and must be re-measured rather than assumed after each step.
 R10.10 is not yet affordable on paper without savings: the R10.8 plan estimated R10.10 at HOME +75…+140 and
 EXROM +385…+655 (editor work), which with the table above leaves roughly HOME 260…416 and EXROM 630…955, and the
 R10.10 close floors are HOME ≥ 250 / EXROM ≥ 500. `IN`/`OUT` (below) and the 2.5 repair are on top of that and

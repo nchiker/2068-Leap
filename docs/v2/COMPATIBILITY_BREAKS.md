@@ -157,6 +157,23 @@ ABI first — out of scope for this milestone given Home's now-2-byte
 margin. Any future attempt should budget for that shape's own fixed Home
 cost before assuming the EXROM saving is free.
 
+## Break 4 (landed, R10.9 Phase 2D): the V2 compiler is strict — malformed source is a compile error
+
+- **Old behavior**: on any token it did not recognise at a statement boundary the compiler stopped "cleanly" and ran the part of the
+  program it had compiled; trailing text after a statement, a missing `)` and a `FOR` without `NEXT` were accepted; an unterminated string
+  swallowed the following source lines. A program could therefore *appear* to work while most of it was never compiled (for example, a
+  program whose first line is a V1-style `;; comment` compiled to an empty program).
+- **New behavior**: every one of those is a compile error with the cursor on the offending line, and nothing runs: error 64
+  `UNEXPECTED TOKEN` (stray `ENDIF`/`ELSE`/`ENDP`/`THEN`/`TO`/`)`, trailing junk, missing `:`, unterminated string), 65 `FOR` without `NEXT`
+  (`SYNTAX ERROR`), 66 missing `)` (`SYNTAX ERROR`). A string literal cannot span lines; a `REM` whose text ends in `:` ends at its line.
+- **Reason**: D3 of the R10.8 audit (silent data loss in the programmer's own source); owner decision 3, work-sequence step 2.1.
+- **ROM cost**: HOME 20 B, EXROM -14 B (measured; see `R10_9_PHASE2D_REPORT.md`).
+- **User-visible consequence**: programs that were silently truncated now fail at `RUN` and must be fixed. Valid programs, supported
+  statement forms and bytecode are unchanged.
+- **Migration consequence**: remove or rewrite `;;` / `'` comments (`REM`), add the missing `:` between statements on one line, close every `(` and
+  `FOR`, close every string on its own line; use one expression per `PRINT`.
+- **Status**: **landed** — emulator-tested only (`R10_9_PHASE2D_REPORT.md`).
+
 ## What is explicitly not yet broken
 
 Every other V1 behavior, format, or API (tape/storage framing, the four

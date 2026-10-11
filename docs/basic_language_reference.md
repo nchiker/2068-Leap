@@ -379,6 +379,21 @@ statement. See `docs/programmers_reference.md`'s own "Statement
 separator" section for why this is a deliberate, low-risk scope
 boundary rather than an oversight.
 
+**Strict compilation (V2, R10.9 Phase 2D).** The V2 compiler accepts only a complete, well-formed program. After
+each statement the next token must be `:` (or the end of the line), the end of the program, or the keyword that
+closes the enclosing block (`ELSE`/`ENDIF` for a block `IF`, `ENDP` for a `PROC`). Anything else is a compile
+error, `UNEXPECTED TOKEN`, shown with the cursor on the offending line, and **nothing is run** — before Phase 2D the
+compiler silently stopped at the first token it did not recognise and ran the part it had compiled. This rejects, for
+example: two statements without a `:` between them (`x = 1 y = 2`), trailing text (`x = (1))`, `x = 7 MOD 2`), a stray
+`ENDIF`/`ELSE`/`ENDP`/`THEN`/`TO`/`)`, a leading line number, `PRINT x; x` and `PRINT x, x` (one expression per
+`PRINT`), a chained comparison (`1 < 2 < 3`), `a$(2 TO 3)`, `'` comments, and a doubled quote inside a string. A missing `)`
+(`x = (1 + 2`) and a `FOR` that is never closed by `NEXT` are also compile errors (both report `SYNTAX ERROR`). A string
+literal must be closed on its own line: an unterminated `"` is `UNEXPECTED TOKEN` on that line (it used to swallow the
+following lines). A `REM` whose text ends in `:` ends at its line. The error line is exact: the cursor goes to the
+line that contains the offending token. Errors that can only be found at the end of the program (an unclosed `FOR`, `PROC` or
+block `IF`, or a `GOTO`/`CALL` to a label that does not exist) put the cursor on the empty line after the last line, where the
+missing `NEXT`/`ENDP`/`ENDIF`/label belongs.
+
 Live keyword bolding while typing only recognizes a keyword at the
 very *start* of a line — in `PRINT 1: GOTO loop`, only `PRINT` renders
 bold, not `GOTO` after the colon. Purely cosmetic (execution is

@@ -29,7 +29,7 @@ shipped) and prints both logs. Library: `tools/v2_prod.py`; tape synthesiser:
 
 | Suite | File | Meaning of a result |
 |---|---|---|
-| **Gate** | `tools/v2_prod_regress.py` | every case must `PASS`. Editor key path, command dispatch, real tape LOAD/VERIFY/SAVE, cassette failure semantics (`D1-*`, `D2-*`, R10.9 Phase 2A), all five packages, display-mode return, package ABI 2.0 (`abi-*`) |
+| **Gate** | `tools/v2_prod_regress.py` | every case must `PASS`. Editor key path, command dispatch, real tape LOAD/VERIFY/SAVE, cassette failure semantics (`D1-*`, `D2-*`, R10.9 Phase 2A), all five packages, display-mode return, package ABI 2.0 (`abi-*`), strict compilation and compile-error line (`D3-*`, `D4-*`, R10.9 Phase 2D) |
 | **Known defects** | `tools/v2_known_defects.py` | each case asserts the *correct* behaviour. `XFAIL` = a documented R10.8 defect reproduced (expected, exit 0). `PASS` = a positive control. `FAIL` = unexpected failure (exit 1). `XPASS` = a case marked as a known defect now behaves correctly (exit 1): the defect was fixed, so drop the `xfail=` marker and the case becomes a gate test |
 
 An XFAIL line is **not** a pass: the summary line counts them separately, and `docs/v2/
@@ -96,3 +96,22 @@ compiler, the VM and the allocator, but **not** the production `DIM` code, the a
 
 Known synthetic limits (unchanged from above): the tape path is a synthesised EAR stream, not a recorder; the
 `ARRAY STORE FULL` / capacity cases poke `PAS_END` directly to place the store boundary.
+
+
+## Strict compilation and compile-error line (R10.9 Phase 2D)
+
+`D3` (the compiler silently stopped at the first token it did not recognise) and `D4` (the error cursor landed on the lexer's look-ahead
+record) were strict expected failures in Phase 1 and are **repaired in Phase 2D**. Their cases are production **gate** cases in
+`tools/v2_prod_regress.py` (the sections "strict compilation" and "compile-error line"); `tools/v2_known_defects.py` no longer holds any D3/D4 case.
+
+* `D3-*` (18 malformed-program families) assert the **exact compile error code** (64 unexpected token, 65 `FOR` without `NEXT`, 66 missing `)`) *and* that the
+  program did not execute (`x = 1`, the first statement of the program, must not have run). `D3-ok-*` are the positive controls (the two cases that were already errors,
+  a valid colon line, a valid program using every closer — block `IF`/`ELSE`/`ENDIF`, `PROC`/`ENDP`, `DEF FN`, `FOR ... STEP`, a label sharing a line with a statement,
+  a line ending in `:`, `REM ...:`, `:` inside a string — and a `:`/keywords-in-a-string case).
+* `D4-*`: the original 15-case matrix (20 lines of 5/29/69 characters, error on line 0, 2, 5, 10, 19: the 69-character cases cross the 264-byte chunk window repeatedly) plus
+  boundary cases: lines that end in `:` (the lexer's LF continuation marker) before and on the failing line, trailing junk on the first/last line, an expression cut off at
+  the end of its line, blank and `REM` lines, a label line, a stray `ENDIF` late in the program, an unclosed `(`, the four end-of-source errors (cursor on the append position),
+  and a typed `run` through the real editor key path (cursor *and* loaded edit line).
+* A failed compile followed by a good one in the same session (`D3-failed-compile-then-good`) proves the line counter and compiler state restart cleanly.
+* `rom/test_v2_chunk_refill_boundary.asm` (standalone) TEST3/TEST4 were rewritten for the new mechanism (`LEX_LINE` instead of `CHUNK_CUR_REC_PTR`).
+

@@ -1372,8 +1372,14 @@ text, not a new statement.
 | Message | Meaning |
 |---|---|
 | `SYNTAX ERROR` | Malformed statement |
+| `UNEXPECTED TOKEN` | Text where a statement or its `:` separator should be: two statements without a `:`, trailing characters after a complete statement, a stray `ENDIF`/`ELSE`/`ENDP`, an unterminated `"` string. The cursor goes to that line and the program does not run |
 | `LABEL NOT FOUND` | A `GOTO`/`GOSUB`/`CALL` target doesn't exist |
 | `INVALID ARGUMENT` | An argument is outside its valid range (`STICK`, `CHR$`) |
+
+A compile error stops the `RUN` before anything executes, and the cursor goes to the line that contains the error. For an
+error that can only be found at the end of the program (a `FOR` without `NEXT`, a `PROC` or block `IF` that is never closed, a `GOTO`
+or `CALL` to a label that does not exist) the cursor goes to the empty line after the last line, where the missing `NEXT`, `ENDP`,
+`ENDIF` or label belongs.
 
 **Found at `RUN` time**:
 
