@@ -77,14 +77,19 @@ case("seg2-string", ["dim a(3600)", "dim s$(10,100)", "s$(9) = \"hello\"", "t$ =
 case("seg2-exhausted", ["dim a(3600)", "dim b(900)", "dim c(900)"], ve=64)
 case("seg2-reset-on-rerun", ["dim a(3600)", "dim b(900)", "b(899) = 4", "x = b(899)"], vals={0: 4},
      extra=seg2(("n", 1), True, 0xE000 + 1803), times=2)
+# RC: the main pool is 154 bytes smaller than in R10.7 (this program: 967 -> 813 free), both measured:
+# 74 = two more string temps (2 x 32) and two more float temps (2 x 5) -- QUAL Q-02, temporaries are
+# never reused while referenced (817667f); 80 = SESS_GAP, room for the symbols that immediate statements
+# add to a session (owner decision 2). The bounds are the old ones moved by exactly that 154.
 case("free-1", ["x = free(1)", "dim a(3600)", "dim b(900)", "y = free(1)", "z = free()", "w = free(0)"],
      vals={0: 2048, 1: 2048 - 1803},
-     extra=lambda v: (v(2) == v(3) and 900 < v(2) < 1100, f"free()={v(2)} free(0)={v(3)}"))
+     extra=lambda v: (v(2) == v(3) and 900 - 154 < v(2) < 1100 - 154, f"free()={v(2)} free(0)={v(3)}"))
 case("free-expr-arg", ["n = 1", "x = free(n)"], vals={1: 2048})
-# 8. capacity: 253 numeric variables ok, 254th a clean compile error
-case("253-vars", [f"w{i} = {i % 100}" for i in range(1, 254)])
-c, e, v = run([f"w{i} = {i % 100}" for i in range(1, 255)])
-print(f"{'PASS' if c in (1, 39) else 'FAIL'} 254-vars: compile_err={c} vm_err={e}")
+# 8. capacity: 251 numeric variables ok, 252nd a clean compile error. RC: the cap is 255 minus the float
+# temporaries (SYM_CAPS), which QUAL Q-02 raised from 2 to 4 (817667f) -- it was 253.
+case("251-vars", [f"w{i} = {i % 100}" for i in range(1, 252)])
+c, e, v = run([f"w{i} = {i % 100}" for i in range(1, 253)])
+print(f"{'PASS' if c in (1, 39) else 'FAIL'} 252-vars: compile_err={c} vm_err={e}")
 fails += c not in (1, 39); D("stop")
 # 9. ordinary program
 case("plain", ["s = 0", "for i = 1 to 3", "s = s + i", "next i"], vals={0: 6})
