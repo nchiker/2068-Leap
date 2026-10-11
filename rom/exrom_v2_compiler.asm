@@ -733,7 +733,7 @@ LEX_NEXT_TOKEN_CORE:
         cp ':'
         jr z,.single1
         cp $0D
-        jp z,.newline
+        jr z,.newline
         cp '='
         jr z,.single2
         cp '+'
@@ -753,9 +753,9 @@ LEX_NEXT_TOKEN_CORE:
         cp '>'
         jr z,.gt_start
         cp ','
-        jp z,.single10
+        jr z,.single10
         cp ';'
-        jp z,.semi
+        jr z,.semi
         cp '"'
         jr z,.string_lit
         cp '0'
@@ -813,28 +813,28 @@ LEX_NEXT_TOKEN_CORE:
         set LEX_NEWLINE_PENDING,(hl)
 .single1:
         ld a,TOK_COLON
-        jp .advance1
+        jr .advance1
 .single2:
         ld a,TOK_ASSIGN
-        jp .advance1
+        jr .advance1
 .single3:
         ld a,TOK_PLUS
-        jp .advance1
+        jr .advance1
 .single4:
         ld a,TOK_MINUS
-        jp .advance1
+        jr .advance1
 .single5:
         ld a,TOK_STAR
-        jp .advance1
+        jr .advance1
 .single6:
         ld a,TOK_SLASH
-        jp .advance1
+        jr .advance1
 .single7:
         ld a,TOK_LPAREN
-        jp .advance1
+        jr .advance1
 .single8:
         ld a,TOK_RPAREN
-        jp .advance1
+        jr .advance1
 .single9:
         ; R8.5 Group 3 -- '<' now needs one character of lookahead: '<='
         ; and '<>' are both real relops this dialect never supported
@@ -848,13 +848,13 @@ LEX_NEXT_TOKEN_CORE:
         cp '>'
         jr z,.lt_gt
         ld a,TOK_LT
-        jp .advance1
+        jr .advance1
 .lt_eq:
         ld a,TOK_LE
-        jp .advance2
+        jr .advance2
 .lt_gt:
         ld a,TOK_NE
-        jp .advance2
+        jr .advance2
 .gt_start:
         ; R8.5 Group 3 -- '>' didn't exist as a token at all before this;
         ; '>=' is the only two-character form.
@@ -864,21 +864,21 @@ LEX_NEXT_TOKEN_CORE:
         cp '='
         jr z,.gt_eq
         ld a,TOK_GT
-        jp .advance1
+        jr .advance1
 .gt_eq:
         ld a,TOK_GE
-        jp .advance2
+        jr .advance2
 .single10:
         ld a,TOK_COMMA
-        jp .advance1
+        jr .advance1
 .semi:
         ld a,TOK_SEMI
-        jp .advance1
+        jr .advance1
 .number:
         jr LEX_SCAN_NUMBER
 .unknown:
         ld a,TOK_UNKNOWN
-        jp .advance1
+        ; RC shrink: falls through to .advance1 (was jp)
 .advance1:
         ld (TOK_TYPE),a
         ld hl,(SRC_PTR)
@@ -2780,7 +2780,7 @@ COMPILE_DIM_STR:
         ld a,(TOK_TYPE)
         cp TOK_NUMBER
         jr z,.have_size
-        jp ERR_DIM_EXPECTED_NUMBER
+        jr ERR_DIM_EXPECTED_NUMBER
 .have_size:
         ld hl,(TOK_VAL)
         ld a,h
@@ -4280,21 +4280,21 @@ COMPILE_STATEMENT_LIST:
         cp TOK_KW_EXIT
         jp z,.exit_for
         cp TOK_KW_FLASH
-        jp z,.flash
+        jr z,.flash
         cp TOK_KW_BRIGHT
-        jp z,.bright
+        jr z,.bright
         cp TOK_KW_OVER
-        jp z,.over
+        jr z,.over
         cp TOK_KW_INVERSE
-        jp z,.inverse
+        jr z,.inverse
         cp TOK_KW_AT
-        jp z,.at
+        jr z,.at
         cp TOK_KW_TAB
-        jp z,.tab
+        jr z,.tab
         cp TOK_KW_CLEAR
-        jp z,.clear
+        jr z,.clear
         cp TOK_KW_OUT
-        jp z,.out
+        jr z,.out
         cp TOK_IDENT
         jp z,.ident_stmt
         cp TOK_STR_IDENT
@@ -4403,16 +4403,16 @@ COMPILE_STATEMENT_LIST:
                                   ; with no ':' between them
 .str_ident_stmt:
         call COMPILE_STR_IDENT_STMT
-        jp .after_stmt
+        jr .after_stmt
 .dim:
         call COMPILE_DIM
-        jp .after_stmt
+        jr .after_stmt
 .input:
         call COMPILE_INPUT
-        jp .after_stmt
+        jr .after_stmt
 .exit_for:
         call COMPILE_EXIT_FOR
-        jp .after_stmt
+        jr .after_stmt
 .ident_stmt:
         ; R7.5 addition: BEFORE assuming this identifier starts an
         ; assignment or a label definition, check whether its exact name
@@ -4433,7 +4433,7 @@ COMPILE_STATEMENT_LIST:
         call EXT2_LOOKUP
         jr c,.not_extension
         call COMPILE_EXT_CALL
-        jp .after_stmt
+        jr .after_stmt
 .not_extension:
         ; genuine one-token lookahead: save this identifier's name, then
         ; fetch the NEXT token. If it's ':', this was a label definition —
@@ -4447,7 +4447,7 @@ COMPILE_STATEMENT_LIST:
         cp TOK_COLON
         jr z,.label
         call COMPILE_ASSIGN_CONTINUED
-        jp .after_stmt
+        jr .after_stmt
 .label:
         ld a,(LEX_LINE+1)        ; STUDY: a line end is also a TOK_COLON (the lexer's record
         bit LEX_NEWLINE_PENDING,a ; separator) -- an identifier alone on its line is NOT a label
@@ -4463,22 +4463,22 @@ COMPILE_STATEMENT_LIST:
         jp .loop
 .goto:
         call COMPILE_GOTO
-        jp .after_stmt
+        jr .after_stmt
 .if:
         call COMPILE_IF
-        jp .after_stmt
+        jr .after_stmt
 .for:
         call COMPILE_FOR
-        jp .after_stmt
+        jr .after_stmt
 .next_stmt:
         call COMPILE_NEXT
-        jp .after_stmt
+        jr .after_stmt
 .proc:
         call COMPILE_PROC
-        jp .after_stmt
+        jr .after_stmt
 .call_stmt:
         call COMPILE_CALL_STMT
-        jp .after_stmt
+        jr .after_stmt
 .def_fn:
         call COMPILE_DEF_FN
 .after_stmt:

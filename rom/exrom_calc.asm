@@ -1321,7 +1321,7 @@ CALC_OP_MUL:
     ; DEC B + JP NZ instead, same pattern this project already uses
     ; everywhere else a jump might be far from its target.
     dec  b
-    jp   nz, .cm_loop
+    jr   nz, .cm_loop
     ld   a, (CALC_MUL_ACC+7)
     bit  7, a
     jr   nz, .cm_no_renorm
@@ -1587,7 +1587,7 @@ CALC_OP_DIV:
     ; B (the 32-iteration counter) is never touched by anything above —
     ; same discipline as CALC_OP_MUL's own loop
     dec  b
-    jp   nz, .cd_loop
+    jr   nz, .cd_loop
 
     ld   a, (CALC_SHIFT_COUNT)
     ld   (CALC_UNP_A), a

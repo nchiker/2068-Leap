@@ -989,8 +989,8 @@ VM_OP_TABLE:
         dw OP_CMP_GT                            ; 41
         dw OP_CMP_GE                             ; 42
         dw OP_CMP_NE                              ; 43
-        dw OP_AND                                  ; 44
-        dw OP_OR                                    ; 45
+        dw VM_ERR_ILLEGAL_OPCODE                   ; 44 (was OP_AND; RC: short-circuit AND is 72)
+        dw VM_ERR_ILLEGAL_OPCODE                   ; 45 (was OP_OR; RC: short-circuit OR is 73)
         dw OP_NOT                                    ; 46
         dw OP_JMP                                     ; 47 (R8.5 Group 3
                                                         ; -- OP_JMP_ELSE:
@@ -1917,7 +1917,7 @@ ARENA_ALLOC_STRING:
         ld de,(VM_STRARR_ADDR_TMP)        ; count*width, cached above
         add hl,de
         ld (ARRAYS_END),hl
-        jp VM_ARENA_DONE
+        jr VM_ARENA_DONE
 
 ; VM_ARENA_FIT -- R10.7 P5.4. HL = bytes needed. Carry SET if they fit: first in
 ; the main pool (ARRAYS_END + needed < VM_CSP), else in segment 2, in which case
@@ -2197,7 +2197,7 @@ OP_MUL:
         ld hl,(VM_FLOAT_A_VAL)
         ld de,(VM_FLOAT_B_VAL)
         call VM_MUL_CHECKED     ; STUDY (D11): MATH_MULTIPLY16 with overflow detection
-        jp c,.float_path        ; promote
+        jr c,.float_path        ; promote
         jp PUSH_INT_CONTINUE
         ; (old text) existing, already-verified platform
                                  ; primitive (kernel/math/math.asm) — reused,
@@ -2327,48 +2327,8 @@ OP_CMP_NE:
 .not_ne:
         jp PUSH_INT_CONTINUE
 
-OP_AND:
-        rst $10                 ; HL = b, A = tag_b
-        ld c,a
-        push hl
-        rst $10                  ; HL = a, A = tag_a
-        or c
-        jp nz,VM_ERR_FLOAT_NOT_IMPLEMENTED
-        pop de                   ; DE = b
-        ld a,h
-        or l
-        jr z,.false               ; a == 0 -> false regardless of b
-        ld a,d
-        or e
-        jr z,.false                ; b == 0 -> false
-        ld hl,1
-        jr .push
-.false:
-        ld hl,0
-.push:
-        jp PUSH_INT_CONTINUE
-
-OP_OR:
-        rst $10
-        ld c,a
-        push hl
-        rst $10
-        or c
-        jp nz,VM_ERR_FLOAT_NOT_IMPLEMENTED
-        pop de
-        ld a,h
-        or l
-        jr nz,.true
-        ld a,d
-        or e
-        jr nz,.true
-        ld hl,0
-        jr .push
-.true:
-        ld hl,1
-.push:
-        jp PUSH_INT_CONTINUE
-
+; RC: OP_AND / OP_OR (44/45) removed -- the compiler emits the short-circuit forms (72/73) only; the
+; two table slots raise ILLEGAL OPCODE like any other unused code.
 OP_NOT:
         rst $10                  ; HL = value, A = tag
         call VM_FLOAT_TEST_ZERO  ; RC: a FLOAT is true when nonzero (was error 4)
@@ -2397,7 +2357,7 @@ VM_LOGIC_SC:
 .t:
         pop af
         cp l
-        jp nz,OP_JMPZ.no_branch  ; not decided: on to the right operand
+        jr nz,OP_JMPZ.no_branch  ; not decided: on to the right operand
         xor a                    ; TAG_INT
         call VM_PUSH
         jp OP_JMP
@@ -2497,7 +2457,7 @@ OP_FOR_INIT:
         call VM_FOR_PAST
         dec a
         jp z,OP_JMP             ; already past the limit: skip the body (to FOR_POP)
-        jp OP_JMPZ.no_branch    ; run the body: step over the operand
+        jr OP_JMPZ.no_branch    ; run the body: step over the operand
 
 OP_FOR_NEXT:
         ld hl,(VM_IP)
@@ -2896,7 +2856,7 @@ VM_STR_POP_COMPARE:
         ld a,l
         call VM_STR_ADDR        ; HL -> a's record
         ld de,(VM_STR_RUNNING_DST_TMP)
-        jp VM_STR_COMPARE
+        ; RC shrink: falls through to VM_STR_COMPARE (was jp)
 
 ; VM_STR_COMPARE — input: HL = a's record address, DE = b's record address.
 ; Output: A = 0 if equal, 1 if a>b, $FF if a<b (matches MATH_COMPARE16's
@@ -5438,7 +5398,7 @@ BUILTIN_FN_TAN:
         ld a,(VM_FLOAT_A_TAG)
         ld hl,(VM_FLOAT_A_VAL)
         call VM_FLOAT_TEST_ZERO      ; COS(x) = 0 at x = 90 + 180n
-        jp z,VM_ERR_DIVIDE_BY_ZERO
+        jr z,VM_ERR_DIVIDE_BY_ZERO
         call VM_CALC_PUSH_AB         ; [c, s]
         ld b,0
         rst $28

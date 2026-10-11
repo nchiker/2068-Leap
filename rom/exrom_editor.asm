@@ -113,13 +113,13 @@ EDITOR_LOOP:
     cp   KEY_ENTER
     jp   z, EDITOR_EXIT
     cp   KEY_CURSOR_LEFT
-    jp   z, .move_left
+    jr   z, .move_left
     cp   KEY_CURSOR_RIGHT
-    jp   z, .move_right
+    jr   z, .move_right
     cp   KEY_CURSOR_UP
-    jp   z, .move_up
+    jr   z, .move_up
     cp   KEY_CURSOR_DOWN
-    jp   z, .move_down
+    jr   z, .move_down
     cp   KEY_DELETE
     jp   z, .delete
     cp   KEY_DELETE_LINE
@@ -131,7 +131,7 @@ EDITOR_LOOP:
     cp   KEY_PREV_ERROR
     jp   z, .prev_error
     cp   $20
-    jp   c, EDITOR_LOOP            ; STUDY (D5b): was `or a / jp z` (A=0 only); every
+    jr   c, EDITOR_LOOP            ; STUDY (D5b): was `or a / jp z` (A=0 only); every
                                    ; code < $20 that has no handler above (BREAK $10 ...)
                                    ; is ignored. A=0: IO_READ_KEY saw a key it
                                    ; doesn't have a mapping for yet
@@ -515,7 +515,7 @@ EDITOR_BACKSPACE:
                                  ; before the cursor to delete
     ld   a, EDIR_LEFT
     call EDITOR_MOVE_CURSOR
-    jp   EDITOR_DELETE_CHAR        ; tail call — delete now happens at
+    jr   EDITOR_DELETE_CHAR        ; tail call — delete now happens at
                                   ; the position we just moved back to.
 
 ; ============================================================================
@@ -629,7 +629,7 @@ EDITOR_REDRAW_SCREEN:
     ld   hl, (EDITOR_REDRAW_HOOK)
     ld   a, h
     or   l
-    jp   nz, .use_hook
+    jr   nz, .use_hook
 
     call KTAB_GFX_CLS
     ld   hl, EDIT_LINE_BUF
@@ -790,7 +790,7 @@ EDITOR_WRAP_CALC:
     ld   a, (WRAP_REMAIN)
     or   a
     jr   z, .done
-    jp   .row_loop
+    jr   .row_loop
 
 .done:
     ld   a, (WRAP_ROW_IDX)

@@ -70,6 +70,11 @@ ARR_RUN_INIT:
     ld hl,(PAS_END)
     ld (ARR2_END),hl
 ARR_RUN_BIND:                   ; RC (session): bind the store without resetting segment 2
+    xor a
+    db $FE                      ; cp n: skips the ld a,1 below
+ARR_RUN_CHECK:                  ; RC (session): only compare; CF = a declared size differs from the
+    ld a,1                      ; stored one. Nothing is bound (the tables may not be carved yet)
+    ld (ASV_CHECK),a
     ld hl,(PAS_END)
     ld a,h
     sub ARR2_BASE >> 8
@@ -119,6 +124,9 @@ ARR_RUN_BIND:                   ; RC (session): bind the store without resetting
     inc hl
     inc de
     djnz .cmp
+    ld a,(ASV_CHECK)
+    or a
+    jr nz,.next
     ld a,(ASV_IDX)
     call ARR_SLOT               ; C = kind -> HL = &slot
     ld de,(ASV_DESC)
@@ -133,6 +141,10 @@ ARR_RUN_BIND:                   ; RC (session): bind the store without resetting
     jr .rec
 .mismatch:
     pop hl
+    ld a,(ASV_CHECK)
+    or a
+    scf
+    ret nz                      ; check only: CF
     ld a,65
     jp VM_ERR_COMMON            ; error 65 (ARRAY SIZE MISMATCH), VM halted
 

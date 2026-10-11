@@ -603,6 +603,8 @@ V2_RUN_IMMEDIATE:
     cp (hl)
     ld a,71
     jr nz,.undo
+    call ARR_RUN_CHECK           ; a new array name whose declared size differs from the stored
+    jr c,.mismatch               ; array: refused before any table moves (error 65)
     call VM_INIT_SESSION
     ld a,(VM_HALTED)
     or a                         ; no room to carve the new variables' slots (error 64):
@@ -614,6 +616,11 @@ V2_RUN_IMMEDIATE:
     ld (COMPILE_ERROR_CODE),a
     call V2_SESSION_UNDO
     jr V2_COMPILE_RUN.error
+.mismatch:
+    call V2_SESSION_UNDO
+    ld a,65
+    ld (VM_ERROR_CODE),a
+    jp V2_COMPILE_RUN.runtime_error
 .alone:
     ld hl,EDIT_LINE_BUF+1
 V2_COMPILE_RUN:
@@ -654,6 +661,7 @@ V2_COMPILE_RUN:
     ld a,(VM_ERROR_CODE)
     or a
     jr z,.finished
+.runtime_error:
     call V2_RUNTIME_MSG
     jp V2_SHOW_MESSAGE
 .finished:
@@ -666,8 +674,6 @@ V2_COMPILE_RUN:
 ; symbols of a kind, and the capacity class {5,6,45,55,62} = out of memory.
 ; RC (session variables): V2_COMPILE_STORED -- the stored program compiled at VM_CODE_BASE (Z = no error).
 V2_COMPILE_STORED:
-    xor a
-    ld (SESS_VALID),a            ; the old session's code and tables are about to be replaced
     call V2_BUILD_SOURCE
     ld hl,V2_SOURCE_STAGE
 V2_COMPILE_AT_BASE:
@@ -687,7 +693,8 @@ V2_SESSION_START:
     ld a,1
     ld (SESS_VALID),a
     call KTAB_VM_INIT
-    jp ARR_RUN_INIT
+    call ARR_RUN_INIT            ; a CALL at the same stack level as VM_INIT's: an error raised while
+    ret                          ; binding unwinds (VM_RUN_SP) to this return address, not a tail jp's
 
 V2_COMPILE_MSG:
     ld hl,V2_MSG_NAMELEN
@@ -828,8 +835,6 @@ V2_DISPATCH:
 ; SAVE/LOAD ... ARRAY can never read stale ones. The two tables are
 ; contiguous (ASSERTed).
 V2_CLEAR_ARRAYS:
-    xor a
-    ld (SESS_VALID),a            ; RC: any edit, LOAD or NEW ends the variable session
     call SYM_RESET               ; the compile symbol table lives at PROG_END and
                                    ; is invalidated by the same events
     ld hl,(SYM_END_V)
@@ -1172,7 +1177,7 @@ V2_VERIFY:
     ld (V2_REQUEST_TYPE),a
     ld a,1
     ld (STORAGE_VERIFY_MODE),a
-    jp V2_LOAD
+    ; RC shrink: falls through to V2_LOAD (was jp)
 
 V2_LOAD:
     ld a,(V2_REQUEST_TYPE)
@@ -1908,7 +1913,7 @@ V2_REDRAW_NAV:
     ld a,(EDIT_WRAP_COUNT)
     ld hl,V2_RD_WRAPS
     cp (hl)
-    jp nz,.full_pop              ; the old line is not drawn the way the record would be
+    jr nz,.full_pop              ; the old line is not drawn the way the record would be
 .old_blank:
     ld hl,EDIT_LINE_BUF
     call EDITOR_WRAP_CALC        ; the NEW line's height
@@ -1921,12 +1926,12 @@ V2_REDRAW_NAV:
     ld hl,V2_RD_WRAPS            ; DOWN: new row = old row + old height
     add a,(hl)
     cp 23
-    jp nc,.full
+    jr nc,.full
     jr .rows
 .up:
     ld hl,V2_RD_NEWH             ; UP: new row = old row - new height
     sub (hl)
-    jp c,.full
+    jr c,.full
 .rows:
     ld (V2_RD_NEWROW),a
     ld a,(V2_ACTIVE_ROW)         ; the old line: clear its rows, redraw it settled
@@ -2003,7 +2008,7 @@ V2_DRAW_STATUS:
     ld b,23
     ld c,0
     call KTAB_GFX_PRINT_STRING
-    jp V2_STATUS_SET_BAR_ATTR
+    jr V2_STATUS_SET_BAR_ATTR
 
 ; Copies a null-terminated string at (hl) into (de), advancing de past
 ; the copied bytes (not including the terminator -- callers append

@@ -53,7 +53,10 @@ SYM_RESET:
         ld bc,4
         ld (hl),b
         ldir
-        ret
+        ld a,c
+        ld (SESS_VALID),a       ; RC: a new symbol table ends the variable session (any edit, LOAD,
+        ret                     ; NEW, or a compile of the stored program). Flags kept: V2_STORE_EDIT's
+                                ; PROGRAM FULL carry passes through V2_CLEAR_ARRAYS
 
 ; SYM_FIND -- HL = name, B = length, C = kind.
 ;   found    : carry clear, A = index, HL = record start

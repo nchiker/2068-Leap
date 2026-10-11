@@ -866,7 +866,7 @@ STORAGE_LOAD:
     pop  ix
     pop  bc
     pop  hl
-    jp   .total_failure
+    jr   .total_failure
 
 .name_ok:
     IFDEF STORAGE_VERSIONED
@@ -878,10 +878,10 @@ STORAGE_LOAD:
     call STORAGE_VERSION_WORD             ; DE = expected word (IX/HL preserved)
     ld   a, h
     cp   d
-    jp   nz, .bad_version                 ; JP: out of JR range
+    jr   nz, .bad_version                 ; JP: out of JR range
     ld   a, e
     cp   l                                ; carry if our minor < the tape's
-    jp   c, .bad_version
+    jr   c, .bad_version
     ENDIF
     ld   hl, (STORAGE_HEADER_BUF + STORAGE_HEADER_LENGTH_OFF)
     ld   de, (STORAGE_MAX_LEN)
@@ -891,7 +891,7 @@ STORAGE_LOAD:
     ld   a, h
     or   l
     jr   z, .length_ok                    ; header length == max — fine
-    jp   .total_failure                   ; JP not JR — out of range;
+    jr   .total_failure                   ; JP not JR — out of range;
                                          ; header length > max
 
 .length_ok:

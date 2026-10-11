@@ -127,7 +127,8 @@ SESS_GAP          equ 80      ; bytes kept free after the symbol table for symbo
                               ; statements add, and for their compile stack
 CSTK_BASE:        equ SESS_SAVE + 23   ; 2: where the compile stack starts (empty position):
                                        ; V2_SOURCE_END, or SESS_ARENA_BASE in a session compile
-    ASSERT CSTK_BASE + 2 <= $B900
+ASV_CHECK:        equ CSTK_BASE + 2        ; 1: nonzero = ARR_RUN_CHECK (compare only)
+    ASSERT ASV_CHECK + 1 <= $B900
     ASSERT GFX_FILL_STACK_END <= ARR2_BASE
     ASSERT ARR2_LIMIT <= SPRITE_SLOT_IMG_BUF
 CSYM_COUNT:     equ SYM_COUNTS + SYM_K_NUM
