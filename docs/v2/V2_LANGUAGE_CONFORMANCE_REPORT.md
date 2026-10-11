@@ -1,7 +1,6 @@
 # 2068-Leap V2 — Language conformance report (qualification study, Phase A)
 
-**Status: INCOMPLETE** — corpus results (§0, §3) and the coverage CSVs are final; §4.1 (study-tool battery), §6.2 (gate on the fixed builds) are still
-being filled from runs in progress (`qual-runs/a3-*`, `qual-runs/gate-costs3`, `qual-runs/gate-final`). Otherwise complete for the scope stated in §1. Nothing here is integrated: `~/2068-Leap` / `v2-development` stay at `7ae0599`, nothing was
+**Status:** complete for the scope stated in §1. Nothing here is integrated: `~/2068-Leap` / `v2-development` stay at `7ae0599`, nothing was
 pushed, the overnight `study/*` prototype branches were not modified. New work lives on `study/qualification-a` (this report, the tools),
 `study/qualification-b` (test infrastructure), `study/qualification-costs` (measured fixes) and `study/qualification-shrink` (measured shrink).
 
@@ -318,8 +317,25 @@ Both fixed builds were exported and run exactly like the three configurations **
   The two failing production checks are `253-vars` (a 253rd scalar is now a compile error: the cap is 251) and `free-1` (`FREE` = 893, outside the
   check's 900–1100 window). Both are capacity constants that the Q-02 fix changes by design (+74 B RAM for 8 temp slots). The checks were not edited.
 * **`make check`** rc 0 on both (assembly, docs, package-ABI, storage-contract, basic-source, calculator-dispatcher and SPRITE checks).
-* **Standalone component tests** (`tools/run_v2_standalone_tests.sh`): see the line below.
+* **Standalone component tests** (`tools/run_v2_standalone_tests.sh`, in the branch worktrees): **38/38** on `b1463c7` and on `b716d4e` (the two pass-3 label
+  warnings of `vm_milestone01` are pre-existing). Enhanced: see §6.3.
 * An earlier gate run on the intermediate `b478b31` was stopped after 38 gate cases (0 FAIL) once `b1463c7` superseded it (`qual-runs/gate-costs2.SUPERSEDED`).
+
+### 6.3 The same fixes on Enhanced (`study/qualification-enh-final`)
+
+The nine fix commits cherry-picked onto `study/qualification-b` (Enhanced + the test-infrastructure commits) without a conflict, and the RST rule was
+re-applied with `tools/qual/apply_rst_rule.py`. Measured **[M]**: fixes **HOME 23 / EXROM 233** (`c461d7c`), fixes + RST **HOME 578 / EXROM 233** (`162dd59`).
+
+* **Corpus** (Enhanced expectations, the same 22 ids marked fixed): **551 PASS, 61 XFAIL, 5 FAIL, 0 XPASS, 2 N/A** on both builds, with the same 5 FAILs as on
+  Essential. Against unfixed Enhanced, every status change is a case of a fixed defect; the 11 Enhanced-only cases (multi-item `PRINT`, prompted `INPUT`, the
+  `FOR` error line) PASS. Against Essential-final there are 0 status differences, and output differs only in those 11 cases.
+* **Gate** (`qual-runs/gate-enh-final`): `v2_prod_regress` **113 PASS**, `v2_prod_arrays` **98 PASS**, `v2_known_defects` **15 PASS**, FILL **10/10**,
+  production checks **17/19** (the same two capacity checks as on Essential). Enhanced's gate has 113 cases, not 115, by the overnight study's design: `8379ab5` dropped
+  `D3-print-comma-list` / `D3-print-semicolon-list`, which assert that a multi-item `PRINT` is *rejected* — Enhanced implements it.
+* **`make check`** rc 0; **standalone component tests 38/38**.
+* **Prototype tools** (`qual-runs/a3-enh-final`): every tool of §4.1 again passes in full. That covers break matrix 6, edit preservation 9, U6 4, bare words 13,
+  `CALL p(FN …)` 7, literals 13, D11 print 15, `OUT/IN/STICK` 6, `FOR` line 5 and multi-item `PRINT` 13. FILL BREAK ✓; flicker diff 12 scenarios, 0 mismatches;
+  the VM oracle has 0 mismatches in 4 × 8 476 pairs.
 
 ---------------------------------------------------------------------------------------------------------------------------
 

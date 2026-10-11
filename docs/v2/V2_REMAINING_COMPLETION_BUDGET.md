@@ -58,7 +58,7 @@ Companion reports: `V2_LANGUAGE_CONFORMANCE_REPORT.md` (what is wrong, by test),
 | Essential + all measured fixes | `b1463c7` `study/qualification-costs` | **196** (−157) | **482** (−6) | `make check` rc 0; corpus with the fixes' markers dropped: §2.2; gate: §2.3 |
 | **Essential + fixes + RST** | `b716d4e` `study/qualification-final` | **741** | **482** | `make check` rc 0; corpus and gate: §2.3 |
 | Enhanced + all measured fixes | `c461d7c` `study/qualification-enh-final~1` | **23** (−157) | **233** (−6) | corpus identical to Enhanced-final |
-| **Enhanced + fixes + RST** | `162dd59` `study/qualification-enh-final` | **578** (+555) | **233** | `make check` rc 0; corpus: 551 PASS / 61 XFAIL / 5 FAIL (the same 5 as Essential); gate: §2.3 |
+| **Enhanced + fixes + RST** | `162dd59` `study/qualification-enh-final` | **578** (+555) | **233** | `make check` rc 0, standalone 38/38; corpus: 551 PASS / 61 XFAIL / 5 FAIL (the same 5 as Essential); gate 113/98/15, FILL 10/10: §2.3 |
 
 Per-commit figures are from `make budget` on each commit's own export. The RST saving measured on top of the fixes is **+545**, against +559 on plain Essential.
 The fix branch has 85 `VM_POP`/`VM_POP_COERCE_INT` call sites against 89 (typed pops such as `VM_POP_CHECK_INT` replaced some), and a different set of raise sites.
@@ -99,6 +99,9 @@ Identical on `b1463c7` (fixes) and `b716d4e` (fixes + RST) **[M]**: gate 115 PAS
 17/19, `make check` rc 0. The two failing production checks (`253-vars`, `free-1`) assert the scalar cap and the `FREE` window that the Q-02 fix changes by design
 (cap 253 → 251, `FREE` 893). They are left failing until the owner accepts the new capacities. The corpus runs on the two builds agree case for case (0 status, 0 output
 differences). Details: conformance report §6.2.
+
+Enhanced, `c461d7c` / `162dd59` **[M]**: gate 113 PASS (Enhanced's own gate has 113 cases), Array Store 98, known-defect 15, FILL 10/10, production checks 17/19 (same two),
+`make check` rc 0, standalone 38/38, corpus with the same 5 FAILs and no other change, and every prototype tool passing (conformance report §6.3).
 
 ---------------------------------------------------------------------------------------------------------------------------
 

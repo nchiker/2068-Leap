@@ -39,10 +39,10 @@ study: “HOME −8” = 8 bytes consumed, “HOME +40” = 40 bytes freed. Ever
 * **Fixes and shrink together are measured too:** `study/qualification-final` (`b716d4e`) = the fix branch + the RST change re-applied by its mechanical rule:
   **HOME 741 / EXROM 482 free [M]**, `make check` rc 0, the same gate results and the same corpus results as the fix branch, case for case.
   The same procedure on Enhanced (`study/qualification-enh-final`, `162dd59`): fixes alone **HOME 23 / EXROM 233**, fixes + RST **HOME 578 / EXROM 233 [M]**,
-  `make check` rc 0, corpus with the same 5 known FAILs and no other change.
+  `make check` rc 0, standalone 38/38, gate 113 (Enhanced's case count) / 98 / 15, FILL 10/10, corpus with the same 5 known FAILs and no other change.
 * **A large, safe shrink exists that the earlier shrink passes did not find** (§4.1): the HOME ROM bytes `$0004–$0027` and `$002B–$0037` are `$FF` fill, i.e. five free
   RST vectors. Routing the five hottest call targets through them (`LEX_NEXT_TOKEN`, `VM_POP`, `VM_POP_COERCE_INT`, `EMIT_BYTE`, tail jumps to `COMPILE_RAISE_ERROR`)
-  frees **HOME +559 B** on V2 Essential (353 → 912 free) **[M]**, at **+0.1 … +0.3 %** emulated run time **[M]**; the full project battery passes and the 555-case corpus gives
+  frees **HOME +559 B** on V2 Essential (353 → 912 free) **[M]**, at **+0.1 … +0.3 %** emulated run time **[M]**; the full project battery passes and the corpus as it stood then (555 cases) gives
   results identical to Essential, case for case **[M]**. It is mechanical, behaviour-preserving and reversible. This alone is larger than everything the overnight prototypes consumed in HOME.
 * The overnight prototypes themselves are sound in the parts reviewed (§5): no new correctness defect was found in their code; the risks are in the ISR-side `BREAK`
   write ordering (benign), the `STICK` port read (hardware question), and one contract change (`FLOAT_BIG_TO_STRING` destroys `IX`, harmless for current callers).
@@ -85,7 +85,7 @@ study: “HOME −8” = 8 bytes consumed, “HOME +40” = 40 bytes freed. Ever
 | `z80-skills:shrink-z80` `deadcode_scan.py` | noisy (tables and data reported as unreferenced); no dead routine confirmed |
 | **error-raise site scanner** (this study, inline Python over `exrom_v2_vm_core.asm`) | classifies every `jp/jr … VM_ERR_*` by calling context and pushes outstanding → found Q-03 and Q-18 by construction (§3.1) |
 | **call-frequency counter** over the HOME listing | found the RST opportunity (§4.1) |
-| qualification harness `tools/qual/` (614-case corpus, `qprobe.py`, `qbench.py`) | reproductions and fix verification on the real ROM |
+| qualification harness `tools/qual/` (619-case corpus, `qprobe.py`, `qbench.py`) | reproductions and fix verification on the real ROM |
 
 The audit skill's contract was followed: primary checkout read-only; all builds in exported trees or study worktrees; scanner output was used as candidates only.
 No agents were spawned; every promoted finding was re-read at its site and, where marked [M], reproduced on the real ROM.
