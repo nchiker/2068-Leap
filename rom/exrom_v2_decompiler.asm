@@ -953,8 +953,8 @@ DECOMP_SKIP_OPERAND:
         jr z,.w1
         cp 4                      ; STORE_VAR
         jr z,.w1
-        cp 13                     ; FOR_INIT
-        jr z,.w1
+        cp 13                     ; FOR_INIT (QUAL: var + 2-byte skip target)
+        jr z,.w3
         cp 18                     ; STORE_STR_VAR (R5)
         jr z,.w1
         cp 39                     ; CALL_FN (R8.5 Group 1)
@@ -2283,6 +2283,8 @@ DECOMPILE_PROGRAM:
 .op_for_init:
         ld hl,(DECOMP_IP)
         ld a,(hl)
+        inc hl
+        inc hl                     ; QUAL: skip the skip-the-body target (no source text)
         inc hl
         ld (DECOMP_IP),hl
         ld (DECOMP_ARR_INDEX_TMP),a   ; symtab index -- NOT DECOMP_TMP_LEN:

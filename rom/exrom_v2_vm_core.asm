@@ -1133,7 +1133,7 @@ VM_CS_UNWIND:
         ld a,(hl)
         cp T_FOR
         ret nz                  ; carry clear
-        ld de,5
+        ld de,VM_FOR_FRAME_LEN  ; QUAL: FOR frames are [T_FOR][var][limit:2][step:2]
         add hl,de
         jr .next
 .empty:
@@ -2354,54 +2354,104 @@ OP_JMPZ:
         ld (VM_IP),hl
         jp VM_RUN.loop
 
+; QUAL (Q-07/Q-08/Q-19/Q-20): a FOR frame now holds the loop's OWN state,
+; [T_FOR][var][limit:2][step:2], instead of the enclosing loop's limit/step with the current
+; loop in the VM_FOR_LIMIT/VM_FOR_STEP globals. NEXT v finds its own frame (dropping loops
+; abandoned by GOTO above it); FOR v replaces a stale frame of the same variable; FOR skips the
+; body when the start is already past the limit (the 2-byte operand is linked into the loop's
+; EXIT chain by the compiler, so it lands on the loop's FOR_POP); a FLOAT start/limit/step is
+; error 11 instead of a float-table slot index read as an integer.
+VM_FOR_FRAME_LEN:   equ 6
+
+; VM_FIND_FOR -- C = loop variable. Walks the run of FOR frames on top of the control stack.
+; Out: Z and HL = that loop's frame; NZ = not found (another kind of frame, or the bottom).
+; Destroys AF, DE, HL.
+VM_FIND_FOR:
+        ld hl,(VM_CSP)
+.l:
+        ld de,(VARS_START)
+        or a
+        sbc hl,de
+        jr z,.none
+        add hl,de
+        ld a,(hl)
+        cp T_FOR
+        ret nz
+        inc hl
+        ld a,(hl)
+        dec hl
+        cp c
+        ret z
+        ld de,VM_FOR_FRAME_LEN
+        add hl,de
+        jr .l
+.none:
+        or $FF                  ; NZ
+        ret
+
 OP_FOR_INIT:
         ld hl,(VM_IP)
-        ld a,(hl)               ; loop variable symbol index
+        ld c,(hl)               ; C = loop variable
         inc hl
-        ld (VM_IP),hl
-        ld c,a
-        call VM_POP             ; HL = step (R8.5 Group 5 -- pushed last
-                                  ; by COMPILE_FOR, so popped first; a
-                                  ; STEP-less FOR's own literal PUSH_I8 1
-                                  ; lands here exactly the same way)
-        push hl                  ; park the new step across the frame push
-        ld a,5
-        call VM_CS_ALLOC         ; HL = new FOR frame (C survives)
-        jr nc,.frame
-        pop hl                   ; balance the hardware stack, then fail
-        jp VM_ERR_CALL_STACK_OVERFLOW
-.frame:
+        ld (VM_IP),hl           ; VM_IP -> the 2-byte skip operand
+        call VM_FIND_FOR
+        jr nz,.fresh
+        ld de,VM_FOR_FRAME_LEN  ; re-entered: drop the old frame of this variable and
+        add hl,de               ; any loop abandoned above it
+        ld (VM_CSP),hl
+.fresh:
+        ld a,VM_FOR_FRAME_LEN
+        call VM_CS_ALLOC        ; HL = new frame (C survives)
+        jp c,VM_ERR_CALL_STACK_OVERFLOW
         ld (hl),T_FOR
         inc hl
+        ld (hl),c
+        inc hl
+        ld (VM_FOR_NEXT_VALADDR),hl   ; scratch: -> the frame's limit field
+        push bc
+        call VM_POP_CHECK_INT   ; step (FLOAT -> error 11; the unwind makes the push harmless)
+        ld (VM_FOR_STEP),hl     ; (scratch now)
+        call VM_POP_CHECK_INT   ; limit
+        ld (VM_FOR_LIMIT),hl
+        call VM_POP_CHECK_INT   ; start
+        push hl
+        ld hl,(VM_FOR_NEXT_VALADDR)
         ld de,(VM_FOR_LIMIT)
         ld (hl),e
         inc hl
-        ld (hl),d                ; enclosing loop's limit
+        ld (hl),d
         inc hl
         ld de,(VM_FOR_STEP)
         ld (hl),e
         inc hl
-        ld (hl),d                ; enclosing loop's step
-        pop hl                   ; HL = step (restored)
-        ld (VM_FOR_STEP),hl
-        call VM_POP             ; HL = limit
-        ld (VM_FOR_LIMIT),hl
-        call VM_POP             ; HL = initial value
-        push hl
+        ld (hl),d
+        pop de                  ; DE = start
+        pop bc
         ld a,c
+        push de
         call VM_SYM_ADDR
         pop de
-        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
+        xor a                   ; TAG_INT
         ld (hl),a
         inc hl
         ld (hl),e
         inc hl
-        ld (hl),d
-        jp VM_RUN.loop
+        ld (hl),d               ; var = start
+        ex de,hl                ; HL = start
+        ld de,(VM_FOR_LIMIT)
+        call MATH_COMPARE16     ; A = $FF start<limit, 0 equal, 1 start>limit
+        ld hl,(VM_FOR_STEP)
+        bit 7,h
+        jr z,.up
+        neg                     ; counting down: "past" means start < limit
+.up:
+        dec a
+        jp z,OP_JMP             ; already past the limit: skip the body (to FOR_POP)
+        jp OP_JMPZ.no_branch    ; run the body: step over the operand
 
 OP_FOR_NEXT:
         ld hl,(VM_IP)
-        ld a,(hl)               ; loop variable symbol index
+        ld c,(hl)               ; loop variable symbol index
         inc hl
         ld e,(hl)               ; branch target low
         inc hl
@@ -2409,7 +2459,25 @@ OP_FOR_NEXT:
         inc hl
         ld (VM_IP),hl
         ld (VM_FOR_NEXT_BRANCH),de
-        call VM_SYM_ADDR        ; HL -> record (A = symbol index, consumed)
+        call VM_FIND_FOR        ; QUAL: this loop's own frame
+        jp nz,VM_ERR_CALL_STACK_UNDERFLOW  ; NEXT without its FOR (GOTO into a body, a FOR skipped by IF)
+        ld (VM_CSP),hl          ; drop loops abandoned above it by GOTO
+        inc hl
+        inc hl
+        ld e,(hl)
+        inc hl
+        ld d,(hl)
+        inc hl
+        ld (VM_FOR_LIMIT),de
+        ld e,(hl)
+        inc hl
+        ld d,(hl)
+        ld (VM_FOR_STEP),de
+        ld a,c
+        call VM_SYM_ADDR        ; HL -> record
+        ld a,(hl)
+        or a
+        jp nz,VM_ERR_ARRAY_TYPE ; QUAL (Q-08): the body made the loop variable a FLOAT
         inc hl                  ; -> value_lo (record+1)
         ld (VM_FOR_NEXT_VALADDR),hl
         ld e,(hl)
@@ -2463,17 +2531,8 @@ OP_FOR_POP:
         ld a,(hl)
         cp T_FOR
         jp nz,VM_ERR_CALL_STACK_UNDERFLOW
-        inc hl
-        ld e,(hl)
-        inc hl
-        ld d,(hl)
-        ld (VM_FOR_LIMIT),de
-        inc hl
-        ld e,(hl)
-        inc hl
-        ld d,(hl)
-        ld (VM_FOR_STEP),de
-        inc hl
+        ld de,VM_FOR_FRAME_LEN  ; QUAL: no enclosing state to restore any more
+        add hl,de
         ld (VM_CSP),hl
         jp VM_RUN.loop
 

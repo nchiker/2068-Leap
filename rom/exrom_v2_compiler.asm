@@ -3905,6 +3905,15 @@ COMPILE_FOR:
         call EMIT_OP_FOR_INIT
         ld a,(FOR_LOOP_VAR_INDEX)
         call EMIT_BYTE
+        call EMIT_PLACEHOLDER_16 ; QUAL (Q-07): skip-the-body target, the first node of this
+        ex de,hl                 ; loop's EXIT chain (frame+3/+4), so NEXT patches it with the
+        ld hl,(FOR_FRAME_ADDR_TMP) ; FOR_POP address like an EXIT FOR
+        inc hl
+        inc hl
+        inc hl
+        ld (hl),e
+        inc hl
+        ld (hl),d
         call COMPILE_RELATIVE_OFFSET  ; HL = loop body's start, relative offset
         ld (FOR_LOOP_TOP_OFFSET),hl
         ex de,hl                  ; DE = top offset
