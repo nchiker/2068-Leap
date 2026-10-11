@@ -71,9 +71,7 @@ BASIC_FLOAT_TO_STRING_EXROM:
     DB   $31, $38
     call CALC_FP_TO_INT
     IFNDEF EDITOR_TEST_EXROM        ; (the legacy EXROM fixture built by `make check` has only 96 B of room below $DFC0)
-    ld   a, (CALC_TRUNC_FLAG)       ; STUDY (D11): the integer part does not fit INT16
-    or   a
-    jr   nz, FLOAT_BIG_TO_STRING
+    jr   c, FLOAT_BIG_TO_STRING     ; STUDY (D11): CALC_FP_TO_INT sets carry when the integer part does not fit INT16
     ENDIF
     ld   (FLOAT_PRINT_INTPART), hl
     ex   de, hl
@@ -123,10 +121,18 @@ BASIC_FLOAT_TO_STRING_EXROM:
 ; (the fraction of a float this large is not shown).  Exponent byte > 160 (>= 2^32) saturates the shift
 ; at 0.  Digits are written right to left ending at PRINT_BUF+11; the string is returned in HL.
 FLOAT_BIG_TO_STRING:
-    call CALC_SP_TO_TOP_PTR     ; HL -> the 5-byte record
     ld   a, (CALC_SP)
     dec  a
-    ld   (CALC_SP), a           ; pop it (the bytes stay where they are)
+    ld   (CALC_SP), a           ; pop the value (its bytes stay where they are)
+    ld   c, a
+    ld   b, 0
+    ld   h, b
+    ld   l, c
+    add  hl, hl
+    add  hl, hl
+    add  hl, bc                 ; HL = index * 5
+    ld   de, CALC_STACK
+    add  hl, de                 ; HL -> the 5-byte record
     ld   c, (hl)                ; C = exponent byte
     inc  hl
     ld   a, (hl)
