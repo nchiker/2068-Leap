@@ -592,6 +592,7 @@ TOK_KW_INVERSE:     equ 61
 TOK_KW_AT:          equ 62   ; R10.7 standalone cursor statements
 TOK_KW_TAB:         equ 63
 TOK_KW_CLEAR:       equ 64   ; R10.7
+TOK_KW_OUT:         equ 65   ; STUDY
 
 ; ---------------------------------------------------------------------------
 ; COMPILER_INIT — call once before COMPILE_PROGRAM.
@@ -1426,7 +1427,7 @@ V2_GET_KEYWORD_TABLE:
         ld a,KEYWORD_TABLE_COUNT
         ret
 
-KEYWORD_TABLE_COUNT: equ 43  ; R10.7 adds FLASH/BRIGHT/OVER/INVERSE/AT/
+KEYWORD_TABLE_COUNT: equ 44  ; R10.7 adds FLASH/BRIGHT/OVER/INVERSE/AT/
                              ; TAB/CLEAR (7) on top of the post-R9 DEF
                              ; FN reintegration count below
 
@@ -1488,6 +1489,7 @@ KEYWORD_TABLE:
         db 2, "AT", TOK_KW_AT
         db 3, "TAB", TOK_KW_TAB
         db 5, "CLEAR", TOK_KW_CLEAR
+        db 3, "OUT", TOK_KW_OUT     ; STUDY
 
 ; ===========================================================================
 ; COMPILE-TIME SYMBOL TABLE — real name storage, real comparison (the piece
@@ -1616,6 +1618,7 @@ EMIT_OP_DIM:               ld a,63 : jp EMIT_BYTE  ; R10.7 dynamic arrays
 EMIT_OP_DIM_STR:            ld a,64 : jp EMIT_BYTE  ; Dynamic Data Phase 2
 EMIT_OP_STRARR_LOAD:         ld a,65 : jp EMIT_BYTE  ; -- string arrays
 EMIT_OP_STRARR_STORE:         ld a,66 : jp EMIT_BYTE
+EMIT_OP_OUT:                  ld a,67 : jp EMIT_BYTE  ; STUDY
 
 ; COMPILE_RELATIVE_OFFSET — R10.5 shrink: factors out the "current
 ; bytecode position, relative to VM_CODE_BASE" computation duplicated at
@@ -2291,7 +2294,7 @@ BUILTIN_FN_FIND:               ; input: TOK_NAME/TOK_LEN (current, not
         or a                       ; clear carry -- not a built-in
         ret                          ; function name
 
-BUILTIN_FN_TABLE_COUNT: equ 30
+BUILTIN_FN_TABLE_COUNT: equ 32
 
 ; fn_index 0 = ABS (rom/exrom_v2_vm_core.asm's own BUILTIN_FN_ABS).
 ; Group 6 appends the remaining ~24 functions to this same table --
@@ -2408,6 +2411,8 @@ BUILTIN_FN_TABLE:
 ; (matching RAD/DEG/SIN's own contract), always a real float result.
     db 3, "COS", 1, 26, 0
     db 3, "TAN", 1, 27, 0
+    db 2, "IN", 1, 30, 0          ; STUDY: IN(port), full 16-bit port address
+    db 5, "STICK", 1, 31, 0       ; STUDY: STICK(1|2), Timex joystick via AY port A
 
 ; BUG FOUND (real hardware, R8.5 Group 5): a literal 128-255 has TOK_VAL
 ; high byte 0, so this used to take the PUSH_I8 path below -- but
@@ -3383,6 +3388,16 @@ COMPILE_LINE:
         call COMPILE_EXPR       ; y1
         jp EMIT_OP_LINE
 
+; STUDY: OUT <port>,<value>.  The port is the FULL 16-bit address (BC), not just the low byte.
+COMPILE_OUT:
+        call LEX_NEXT_TOKEN     ; consume OUT
+        call COMPILE_EXPR       ; port
+        call COMPILE_EXPECT_COMMA_EXPR  ; value
+        ld a,(COMPILE_ERROR_CODE)
+        or a
+        ret nz
+        jp EMIT_OP_OUT
+
 ; COMPILE_BEEP — BEEP <duration>,<pitch>  (matches V1's own
 ; BASIC_STMT_BEEP argument order). "Expected comma" now reports code
 ; 22 (COMPILE_EXPECT_COMMA_EXPR's own code) rather than its own former
@@ -4100,6 +4115,8 @@ COMPILE_STATEMENT_LIST:
         jp z,.tab
         cp TOK_KW_CLEAR
         jp z,.clear
+        cp TOK_KW_OUT
+        jp z,.out
         cp TOK_IDENT
         jp z,.ident_stmt
         cp TOK_STR_IDENT
@@ -4143,6 +4160,9 @@ COMPILE_STATEMENT_LIST:
         jp .after_stmt
 .clear:
         call COMPILE_CLEAR
+        jp .after_stmt
+.out:
+        call COMPILE_OUT
         jp .after_stmt
 .plot:
         call COMPILE_PLOT
