@@ -70,6 +70,9 @@ BASIC_FLOAT_TO_STRING_EXROM:
     rst  $28
     DB   $31, $38
     call CALC_FP_TO_INT
+    ld   a, (CALC_TRUNC_FLAG)       ; STUDY (D11): the integer part does not fit INT16
+    or   a
+    jr   nz, FLOAT_BIG_TO_STRING
     ld   (FLOAT_PRINT_INTPART), hl
     ex   de, hl
     call BASIC_NUM_TO_STRING_EXROM
@@ -111,6 +114,76 @@ BASIC_FLOAT_TO_STRING_EXROM:
     call CALC_FP_TO_INT
     pop  hl
     ret
+
+; STUDY (D11): |x| >= 32768 (x >= 0 here; VM_NUM_TO_TEXT strips the sign) is on top of the calculator
+; stack.  Integer part = the 32-bit mantissa >> (160 - exponent byte), printed in decimal as "<digits>.0000"
+; (the fraction of a float this large is not shown).  Exponent byte > 160 (>= 2^32) saturates the shift
+; at 0.  Digits are written right to left ending at PRINT_BUF+11; the string is returned in HL.
+FLOAT_BIG_TO_STRING:
+    call CALC_SP_TO_TOP_PTR     ; HL -> the 5-byte record
+    ld   a, (CALC_SP)
+    dec  a
+    ld   (CALC_SP), a           ; pop it (the bytes stay where they are)
+    ld   c, (hl)                ; C = exponent byte
+    inc  hl
+    ld   a, (hl)
+    or   $80
+    ld   d, a
+    inc  hl
+    ld   e, (hl)
+    inc  hl
+    ld   a, (hl)
+    inc  hl
+    ld   l, (hl)
+    ld   h, a                   ; DE:HL = mantissa with the implied 1 restored
+    ld   a, 160
+    sub  c
+    jr   nc, .shift
+    xor  a
+.shift:
+    ld   b, a
+    inc  b
+    jr   .shift_test
+.shift_loop:
+    srl  d
+    rr   e
+    rr   h
+    rr   l
+.shift_test:
+    djnz .shift_loop
+    ld   ix, PRINT_BUF + 11
+.digit:
+    ld   b, 32                  ; DE:HL = DE:HL / 10, remainder in A
+    xor  a
+.bit:
+    add  hl, hl
+    rl   e
+    rl   d
+    rla
+    cp   10
+    jr   c, .no_sub
+    sub  10
+    inc  l
+.no_sub:
+    djnz .bit
+    add  a, "0"
+    ld   (ix+0), a
+    dec  ix
+    ld   a, d
+    or   e
+    or   h
+    or   l
+    jr   nz, .digit
+    ld   hl, .suffix
+    ld   de, PRINT_BUF + 12
+    ld   bc, 6
+    ldir
+    push ix
+    pop  hl
+    inc  hl
+    ret
+.suffix:
+    DB   ".0000", 0
 
 BASIC_APPEND_STR_EXROM:
     push hl

@@ -2089,7 +2089,7 @@ OP_ADD:
         ld de,(VM_FLOAT_B_VAL)
         or a
         adc hl,de               ; STUDY (D11): ADC sets P/V = signed overflow
-        jp pe,VM_ERR_OVERFLOW
+        jp pe,.float_path       ; promote: the operands are still in VM_FLOAT_A/B_VAL
         ;                         HL = a+b — native 16-bit Z80 add, the
                                  ; integer fast path this whole architecture
                                  ; exists to preserve. Untouched by R6:
@@ -2118,7 +2118,7 @@ OP_SUB:
         ld de,(VM_FLOAT_B_VAL)
         or a
         sbc hl,de               ; HL = a - b
-        jp pe,VM_ERR_OVERFLOW   ; STUDY (D11)
+        jp pe,.float_path       ; STUDY (D11): promote on signed overflow
         jp PUSH_INT_CONTINUE
 .float_path:
         ld hl,VM_CALC_SUB_STUB
@@ -2130,7 +2130,7 @@ OP_MUL:
         ld hl,(VM_FLOAT_A_VAL)
         ld de,(VM_FLOAT_B_VAL)
         call VM_MUL_CHECKED     ; STUDY (D11): MATH_MULTIPLY16 with overflow detection
-        jp c,VM_ERR_OVERFLOW
+        jp c,.float_path        ; promote
         jp PUSH_INT_CONTINUE
         ; (old text) existing, already-verified platform
                                  ; primitive (kernel/math/math.asm) — reused,

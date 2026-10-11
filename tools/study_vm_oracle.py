@@ -32,7 +32,7 @@ def hsym(n):
 def build_driver(mode, opcode):
     src = ["    DEVICE ZXSPECTRUM48", "    ORG %d" % DRV]
     for n in ("VM_CODE_BASE", "VM_IP", "VM_SP", "VM_STACK_TOP", "VM_HALTED", "VM_ERROR_CODE", "VM_RUN", "VM_POP",
-              "VM_TOS_TAG", "VM_STR_TEMP_NEXT", "VM_FLOAT_TEMP_NEXT"):
+              "VM_TOS_TAG", "VM_STR_TEMP_NEXT", "VM_FLOAT_TEMP_NEXT", "VM_FLOAT_ADDR"):
         src.append("%s EQU $%04X" % (n, hsym(n)) if n in HSYM else "%s EQU $%04X" % (n, SYM[n]))
     if mode == "mul":
         src.append("VM_MUL_CHECKED EQU $%04X" % hsym("VM_MUL_CHECKED"))
@@ -51,8 +51,11 @@ def build_driver(mode, opcode):
                 "    ld (VM_STR_TEMP_NEXT),a", "    ld (VM_FLOAT_TEMP_NEXT),a",
                 "    call VM_RUN",
                 "    ld a,(VM_ERROR_CODE)", "    ld (iy+2),a",
-                "    call VM_POP", "    ld (iy+0),l", "    ld (iy+1),h", "    ld (iy+3),a"]
-    src += ["    pop bc", "    ld de,4", "    add ix,de", "    add iy,de", "    djnz .next",
+                "    call VM_POP", "    ld (iy+0),l", "    ld (iy+1),h", "    ld (iy+3),a",
+                "    cp 1", "    jr nz,.nofloat", "    ld a,l", "    call VM_FLOAT_ADDR", "    push iy", "    pop de", "    ld bc,4", "    ex de,hl",
+                "    add hl,bc", "    ex de,hl", "    ld bc,5", "    ldir",       # copy the 5-byte float to iy+4..8
+                ".nofloat:"]
+    src += ["    pop bc", "    ld de,4", "    add ix,de", "    ld de,12", "    add iy,de", "    djnz .next",
             "DONE: jr DONE", "CNT: DB 0"]
     d = tempfile.mkdtemp(prefix="oracle-")
     asm, binf = os.path.join(d, "drv.asm"), os.path.join(d, "drv.bin")
@@ -63,6 +66,19 @@ def build_driver(mode, opcode):
     done = [int(l.split()[2], 16) for l in open(os.path.join(d, "drv.sym")) if l.startswith("DONE:")][0]
     cnt = [int(l.split()[2], 16) for l in open(os.path.join(d, "drv.sym")) if l.startswith("CNT:")][0]
     return open(binf, "rb").read(), done, cnt
+
+
+PROMOTE = os.environ.get("ORACLE_PROMOTE") == "1"
+
+
+def decode_float(b):
+    e, b1, b2, b3, b4 = b
+    if e == 0:
+        v = b2 | b3 << 8
+        return v - 65536 if v >= 32768 else v
+    sign = -1 if b1 & 0x80 else 1
+    mant = ((b1 | 0x80) & 0xFF) << 24 | b2 << 16 | b3 << 8 | b4
+    return sign * mant * 2.0 ** (e - 128 - 32)
 
 
 def s16(v):
@@ -104,6 +120,8 @@ def main():
     opcode = OPS.get(mode, 0)
     drv, done, cnt = build_driver(mode, opcode)
     P.boot()
+    P.put_store(["x = 1"])                     # a real RUN carves the run-time tables (float temps) the driver reuses
+    P.call_prompt("V2_RUN_STORED")
     P.poke(DRV, drv)
     pairs = cases(nrand)
     bad, nfit, novf = [], 0, 0
@@ -115,9 +133,10 @@ def main():
         D("set-register", "SP", "0xFF00")
         D("set-register", "PC", hex(DRV))
         P.run_to(done, 400_000_000)
-        raw = read(OUT, 4 * len(chunk))
+        raw = read(OUT, 12 * len(chunk))
         for k, (a, b) in enumerate(chunk):
-            lo, hi, x, y = raw[4 * k:4 * k + 4]
+            lo, hi, x, y = raw[12 * k:12 * k + 4]
+            fl = raw[12 * k + 4:12 * k + 9]
             exact, fits = reference(mode, a, b)
             got = s16(lo | hi << 8)
             if mode == "mul":
@@ -126,13 +145,15 @@ def main():
             else:
                 err = x
                 if fits:
-                    ok = err == 0 and got == exact
+                    ok = err == 0 and y == 0 and got == exact
+                elif PROMOTE:
+                    ok = err == 0 and y == 1 and decode_float(fl) == exact
                 else:
                     ok = err == 67
             nfit += fits
             novf += not fits
             if not ok:
-                bad.append((a, b, exact, fits, got, x, y))
+                bad.append((a, b, exact, fits, got, x, y, fl.hex(), decode_float(fl)))
         print("batch %d..%d done, mismatches so far %d" % (i, i + len(chunk), len(bad)), flush=True)
     print("%s: %d pairs (%d fit, %d overflow), mismatches %d" % (mode, len(pairs), nfit, novf, len(bad)))
     for b in bad[:25]:
