@@ -70,9 +70,11 @@ BASIC_FLOAT_TO_STRING_EXROM:
     rst  $28
     DB   $31, $38
     call CALC_FP_TO_INT
+    IFNDEF EDITOR_TEST_EXROM        ; (the legacy EXROM fixture built by `make check` has only 96 B of room below $DFC0)
     ld   a, (CALC_TRUNC_FLAG)       ; STUDY (D11): the integer part does not fit INT16
     or   a
     jr   nz, FLOAT_BIG_TO_STRING
+    ENDIF
     ld   (FLOAT_PRINT_INTPART), hl
     ex   de, hl
     call BASIC_NUM_TO_STRING_EXROM
@@ -115,6 +117,7 @@ BASIC_FLOAT_TO_STRING_EXROM:
     pop  hl
     ret
 
+    IFNDEF EDITOR_TEST_EXROM
 ; STUDY (D11): |x| >= 32768 (x >= 0 here; VM_NUM_TO_TEXT strips the sign) is on top of the calculator
 ; stack.  Integer part = the 32-bit mantissa >> (160 - exponent byte), printed in decimal as "<digits>.0000"
 ; (the fraction of a float this large is not shown).  Exponent byte > 160 (>= 2^32) saturates the shift
@@ -184,6 +187,7 @@ FLOAT_BIG_TO_STRING:
     ret
 .suffix:
     DB   ".0000", 0
+    ENDIF
 
 BASIC_APPEND_STR_EXROM:
     push hl
