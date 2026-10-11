@@ -33,7 +33,7 @@ case("recursion-150", ["proc c(n)", "if n > 0 then call c(n - 1)", "endif", "r =
 case("nested-for", ["s = 0", "for i = 1 to 10", "for j = 1 to 10", "for k = 1 to 3", "s = s + 1",
                     "next k", "next j", "next i"], vals={0: 300})
 # 3. GOTO out of a loop inside a PROC (leaked FOR frame), three calls
-case("goto-out-of-for", ["proc g(n)", "for i = 1 to 5", "goto out", "next i", "out:", "r = r + 1", "endp",
+case("goto-out-of-for", ["proc g(n)", "for i = 1 to 5", "goto fin", "next i", "fin:", "r = r + 1", "endp",
                          "r = 0", "call g(0)", "call g(0)", "call g(0)"], vals={2: 3})
 # 4. identifiers: 31 significant characters stay distinct; 32 is an explicit error
 a = "abcdefghijklmnopqrstuvwxyz01234"
