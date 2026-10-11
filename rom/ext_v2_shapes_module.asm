@@ -438,6 +438,9 @@ SHAPES_GFX_FILL:
     call SHAPES_GFX_FILL_PUSH
 
 .loop:
+    ld   a, (VM_HALTED)          ; STUDY: BREAK (ISR) halts the VM; a long FILL must notice it
+    or   a
+    ret  nz
     call SHAPES_GFX_FILL_POP
     jr   c, .dry
     ld   a, c
@@ -570,6 +573,9 @@ SHAPES_GFX_FILL:
     inc  b
     jr   nz, .rs_px
 .rs_nextrow:
+    ld   a, (VM_HALTED)          ; STUDY: BREAK also ends a sweep (checked once per row)
+    or   a
+    ret  nz
     inc  c
     ld   a, c
     cp   192
