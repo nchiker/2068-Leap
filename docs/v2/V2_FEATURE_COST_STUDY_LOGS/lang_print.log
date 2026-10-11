@@ -1,0 +1,13 @@
+PASS  single string                      ce=0 ve=0 rows=['hello']
+PASS  single number                      ce=0 ve=0 rows=['42']
+PASS  semicolon list                     ce=0 ve=0 rows=['a1b2']
+PASS  comma zones                        ce=0 ve=0 rows=['ab              cd', 'ef']
+PASS  trailing semicolon                 ce=0 ve=0 rows=['xy']
+PASS  bare PRINT = blank line            ce=0 ve=0 rows=['a', '', 'b']
+PASS  number expressions                 ce=0 ve=0 rows=['3+6=9']
+PASS  string var + concat                ce=0 ve=0 rows=['hi!7']
+PASS  mixed separators                   ce=0 ve=0 rows=['12              3']
+PASS  PRINT in IF/ELSE block             ce=0 ve=0 rows=['yes!']
+PASS  error: junk after item             ce=64 ve=0 rows=['']
+PASS  error: INPUT prompt w/o separator  ce=22 ve=0 rows=['']
+FAIL  INPUT "N? "; a                     rows=['N? 7', ''] a=0 ve=0

@@ -1,0 +1,11 @@
+{"scenario": "type-10lines", "keys": 17, "tstates_total": 1219776, "tstates_mean": 71751, "tstates_max": 79859, "cls": 0, "drawtext": 17, "rowclr": 17, "diff_mismatches": 0}
+{"scenario": "type-20lines", "keys": 17, "tstates_total": 2473894, "tstates_mean": 145523, "tstates_max": 949409, "cls": 1, "drawtext": 36, "rowclr": 25, "diff_mismatches": 0}
+{"scenario": "type-wrapchg", "keys": 19, "tstates_total": 4071154, "tstates_mean": 214271, "tstates_max": 224044, "cls": 0, "drawtext": 19, "rowclr": 57, "diff_mismatches": 0}
+{"scenario": "lr-10lines", "keys": 12, "tstates_total": 23348, "tstates_mean": 1945, "tstates_max": 2561, "cls": 0, "drawtext": 0, "rowclr": 0, "diff_mismatches": 0}
+{"scenario": "updown-10lines", "keys": 6, "tstates_total": 1003964, "tstates_mean": 167327, "tstates_max": 203824, "cls": 0, "drawtext": 12, "rowclr": 18, "diff_mismatches": 0}
+{"scenario": "updown-20lines", "keys": 6, "tstates_total": 1118590, "tstates_mean": 186431, "tstates_max": 203585, "cls": 0, "drawtext": 12, "rowclr": 18, "diff_mismatches": 0}
+{"scenario": "updown-ends", "keys": 16, "tstates_total": 2244256, "tstates_mean": 140266, "tstates_max": 200888, "cls": 0, "drawtext": 28, "rowclr": 40, "diff_mismatches": 0}
+{"scenario": "updown-wrapped", "keys": 17, "tstates_total": 3910441, "tstates_mean": 230025, "tstates_max": 516429, "cls": 0, "drawtext": 20, "rowclr": 58, "diff_mismatches": 0}
+{"scenario": "updown-typed", "keys": 7, "tstates_total": 775764, "tstates_mean": 110823, "tstates_max": 177502, "cls": 0, "drawtext": 11, "rowclr": 15, "diff_mismatches": 0}
+{"scenario": "updown-deep", "keys": 9, "tstates_total": 5082212, "tstates_mean": 564690, "tstates_max": 1048703, "cls": 4, "drawtext": 102, "rowclr": 19, "diff_mismatches": 0}
+{"scenario": "mixed-session", "keys": 13, "tstates_total": 1428647, "tstates_mean": 109895, "tstates_max": 203853, "cls": 0, "drawtext": 17, "rowclr": 23, "diff_mismatches": 0}

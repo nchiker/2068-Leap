@@ -1,0 +1,5 @@
+{"scenario": "updown-ends", "keys": 16, "tstates_total": 7565718, "tstates_mean": 472857, "tstates_max": 492178, "cls": 16, "drawtext": 98, "rowclr": 16, "diff_mismatches": 0}
+{"scenario": "updown-wrapped", "keys": 17, "tstates_total": 9976548, "tstates_mean": 586855, "tstates_max": 753277, "cls": 15, "drawtext": 75, "rowclr": 15, "diff_mismatches": 0}
+{"scenario": "updown-typed", "keys": 7, "tstates_total": 2146250, "tstates_mean": 306607, "tstates_max": 508437, "cls": 4, "drawtext": 35, "rowclr": 7, "diff_mismatches": 0}
+{"scenario": "updown-deep", "keys": 9, "tstates_total": 9452714, "tstates_mean": 1050301, "tstates_max": 1060235, "cls": 9, "drawtext": 207, "rowclr": 9, "diff_mismatches": 0}
+{"scenario": "mixed-session", "keys": 13, "tstates_total": 3786852, "tstates_mean": 291296, "tstates_max": 587167, "cls": 6, "drawtext": 65, "rowclr": 11, "diff_mismatches": 0}

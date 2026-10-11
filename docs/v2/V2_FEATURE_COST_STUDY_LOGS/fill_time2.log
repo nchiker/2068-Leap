@@ -1,0 +1,4 @@
+ladder-1px-teeth: differing pixels=0  emulated time=453.4 s (1599462901 T-states, 3.528 MHz)  wall 464s
+noise-10pct: differing pixels=0  emulated time=119.5 s (421544202 T-states, 3.528 MHz)  wall 125s
+noise-25pct: differing pixels=0  emulated time=101.6 s (358322624 T-states, 3.528 MHz)  wall 106s
+ladder-2px: differing pixels=0  emulated time=65.0 s (229276434 T-states, 3.528 MHz)  wall 69s

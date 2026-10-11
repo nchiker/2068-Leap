@@ -1,0 +1,12 @@
+PASS rectangle: differing pixels=0 fill-stack high-water=4 B
+PASS circle-r50: differing pixels=0 fill-stack high-water=4 B
+PASS ring-between: differing pixels=0 fill-stack high-water=8 B
+PASS whole-screen: differing pixels=0 fill-stack high-water=4 B
+PASS comb: differing pixels=0 fill-stack high-water=184 B
+PASS fine-comb: differing pixels=0 fill-stack high-water=384 B
+PASS slats: differing pixels=0 fill-stack high-water=4 B
+PASS screen-border: differing pixels=0 fill-stack high-water=4 B
+PASS fill-lit-pixel: differing pixels=0 fill-stack high-water=4 B
+PASS serpentine: differing pixels=0 fill-stack high-water=4 B
+FAILURES: 0
+rc=0

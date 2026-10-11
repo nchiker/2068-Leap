@@ -1,0 +1,9 @@
+XPASS D7-fill-noise-10pct          FILL must produce the exact flood fill -- differing pixels=0 fill-stack high-water=1024 B  [known defect: D7: seed stack overflow drops seeds with no indication]  (125s)
+XPASS D7-fill-noise-25pct          FILL must produce the exact flood fill -- differing pixels=0 fill-stack high-water=1024 B  [known defect: D7: seed stack overflow drops seeds with no indication]  (107s)
+PASS  D7-fill-noise-40pct          FILL must produce the exact flood fill -- differing pixels=0 fill-stack high-water=4 B  (4s)
+FAIL  D7-fill-staggered-dots       FILL must produce the exact flood fill -- ERROR subprocess.TimeoutExpired: Command '['ts2068-debug', '--json', 'run', '--until', '0xfe13', '--max-instructions', '400000000']' timed out after 300 seconds  [known defect: D7: seed stack overflow drops seeds with no indication]  (303s)
+FAIL  D7-fill-ladder-1px-teeth     FILL must produce the exact flood fill -- ERROR subprocess.TimeoutExpired: Command '['ts2068-debug', '--json', 'run', '--until', '0xfe13', '--max-instructions', '400000000']' timed out after 300 seconds  [known defect: D7: seed stack overflow drops seeds with no indication]  (303s)
+XPASS D7-fill-ladder-2px           FILL must produce the exact flood fill -- differing pixels=0 fill-stack high-water=1024 B  [known defect: D7: seed stack overflow drops seeds with no indication]  (69s)
+known-defects: 1 PASS, 0 XFAIL (known defects reproduced), 2 FAIL, 3 XPASS  [910s]
+XPASS means a known-defect marker is stale: the behaviour is now correct. Drop `xfail=` for: D7-fill-noise-10pct, D7-fill-noise-25pct, D7-fill-staggered-dots, D7-fill-ladder-1px-teeth, D7-fill-ladder-2px
+rc=1
