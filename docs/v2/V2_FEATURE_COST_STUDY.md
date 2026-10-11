@@ -14,27 +14,20 @@ All emulator evidence is emulator evidence; **nothing is hardware-qualified.**
 
 ## 0. Summary
 
-* **The headline finding for the owner:** every correctness repair and the two language features you named as essential fit
-  *together* with room to spare in physical ROM. A combined **V2 Essential** (BREAK, edit preservation, display reset,
-  integer-overflow promotion, FILL completeness, nested-call fix, bare-word fix, `OUT`/`IN()`/`STICK()`, and typing-flicker
-  reduction) was **assembled**: **HOME 361 B free, EXROM 468 B free** (Phase 2D: 565 / 802). A combined **V2 Enhanced**
-  (Essential + multi-item `PRINT`, prompted `INPUT`, exact end-of-source error lines, two-line `UP`/`DOWN` redraw, abortable `LIST`) was assembled:
-  **HOME 188 B free, EXROM 227 B free**. Costs were exactly additive (HOME and EXROM deltas of the combined builds equal the sums of the
-  isolated measurements, §E), so the matrix in §B can be used for arithmetic with confidence. *Both pass `make check`; test status in §E.*
-* **The previously identified flicker fix was found and it works.** The V1 row-shadow anti-flicker design and the R10.8 audit's *I1/I2*
-  ("selective redraw / dirty scope", `docs/v2/R10_8_EDITOR_USABILITY_AUDIT.md` §5, §5.1) were never ported to the V2 editor: `V2_REDRAW`
-  still does `GFX_CLS` plus a full redraw on every key. A reuse-only prototype (no new display code; `V2_DRAW_TEXT`, `GFX_CLEAR_ROW_TEXT`,
-  `GFX_INVERT_ATTR`, the wrap tables) cut typing from **≈ 590 k T-states per key to ≈ 70 k (−88 %)** and full-screen clears per key from 1 to 0;
-  with the second step, `UP`/`DOWN` fell from ≈ 580 k to ≈ 170 k (−71 %). A differential oracle (screen after the selective path ==
-  screen after a forced full redraw, 6 912 bytes, every key of 12 scripted sessions) found **0 mismatches**. Cost: **EXROM −123 B** (typing) and **−361 B** (typing + navigation).
-  Visible-flicker qualification still needs a real TS2068 (§D.7).
-* **Four defects that were not on the work-sequence list were found while measuring** (§B, §7): a bare word on a line (`PRNT`, `CLEARR`, `CONT`, …)
-  is *silently accepted and does nothing*; `CALL p(FN f(x))` calls the wrong label (root cause found, 4-byte fix); float literals with more
-  than 5 digits and any float ≥ 32 768 *display garbage* (`PRINT 12345.678` → `24.9099`, a promoted `30000*3` would print `32767.////`);
-  and the Phase 2D report's diagnosis of the `showcase.txt` failure (`MOD(N,15)` "not a V2 function") is wrong — it is an array-vs-scalar name collision.
-* **One owner decision is genuinely open and changes the cost profile:** how to close D11 — *runtime error* (HOME −101, EXROM −23) or
-  *promotion to float* (HOME −99, EXROM −111, including the display fix promotion cannot do without). Both were prototyped and checked against an
-  exact reference; the literal rule (addresses such as `POKE 65000`, which the test corpus uses) constrains both (§B.D11).
+* **Two complete configurations were assembled and tested** (not just costed). **V2 Essential** — BREAK, edit preservation, display restore, integer-overflow promotion to float (with the display fix it needs),
+  exact FILL, the nested-call and bare-word fixes, `OUT`/`IN()`/`STICK()`, typing-flicker reduction — leaves **HOME 353 B / EXROM 488 B free** (Phase 2D: 565 / 802). **V2 Enhanced** (Essential plus multi-item `PRINT`,
+  prompted `INPUT`, exact `FOR` error line, two-line `UP`/`DOWN` redraw, abortable `LIST`) leaves **HOME 180 B / EXROM 239 B**. Costs were *exactly additive* between the isolated measurements and the merged builds, so the matrix in §B can be used
+  for arithmetic. Essential passed `make check` and the whole headless suite (115-case gate, 98-case Array Store gate, known-defect suite with 12 former defects now passing, 19 production checks, 10 FILL fixtures, 38 component tests); Enhanced
+  passed `make check` and everything except one component test that no longer fits its legacy flat image (§E.3).
+* **The previously identified flicker fix was found, and it works.** The V1 row-shadow design and the R10.8 audit's *I1/I2* "dirty-scope" selective redraw (`R10_8_EDITOR_USABILITY_AUDIT.md` §5) were never ported to the V2 editor:
+  `V2_REDRAW` still did `GFX_CLS` (194 k T-states) plus every visible line on every key. Reusing only existing display routines, typing fell from **≈ 591 k to ≈ 70 k T-states per key (−88 %)** and the screen clear per key went from 1 to 0;
+  `UP`/`DOWN` fell from ≈ 583 k to ≈ 167 k (−71 %). A differential oracle (screen after the selective path == screen after a forced full redraw, 6 912 bytes, after every key of 12 scripted sessions, run on four builds) found **0 mismatches** — and demonstrably *can* fail
+  (it caught a real D9 × I2 interaction bug on an unfixed merge). Cost: **EXROM −123 B** (typing) / **−361 B** (typing + navigation); a finer cell-level typing step (no row is ever cleared) costs −341 B. Whether the remaining row-blank (≈ 7 ms) is visible needs a real TS2068 (§D.2.7).
+* **Defects found that were not on the work-sequence list** (all measured, §B.6): (1) a **bare word on a line** (`PRNT`, `CLEARR`, `CONT`, `COPY`, `RESTORE`) is silently accepted and does nothing — fixed for 8 B; (2) `CALL p(FN f(x))` calls the *wrong label* (the nested `FN` overwrites the shared name buffer) — fixed for 4 B;
+  (3) decimal literals wrap at 16 bits (`PRINT 12345.678` → `24.9099`) and **every float ≥ 32 768 prints as `32767.////`**; (4) `FOR i = … TO 32767` never ends; (5) the Phase 2D diagnosis of `showcase.txt` is wrong — `MOD(N,15)` works, the demo has an array `N` *and* a parameter `N`.
+* **Owner decisions the study does not make for you** (§G): (1) **D11** — overflow as a runtime error (HOME −101, EXROM −23) or promotion to float (HOME −99, EXROM −111) and which *literal rule* (the test corpus uses `POKE 65000`-style address literals); (2) hardware functions as core built-ins or as ABI 2.1 *function packages* (the existing registry is statement-only);
+  (3) which parts of `PRINT`/`INPUT` are worth their bytes (150 B for all of it); (4) whether to accept an exact-but-minutes-slow worst-case `FILL`; (5) the reserve policy (Enhanced is below *both* historical targets).
+* **Not done / not claimed:** nothing is hardware-qualified; `STICK` directions, BREAK keycap position, visible flicker, ULAplus/hi-res return and non-`$FE` port behaviour all need the real machine (§H.1). The Fuse/legacy suite was not run. Items marked ESTIMATED ONLY were not assembled.
 
 ---------------------------------------------------------------------------------------------------------------------------
 
@@ -69,7 +62,7 @@ Cost columns are bytes **consumed** (positive) in the real build; a negative num
 | **D9b** | `PROGRAM FULL` keeps the typed line | **Ess.** | EXROM | **0** | **0** | – | 0 | **MEASURED AND TESTED** | known-defect `D9-program-full-keeps-text` XPASS; `study_edit_preserve` | none | very low (a label: re-enter the editor without `EDITOR_INIT`/`V2_LOAD_EDIT`) | No more lost line when the store is full |
 | **D9a** | Commit-on-navigate: an edit survives `UP`/`DOWN`/insert-line; `PROGRAM FULL` while navigating keeps buffer and cursor | **Ess.** | EXROM | 0 | **83** | – | 0 | **MEASURED AND TESTED** | `D9-edit-survives-navigation` XPASS, `D9-nav-plain` PASS, `study_edit_preserve.py` 9/9 (append-line, unchanged nav writes nothing, arrays kept, insert, PROGRAM FULL on nav) | D9b (shares `V2_STORE_EDIT`) | low–medium: new commit path in `V2_NAV` | Edits are never discarded by moving. A cheaper variant (always store when non-empty, no compare) is 55 B but discards the DIM'd arrays and rewrites the store on every move: **rejected** |
 | **U6** | Display/attribute/border/mode restored on return to the editor | **Ess.** | EXROM | 0 | **4** | – | 0 | **MEASURED AND TESTED** | `U6-mode1-return` XPASS; `study_u6.py` 4/4 (colour state, MODE 1 return incl. status bar `$07`, border, second run clean) | – | very low | Editor is usable after `MODE 1`/`BORDER`/colour statements; second `RUN` no longer inherits colours |
-| **D7** | `FILL` exact when the seed stack overflows | **Ess.** (correctness) / low urgency | **package** | 0 | 0 | **+202** (795 → 997 of 1 024) | 8 (in image) | **MEASURED AND TESTED** (with a time caveat) | `v2_fill_check.py` 10/10 unchanged; known-defect D7: noise-10 %, noise-25 %, ladder-2px XPASS, noise-40 % PASS; staggered-dots and ladder-1px-teeth **exact (0 differing pixels) but 787 s / 453 s emulated** — they exceed the harness's 400 M-instruction cap | none | medium: pathological images are minutes-slow; only 27 B of window left | No silent partial fills. Ordinary art is unaffected (same code path, same timing, until a seed is dropped) |
+| **D7** | `FILL` exact when the seed stack overflows | **Ess.** (correctness) / low urgency | **package** | 0 | 0 | **+212** (795 → 1 007 of 1 024; +202 for the exactness itself, +10 for BREAK polling) | 8 (in image) | **MEASURED AND TESTED** (with a time caveat) | `v2_fill_check.py` 10/10 unchanged; known-defect D7: noise-10 %, noise-25 %, ladder-2px XPASS, noise-40 % PASS; staggered-dots and ladder-1px-teeth **exact (0 differing pixels) but 787 s / 453 s emulated** — they exceed the harness's 400 M-instruction cap | none | medium: pathological images are minutes-slow; only 17 B of the window left | No silent partial fills. Ordinary art is unaffected (same code path, same timing, until a seed is dropped) |
 | **D11** (variant **P**) | Integer overflow promotes to the existing float path; large literals handled | **Ess.** | HOME + EXROM | **99** | **111** | – | 0 | **MEASURED AND TESTED** | exact oracle: 105 476 pairs each for `+`, `−`, `*` through the real `VM_RUN` bytecode path, **0 mismatches**; `VM_MUL_CHECKED` alone 105 476 pairs, 0 mismatches; `study_d11_print.py` 15/15; `study_d11_literals.py` (address literals still work); `D11-*` XPASS | float display ≥ 32 768 (the 111 EXROM bytes) | medium: touches the VM hot ops; literal rule changes accepted programs | `30000*3` = `90000.0000`, `32767+1` = `32768.0000`, `FOR i=32765 TO 32767` terminates (it looped forever) |
 | **D11** (variant **E**) | Overflow raises runtime error 67 `NUMERIC OVERFLOW`; literal > 32 767 is error 64 | alt. | HOME + EXROM | **101** | **23** | – | 0 | **MEASURED AND TESTED** | same oracle: 105 476 pairs × (`+`, `−`, `*`, `*` direct) = **0 mismatches**; `D11-*` XPASS | – | low–medium; **breaks `POKE 65000` style literals** (corpus: `tests/math5`, `usr1`, `hit`) unless the literal rule of variant P is used | Clean error instead of a wrong number |
 | **N-1** | Call `p(FN f(x))` calls the right procedure | **Ess.** | HOME | **4** | 0 | – | 0 | **MEASURED AND TESTED** | `study_callfn.py` 7/7 (5 of them fail on the baseline) | – | very low | Silent wrong-call removed |
@@ -85,6 +78,7 @@ Details and caveats behind the D11 numbers are in §B.4.
 | **L-IN** | `IN(port)` function (full 16-bit port) | **Ess.** | HOME (core) | **22** | 0 | – | 0 | **MEASURED AND TESTED** (emulator) | with key `1` held: `IN(63486)=$BE`, `IN(65278)=$BF`, `IN(65022)=$BF`, while `IN(254)=$BE`: the **high byte selects the half-row** (proves the 16-bit address reaches the bus) | – | low | as above |
 | **L-STICK** | `STICK(1|2)` — Timex joystick via AY register 14 (the removed V1 `STICK_READ` algorithm) | **Ess.** (per brief) | HOME (core) | **45** | 0 | – | 0 | **MEASURED BUT NOT FULLY VERIFIED** | idle returns 0 for both sticks; direction bits **not exercised** (no joystick event path in ts2068-debug) | – | low; name `STICK` becomes a function name | Joystick games |
 | shrink | `COMPILE_2ARG_STMT` shared by `BEEP`/`SOUND`/`POKE`/`PLOT`/`OUT` | Ess. (free) | HOME | **−43** (saves) | 0 | – | 0 | **MEASURED AND TESTED** | same suites; error codes/order unchanged | – | very low | Pays for the whole `OUT` statement and most of `IN`/`STICK` (net HOME for all three: **80**, not 123) |
+| **L-HW/EXROM** | `IN()`/`STICK()` handlers placed in **EXROM** behind two fixed 3-byte `jp` slots (`study/lang-hw-exrom`; HOME keeps the table rows and jump words) | alt. | HOME + EXROM | OUT+IN+STICK: **32** (vs 80 in core) | **54** | – | 0 | **MEASURED BUT NOT FULLY VERIFIED** (production build + `study_lang_hw.py` 6/6; component tests not run) | – | low | Total 86 B vs 80 B: it only trades 48 HOME bytes for 54 EXROM bytes — a lever to protect the 350 B HOME reserve, not a saving |
 | **ABI 2.1** | *Function* packages: the existing registry is **statement-only**, so `STICK`/`IN` cannot be exposed through it without compiler + VM changes (registration `C` bit 7 = function; `EXT_CALL_RESULT` pinned; operand bit 7 pushes the result) | opt. | HOME mechanism + package | **95** | 0 | **110** for `OUT`+`IN()`+`STICK()` | 0 | **MEASURED AND TESTED** | `study_extfn.py` 8/9 (the one "FAIL" is the expected error *code* differing); `check_package_abi.py` passes as ABI **2.1**, 35 pins | ABI minor bump (old tapes still load; new function packages refused by old ROMs) | medium: new compiler path; **one package resident at a time**, so hardware access would evict SPRITE/SHAPES/MODE/GRAPHICS/PRINTER | Pays only if ≥ 3 further function candidates would otherwise be core. For the three here, **core is cheaper (80 B vs 95 B + a tape load)** |
 | **L-PRINT** | Multi-item `PRINT` with `;` and `,` (16-column zones), bare `PRINT`, trailing separator, + `INPUT "p"; v` | opt. (high value) | HOME | **150** (unoptimised) | 0 | – | 0 | **MEASURED AND TESTED** (screen read back through the ROM font) | `study_lang_print.py` 13/13 incl. INPUT prompt+echo+value; **component tests that assert bytecode were not run for this branch** | strict compile (Phase 2D already makes today's `PRINT a; b` an error) | medium: OP_PRINT_* no longer end the line, new `OP_NL`/`OP_PRINT_COMMA`; decompiler (test-only) needs them | The biggest single practical language gap. Parts: INPUT prompt 29, `,` zones 41, bare `PRINT` 20, `;` list core ≈ 60; a shared `TOK_ENDS_STMT` helper saves another 6 |
 | **N-3** | End-of-source `FOR` error reports the `FOR`'s own line | opt. | HOME | **23** | 0 | – | +2 B per open `FOR` (compile stack) | **MEASURED AND TESTED** | `study_eof_for.py` 5/5 (simple, later, nested, outer closed, continuation lines) | Phase 2D line counter | low | Cursor lands on the offending `FOR`. `PROC` / block `IF` / forward-label: **ESTIMATED ONLY**, +30–60 B each |
@@ -94,7 +88,8 @@ Details and caveats behind the D11 numbers are in §B.4.
 
 | ID | Candidate | Ess. / Opt. | Place | HOME | EXROM | RAM | Confidence | Evidence | Risk | Benefit |
 |---|---|---|---|---:|---:|---:|---|---|---|---|
-| **I1** | Selective redraw of the active line while typing/backspacing (audit I1) | **Ess.** (high-value usability) | EXROM | 0 | **123** (154 in the refactored form shared with I2) | 2 | **MEASURED AND TESTED** (emulator) | typing 591 k → 70 k T/key (−88 %), 17→0 `GFX_CLS`, differential oracle 0/… mismatches | low–medium | The characteristic "whole screen blinks on every key" goes away; ~8× lower latency |
+| **I1** | Selective redraw of the active line while typing/backspacing (audit I1) | **Ess.** (high-value usability) | EXROM | 0 | **123** (154 in the refactored form shared with I2) | 2 | **MEASURED AND TESTED** (emulator) | typing 591 k → 70 k T/key (−88 %), 17→0 `GFX_CLS`, differential oracle 0 mismatches (12 scenarios) | low–medium | The characteristic "whole screen blinks on every key" goes away; ~8× lower latency |
+| **I1b** | Cell-level typing redraw: only the changed cells are overwritten in place, trailing cells blanked, no row ever cleared (`study/flicker-i1b`) | opt. (only if hardware shows the row-blank flicker of I1) | EXROM | 0 | **341** total (I1 123 + 218) | 11 scratch bytes | **MEASURED AND TESTED** (emulator) | type-10lines 69 562 → 39 918 T/key (worst case: typing at the line start), no `GFX_CLEAR_ROW_TEXT`/`V2_DRAW_TEXT` on the typing path, differential oracle 0 mismatches (3 scenarios) | medium | Removes the last blank interval (a cleared row is blank ≈ 7 ms) |
 | **I2** | Cursor-only and two-line redraw for `UP`/`DOWN` within the first 21 lines (audit I2) | opt. | EXROM | 0 | **+238** on top of I1 (I1+I2 = 361) | 6 | **MEASURED AND TESTED** (emulator) | 583 k → 167 k T/key (−71 %), 0 `GFX_CLS` in the window, differential oracle 0 mismatches over 12 scenarios | medium: more geometry rules; falls back to the full redraw outside its proof conditions | Fast navigation in programs ≤ 21 lines; deeper programs still scroll the whole window each key |
 
 ### B.4 The D11 study in detail
@@ -122,20 +117,21 @@ Not covered by either variant (still wrap): `ABS(-32768)`, `-32768 / -1`, the `I
 
 | ID | Item | Class | Place | HOME | EXROM | Confidence | Note |
 |---|---|---|---|---:|---:|---|---|
-| N-4 | `demos/showcase.txt`: `MOD(N,15)` | **demo compatibility** (name collision), not a missing function | demo edit | 0 | 0 | MEASURED diagnosis | `MOD(a,b)` works (`MOD(20,15)`=5, also inside `DEF FN`). The demo has `DIM N(…)` *and* `DEF FN T(N)=MOD(N,15)`: a DIM'd array name used as a value requires `(` (error 40). Rename the parameter, or (compiler) fall back to the scalar when no `(` follows: **ESTIMATED ONLY** +20 B |
-| ED3 | Typing a command word on a stored line stores it as text | correctness (editor) | EXROM | – | **ESTIMATED ONLY** 25–45 | R10.8 `I4` | with N-2 the bare-word case is now an error at `RUN` |
-| U7 | Viewport re-centres on every `UP`/`DOWN` past line 20 | usability | EXROM | – | ESTIMATED ONLY | needed for I2 to help long programs |
-| I3 | Page / top / bottom / line-start / line-end keys | usability | HOME 40–70 + EXROM 60–110 | – | ESTIMATED ONLY (R10.8) | needs the physical key-ergonomics trial first |
-| I9 | Error codes in messages, `FREE nnnn` in the status bar | usability | EXROM 80–150 | – | ESTIMATED ONLY | |
-| U5/I11 | Runtime error line | usability | M–L | 30–60 | 40–80 | ESTIMATED ONLY — needs design |
-| U8/I12 | `NEW`/`LOAD` confirmation or undo | usability | EXROM 30–60 | – | ESTIMATED ONLY | |
-| L-STR | String ordering `<>`, `>`, `<=`, `>=` (spec "MUST HAVE") | language | HOME ~30–40 | – | ESTIMATED ONLY | probe: error 3 today |
-| L-IF | Single-line `IF c THEN stmt` | language | HOME ~40–60 | – | ESTIMATED ONLY | probe: error 9 today (needs a block `IF`/`ENDIF`) |
-| L-ELIF | `ELSEIF` | language | HOME ~10–20 | – | ESTIMATED ONLY | `ELSE IF … ENDIF ENDIF` works; probe: error 2 |
-| L-NEXT | Bare `NEXT` | language | HOME ~10 | – | ESTIMATED ONLY | docs say optional; probe: error 10 |
-| L-DATA | `DATA`/`READ`/`RESTORE` | — | — | – | decided against (arrays) | probe: `DATA` error 2 |
-| L-FN | `INSTR`, `ATN/ASN/ACS/EXP/LN`, `SCREEN$`, `^`, hex/`1E3` literals | language | package or later | – | ESTIMATED ONLY | the calculator wires only 8 literal opcodes; each is real work |
-| ABI-F4 | Package error codes overlap the VM's range | ABI | – | – | known (A3) | document only |
+| N-4 | `demos/showcase.txt`: `MOD(N,15)` | **demo compatibility** (name collision), not a missing function | demo edit | 0 | 0 | MEASURED diagnosis | `MOD(a,b)` works (`MOD(20,15)`=5, also inside `DEF FN`). The demo has `DIM N(…)` *and* `DEF FN T(N)=MOD(N,15)`: a DIM'd array name used as a value requires `(` (error 40). Rename the parameter, or (compiler) fall back to the scalar when no `(` follows: ESTIMATED ONLY +20 B HOME |
+| ED3 | Typing a command word on a stored line stores it as text | editor correctness | EXROM | – | 25–45 | ESTIMATED ONLY (R10.8 I4) | with N-2 the bare-word case is now an error at `RUN` |
+| U7 | Viewport re-centres on every `UP`/`DOWN` past line 20 | usability | EXROM | – | n/a | ESTIMATED ONLY | needed for I2 to help long programs |
+| I3 | Page / top / bottom / line-start / line-end keys | usability | HOME + EXROM | 40–70 | 60–110 | ESTIMATED ONLY (R10.8) | needs the physical key-ergonomics trial first |
+| I9 | Error codes in messages, `FREE nnnn` in the status bar | usability | EXROM | – | 80–150 | ESTIMATED ONLY | |
+| U5/I11 | Runtime error line | usability | HOME + EXROM | 30–60 | 40–80 | ESTIMATED ONLY | needs design |
+| U8/I12 | `NEW`/`LOAD` confirmation or undo | usability | EXROM | – | 30–60 | ESTIMATED ONLY | |
+| L-STR | String ordering `<>`, `>`, `<=`, `>=` (spec "MUST HAVE") | language | HOME | 30–40 | – | ESTIMATED ONLY | probe: error 3 today |
+| L-IF | Single-line `IF c THEN stmt` | language | HOME | 40–60 | – | ESTIMATED ONLY | probe: error 9 today (needs a block `IF`/`ENDIF`) |
+| L-ELIF | `ELSEIF` | language | HOME | 10–20 | – | ESTIMATED ONLY | `ELSE IF … ENDIF ENDIF` works; probe: error 2 |
+| L-NEXT | Bare `NEXT` | language | HOME | ~10 | – | ESTIMATED ONLY | docs say optional; probe: error 10 |
+| L-OUTR | `OUT` value range check (> 255 is an error, as the V1 package) | language | HOME | 10–14 | – | ESTIMATED ONLY | core `OUT` truncates like `POKE` |
+| L-DATA | `DATA`/`READ`/`RESTORE` | language | – | – | – | decided against (arrays replace it) | probe: `DATA` error 2 |
+| L-FN | `INSTR`, `ATN/ASN/ACS/EXP/LN`, `SCREEN$`, `^`, hex/`1E3` literals | language | package or later | – | – | ESTIMATED ONLY | the calculator wires only 8 literal opcodes; each is real work |
+| ABI-F4 | Package error codes overlap the VM's range | ABI | – | – | – | known (A3) | document only |
 
 ---------------------------------------------------------------------------------------------------------------------------
 
@@ -210,7 +206,7 @@ packages (R10.25 class C: logic done, only the install stub and 3–4 service ca
 
 | Class | Items | Status in this study |
 |---|---|---|
-| **Release-critical (data loss / unusable editor)** | D9a/D9b edit preservation, D5b stray `$10` in the edit line, U6 display/attribute restoration, D4 error-line navigation (kept: Phase 2D) | all prototyped, all MEASURED AND TESTED; Phase 2D's D4 behaviour is unchanged in every build (the line counter and `V2_JUMP_TO_ERROR_LINE` were not touched) |
+| **Release-critical (data loss / unusable editor)** | D9a/D9b edit preservation, D5b stray `$10` in the edit line, U6 display/attribute restoration, D4 error-line navigation (kept: Phase 2D) | all prototyped, all MEASURED AND TESTED; Phase 2D's D4 behaviour is unchanged in every build except the deliberate N-3 change in Enhanced (the line counter and `V2_JUMP_TO_ERROR_LINE` were not touched; the 15-case D4 matrix passes in Essential) |
 | **Release-critical (runtime)** | D5 BREAK of a running program | MEASURED AND TESTED through the real keyboard matrix |
 | **Essential usability** | typing-flicker / latency (I1) | MEASURED AND TESTED (emulator); physical flicker qualification outstanding |
 | **Optional enhancements** | two-line `UP`/`DOWN` redraw (I2), abortable `LIST` (ED5), exact end-of-source `FOR` line (N-3), page/top/bottom/line-start/end keys (I3), run-from-anywhere (I4/ED3), status/error text (I9), `NEW`/`LOAD` confirmation (I12), runtime error line (I11), viewport policy (U7) | I2, ED5, N-3 measured; the rest **ESTIMATED ONLY** from the R10.8 audit, §B.5 |
@@ -225,13 +221,13 @@ Shared code: the commit-on-navigate path and the `ENTER` path now share one stor
 
 | Source | What it records |
 |---|---|
-| `docs/development_log.md` §"Screen-flicker fix" and `docs/programmers_reference.md` §"Screen-flicker fix" | The **V1** editor's cause and cure: `BASIC_REDRAW_PROGRAM` did an unconditional `GFX_CLS` + full re-render on every key; the fix was a **row shadow** (`ROW_SHADOW_POS`/`ROW_SHADOW_FLAGS`/`LAST_RENDERED_ROWS`, 75 B of sysvars, `BASIC_ROW_SHADOW_MATCHES`/`BASIC_UPDATE_ROW_SHADOW`/`BASIC_RESET_ROW_SHADOW`) so a settled row whose content is unchanged is skipped. A "display subsystem" was discussed and explicitly set aside for this reason |
+| `docs/development_log.md` §"Screen-flicker fix" and `docs/programmers_reference.md` §"Screen-flicker fix" | The **V1** editor's cause and cure: `BASIC_REDRAW_PROGRAM` did an unconditional `GFX_CLS` + full re-render on every key; the fix was a **row shadow** (`ROW_SHADOW_POS`/`ROW_SHADOW_FLAGS`/`LAST_RENDERED_ROWS`, ≈ 73–75 B of sysvars, `BASIC_ROW_SHADOW_MATCHES`/`BASIC_UPDATE_ROW_SHADOW`/`BASIC_RESET_ROW_SHADOW`) so a settled row whose content is unchanged is skipped. A "display subsystem" was discussed and explicitly set aside for this reason |
 | `docs/technical_overview.md` | States that "rendering uses row-shadow state so unchanged settled lines are not redrawn" — **true of V1, not of the V2 production editor** (documentation discrepancy to correct) |
 | `docs/v2/R10_7_PRODUCTION_RAM_ARCHITECTURE_AUDIT.md` §9 | **"Editor redraw/flicker: V2 flashes on redraw; V1 had selective-redraw logic and a dedicated smoke test. Locate both, determine whether V2 bypassed/lost the V1 behaviour, restore/reuse, add regression coverage. Not started."** |
 | `docs/v2/R9_CUTOVER_LEDGER.md`, `R8_9_PRODUCTION_INTEGRATION_DESIGN.md` | R9 ledger: *"`basic/editor_integration.asm` is not used: its row-shadow renderer is tied to the old editor, while production reuses `rom/exrom_editor.asm` and the V2 source renderer"*. The R8.9 design had assumed the row-shadow tracking would stay "generic and untouched"; it did not survive the cutover |
 | **`docs/v2/R10_8_EDITOR_USABILITY_AUDIT.md` §3 U1/U11, §5 I1/I2, §5.1** | The **V2-shaped** form of the same idea and the one that was implemented here: *dirty-scope* selective redraw — "`V2_REDRAW` already separates viewport choice, per-record draw and status … I1/I2 add a dirty-scope argument … the full path remains the reference behaviour, which makes a differential test a complete regression oracle." Estimates: I1 HOME 0 / EXROM +60–90 / RAM 1–2; I2 EXROM +80–120 / RAM 2 |
 
-The V1 shadow itself was **not** reused: its 75 B of RAM do not exist in V2 (`IFNDEF V2_COMPACT_SYSVARS` removed them), and the audit's dirty-scope form needs
+The V1 shadow itself was **not** reused: its ≈ 75 B of RAM do not exist in V2 (`IFNDEF V2_COMPACT_SYSVARS` removed them), and the audit's dirty-scope form needs
 2–6 B. The existing code that *was* reused: `V2_DRAW_TEXT` (per-line draw with keyword emphasis), `GFX_CLEAR_ROW_TEXT` (bitmap-only clear, itself an earlier
 anti-flicker fix), `GFX_INVERT_ATTR`, `EDITOR_WRAP_CALC`/`EDITOR_WRAP_OFFSET_TO_ROWCOL`, `V2_DRAW_STATUS`, `V2_KW_DETECT_SPANS`. **No display code was duplicated and none was added.**
 
@@ -273,7 +269,7 @@ Answers to the questions in the brief:
 
 * **Eliminates unnecessary full-screen redraws?** Yes for typing, backspace and in-window `UP`/`DOWN` (0 `GFX_CLS`); no for scrolling, row-count changes, insert/delete line and the first redraw of a session.
 * **Reduces flicker during cursor movement?** `LEFT`/`RIGHT` were already cursor-only. `UP`/`DOWN` now repaint two lines instead of the screen (−71 % time, 0 clears); a full-screen blank per key is gone.
-* **During insertion and deletion?** Yes: the only cells touched per key are the active line's rows (each is cleared bitmap-only and redrawn, so a row is blank for ≈ 0.3 frame).
+* **During insertion and deletion?** Yes: the only cells touched per key are the active line's rows (each is cleared bitmap-only and redrawn, so a row is blank for ≈ 0.4 frame).
   Measured unit costs: `GFX_CLEAR_ROW_TEXT` = **24 834 T per row** (so a cleared row is blank for ≈ 7 ms, i.e. ≈ 40 % of a 60 Hz frame), `GFX_PUTCHAR` ≈ 0.7–0.83 k T.
   A finer step, **I1b** (`study/flicker-i1b`: redraw only from the first changed character and *overwrite* cells in place, blank only the cells a shrunk row no longer uses, never clear a row) was built:
   type-10lines **69 562 → 39 918 T/key**, type-wrapchg 203 312 → 108 829, **no `GFX_CLEAR_ROW_TEXT` / `V2_DRAW_TEXT` call on the typing path** (no blank interval at all),
@@ -319,11 +315,51 @@ Not in either: ABI 2.1 function packages (`study/extfn`), the EXROM-resident `IN
 
 ### E.2 Budgets
 
-@@BUDGET@@
+| Configuration | HOME free | EXROM free | SHAPES package | How obtained |
+|---|---:|---:|---:|---|
+| Phase 2D baseline | 565 | 802 | 795 / 1 024 | `make budget` **[M]** |
+| **V2 Essential** | **353** | **488** | 1 007 / 1 024 | **ASSEMBLED** (`study/combined-essential`, `make budget`) |
+| **V2 Enhanced** | **180** | **239** | 1 007 / 1 024 | **ASSEMBLED** (`study/combined-enhanced`, `make budget`) |
+| historical reserve targets | ≥ 350 | ≥ 800 | – | policy, not physical |
+| physical capacity | 16 384 | 8 192 | 1 024 | hardware |
+
+Essential uses 212 B of HOME and 314 B of EXROM relative to Phase 2D; Enhanced 385 B and 563 B. Both are physically feasible (Essential / Enhanced: HOME 2.2 % / 1.1 % free; EXROM 6.0 % / 2.9 % free). Against the *historical* targets: Essential
+meets HOME (353 ≥ 350) and is 312 B under the EXROM target; Enhanced is 170 B under HOME and 561 B under EXROM — in line with your instruction not to reject a feature for that.
+
+**Arithmetic projections (not assembled — built from the additive §B costs, which the two assembled builds reproduced exactly; treat as ±0 for a pure swap):**
+
+| Variation | HOME free | EXROM free | Note |
+|---|---:|---:|---|
+| Essential, D11 *error* variant instead of promotion | 351 | 576 | HOME −2, EXROM +88 |
+| Essential, `IN`/`STICK` handlers in EXROM (`lang-hw-exrom`) | 401 | 434 | trades 48 HOME for 54 EXROM |
+| Essential without `STICK` | 398 | 488 | −45 B HOME |
+| Essential with I1b instead of I1 | 353 | 270 | +218 B EXROM for a blank-free typing redraw |
+| Essential + ABI 2.1 function packages instead of core `IN`/`STICK` (keeping core `OUT`) | ≈ 353 + 22 + 45 − 95 = 325 | 488 | worse than core; the 110 B package is extra |
+| Enhanced without I2 (typing redraw only) | 180 | 485 | I2 and its 8 B interaction fix are 246 B of EXROM |
+| Enhanced with `PRINT` trimmed to the `;` list + trailing separator (no `,` zones, no bare `PRINT`) | ≈ 241 | 239 | −61 B |
+| Enhanced + R10.10 editor estimate (HOME +75…+140, EXROM +385…+655, `R10_8_PRE_R11_PLAN.md`) | ≈ 40…105 | **negative** | does not fit next to Enhanced; R10.10 would have to replace parts of it (I1/I2/D9 are already inside that estimate) |
+
 
 ### E.3 Qualification actually performed
 
-@@QUAL@@
+All headless (ZEsarUX through ts2068-debug); `make -n test | grep -ci fuse` = 0; **no Fuse/X11, `make test-legacy` not run**. Everything below is emulator evidence.
+
+| Suite | Phase 2D | **Essential** | **Enhanced** |
+|---|---|---|---|
+| `make check` (assemble, lint, ABI, builtin tables, docs, storage contract, legacy fixtures) | rc 0 | **rc 0** (ABI 2.0, 16 slots, 34 pins) | **rc 0** |
+| Headless smoke ROMs | 9/9 | 9/9 | 9/9 |
+| V2 standalone component tests | 38/38 | **38/38** (one pass before the last two merges, which changed only the FILL package and test tools; plus the single final `make test` below) | **37/37** — `chunk_refill_boundary` no longer fits its flat 16 K image (41 B over, §E.4 #8) |
+| `v2_production_checks.py` | 19/19 | **19/19** (after renaming the label `out`, §E.4 #2) | **19/19** |
+| `v2_fill_check.py` | 10/10 | **10/10** | **10/10** |
+| Production gate `v2_prod_regress.py` | 115 PASS | **115 PASS**, 0 XFAIL/FAIL/XPASS (incl. all 15 D4 error-line cases and all 18 D3 families) | **113 PASS** (the two `PRINT x; x` D3 cases removed — now valid; `D4-eof-for` ×2 expect the `FOR` line) |
+| Array Store gate | 98 PASS | **98 PASS** | **98 PASS** |
+| Known-defect suite | 3 PASS + **14 XFAIL** | **15 PASS, 0 XFAIL**: D5b, D5 (re-written for the real keyboard matrix), D9 ×2, D11 ×4, U6, D7 ×3 are now gate cases; 3 controls; the two pathological D7 scenarios are exact but exceed the harness's cap (§B.1) and were left out, not hidden | **15 PASS, 0 XFAIL** |
+| Study suites (focused) | – | break 6/6, edit-preserve 9/9, u6 4/4, callfn 7/7, d11 prints 15/15, literals 13/13, lang_hw 6/6, oracle `+ − * *` 4 × 9 476 pairs 0 mismatches, flicker differential 12 scenarios 0 mismatches | the same plus `eof-for` 5/5, `lang-print` 13/13; flicker differential 12 scenarios (incl. `append-up`) 0 mismatches |
+| One uninterrupted `make test` on the final tree | – | @@FINALTEST@@ | not applicable as-is (needs the `chunk_refill_boundary` migration) |
+
+Honest limits of this evidence: the production tests drive the key latch directly for most editor paths (as in Phases 1–2D) — the one exception here is BREAK, which was run through the emulated keyboard *matrix*;
+the tape path is a synthesised EAR stream; STICK directions, hi-res/ULAplus return, visible flicker and real-clock FILL time are untested; the study suites and the oracle live on the branches, not in the gate.
+
 
 ### E.4 Integration facts found only by combining (each is a reason not to trust the isolated numbers alone)
 
@@ -334,6 +370,10 @@ Not in either: ABI 2.1 function packages (`study/extfn`), the EXROM-resident `IN
 5. **D9 × I2:** an append-line commit followed by `UP` left the status count stale (the differential oracle caught it: 1 mismatch on the unfixed merge); fixed by clearing the redraw scope in `V2_SHOW_MESSAGE` and after a commit store (+8 B).
 6. The existing **`D5` known-defect case pokes the key latch** and therefore cannot observe an ISR-side BREAK; the combined branch replaces it with a real-matrix press. Two pathological **D7 scenarios** (staggered dots, 1-px ladder) are exact but need ≈ 800 M instructions (> the 400 M-instruction harness cap) and were left out of the combined gate (not silently: listed in §B.1).
 7. **PRINT's bytecode semantics change** (`OP_PRINT_NUM/STR` no longer end the line): the test-only decompiler does not know `OP_NL`/`OP_PRINT_COMMA`; bytecode-asserting component tests were not re-run on the lang-print branch alone, but the full `make test` of the Enhanced build covers them (§E.3).
+
+8. **Test-infrastructure capacity:** the legacy flat-16 K component test `rom/test_v2_chunk_refill_boundary.asm` no longer assembles in Enhanced (it embeds vm_core + compiler and is **41 B over** its image; Essential still fits). It needs the same migration to the two-bank harness that 33 other tests already received; it was excluded from the Enhanced standalone run with a runner copy (`tools/run_v2_standalone_tests_skip_crb.sh`), giving 37/37 instead of 38/38.
+9. **The test-only decompiler** must skip `OP_NL`/`OP_PRINT_COMMA` for the byte-exact `block_if` decompile check (`block_if` failed until it did); the production image does not contain the decompiler.
+10. **Gate expectations that Enhanced deliberately changes:** two D3 cases (`PRINT x; x`, `PRINT x, x` were asserted to be errors) and two D4 cases (`D4-eof-for`, `D4-eof-trailing-colon`: cursor now on the `FOR`, line 0) were edited in `study/combined-enhanced`; in Essential nothing in the 115-case gate needed to change.
 
 ### E.5 Compatibility effects to add to `COMPATIBILITY_BREAKS.md` if adopted
 
