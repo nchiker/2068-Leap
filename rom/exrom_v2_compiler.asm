@@ -1726,7 +1726,8 @@ COMPILE_BOOL_NOT:
                                   ; COMPILE_FACTOR's own unary-minus
                                   ; recursion already uses
         ld a,46        ; QUAL shrink: inlined EMIT_OP_NOT (tail)
-        jp EMIT_BYTE
+        rst $20
+        ret                      ; RC shrink: tail call through the RST (was jp EMIT_BYTE)
 
 ; COMPILE_RELATIONAL — bare comparison (was COMPILE_EXPR's own whole body
 ; before this milestone). The full relop set: <, <=, =, >=, >, <>.
@@ -1758,32 +1759,38 @@ COMPILE_RELATIONAL:
         rst $08
         call COMPILE_ADDITIVE
         ld a,10        ; QUAL shrink: inlined EMIT_OP_CMP_LT (tail)
-        jp EMIT_BYTE
+        rst $20
+        ret                      ; RC shrink: tail call through the RST (was jp EMIT_BYTE)
 .do_le:
         rst $08
         call COMPILE_ADDITIVE
         ld a,40        ; QUAL shrink: inlined EMIT_OP_CMP_LE (tail)
-        jp EMIT_BYTE
+        rst $20
+        ret                      ; RC shrink: tail call through the RST (was jp EMIT_BYTE)
 .do_eq:
         rst $08
         call COMPILE_ADDITIVE
         ld a,11        ; QUAL shrink: inlined EMIT_OP_CMP_EQ (tail)
-        jp EMIT_BYTE
+        rst $20
+        ret                      ; RC shrink: tail call through the RST (was jp EMIT_BYTE)
 .do_ge:
         rst $08
         call COMPILE_ADDITIVE
         ld a,42        ; QUAL shrink: inlined EMIT_OP_CMP_GE (tail)
-        jp EMIT_BYTE
+        rst $20
+        ret                      ; RC shrink: tail call through the RST (was jp EMIT_BYTE)
 .do_gt:
         rst $08
         call COMPILE_ADDITIVE
         ld a,41        ; QUAL shrink: inlined EMIT_OP_CMP_GT (tail)
-        jp EMIT_BYTE
+        rst $20
+        ret                      ; RC shrink: tail call through the RST (was jp EMIT_BYTE)
 .do_ne:
         rst $08
         call COMPILE_ADDITIVE
         ld a,43        ; QUAL shrink: inlined EMIT_OP_CMP_NE (tail)
-        jp EMIT_BYTE
+        rst $20
+        ret                      ; RC shrink: tail call through the RST (was jp EMIT_BYTE)
 
 COMPILE_ADDITIVE:
         call COMPILE_TERM
@@ -1873,7 +1880,8 @@ COMPILE_FACTOR:
         call MATH_NEGATE16       ; -1 .. -32768: an INT
         ex de,hl
         call COMPILE_INT_LITERAL
-        jp LEX_NEXT_TOKEN
+        rst $08
+        ret                      ; RC shrink: tail call through the RST (was jp LEX_NEXT_TOKEN)
 .neg_expr:
         ld a,1        ; QUAL shrink: inlined EMIT_BYTE_OP_PUSH_I8
         rst $20
@@ -1882,7 +1890,8 @@ COMPILE_FACTOR:
         call COMPILE_FACTOR      ; the operand -X applies to
         call CHK_ERR           ; RC shrink: return if a compile error is pending
         ld a,7        ; QUAL shrink: inlined EMIT_OP_SUB (tail)
-        jp EMIT_BYTE
+        rst $20
+        ret                      ; RC shrink: tail call through the RST (was jp EMIT_BYTE)
 .paren:
         rst $08
         call COMPILE_EXPR
@@ -1893,13 +1902,16 @@ COMPILE_FACTOR:
         rst $30
 .number:
         call COMPILE_NUMBER_LITERAL
-        jp LEX_NEXT_TOKEN
+        rst $08
+        ret                      ; RC shrink: tail call through the RST (was jp LEX_NEXT_TOKEN)
 .float_number:
         call COMPILE_FLOAT_LITERAL
-        jp LEX_NEXT_TOKEN
+        rst $08
+        ret                      ; RC shrink: tail call through the RST (was jp LEX_NEXT_TOKEN)
 .float5:
         call COMPILE_FLOAT5
-        jp LEX_NEXT_TOKEN
+        rst $08
+        ret                      ; RC shrink: tail call through the RST (was jp LEX_NEXT_TOKEN)
 .ident:
         ; R8.5 Group 6 (DIMN) -- DIMN(name) returns an array's declared
         ; size, a real COMPILE-TIME CONSTANT (an array's size is fully
@@ -1979,7 +1991,8 @@ COMPILE_FACTOR:
         jr nc,.arr_read
 .scalar:
         call COMPILE_IDENT_LOAD
-        jp LEX_NEXT_TOKEN
+        rst $08
+        ret                      ; RC shrink: tail call through the RST (was jp LEX_NEXT_TOKEN)
 .arr_read:
         push af                    ; A = array index, preserve across the
         xor a                        ; flag-set below
@@ -2106,7 +2119,8 @@ COMPILE_FACTOR:
         ld a,39        ; QUAL shrink: inlined EMIT_OP_CALL_FN
         rst $20
         ld a,(CFN_INDEX)
-        jp EMIT_BYTE
+        rst $20
+        ret                      ; RC shrink: tail call through the RST (was jp EMIT_BYTE)
 
 ; .udf_call — FN name(arg), as an expression factor (post-R9 DEF FN
 ; reintegration, docs/v2/deffn_design/README.md). Resolved via the SAME
@@ -2247,7 +2261,8 @@ EMIT_ARR_OPERAND:
         ld a,e
         rst $20
         ld a,d
-        jp EMIT_BYTE
+        rst $20
+        ret                      ; RC shrink: tail call through the RST (was jp EMIT_BYTE)
 
 ; ===========================================================================
 ; VARIABLE-STRIDE table (bounded ROM consolidation pass, same technique
@@ -2506,14 +2521,16 @@ COMPILE_INT_LITERAL:                       ; DE = a signed 16-bit value
         ld a,1        ; QUAL shrink: inlined EMIT_BYTE_OP_PUSH_I8
         rst $20
         ld a,e
-        jp EMIT_BYTE
+        rst $20
+        ret                      ; RC shrink: tail call through the RST (was jp EMIT_BYTE)
 .wide:
         ld a,2        ; QUAL shrink: inlined EMIT_BYTE_OP_PUSH_I16
         rst $20
         ld a,e
         rst $20
         ld a,d
-        jp EMIT_BYTE
+        rst $20
+        ret                      ; RC shrink: tail call through the RST (was jp EMIT_BYTE)
 
 ; COMPILE_FLOAT_LITERAL — emits PUSH_FLOAT_LIT's 4-byte operand: TOK_VAL
 ; (the literal's digits) then TOK_FLOAT_DIVISOR (10^fractional-digits),
@@ -2532,7 +2549,8 @@ COMPILE_FLOAT_LITERAL:
         ld a,e
         rst $20
         ld a,d
-        jp EMIT_BYTE
+        rst $20
+        ret                      ; RC shrink: tail call through the RST (was jp EMIT_BYTE)
 
 COMPILE_IDENT_LOAD:
         ld hl,(TOK_NAME)
@@ -2544,7 +2562,8 @@ COMPILE_IDENT_LOAD:
         ld a,3        ; QUAL shrink: inlined EMIT_BYTE_OP_LOAD_VAR
         rst $20
         ld a,(IDENT_LOAD_INDEX)
-        jp EMIT_BYTE
+        rst $20
+        ret                      ; RC shrink: tail call through the RST (was jp EMIT_BYTE)
 
 ; STASH_IDENT_NAME -- copies the CURRENT identifier token (TOK_NAME/
 ; TOK_LEN) into the fixed STMT_IDENT_NAME_BUF/STMT_IDENT_NAME_PTR/LEN
@@ -2644,7 +2663,8 @@ COMPILE_ASSIGN_CONTINUED:
         ld a,4        ; QUAL shrink: inlined EMIT_BYTE_OP_STORE_VAR
         rst $20
         ld a,(ASSIGN_TARGET_INDEX)
-        jp EMIT_BYTE
+        rst $20
+        ret                      ; RC shrink: tail call through the RST (was jp EMIT_BYTE)
 
 ; ===========================================================================
 ; R8.5 Group 4 -- DIM/array grammar.
@@ -2845,7 +2865,8 @@ COMPILE_DIM_STR:
         ld de,(STRARR_SIZE_TMP)   ; DE, not HL -- EMIT_BYTE destroys HL
         call EMIT_IDX_COUNT       ; array index + count, low/high byte
         ld a,(STRARR_WIDTH_TMP)
-        jp EMIT_BYTE              ; width
+        rst $20          ; width
+        ret                      ; RC shrink: tail call through the RST (was jp EMIT_BYTE)
 
 ; EMIT_IDX_COUNT — shared [index:1][count_lo:1][count_hi:1] bytecode-
 ; operand emit, the common tail of both COMPILE_DIM's and COMPILE_DIM_
@@ -2856,17 +2877,18 @@ EMIT_IDX_COUNT:
         ld a,e
         rst $20
         ld a,d
-        jp EMIT_BYTE
+        rst $20
+        ret                      ; RC shrink: tail call through the RST (was jp EMIT_BYTE)
 
 ; Shared one-error-code stubs -- each of these exact "ld a,N / jp
 ; COMPILE_RAISE_ERROR" pairs was duplicated 3-4 times across COMPILE_
 ; DIM/COMPILE_DIM_STR/COMPILE_ARR_ASSIGN_COMMON (identical literal
 ; error code, identical raise call); factored out during the Dynamic
 ; Data Phase 2 HOME-budget shrink pass.
-ERR_DIM_EXPECTED_NUMBER: ld a,34 : jp COMPILE_RAISE_ERROR
-ERR_DIM_EXPECTED_SEP:    ld a,37 : jp COMPILE_RAISE_ERROR
-ERR_EXPECTED_ASSIGN:     ld a,2  : jp COMPILE_RAISE_ERROR
-ERR_UNEXPECTED_TOKEN:    ld a,64 : jp COMPILE_RAISE_ERROR   ; R10.9 2D
+ERR_DIM_EXPECTED_NUMBER: ld a,34 : rst $30           
+ERR_DIM_EXPECTED_SEP:    ld a,37 : rst $30           
+ERR_EXPECTED_ASSIGN:     ld a,2  : rst $30           
+ERR_UNEXPECTED_TOKEN:    ld a,64 : rst $30              ; R10.9 2D
 
 ; COMPILE_ARRAY_ASSIGN — entry: STMT_IDENT_NAME_PTR/LEN describe the
 ; array name (already consumed); TOK_TYPE is already TOK_LPAREN (already
@@ -3031,7 +3053,8 @@ COMPILE_DIMN:
         ld a,e
         rst $20
         ld a,d
-        jp EMIT_BYTE
+        rst $20
+        ret                      ; RC shrink: tail call through the RST (was jp EMIT_BYTE)
 
 DIMN_KEYWORD_TEXT: db "DIMN"
 
@@ -3079,7 +3102,8 @@ COMPILE_INPUT:
         ld a,50        ; QUAL shrink: inlined EMIT_OP_INPUT_NUM
         rst $20
         ld a,(CINPUT_INDEX_TMP)
-        jp EMIT_BYTE
+        rst $20
+        ret                      ; RC shrink: tail call through the RST (was jp EMIT_BYTE)
 .string:
         ld hl,(TOK_NAME)
         ld a,(TOK_LEN)
@@ -3091,7 +3115,8 @@ COMPILE_INPUT:
         ld a,51        ; QUAL shrink: inlined EMIT_OP_INPUT_STR
         rst $20
         ld a,(CINPUT_INDEX_TMP)
-        jp EMIT_BYTE
+        rst $20
+        ret                      ; RC shrink: tail call through the RST (was jp EMIT_BYTE)
 
 ; ===========================================================================
 ; STRING EXPRESSION/STATEMENT COMPILERS (R5 addition)
@@ -3212,7 +3237,8 @@ COMPILE_STR_FACTOR:
         inc de
         djnz .lit_copy_loop
 .lit_no_content:
-        jp LEX_NEXT_TOKEN
+        rst $08
+        ret                      ; RC shrink: tail call through the RST (was jp LEX_NEXT_TOKEN)
 .ident:
         ; R8.5 Group 6 (string-result functions) -- mirrors COMPILE_
         ; FACTOR.ident's own identical check (see its header for the
@@ -3273,7 +3299,8 @@ COMPILE_STR_FACTOR:
         rst $20
         xor a
         rst $20                   ; high byte: always 0, indices are small
-        jp LEX_NEXT_TOKEN
+        rst $08
+        ret                      ; RC shrink: tail call through the RST (was jp LEX_NEXT_TOKEN)
 .strarr_read:
         ; thin wrapper around the shared COMPILE_ARR_READ_COMMON skeleton
         ; (see its own header) -- flag set to select the string opcode.
@@ -3325,7 +3352,8 @@ COMPILE_STR_ASSIGN_CONTINUED:
         ld a,18        ; QUAL shrink: inlined EMIT_OP_STORE_STR_VAR
         rst $20
         ld a,(CSTR_ASSIGN_TARGET_TMP)
-        jp EMIT_BYTE
+        rst $20
+        ret                      ; RC shrink: tail call through the RST (was jp EMIT_BYTE)
 
 ; COMPILE_STRARR_ASSIGN — Dynamic Data Phase 2: A$(expr) = str_expr.
 ; Thin wrapper around the shared COMPILE_ARR_ASSIGN_COMMON skeleton (see
@@ -3370,7 +3398,8 @@ COMPILE_BRANCH_TARGET:
         ld a,(TOK_LEN)
         ld b,a
         call LABEL_REF           ; defined: patched now; else threaded on the chain
-        jp LEX_NEXT_TOKEN ; consume the label identifier
+        rst $08          ; consume the label identifier
+        ret                      ; RC shrink: tail call through the RST (was jp LEX_NEXT_TOKEN)
 
 ; ===========================================================================
 ; PLATFORM INTEGRATION (R7 addition) — graphics/system command family.
@@ -3382,10 +3411,13 @@ COMPILE_BRANCH_TARGET:
 ; ===========================================================================
 
 ; COMPILE_CLS — CLS (no arguments)
+    IFNDEF V2_PRODUCTION          ; RC: production places it in the low-ROM padding (rom/v2_lowrom_fill.asm)
 COMPILE_CLS:
         rst $08                 ; consume CLS
         ld a,23        ; QUAL shrink: inlined EMIT_OP_CLS (tail)
-        jp EMIT_BYTE
+        rst $20
+        ret                      ; RC shrink: tail call through the RST (was jp EMIT_BYTE)
+    ENDIF
 
 ; COMPILE_BORDER / COMPILE_INK / COMPILE_PAPER — KEYWORD <expr>, one
 ; numeric argument, identical shape, differing only in which opcode gets
@@ -3407,7 +3439,8 @@ COMPILE_1ARG_STMT:
         rst $08
         call COMPILE_EXPR
         pop af
-        jp EMIT_BYTE
+        rst $20
+        ret                      ; RC shrink: tail call through the RST (was jp EMIT_BYTE)
 
 COMPILE_BORDER:
         ld a,24        ; QUAL shrink: the opcode of EMIT_OP_BORDER
@@ -3450,13 +3483,17 @@ COMPILE_AT:
         call COMPILE_EXPR       ; row -> VM operand stack
         call COMPILE_EXPECT_COMMA_EXPR  ; col -> VM operand stack
         ld a,60        ; QUAL shrink: inlined EMIT_OP_AT (tail)
-        jp EMIT_BYTE
+        rst $20
+        ret                      ; RC shrink: tail call through the RST (was jp EMIT_BYTE)
 
 ; COMPILE_CLEAR — CLEAR, no arguments (R10.7).
+    IFNDEF V2_PRODUCTION          ; RC: production places it in the low-ROM padding (rom/v2_lowrom_fill.asm)
 COMPILE_CLEAR:
         rst $08                 ; consume CLEAR
         ld a,62        ; QUAL shrink: inlined EMIT_OP_CLEAR (tail)
-        jp EMIT_BYTE
+        rst $20
+        ret                      ; RC shrink: tail call through the RST (was jp EMIT_BYTE)
+    ENDIF
 
 ; COMPILE_EXPECT_COMMA_EXPR — expects the current token to be ',',
 ; consumes it, then compiles the following expression (tail-calls
@@ -3481,7 +3518,8 @@ COMPILE_2ARG_STMT:
         pop bc                  ; B = the opcode
         call CHK_ERR           ; RC shrink: return if a compile error is pending
         ld a,b
-        jp EMIT_BYTE
+        rst $20
+        ret                      ; RC shrink: tail call through the RST (was jp EMIT_BYTE)
 
 ; COMPILE_PLOT — PLOT <expr>,<expr>  (x, then y — matches V1's own
 ; BASIC_STMT_PLOT reading order; OP_PLOT's own header note explains why
@@ -3539,7 +3577,8 @@ COMPILE_LINE:
         rst $08                 ; consume ','
         call COMPILE_EXPR       ; y1
         ld a,28        ; QUAL shrink: inlined EMIT_OP_LINE (tail)
-        jp EMIT_BYTE
+        rst $20
+        ret                      ; RC shrink: tail call through the RST (was jp EMIT_BYTE)
 
 ; STUDY: OUT <port>,<value>.  The port is the FULL 16-bit address (BC), not just the low byte.
 COMPILE_OUT:
@@ -3570,9 +3609,11 @@ COMPILE_POKE:
 
 ; COMPILE_PAUSE — PAUSE <n>  (one argument, same shape as BORDER/INK/
 ; PAPER above)
+    IFNDEF V2_PRODUCTION          ; RC: production places it in the low-ROM padding (rom/v2_lowrom_fill.asm)
 COMPILE_PAUSE:
         ld a,32        ; QUAL shrink: the opcode of EMIT_OP_PAUSE
         jp COMPILE_1ARG_STMT
+    ENDIF
 
 ; COMPILE_RANDOMISE — RANDOMISE <n>
 COMPILE_RANDOMISE:
@@ -3643,7 +3684,8 @@ COMPILE_PRINT:
         jr .item
 .nl:
         ld a,68        ; QUAL shrink: inlined EMIT_OP_NL (tail)
-        jp EMIT_BYTE
+        rst $20
+        ret                      ; RC shrink: tail call through the RST (was jp EMIT_BYTE)
 
 ; COMPILE_LPRINT -- printer-package ROM reconciliation: LPRINT is no
 ; longer a resident opcode. Its own real body (rom/exrom_printer.asm's
@@ -3916,7 +3958,8 @@ COMPILE_IF_BLOCK:
         ld (hl),e
         inc hl
         ld (hl),d
-        jp LEX_NEXT_TOKEN ; consume ENDIF
+        rst $08          ; consume ENDIF
+        ret                      ; RC shrink: tail call through the RST (was jp LEX_NEXT_TOKEN)
 .have_endif:
         call COMPILE_RELATIVE_OFFSET
         ex de,hl
@@ -3926,7 +3969,8 @@ COMPILE_IF_BLOCK:
         ld (hl),e
         inc hl
         ld (hl),d
-        jp LEX_NEXT_TOKEN ; consume ENDIF
+        rst $08          ; consume ENDIF
+        ret                      ; RC shrink: tail call through the RST (was jp LEX_NEXT_TOKEN)
 
 ; ===========================================================================
 ; LOOP STATEMENT COMPILERS (R3 addition: FOR/NEXT)
@@ -4062,7 +4106,8 @@ COMPILE_EXIT_FOR:
         ld (hl),c
         inc hl
         ld (hl),b                ; slot = previous head (0 ends the chain)
-        jp LEX_NEXT_TOKEN ; consume FOR
+        rst $08          ; consume FOR
+        ret                      ; RC shrink: tail call through the RST (was jp LEX_NEXT_TOKEN)
 
 ; COMPILE_NEXT — NEXT <ident>
 COMPILE_NEXT:
@@ -4669,7 +4714,8 @@ COMPILE_PROC:
         ld (hl),e
         inc hl
         ld (hl),d
-        jp LEX_NEXT_TOKEN ; consume ENDP, fetch whatever follows
+        rst $08          ; consume ENDP, fetch whatever follows
+        ret                      ; RC shrink: tail call through the RST (was jp LEX_NEXT_TOKEN)
 
 ; COMPILE_EXPR_KEEPNAME -- COMPILE_EXPR with the stashed identifier (STMT_IDENT_NAME_BUF/LEN) preserved:
 ; compiling the expression can re-stash it (a nested "FN name(...)"), so its content is parked on the
@@ -4927,7 +4973,8 @@ COMPILE_EXT_CALL:
         ld a,(CEXT_GEN)
         rst $20
         ld a,(CEXT_ARGCOUNT)
-        jp EMIT_BYTE
+        rst $20
+        ret                      ; RC shrink: tail call through the RST (was jp EMIT_BYTE)
 
 ; COMPILE_TEST_ARGTYPE_BIT removed (bounded ROM consolidation pass) --
 ; was byte-identical to rom/exrom_v2_decompiler.asm's own DECOMP_TEST_

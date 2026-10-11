@@ -306,6 +306,8 @@ KBD_ISR_TICK:
 ; Out: HL = FRAMES
 ; Destroys: HL
 ; ============================================================================
+    IFNDEF V2_PRODUCTION          ; RC: production places it in the low-ROM padding (rom/v2_lowrom_fill.asm)
 INT_GET_FRAMES:
     ld   hl, (FRAMES)
     ret
+    ENDIF

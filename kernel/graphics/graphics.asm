@@ -295,6 +295,7 @@ GFX_SCROLL_OUTPUT_UP:
 ; Out: none
 ; Destroys: AF, BC, DE, HL
 ; ============================================================================
+    IFNDEF V2_PRODUCTION          ; RC: unused by the V2 images (legacy builds keep it)
 GFX_SCROLL_TEXT_DOWN:
     call GFX_SPRITE_INVALIDATE
     ld   hl, ATTR_ADDR + 22*32 - 1   ; last byte of rows 0-21 (source)
@@ -314,6 +315,7 @@ GFX_SCROLL_TEXT_DOWN:
     ld   (GFX_SCROLL_DST_ROW), a
     jr   nz, .row_loop
     ret
+    ENDIF
 
 ; ============================================================================
 ; GFX_SET_BORDER
@@ -951,6 +953,7 @@ GFX_INVERT_ATTR:
 ; Out: none
 ; Destroys: AF, BC, DE, HL
 ; ============================================================================
+    IFNDEF V2_PRODUCTION          ; RC: unused by the V2 images (legacy builds keep it)
 GFX_INVERT_ATTR_STATIC:
     call GFX_ATTR_SWAP
     ret  c                                    ; out of range — see
@@ -958,6 +961,7 @@ GFX_INVERT_ATTR_STATIC:
                                              ; identical check just above
     ld   (hl), a
     ret
+    ENDIF
 
 ; ============================================================================
 ; GFX_SET_ATTR

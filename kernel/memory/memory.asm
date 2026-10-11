@@ -702,9 +702,11 @@ MEM_LINE_DELETE_RANGE:
 ; Out: HL = free bytes
 ; Destroys: AF, HL, DE
 ; ============================================================================
+    IFNDEF V2_PRODUCTION          ; RC: unused by the V2 images (FREE() is computed VM-side)
 MEM_FREE_BYTES:
     ld   hl, (VARS_START)
     ld   de, (ARRAYS_END)
     or   a
     sbc  hl, de
     ret
+    ENDIF

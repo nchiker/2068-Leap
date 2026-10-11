@@ -768,18 +768,6 @@ VM_INIT_SESSION:
         djnz .move
         ret
 
-; V2_SESSION_UNDO -- RC: back to the symbol table and run-time tables saved in SESS_SAVE (an immediate
-; statement that failed to compile, or whose new slots did not fit). Flags are preserved.
-V2_SESSION_UNDO:
-        ld hl,SESS_SAVE
-        ld de,SYM_COUNTS
-        ld bc,23
-        ldir
-        ld hl,(SYM_END_V)
-        ld (hl),b                       ; the table's terminator
-        ld hl,(RT_SYMTAB_PTR)
-        ld (VARS_START),hl              ; the lowest table's base
-        ret
 
 ; ---------------------------------------------------------------------------
 ; VM_CARVE_TABLES -- R10.7 P3. The run-time tables are no longer fixed
@@ -897,6 +885,9 @@ VM_CARVE_DESC:
 ; ---------------------------------------------------------------------------
 VM_RUN:
         ld (VM_RUN_SP),sp       ; QUAL: any VM error returns straight to VM_RUN's caller
+        ld iy,.loop             ; RC shrink: handlers end `jp (iy)` (2 bytes, was jp VM_RUN.loop).
+                                ; VM_RUN destroys IY; code that runs foreign code (packages:
+                                ; OP_CALL_EXT re-enters at VM_RUN; USR: the trampoline keeps IY)
 .loop:
         ld a,(VM_HALTED)
         or a
@@ -1150,7 +1141,7 @@ PUSH_INT_CONTINUE:
         xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
 .push:
         call VM_PUSH
-        jp VM_RUN.loop
+        jp (iy)
 
 VM_POP:                        ; output: HL = value, A = tag
         ld hl,(VM_SP)
@@ -1365,7 +1356,7 @@ OP_LOAD_VAR:
         ld d,(hl)
         ex de,hl                ; HL = value; A still holds the tag
         call VM_PUSH
-        jp VM_RUN.loop
+        jp (iy)
 
 ; OP_STORE_VAR — R6 changes this beyond just preserving the tag (see
 ; below): storing a FLOAT-tagged value must copy the actual 5 float
@@ -1386,7 +1377,7 @@ OP_STORE_VAR:
         ld (VM_IP),hl
 VM_STORE_VAR_LOOP:              ; QUAL (float FOR): the store is a subroutine now; FOR_INIT/NEXT reuse it
         call VM_STORE_VAR_BY_INDEX
-        jp VM_RUN.loop
+        jp (iy)
 
 ; VM_STORE_VAR_BY_INDEX -- input: A = symbol index. Pops one operand-
 ; stack value and stores it into that symbol, tag-aware (float values
@@ -1507,7 +1498,7 @@ OP_PARAM_UNBIND:
         ex de,hl                        ; DE = floattab addr
         ld hl,(VM_PARAM_SYM_ADDR_TMP)   ; HL = sym addr
         call VM_PARAM_SAVE_POP
-        jp VM_RUN.loop
+        jp (iy)
 
 ; ---------------------------------------------------------------------------
 ; R10.7 dynamic-array redesign (R8.5 Group 4's own opcodes, rewired) --
@@ -1615,7 +1606,7 @@ OP_ARR_STORE:
         ld (hl),e
         inc hl
         ld (hl),d
-        jp VM_RUN.loop
+        jp (iy)
 
 ; OP_DIM — R10.7, real runtime allocation (DIM used to do zero runtime
 ; work; the size was purely a compile-time bound). Operand: [array_
@@ -1842,7 +1833,7 @@ OP_STRARR_STORE:
         inc de
         djnz .store_copy
 .store_done:
-        jp VM_RUN.loop
+        jp (iy)
 
 ; OP_DIM_STR -- DIM A$(n,w)'s own runtime allocation, mirroring OP_DIM
 ; exactly (same arena/exhaustion-check/pointer-table shape) with one
@@ -2043,7 +2034,7 @@ OP_INPUT_NUM:                   ; RC (Q-15/Q-16): the typed text ('-' first, dig
         ld a,(VM_INPUT_TARGET_TMP)
         call VM_STORE_VAR_BY_INDEX   ; INT or FLOAT
         call VM_ADVANCE_OUTPUT_ROW
-        jp VM_RUN.loop
+        jp (iy)
 
 OP_INPUT_STR:
         ld hl,(VM_IP)
@@ -2104,7 +2095,7 @@ OP_INPUT_STR:
         ld a,(VM_INPUT_COUNT)
         ld (hl),a
         call VM_ADVANCE_OUTPUT_ROW
-        jp VM_RUN.loop
+        jp (iy)
 
 ; R10.5 shrink: OP_ADD/SUB/MUL/DIV shared a near-identical pop/tag-check
 ; prologue and (for ADD/SUB/MUL, and DIV's own float_path) a near-identical
@@ -2132,7 +2123,7 @@ VM_FLOAT_BINARY_COMMON:
         pop hl
         call VM_CALL_USR_TRAMPOLINE   ; indirect call to the stub in HL
         call VM_FLOAT_STORE_RESULT
-        jp VM_RUN.loop
+        jp (iy)
 
 ; QUAL: VM_CALC_PUSH_AB -- a fresh calculator stack holding [a, b] from VM_FLOAT_A/B_TAG/VAL
 ; (shared by the float arithmetic, the float compare, DIV and MOD). Destroys AF, BC, DE, HL.
@@ -2176,7 +2167,7 @@ OP_JMP:
         ld (VM_IP),hl           ; O(1) compiled branch — see Milestone 01's
                                  ; real hardware measurement for the direct
                                  ; confirmation of this claim.
-        jp VM_RUN.loop
+        jp (iy)
 
 OP_SUB:
         call VM_PREPARE_BINARY_OPERANDS
@@ -2376,13 +2367,13 @@ OP_JMPZ:
         ld hl,VM_CODE_BASE
         add hl,de
         ld (VM_IP),hl
-        jp VM_RUN.loop
+        jp (iy)
 .no_branch:
         ld hl,(VM_IP)
         inc hl
         inc hl                  ; skip the 2-byte operand we didn't use
         ld (VM_IP),hl
-        jp VM_RUN.loop
+        jp (iy)
 
 ; QUAL (Q-07/Q-19/Q-20; owner decision 1: floating-point FOR): a FOR frame holds the loop's OWN
 ; state, [T_FOR][var][limit:5][step:5]. The limit and the step are kept in the calculator's 5-byte
@@ -2536,7 +2527,7 @@ OP_FOR_NEXT:
         ld hl,VM_CODE_BASE
         add hl,de
         ld (VM_IP),hl
-        jp VM_RUN.loop
+        jp (iy)
 
 ; VM_FOR_VAR -- A = the current loop's variable (from VM_FOR_FRM). Destroys HL.
 VM_FOR_VAR:
@@ -2643,7 +2634,7 @@ OP_FOR_POP:
         ld de,VM_FOR_FRAME_LEN  ; QUAL: no enclosing state to restore any more
         add hl,de
         ld (VM_CSP),hl
-        jp VM_RUN.loop
+        jp (iy)
 
 OP_CALL:
         ld hl,(VM_IP)
@@ -2671,12 +2662,12 @@ OP_CALL:
                                  ; can undo this
         pop hl                  ; HL = return address
         call VM_CALL_PUSH
-        jp VM_RUN.loop
+        jp (iy)
 
 OP_RET:
         call VM_CALL_POP        ; HL = return address
         ld (VM_IP),hl
-        jp VM_RUN.loop
+        jp (iy)
 
 ; ===========================================================================
 ; STRING OPCODE HANDLERS (R5 addition)
@@ -2763,7 +2754,7 @@ OP_STORE_STR_VAR:
         ex de,hl                ; DE = target record address
         ld hl,(VM_STR_SRC_ADDR_TMP)
         call VM_STR_COPY        ; copies HL(src) -> DE(dst), 32 bytes
-        jp VM_RUN.loop
+        jp (iy)
 
 OP_STR_CONCAT:
         call VM_STR_ALLOC_TEMP  ; QUAL (Q-02): destination picked while both operands are still on
@@ -3071,7 +3062,7 @@ VM_DIV_VIA_FLOAT:
         call CALC_INT_TO_FP
         call VM_CALC_DIV_STUB
         call VM_FLOAT_STORE_RESULT
-        jp VM_RUN.loop
+        jp (iy)
 
 ; VM_FLOAT_TEST_ZERO -- input: A = tag, HL = value (as VM_POP delivers).
 ; TAG_INT tests HL directly. TAG_FLOAT treats HL as a FLOATTAB index and
@@ -3370,7 +3361,7 @@ OP_PUSH_FLOAT5:
         ldir
         ld (VM_IP),hl
         call VM_FLOAT_STORE_RESULT
-        jp VM_RUN.loop
+        jp (iy)
 
 ; OP_PUSH_FLOAT_LIT — operand: 2-byte int value (the literal's digits,
 ; decimal point removed) + 2-byte divisor (10^number-of-fractional-
@@ -3503,14 +3494,14 @@ OP_CLS:
         call GFX_PAINT_ATTR
         ld hl,0                  ; QUAL (Q-14): CLS homes the PRINT position (it kept the old row/column)
         ld (VM_OUTPUT_ROW),hl    ; (VM_OUTPUT_ROW, VM_OUTPUT_COL are adjacent)
-        jp VM_RUN.loop
+        jp (iy)
 
 OP_BORDER:
         rst $18                 ; HL = value (QUAL Q-30) (any numeric value
                                   ; is accepted, same as V1's BORDER)
         ld a,l
         call GFX_SET_BORDER      ; masks to the low 3 bits itself
-        jp VM_RUN.loop
+        jp (iy)
 
 ; R8.5 Group 5's own resident OP_MODE/OP_ULAPLUS/OP_PALETTE removed
 ; (product decision, same principle as the earlier SPRITE-to-loadable-
@@ -3525,14 +3516,14 @@ OP_INK:
         ld a,l
         and $07
         ld (CURRENT_INK),a
-        jp VM_RUN.loop
+        jp (iy)
 
 OP_PAPER:
         rst $18
         ld a,l
         and $07
         ld (CURRENT_PAPER),a
-        jp VM_RUN.loop
+        jp (iy)
 
 ; OP_FLASH/OP_BRIGHT/OP_OVER/OP_INVERSE (R10.7, opcodes 37/38/58/59) --
 ; same shape as OP_INK/OP_PAPER above, cloned per R10.25's own finding;
@@ -3544,28 +3535,28 @@ OP_FLASH:
         ld a,l
         and $01
         ld (CURRENT_FLASH),a
-        jp VM_RUN.loop
+        jp (iy)
 
 OP_BRIGHT:
         rst $18
         ld a,l
         and $01
         ld (CURRENT_BRIGHT),a
-        jp VM_RUN.loop
+        jp (iy)
 
 OP_OVER:
         rst $18
         ld a,l
         and $01
         ld (CURRENT_OVER),a
-        jp VM_RUN.loop
+        jp (iy)
 
 OP_INVERSE:
         rst $18
         ld a,l
         and $01
         ld (CURRENT_INVERSE),a
-        jp VM_RUN.loop
+        jp (iy)
 
 ; OP_AT (opcode 60) -- standalone "AT row,col" statement (R10.7).
 ; Compiler pushes row then col (COMPILE_EXPECT_COMMA_EXPR's own
@@ -3587,7 +3578,7 @@ OP_AT:
         ld a,23
 .row_ok:
         ld (VM_OUTPUT_ROW),a
-        jp VM_RUN.loop
+        jp (iy)
 
 ; OP_TAB (opcode 61) -- standalone "TAB col" statement (R10.7). Sets
 ; VM_OUTPUT_COL only, row untouched -- same masked-1-arg shape as
@@ -3597,7 +3588,7 @@ OP_TAB:
         ld a,l
         and $1F
         ld (VM_OUTPUT_COL),a
-        jp VM_RUN.loop
+        jp (iy)
 
 ; OP_CLEAR (opcode 62) -- CLEAR statement (R10.7, class B). Thin call
 ; into EXROM's own MEM_CLEAR_V2 (rom/exrom_v2_shell.asm) -- EXROM is
@@ -3611,7 +3602,7 @@ OP_CLEAR:
         ld hl,(VARS_START)       ; cleared loop variable does on the Spectrum; it looped forever)
 .keep:
         ld (VM_CSP),hl
-        jp VM_RUN.loop
+        jp (iy)
 
 ; OP_PLOT — pops y then x (compiler pushes x, then y, matching "PLOT
 ; x,y"'s reading order; VM_POP is LIFO, so y comes off first). Every
@@ -3644,7 +3635,7 @@ OP_PLOT:
                                     ; call in between here to clobber any
                                     ; of them)
         call GFX_WRITE_PIXEL
-        jp VM_RUN.loop
+        jp (iy)
 
 ; ===========================================================================
 ; R7 PHASE 2 — the real remainder of this ROM's own graphics/system
@@ -3683,7 +3674,7 @@ OP_LINE:
         call VM_COMPUTE_PRINT_ATTR
         ld (GFX_LINE_ATTR),a
         call GFX_LINE
-        jp VM_RUN.loop
+        jp (iy)
 
 ; OP_BEEP — pops pitch then duration (compiler pushes duration,pitch,
 ; matching "BEEP duration,pitch"'s real V1 argument order). Uses the Z80
@@ -3699,7 +3690,7 @@ OP_BEEP:
                                     ; register); HL now holds whatever
                                     ; DE held before (unused garbage)
         call SOUND_BEEP
-        jp VM_RUN.loop
+        jp (iy)
 
 ; OP_SOUND — pops data then register (compiler pushes register,data,
 ; matching "SOUND register,data"'s real V1 argument order). Calls the
@@ -3721,7 +3712,7 @@ OP_SOUND:
         ld c,a                    ; C = data
         call SOUND_EXROM
         jp c,VM_ERR_INVALID_SOUND_REGISTER
-        jp VM_RUN.loop
+        jp (iy)
 
 ; OP_POKE — pops value then address (compiler pushes address,value,
 ; matching "POKE address,value"'s real V1 argument order).
@@ -3733,7 +3724,7 @@ OP_POKE:
         ld a,e                    ; low byte of value — matches V1's own
                                     ; BASIC_STMT_POKE (`ld a,e / ld (hl),a`)
         ld (hl),a
-        jp VM_RUN.loop
+        jp (iy)
 
 ; OP_PAUSE — pops n. n=0 waits for a keypress (IO_READ_KEY); n>0 waits
 ; exactly n display-frame ticks (INT_GET_FRAMES) — the identical
@@ -3763,10 +3754,10 @@ OP_PAUSE:
         or a
         sbc hl,de                 ; carry set while current < target
         jr c,.wait_loop
-        jp VM_RUN.loop
+        jp (iy)
 .wait_key:
         call IO_READ_KEY
-        jp VM_RUN.loop
+        jp (iy)
 
 ; OP_RANDOMISE — pops n, reseeds the RNG via the real, unmodified
 ; MATH_RND_SEED (kernel/math). No register survives past this one call
@@ -3774,7 +3765,7 @@ OP_PAUSE:
 OP_RANDOMISE:
         rst $18                 ; HL = n (FLOAT truncated)
         call MATH_RND_SEED
-        jp VM_RUN.loop
+        jp (iy)
 
 ; ===========================================================================
 ; R7.5 — V2-native loadable-extension dispatch. See kernel/extensions/
@@ -3885,7 +3876,7 @@ OP_CALL_EXT:
         IFDEF V2_PRODUCTION
         call BANK_PAGE_EXROM_IN
         ENDIF
-        jp VM_RUN.loop
+        jp VM_RUN               ; RC: re-enter (IY again) -- the package may have used IY
 
 ; ===========================================================================
 ; R8.5 — text I/O (PRINT/LPRINT). V1's own real scope, matched (not
@@ -4047,13 +4038,15 @@ VM_PRINT_COMMON:
         ld (VM_OUTPUT_ROW),a
         ld a,c                         ; STUDY: the column survives -- OP_NL ends the line,
         ld (VM_OUTPUT_COL),a           ; a trailing ';' leaves the cursor here
-        jp VM_RUN.loop
+        jp (iy)
 
 ; STUDY: end of a PRINT line (the implicit newline every PRINT statement ends with, unless it
 ; ended in ';' or ',').
+    IFNDEF V2_PRODUCTION          ; RC: production places it in the low-ROM padding (rom/v2_lowrom_fill.asm)
 OP_NL:
         call VM_ADVANCE_OUTPUT_ROW
-        jp VM_RUN.loop
+        jp (iy)
+    ENDIF
 
 ; STUDY: ',' in a PRINT list -- the next 16-column zone; from the right-hand zone, the next line.
 OP_PRINT_COMMA:
@@ -4063,10 +4056,10 @@ OP_PRINT_COMMA:
         cp 32
         jr nc,.next_line
         ld (VM_OUTPUT_COL),a
-        jp VM_RUN.loop
+        jp (iy)
 .next_line:
         call VM_ADVANCE_OUTPUT_ROW
-        jp VM_RUN.loop
+        jp (iy)
 
 ; VM_ADVANCE_OUTPUT_ROW — a small, self-contained VM-owned equivalent of
 ; basic/basic.asm's own BASIC_ADVANCE_OUTPUT_ROW (same algorithm: reset
@@ -4124,7 +4117,7 @@ OP_CALL_FN:
         inc hl
         ld d,(hl)
         call VM_CALL_INDIRECT
-        jp VM_RUN.loop
+        jp (iy)
 
 BUILTIN_FN_JUMP_TABLE:
         dw BUILTIN_FN_ABS       ; fn_index 0
@@ -4529,9 +4522,14 @@ OP_OUT:
         pop hl
         ld a,l
         out (c),a
-        jp VM_RUN.loop
+        jp (iy)
 
 VM_CALL_USR_TRAMPOLINE:
+        push iy                 ; RC: user code may use IY (VM_RUN's handler return)
+        call .go
+        pop iy
+        ret
+.go:
         jp (hl)
 
 ; LEN(a$)/CODE(a$)/VAL(a$) -- confirmed via basic.asm's own real
@@ -5455,9 +5453,7 @@ VM_ERR_STACK_UNDERFLOW:
         ld a,3
         jr VM_ERR_COMMON
 
-VM_ERR_FLOAT_NOT_IMPLEMENTED:
-        ld a,4
-        jr VM_ERR_COMMON
+; (RC: VM_ERR_FLOAT_NOT_IMPLEMENTED, code 4, had no caller left: every float operand is supported.)
 
 VM_ERR_DIVIDE_BY_ZERO:
         ld a,5

@@ -679,8 +679,16 @@ STORAGE_SAVE:
 .autostart_ready:
     ld   (STORAGE_HEADER_BUF + STORAGE_HEADER_AUTOSTART_OFF), de
     ; The stock BASIC header's second parameter is the program portion
-    ; length. This ROM serializes program text only (never variables),
-    ; so it is identical to the data length.
+    ; length. RC: for a program tape it is PROG_END - PROG_AREA_START, which
+    ; SAVE ... ALL makes shorter than the data (the variable session follows);
+    ; array and package tapes keep the data length.
+    ld   a, (STORAGE_REQUEST_TYPE)
+    or   a
+    jr   nz, .proglen
+    ld   hl, (PROG_END)
+    ld   de, -PROG_AREA_START
+    add  hl, de
+.proglen:
     ld   (STORAGE_HEADER_BUF + STORAGE_HEADER_PROGLEN_OFF), hl
 
     xor  a

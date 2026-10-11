@@ -120,7 +120,10 @@ ASV_EL:           equ $B828   ; 2: length of the entry being replaced
 SESS_VALID:       equ $B82A   ; 1: nonzero while a session exists
 SESS_CODE_END:    equ $B82B   ; 2: first byte after the session program's bytecode
 SESS_ARENA_BASE:  equ $B82D   ; 2: first byte of the array arena (SESS_GAP above the symbol table)
-SESS_SAVE:        equ $B830   ; 23: copy of SYM_COUNTS..RT_STRARRPTR_PTR ($B800..$B816) taken before an
+SA_AE:            equ $B82F   ; 2: SAVE ... ALL: ARRAYS_END, so that $B800..$B830 (SA_K_LEN bytes) is the
+                              ; whole session-cell image a SAVE ... ALL tape carries (rom/v2_saveall.asm)
+SA_K_LEN          equ SA_AE + 2 - SYM_COUNTS
+SESS_SAVE:        equ $B831   ; 23: copy of SYM_COUNTS..RT_STRARRPTR_PTR ($B800..$B816) taken before an
                               ; immediate statement is compiled (old counts at +kind, old bases at +$0D..)
 SESS_SAVE_OFS     equ SESS_SAVE - SYM_COUNTS
 SESS_GAP          equ 80      ; bytes kept free after the symbol table for symbols that immediate
@@ -128,7 +131,10 @@ SESS_GAP          equ 80      ; bytes kept free after the symbol table for symbo
 CSTK_BASE:        equ SESS_SAVE + 23   ; 2: where the compile stack starts (empty position):
                                        ; V2_SOURCE_END, or SESS_ARENA_BASE in a session compile
 ASV_CHECK:        equ CSTK_BASE + 2        ; 1: nonzero = ARR_RUN_CHECK (compare only)
-    ASSERT ASV_CHECK + 1 <= $B900
+SA_BUILT:         equ ASV_CHECK + 1        ; 1: nonzero while SAVE/VERIFY has the session laid out as a
+                                           ; SAVE ... ALL image (V2_SHOW_MESSAGE undoes it); zeroed by
+                                           ; MEM_COLD_INIT ($8000 .. PROG_AREA_MAX)
+    ASSERT SA_BUILT + 1 <= $B900
     ASSERT GFX_FILL_STACK_END <= ARR2_BASE
     ASSERT ARR2_LIMIT <= SPRITE_SLOT_IMG_BUF
 CSYM_COUNT:     equ SYM_COUNTS + SYM_K_NUM

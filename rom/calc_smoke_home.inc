@@ -4,7 +4,7 @@
 
 CALC_ENTRY_TRAMPOLINE:
     call BANK_PAGE_EXROM_IN
-    jp   $C024
+    jp   $C024                        ; the LEGACY rom/exrom_build.asm calculator slot (not the V2 table)
 
 CALC_EXIT_TRAMPOLINE:
     jp   BANK_PAGE_EXROM_OUT

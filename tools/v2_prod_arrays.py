@@ -998,7 +998,7 @@ def ktab_verify():
     target = code[1] | code[2] << 8
     slots = P.read(P.sym("VM_OP_TABLE") + 2 * 63, 4)
     dim_slots = (slots[0] | slots[1] << 8, slots[2] | slots[3] << 8)
-    return code[0] == 0xCD and target == P.sym("V2_VERIFY_KTAB") and dim_slots == (0xC0E6, 0xC0E9), \
+    return code[0] == 0xCD and target == P.sym("V2_VERIFY_KTAB") and dim_slots == (P.sym("ARR_OP_DIM"), P.sym("ARR_OP_DIM_STR")), \
         "ARR_RUN_INIT -> %s call %04X (V2_VERIFY_KTAB=%04X); opcode 63/64 slots=%04X/%04X" % (
             code.hex(), target, P.sym("V2_VERIFY_KTAB"), *dim_slots)
 

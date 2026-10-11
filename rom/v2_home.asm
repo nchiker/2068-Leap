@@ -20,8 +20,12 @@ V2_RST_38:
     ei
     reti
     ORG V2_KTAB_BASE
-    V2_KTAB_LIST
-    ASSERT $ == V2_KTAB_END
+; RC: no KTAB jump table in production (include/v2_ktab.inc); the space holds the CRC routines of
+; SAVE ... ALL instead.
+    INCLUDE "rom/v2_saveall_crc.asm"
+    INCLUDE "rom/v2_session_undo.asm"
+    ASSERT $ <= V2_KTAB_MAGIC_ADDR
+    DS V2_KTAB_MAGIC_ADDR - $, $FF
     DB V2_KTAB_MAGIC
 ; R10.9 Phase 1: versioned package service table (docs/v2/PACKAGE_ABI.md), in what used
 ; to be unused $FF padding -- zero HOME-budget cost.  Header, 16 `jp` slots, room for 14
@@ -98,8 +102,10 @@ MEM_CLEAR_V2 EQU V2_EXROM_CLEAR_ADDR
     INCLUDE "kernel/extensions/ext_registry.asm"
     INCLUDE "rom/exrom_v2_vm_core.asm"
     INCLUDE "rom/exrom_v2_compiler.asm"
+    INCLUDE "rom/v2_saveall.asm"            ; RC: SAVE ... ALL (owner decision 2)
 ; R10.9: the package ABI pins -- every package-visible sysvar / constant must still live
 ; where include/v2_package_abi.inc says (a mismatch fails the build).
+    INCLUDE "rom/v2_lowrom_fill.asm"        ; RC shrink: small routines in the RST-slot padding
     PKG_CONST_LIST
     PKG_PIN_LIST
     DS V2_HOME_IMAGE_END - $, $FF

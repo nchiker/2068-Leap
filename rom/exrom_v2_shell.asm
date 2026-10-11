@@ -578,12 +578,8 @@ V2_RUN_IMMEDIATE:
     xor a
     ld (V2_RUN_IS_STORED),a   ; an immediate colon-statement has no
                                 ; separate stored line to jump to
-    ld a,(SESS_VALID)
-    or a
-    jr nz,.session
-    call V2_COMPILE_STORED
+    call V2_ENSURE_SESSION
     jr nz,.alone
-    call V2_SESSION_START
 .session:
     ld hl,SYM_COUNTS
     ld de,SESS_SAVE
@@ -620,7 +616,7 @@ V2_RUN_IMMEDIATE:
     call V2_SESSION_UNDO
     ld a,65
     ld (VM_ERROR_CODE),a
-    jp V2_COMPILE_RUN.runtime_error
+    jr V2_COMPILE_RUN.runtime_error
 .alone:
     ld hl,EDIT_LINE_BUF+1
 V2_COMPILE_RUN:
@@ -687,6 +683,52 @@ V2_COMPILE_AT_BASE:
     ret
 ; V2_SESSION_START -- the program just compiled becomes the session: fresh variables (VM_INIT, the Array
 ; Store bound), its code ends at SESS_CODE_END (immediate statements are compiled after it).
+; SA_BUILD -- RC (rom/v2_saveall.asm): lay the session out as a SAVE ... ALL block (a session existing): the span moves down to
+; ARRAYS_END, segment 2, the cells and the CRCs follow it. SA_BUILT is set: V2_SHOW_MESSAGE calls
+; SA_UNBUILD before the next message, so every SAVE / VERIFY outcome puts the span back.
+; Out: CF = the image would pass V2_CODE_LIMIT (nothing moved); else BC = its length from
+; PROG_AREA_START. Destroys everything else.
+SA_BUILD:
+        ld hl,(ARRAYS_END)
+        ld (SA_AE),hl
+        call SA_SIZES
+        ld de,SA_TAIL
+        add hl,de
+        ld de,(ARRAYS_END)
+        add hl,de
+        ex de,hl                          ; DE = the image's end
+        ld hl,V2_CODE_LIMIT
+        or a
+        sbc hl,de
+        ret c
+        ld de,(ARRAYS_END)
+        ld hl,(RT_SYMTAB_PTR)
+        ld bc,(SA_W)
+        ldir                              ; tables, zone, bytecode: down to ARRAYS_END
+        ld hl,ARR2_BASE
+        ld bc,(SA_S)
+        call SA_COPY                      ; segment 2
+        ld hl,SYM_COUNTS
+        ld bc,SA_K_LEN
+        ldir                              ; the session cells
+        ld a,1
+        ld (SA_BUILT),a
+        jp SA_SEAL
+
+; V2_ENSURE_SESSION -- RC: the session of the last RUN, or a new one (fresh variables) for the stored
+; program. NZ = the program does not compile: no session.
+V2_ENSURE_SESSION:
+    ld a,(SESS_VALID)
+    or a
+    jr z,.start
+    cp a                         ; Z
+    ret
+.start:
+    call V2_COMPILE_STORED
+    ret nz
+    call V2_SESSION_START
+    xor a
+    ret
 V2_SESSION_START:
     ld hl,(EMIT_PTR)
     ld (SESS_CODE_END),hl
@@ -965,12 +1007,14 @@ V2_PARSE_NAME:
 .qualifier:
     ld de,V2_KW_EXT
     call V2_MATCH_EXACT
-    jr c,.not_ext
     ld a,STORAGE_EXTENSION_TYPE
-    ld (V2_REQUEST_TYPE),a
-    or a
-    ret
-.not_ext:
+    jr nc,.set_type
+    push hl
+    ld de,V2_KW_ALL              ; RC: SAVE "name" ALL (V2_MATCH_PREFIX moves HL on a partial match)
+    call V2_MATCH_EXACT
+    pop hl
+    ld a,$80
+    jr nc,.set_type
     ld de,V2_KW_ARRAY
     call V2_MATCH_PREFIX      ; leaves HL right after "ARRAY" (its own
                                 ; comparison loop advances HL per
@@ -980,6 +1024,7 @@ V2_PARSE_NAME:
     call V2_SCAN_ARRAY_NAME
     jr c,.bad
     ld a,STORAGE_ARRAY_TYPE
+.set_type:
     ld (V2_REQUEST_TYPE),a
     or a
     ret
@@ -1046,6 +1091,8 @@ V2_SCAN_ARRAY_NAME:
 
 V2_SAVE:
     ld a,(V2_REQUEST_TYPE)
+    cp $80
+    jr z,.all
     ld (STORAGE_REQUEST_TYPE),a
     or a
     jr z,.program
@@ -1077,6 +1124,21 @@ V2_SAVE:
 .missing_package:
     ld hl,V2_MSG_NO_PACKAGE
     jp V2_SHOW_MESSAGE
+; RC: SAVE "name" ALL -- the program, its variable session and the Array Store in one program
+; block (rom/v2_saveall.asm, docs/v2/V2_SAVE_ALL_FORMAT.md). Without a session since the last
+; edit, a new one (fresh variables) is started first.
+.all:
+    call V2_ENSURE_SESSION
+    jp nz,V2_COMPILE_RUN.error   ; the program does not compile: its message
+    call SA_BUILD                ; BC = the block length; CF = no room for it
+    ld hl,V2_MSG_NOMEM
+    jp c,V2_SHOW_MESSAGE
+    ld d,b
+    ld e,c
+    xor a
+    ld (STORAGE_REQUEST_TYPE),a
+    ld ix,PROG_AREA_START
+    jr .call
 
 ; ============================================================================
 ; Dynamic Data Phase 2 -- array persistence. SAVE "name" ARRAY arrname /
@@ -1173,6 +1235,9 @@ V2_SAVE_ARRAY:
 ; success/failure message branches above) distinguishes this from a
 ; real LOAD.
 V2_VERIFY:
+    ld a,(SESS_VALID)
+    or a
+    call nz,SA_BUILD             ; RC: memory as a SAVE ... ALL tape of the session holds it (no room: as is)
     xor a
     ld (V2_REQUEST_TYPE),a
     ld a,1
@@ -1181,6 +1246,8 @@ V2_VERIFY:
 
 V2_LOAD:
     ld a,(V2_REQUEST_TYPE)
+    and $7F                      ; RC: LOAD "name" ALL is LOAD "name" (the tape says what it holds)
+    ld (V2_REQUEST_TYPE),a
     ld (STORAGE_REQUEST_TYPE),a
     or a
     jr z,.name
@@ -1213,7 +1280,7 @@ V2_LOAD:
     ld ix,EXTENSION_MODULE_BASE
     jr .load_call
 .program_receive:
-    ld de,V2_SOURCE_END-PROG_AREA_START
+    ld de,V2_CODE_LIMIT-PROG_AREA_START   ; RC: a SAVE ... ALL image may run past the pool
     ld ix,PROG_AREA_START
 .load_call:
     call STORAGE_LOAD
@@ -1242,16 +1309,48 @@ V2_LOAD:
     ld hl,V2_MSG_LOAD_FAILED
     jp V2_SHOW_MESSAGE
 .program_loaded:
-    ld hl,PROG_AREA_START
-    add hl,de
+    ; RC: a SAVE ... ALL block has a header PROGLEN below its length (DE); the rest is the
+    ; variable session (SA_RESTORE: A = 0 restored, 1 unusable -- program only, 2 block CRC bad)
+    ld hl,(STORAGE_HEADER_BUF + STORAGE_HEADER_PROGLEN_OFF)
+    or a
+    sbc hl,de
+    add hl,de                    ; HL = PROGLEN
+    ld bc,PROG_AREA_START
+    jr c,.with_state
+    ex de,hl                     ; a plain program: the whole block
+    add hl,bc
     ld (PROG_END),hl
-    call V2_CLEAR_ARRAYS
-    ld hl,V2_SOURCE_END
-    ld (VARS_START),hl
+    ld de,V2_SOURCE_END
+    ex de,hl
+    sbc hl,de                    ; (no carry from the add) longer than the pool: not ours
+    jr c,.state_crc_bad
+    ld a,3
+    jr .loaded
+.with_state:
+    push hl
+    add hl,bc
+    ld (PROG_END),hl
+    pop hl
+    call SA_RESTORE
+    cp 2
+    jr z,.state_crc_bad
+.loaded:
+    push af
+    or a
+    call nz,V2_CLEAR_ARRAYS      ; no restored session: no variables
     call V2_RESET_EDIT
     call V2_COUNT_LINES
     ld (CUR_EDIT_INDEX),de
+    pop af
     ld hl,V2_MSG_LOADED
+    dec a
+    jp nz,V2_SHOW_MESSAGE
+    ld hl,V2_MSG_NO_VARS         ; the program loaded, its variables could not be used
+    jp V2_SHOW_MESSAGE
+.state_crc_bad:                  ; the block is corrupt: nothing in it can be trusted
+    call MEM_INIT_V2
+    call V2_RESET_EDIT
+    ld hl,V2_MSG_LOAD_FAILED
     jp V2_SHOW_MESSAGE
 .failed:
     ; R10.9 failure classes (STORAGE_LOAD: A = class, B = user-abort flag):
@@ -1310,8 +1409,9 @@ V2_LOAD:
     ; programs are only equal if the tape ALSO ends where the program does
     ; (DE = tape length).  A shorter or longer tape would otherwise verify
     ; against stale RAM or match a prefix.
-    ld hl,PROG_AREA_START
-    add hl,de
+    ld hl,(STORAGE_HEADER_BUF + STORAGE_HEADER_PROGLEN_OFF)   ; RC: the program part (all of a
+    ld de,PROG_AREA_START                                     ; plain tape; a SAVE ... ALL tape's
+    add hl,de                                                 ; state is compared byte for byte)
     ld de,(PROG_END)
     or a
     sbc hl,de
@@ -2103,6 +2203,9 @@ V2_STATUS_SET_BAR_ATTR:
 ; above uses, since V2_REDRAW's next call naturally redraws the status
 ; line back over a dismissed message; no separate arbitration needed.
 V2_SHOW_MESSAGE:
+    ld a,(SA_BUILT)
+    or a
+    call nz,SA_UNBUILD           ; RC: a SAVE ... ALL / VERIFY laid the session out: put it back (keeps HL)
     xor a
     ld (V2_REDRAW_SCOPE),a       ; STUDY: row 23 is about to be overwritten -> the next redraw must be a full one
     push hl
@@ -2129,6 +2232,7 @@ V2_KW_LOAD: DB "LOAD",0
 V2_KW_VERIFY: DB "VERIFY",0
 V2_KW_EXT: DB "EXT",0
 V2_KW_ARRAY: DB "ARRAY",0
+V2_KW_ALL: DB "ALL",0
 V2_MSG_SYNTAX: DB "SYNTAX ERROR",0
 V2_MSG_RUNTIME: DB "RUNTIME ERROR",0
 V2_MSG_BREAK: DB "BREAK",0
@@ -2142,6 +2246,7 @@ V2_MSG_TOOMANY: DB "TOO MANY VARIABLES",0
 V2_MSG_SAVED: DB "SAVED",0
 V2_MSG_LOADED: DB "LOADED",0
 V2_MSG_LOAD_FAILED: DB "LOAD FAILED",0
+V2_MSG_NO_VARS: DB "NO VARIABLES",0
 V2_MSG_NO_PACKAGE: DB "NO PACKAGE",0
 V2_MSG_ARRAY_NOT_DIMD: DB "ARRAY NOT DIMD",0
 V2_MSG_STORE_FULL: DB "ARRAY STORE FULL",0

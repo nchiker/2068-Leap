@@ -298,6 +298,7 @@ BASIC_FLOAT_TO_STRING_EXROM:
     ret
     ENDIF
 
+    IFNDEF V2_PRODUCTION          ; RC: only the V1 rom/exrom_storage.asm calls it
 BASIC_APPEND_STR_EXROM:
     push hl
     ld   hl, STATUS_BUF + 28
@@ -330,3 +331,4 @@ BASIC_APPEND_STR_EXROM:
     ld   (de), a
     ld   (STATUS_WRITE_PTR), de
     ret
+    ENDIF

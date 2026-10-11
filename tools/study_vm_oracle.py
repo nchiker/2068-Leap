@@ -49,7 +49,7 @@ def build_driver(mode, opcode):
                 "    ld hl,VM_CODE_BASE", "    ld (VM_IP),hl", "    ld hl,VM_STACK_TOP", "    ld (VM_SP),hl",
                 "    xor a", "    ld (VM_HALTED),a", "    ld (VM_ERROR_CODE),a", "    ld (VM_TOS_TAG),a",
                 "    ld (VM_STR_TEMP_NEXT),a", "    ld (VM_FLOAT_TEMP_NEXT),a",
-                "    call VM_RUN",
+                "    push iy", "    call VM_RUN", "    pop iy",   # RC: VM_RUN destroys IY (jp (iy) dispatch)
                 "    ld a,(VM_ERROR_CODE)", "    ld (iy+2),a",
                 "    call VM_POP", "    ld (iy+0),l", "    ld (iy+1),h", "    ld (iy+3),a",
                 "    cp 1", "    jr nz,.nofloat", "    ld a,l", "    call VM_FLOAT_ADDR", "    push iy", "    pop de", "    ld bc,4", "    ex de,hl",

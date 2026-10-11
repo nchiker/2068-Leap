@@ -74,6 +74,38 @@ NAMES = (
     "COMPILER_INIT_SESSION",    # RC: session variables
     "VM_INIT_SESSION",
     "V2_SESSION_UNDO",
+    "MEM_FILL_ZERO",   # RC: the production EXROM calls the KTAB targets directly
+    "MEM_SHIFT_UP",
+    "MEM_SHIFT_DOWN",
+    "MEM_LINE_DELETE_RANGE",
+    "MEM_LINE_STORE",
+    "MEM_LINE_INSERT",
+    "IO_READ_KEY",
+    "GFX_CLS",
+    "GFX_PRINT_STRING",
+    "GFX_INVERT_ATTR",
+    "GFX_PUTCHAR",
+    "GFX_CLEAR_ROW",
+    "GFX_SET_BORDER",
+    "COMPILER_INIT",
+    "COMPILE_PROGRAM",
+    "VM_INIT",
+    "VM_RUN",
+    "CALC_EXIT_TRAMPOLINE",
+    "EXT2_CLEAR_ALL",
+    "GFX_PUTCHAR_BOLD",
+    "V2_GET_KEYWORD_TABLE",
+    "GFX_SET_ATTR",
+    "GFX_CLEAR_ROW_TEXT",
+    "CHUNK_REFILL",
+    "SA_UNBUILD",               # RC: SAVE ... ALL (HOME half; SA_BUILD is in the shell)
+    "SA_RESTORE",
+    "SA_SEAL",
+    "SA_SIZES",
+    "SA_COPY",
+    "SA_W",
+    "SA_S",
+    "SA_TAIL",
 )
 
 

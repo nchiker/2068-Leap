@@ -323,6 +323,7 @@ MATH_COMPARE16:
 ; Out: HL = HL + DE (truncated to 16 bits)
 ; Destroys: AF
 ; ----------------------------------------------------------------------
+    IFNDEF V2_PRODUCTION          ; RC: only rom/test_math.asm calls MATH_ADD16 / MATH_SUB16
 MATH_ADD16:
     add  hl, de
     ret
@@ -337,6 +338,7 @@ MATH_SUB16:
     or   a
     sbc  hl, de
     ret
+    ENDIF
 
 ; ----------------------------------------------------------------------
 ; MATH_NEGATE16
@@ -732,8 +734,10 @@ MATH_RND16:
 ; Out: none
 ; Destroys: none
 ; ============================================================================
+    IFNDEF V2_PRODUCTION          ; RC: production places it in the low-ROM padding (rom/v2_lowrom_fill.asm)
 MATH_RND_SEED:
     ld   (RND_STATE), hl
     ret
+    ENDIF
 
     ENDIF

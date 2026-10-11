@@ -122,9 +122,11 @@ KEY_ROW_COUNT   EQU 8
 ;      undefined
 ; Destroys: AF
 ; ============================================================================
+    IFNDEF V2_PRODUCTION          ; RC: production places it in the low-ROM padding (rom/v2_lowrom_fill.asm)
 IO_KEY_SCAN_ROW:
     in   a, (PORT_ULA)
     ret
+    ENDIF
 
 ; ============================================================================
 ; IO_KEY_SCAN_ALL

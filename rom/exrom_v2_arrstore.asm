@@ -71,7 +71,7 @@ ARR_RUN_INIT:
     ld (ARR2_END),hl
 ARR_RUN_BIND:                   ; RC (session): bind the store without resetting segment 2
     xor a
-    db $FE                      ; cp n: skips the ld a,1 below
+    db $01                      ; ld bc,nn: swallows the 2-byte ld a,1 below (BC is free here)
 ARR_RUN_CHECK:                  ; RC (session): only compare; CF = a declared size differs from the
     ld a,1                      ; stored one. Nothing is bound (the tables may not be carved yet)
     ld (ASV_CHECK),a
@@ -183,7 +183,7 @@ ARR_DIM:                        ; C = kind
     jr c,.alloc                 ; at/after PAS_END: an overflow array, allocate
     pop de                      ; slot points into the store: adopted
     pop bc
-    jp VM_RUN_LOOP
+    jp (iy)                     ; RC: VM_RUN.loop (IY, set by VM_RUN)
 .alloc:
     pop de
     pop bc
@@ -223,7 +223,7 @@ ARR_DIM:                        ; C = kind
     add hl,bc                   ; HL = first data byte
     pop bc                      ; BC = data length
     call KTAB_MEM_FILL_ZERO     ; D12: DIM zero-fills
-    jp VM_RUN_LOOP
+    jp (iy)                     ; RC: VM_RUN.loop (IY, set by VM_RUN)
 
 ; ---- tape side: name padding, lookup, validator, loader, saver ---------------
 
