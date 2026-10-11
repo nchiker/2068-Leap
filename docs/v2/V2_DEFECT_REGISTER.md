@@ -1,4 +1,4 @@
-# V2 defect register (release candidate)
+# V2 defect register (V2 Enhanced release)
 
 Branch `integration/v2-final-rom`. Severity as found; **Status** is the state in the release
 candidate: **Fixed** (the corpus case now passes on the corrected expectation), **Decided** (a
@@ -11,17 +11,17 @@ case ids (`tools/qual/corpus.py`) or suite case names. Source of the Q-/D-/L-/N-
 
 | Id | Sev | Defect | Why open | Evidence |
 |---|---|---|---|---|
-| Q-24 | LOW | `CALL` of a plain label (not a `PROC`) is accepted: it jumps there, and the code runs on without returning | deferred: needs a label-kind check in the compiler; no ROM reserve | `proc.goto_label` (XFAIL) |
-| Q-26 | LOW | `[ \ ] ^ \` { | } ~` print as blanks (no glyphs in the ROM font) | deferred: 9 glyphs cost ~72-90 bytes of HOME | `print.font_brackets` (XFAIL) |
+| Q-24 | LOW | `CALL` of a plain label (not a `PROC`) is accepted: it jumps there, and the code runs on without returning | deferred: needs a label-kind check in the compiler; no ROM reserve; **accepted LOW limitation** (owner, 2026-10-11) | `proc.goto_label` (XFAIL) |
+| Q-26 | LOW | the nine characters `[` `\` `]` `^` `` ` `` `{` `\|` `}` `~` print as blanks (no glyphs in the ROM font) | deferred: 9 glyphs cost ~72-90 bytes of HOME; **accepted LOW limitation** (owner, 2026-10-11) | `print.font_brackets` (XFAIL) |
 | RC-O1 | LOW | A literal beyond the float range (~1.7E38) is compile error 64, whose message reads "UNEXPECTED TOKEN" | cosmetic; a "NUMBER TOO BIG" message costs ~20 bytes | `lit.float.too_big` (passes on the code) |
 | RC-O2 | LIMIT | `SAVE ... ALL` refuses (`OUT OF MEMORY`) when bytecode + segment 2 + 53 bytes exceed the bytecode area plus free memory | the in-place layout must end at `V2_CODE_LIMIT` | `sa-no-room` |
 | RC-O3 | LIMIT | A `SAVE ... ALL` tape restores its variables only on the exact ROM build, with the same package registration, that wrote it (otherwise: program only, `NO VARIABLES`) | by design: the image includes bytecode, layout and package references | `sa-other-rom`, `sa-package-mismatch` |
 | RC-O4 | LIMIT | Numeric array elements are 16-bit integers: storing a float or a value outside -32768..32767 is runtime error 11 | V2 array format | `arr.float_value` (OkOrErr) |
-| RC-O5 | RESERVE | ROM reserve below the provisional 200 (HOME) / 150 (EXROM) target: 54 / 25 bytes free | SAVE ALL and the language fixes used the space; see `V2_ROM_RAM_BUDGET.md` for options | `make budget` |
-| RC-O6 | PERF | A bare `FOR`/`NEXT` iteration costs ~1190 T-states, ~45 % more than in production `7ae0599` (817 T); loops with real bodies differ by 0.3-1.5 % | measured cause (bisected with `qbench`): the qualification FOR-frame redesign that fixes Q-07/Q-19/Q-20 (NEXT works through its own control-stack frame) +36 %, D11 overflow-checked add +2 %, float FOR variant D +5 %. A correctness cost, kept; a faster INT-only NEXT path would need ROM space | `V2_REGRESSION_REPORT.md` s6 |
+| RC-O5 | RESERVE | ROM reserve 54 (HOME) / 25 (EXROM) bytes free, below the provisional 200 / 150 targets | **accepted by the owner (2026-10-11)**; the provisional targets are dropped and the ROM is not to be changed to recover them; `V2_ROM_RAM_BUDGET.md` keeps the options for reference | `make budget` |
+| RC-O6 | PERF | A bare `FOR`/`NEXT` iteration costs ~1190 T-states, ~45 % more than in production `7ae0599` (817 T); loops with real bodies differ by 0.3-1.5 % | measured cause (bisected with `qbench`): the qualification FOR-frame redesign that fixes Q-07/Q-19/Q-20 (NEXT works through its own control-stack frame) +36 %, D11 overflow-checked add +2 %, float FOR variant D +5 %. A correctness cost, kept; a faster INT-only NEXT path would need ROM space; **accepted as a correctness trade-off** (owner, 2026-10-11) | `V2_REGRESSION_REPORT.md` s6 |
 | T-3 | TEST | 15 legacy component-test sources (`call_fn`, the `compiler_r2` to `compiler_r7` series, `decompiler_phase2`, `editor_integration`, `ext_concurrent`, `graphics_module_ram`, `graphics_pixel`, `print`, `sprite_module`, `sqr`) are in no runner | test debt, unchanged from the study | `tools/run_v2_standalone_tests.sh` |
 
-## Fixed or decided in the release candidate
+## Fixed or decided in the V2 Enhanced release
 
 | Id | Sev | Defect | Status | Evidence |
 |---|---|---|---|---|
@@ -89,5 +89,6 @@ case ids (`tools/qual/corpus.py`) or suite case names. Source of the Q-/D-/L-/N-
 
 ## Hardware
 
-Nothing in this register has been checked on a physical TS2068 (all evidence is ZEsarUX); see
-`V2_HARDWARE_CHECKLIST.md` (HARDWARE PENDING).
+Nothing in this register has been checked on a physical TS2068 (all evidence is ZEsarUX): **NOT
+TESTED — PHYSICAL HARDWARE UNAVAILABLE** (`V2_HARDWARE_CHECKLIST.md`). Hardware qualification is
+deferred; it is not a release blocker.

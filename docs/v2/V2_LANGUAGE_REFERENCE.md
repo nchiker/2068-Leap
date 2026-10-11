@@ -1,12 +1,12 @@
-# 2068-Leap V2 -- language reference (release candidate)
+# 2068-Leap V2 -- language reference (V2 Enhanced release)
 
-This is the authoritative description of the language the V2 release candidate implements
+This is the authoritative description of the language the V2 Enhanced release implements
 (`integration/v2-final-rom`). Where an older document (`docs/user_manual.md`,
 `docs/basic_language_reference.md`, the V1 manuals) disagrees, this one wins; the executable form of
 it is the conformance corpus `tools/qual/corpus.py` (667 cases, run by `make qual`). Features that
 are deliberately not in V2 are listed in section 12 and in `V2_FEATURE_MATRIX.md`.
 `V2_LANGUAGE_SPEC.md` is the planning-phase *target* (MUST HAVE / DESIRABLE, with cost estimates);
-this document is what the release candidate implements.
+this document is what the V2 Enhanced release implements.
 
 ## 1. Programs, lines and labels
 
@@ -175,5 +175,5 @@ Line numbers, `GOSUB`/`RETURN` (use `PROC`/`CALL`), `LET`, single-line `IF ... T
 than `THEN GOTO`), `ELSEIF`, `INSTR`, string slicing `a$(i TO j)` (use `MID$`), `READ`/`DATA`,
 multi-dimensional arrays, `DIM` with a variable size, float array elements, `PRINT AT`/colour
 items inside `PRINT` (use the statements), exponent and hex literals, `CONTINUE` (an immediate
-`: GOTO label` restarts at a label instead). The characters `[ \ ] ^ \` { | } ~` print as
+`: GOTO label` restarts at a label instead). The characters `[`, `\`, `]`, `^`, `` ` ``, `{`, `|`, `}` and `~` print as
 blanks (the font has no glyphs for them -- open defect Q-26).

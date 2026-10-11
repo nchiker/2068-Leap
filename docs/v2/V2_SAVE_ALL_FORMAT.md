@@ -1,6 +1,6 @@
 # SAVE "name" ALL -- tape format, checks and lifecycle
 
-Status: implemented in the release candidate (`integration/v2-final-rom`, commit `07616e7`; the
+Status: implemented in the V2 Enhanced release (`integration/v2-final-rom`, commit `07616e7`; the
 identity CRC covers the package registry from `ef81f49`). Code: `rom/v2_saveall.asm` (HOME: layout,
 CRC, LOAD checks), `rom/v2_saveall_crc.asm` (HOME, in the old KTAB space), `SA_BUILD` in
 `rom/exrom_v2_shell.asm` (EXROM). Tests: `tools/v2_saveall_checks.py` (13 cases, part of
@@ -97,7 +97,7 @@ have been `OUT OF MEMORY`), an ALL tape reports `VERIFY FAILED`.
 `SA_BUILD` sets `SA_BUILT`; `V2_SHOW_MESSAGE` -- which every SAVE and VERIFY outcome ends in,
 success, failure or SPACE abort -- moves the span back first. `SA_BUILT` is zeroed at cold start.
 
-## Hardware notes (HARDWARE PENDING)
+## Hardware notes (NOT TESTED — PHYSICAL HARDWARE UNAVAILABLE)
 
 The format is a standard header + data pair at the stock speed; nothing here has been tried on a
 real TS2068 and cassette yet -- see `V2_HARDWARE_CHECKLIST.md` (round trip, a long ALL block, a

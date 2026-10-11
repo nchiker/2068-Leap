@@ -1,10 +1,10 @@
-# V2 ROM and RAM budget (release candidate)
+# V2 ROM and RAM budget (V2 Enhanced release)
 
 All numbers are measured (`make build v2-packages && make budget` on each commit, or the
 `build/qual_budget.log` of its export under `~/2068-Leap-study/qual-builds/`), not estimated,
 unless marked *est*.
 
-## Where the release candidate stands
+## Where the release stands
 
 | Image | Size | Used | Free | Provisional reserve target (owner decision 4) |
 |---|---|---|---|---|

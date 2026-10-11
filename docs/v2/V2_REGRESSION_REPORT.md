@@ -1,4 +1,7 @@
-# V2 release candidate -- regression report
+# 2068-Leap V2 Enhanced — Emulator-Qualified Release: regression report
+
+This is the qualification evidence for the accepted release (owner acceptance 2026-10-11). Earlier
+parts of this report call it the release candidate (RC), the name it had while it was qualified.
 
 All results are emulator results (ZEsarUX 13.0 through `ts2068-debug` / `tools/qual/qharness.py`,
 headless). Nothing here is hardware evidence (`V2_HARDWARE_CHECKLIST.md`). Accounting is strict:
@@ -165,3 +168,19 @@ bodies differ by 0.3-1.5 %. This is recorded as **RC-O6** (a correctness cost, k
 
 T-3 (15 legacy component-test sources in no runner) is unchanged. The production builds assemble
 with 0 warnings; after RC-12 no standalone component-test build has a warning either.
+
+## 9. Release-integrity verification (closeout, 2026-10-11)
+
+Before the merge into `v2-development`, bounded and without re-running the 47-minute suite (no
+production source changed after the qualification):
+
+| Check | Result |
+|---|---|
+| changes after the ROM-producing commit `ef81f49` | `970dc30`, `c57e968`, `7ecffcf`, `a4e4641`, `118e148`: tests, test tools, one test-only include (`rom/test_v2_*`), documents; **no production source** (`rom/`, `kernel/`, `include/`, `basic/`, `Makefile` outside `rom/test_*`) |
+| fresh clone of `118e148`: `make build v2-packages`, `make check`, `make budget`, `make rc-assets` | all succeed; HOME end `$3FCA` (54 free), EXROM end `$DFE7` (25 free): inside both bank limits |
+| release images vs. the accepted SHA-256s | HOME, EXROM and the ZEsarUX image match exactly; the ZEsarUX image is HOME + EXROM |
+| `SHA256SUMS` (ROMs and the five packages and tapes) | every entry verifies; identical to the qualified worktree's manifest |
+| the images vs. the builds the qualification ran on | byte-identical to `rc7` (`ef81f49`), `rc8` and the fresh clone of `970dc30` (gates, battery, `make test`) and the fresh clone of `c57e968` |
+| identity CRC | `BUILD_INFO.txt` `$5E95`; a real `SAVE ... ALL` on the rebuilt image stamps `$5E95`, block CRC valid |
+| open defects | only LOW, LIMIT, RESERVE, PERF and TEST items (`V2_DEFECT_REGISTER.md`); the HIGH entries D11, N-1, N-2 of the defect list are production-baseline defects fixed in Essential/Enhanced (their corpus markers apply to the baseline only and the cases pass on the release) |
+

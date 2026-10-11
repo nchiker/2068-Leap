@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""RC: collect the V2 release-candidate artifacts into build/release-v2-rc/ (make rc-assets).
+"""Collect the 2068-Leap V2 Enhanced release artifacts into build/release-v2-rc/ (make rc-assets; the
+directory keeps its release-candidate name so existing references stay valid).
 
 ROM images, package binaries and tapes, the V2 documents, SHA256SUMS and BUILD_INFO.txt (commit,
 budget, and the CRC-16 of the HOME+EXROM pair that SAVE ... ALL stamps on its tapes)."""
@@ -48,7 +49,8 @@ def main():
     open(os.path.join(OUT, "SHA256SUMS"), "w").write("\n".join(sums) + "\n")
     budget = sh("python3", "tools/report_budget.py", "build/test_basic.lst", "build/exrom.lst", "build/test_basic.sym")
     info = [
-        "2068-Leap V2 release candidate",
+        "2068-Leap V2 Enhanced — Emulator-Qualified Release",
+        "hardware:    NOT TESTED — PHYSICAL HARDWARE UNAVAILABLE (docs/v2/V2_HARDWARE_CHECKLIST.md)",
         "commit:      %s (%s)" % (sh("git", "rev-parse", "HEAD"), sh("git", "rev-parse", "--abbrev-ref", "HEAD")),
         "describe:    %s" % sh("git", "describe", "--always", "--dirty"),
         "built:       %s" % sh("date", "-u", "+%Y-%m-%dT%H:%M:%SZ"),
@@ -57,8 +59,8 @@ def main():
         "",
         budget,
     ]
-    open(os.path.join(OUT, "BUILD_INFO.txt"), "w").write("\n".join(info) + "\n")
-    print("\n".join(info[:5]))
+    open(os.path.join(OUT, "BUILD_INFO.txt"), "w", encoding="utf-8").write("\n".join(info) + "\n")
+    print("\n".join(info[:6]))
     print("%d files in %s" % (sum(len(fs) for _, _, fs in os.walk(OUT)), OUT))
     return 0
 

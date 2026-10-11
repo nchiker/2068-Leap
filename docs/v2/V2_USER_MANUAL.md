@@ -1,7 +1,7 @@
-# 2068-Leap V2 -- User's Manual (release candidate)
+# 2068-Leap V2 -- User's Manual (V2 Enhanced release)
 
 For the Timex Sinclair 2068 with the 2068-Leap V2 HOME ROM and EXROM. This manual describes the
-release candidate (`integration/v2-final-rom`). The complete, precise rules are in
+V2 Enhanced emulator-qualified release (`v2-development`). The complete, precise rules are in
 `V2_LANGUAGE_REFERENCE.md`; this manual shows how to use them. (`docs/user_manual.md` is the
 manual of the earlier V1 "Release 1 Beta" ROM: much of it does not apply to V2.)
 
@@ -236,4 +236,4 @@ The error codes are listed in `V2_LANGUAGE_REFERENCE.md` section 8.
 * 251 numeric and 251 string variables; arrays up to 16383 elements.
 * No line numbers, `GOSUB`, `LET`, `ELSEIF`, `INSTR`, `READ`/`DATA`, string slicing (`MID$` does
   it), multi-dimensional arrays, exponent notation; `INT` truncates.
-* The characters `[ \ ] ^ \` { | } ~` print as blanks.
+* The characters `[`, `\`, `]`, `^`, `` ` ``, `{`, `|`, `}` and `~` print as blanks.

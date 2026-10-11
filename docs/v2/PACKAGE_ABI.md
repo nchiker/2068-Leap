@@ -99,7 +99,7 @@ Contract for an execute routine:
 
 * Entry: arguments in `EXT_CALL_ARGn` (16-bit, little-endian; numeric values are the VM's 16-bit
   integers, string arguments are string-table indices). Registers: nothing is defined on entry.
-* Exit: `ret`. **All registers may be destroyed** -- IY included: since the release candidate the
+* Exit: `ret`. **All registers may be destroyed** -- IY included: since the V2 Enhanced release the
   VM keeps its dispatch address in IY, and `OP_CALL_EXT` re-enters `VM_RUN` (which reloads it)
   after every package call. There is no return value (statement packages only; no extension
   *functions*).
@@ -264,17 +264,17 @@ future work and will be a *minor* addition only if it rejects nothing a 1.0 writ
 
 | Tape | Before (≤ R10.8) | Now |
 |---|---|---|
-| Program saved by this ROM (release candidate) | — | version word `$8101`; accepted |
+| Program saved by this ROM (V2 Enhanced release) | — | version word `$8101`; accepted |
 | Program saved by R10.9 .. pre-RC V2 | — | `$8100` (minor 0 <= 1): accepted |
 | Program saved by R10.8 or earlier V2 | autostart = stale header-buffer contents (typically `$0000`) | **refused** (`BAD TAPE VERSION`), program untouched |
 | Stock Spectrum/TS2068 BASIC program tape | accepted as garbage source (R3) | **refused** — stock autostart is a line number or `$8000` (major 0) |
 | Future program format | n/a | refused if major ≠ 1 or minor > 1 |
 
-**Release candidate (format 1.1).** The header's PROGLEN field is the program's own length. A
+**V2 Enhanced release (format 1.1).** The header's PROGLEN field is the program's own length. A
 plain `SAVE` writes PROGLEN = the data length, exactly as 1.0. `SAVE "name" ALL` writes a longer
 block -- the program followed by the variable session and the Array Store
 (`V2_SAVE_ALL_FORMAT.md`) -- so PROGLEN < length marks it. Minor 1 makes every pre-RC V2 ROM
-refuse the RC's tapes (it would otherwise load a session as program text); this applies to array
+refuse this release's tapes (it would otherwise load a session as program text); this applies to array
 tapes too, which share `V2_FORMAT_WORD`. Package tapes (`PKG_ABI_WORD`) are unchanged.
 
 There is no in-ROM migration for pre-R10.9 program tapes. *Policy question for the owner*

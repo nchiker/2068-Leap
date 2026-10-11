@@ -1,7 +1,7 @@
-# V2 feature and compatibility matrix (release candidate)
+# V2 feature and compatibility matrix (V2 Enhanced release)
 
-V1 = the 2068-Leap "Release 1 Beta" ROM (`docs/user_manual.md`, Git `cd2f1df`). V2 RC = this
-release candidate (`integration/v2-final-rom`). Intentional V1-to-V2 breaks are also recorded, with
+V1 = the 2068-Leap "Release 1 Beta" ROM (`docs/user_manual.md`, Git `cd2f1df`). V2 = the
+V2 Enhanced emulator-qualified release (`v2-development`; release source `integration/v2-final-rom`). Intentional V1-to-V2 breaks are also recorded, with
 their measured savings, in `COMPATIBILITY_BREAKS.md`; owner policy: breaking V1 compatibility is
 acceptable for real ROM/RAM savings.
 
@@ -10,7 +10,7 @@ Legend: **=** same; **+** new or better in V2; **~** changed; **pkg** moved to a
 
 ## Language
 
-| Feature | V1 | V2 RC | |
+| Feature | V1 | V2 | |
 |---|---|---|---|
 | Program structure | labels, no line numbers | same | = |
 | Execution | line interpreter | whole-program compiler + bytecode VM; errors before anything runs | ~ |
@@ -45,7 +45,7 @@ Legend: **=** same; **+** new or better in V2; **~** changed; **pkg** moved to a
 
 ## Environment
 
-| Feature | V1 | V2 RC | |
+| Feature | V1 | V2 | |
 |---|---|---|---|
 | Editor | full-screen, wrapped lines | same, bold keywords, status bar, faster redraw | = / + |
 | BREAK | yes | CAPS SHIFT + SPACE, now also in tight loops and `PAUSE` (D5) | + |

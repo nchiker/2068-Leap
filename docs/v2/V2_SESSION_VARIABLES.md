@@ -1,6 +1,6 @@
 # V2 session variables (owner decision 2, final semantics)
 
-Status: implemented in the release candidate (`integration/v2-final-rom`, commits `f8042ab`,
+Status: implemented in the V2 Enhanced release (`integration/v2-final-rom`, commits `f8042ab`,
 `d404b57`). Tests: `tools/qual/qlifecycle.py` (23 scenarios), `tools/study_break_matrix.py`
 (`brk-session-vars`, real CAPS SHIFT+SPACE), `tools/v2_prod_arrays.py` (`arr-session-*`),
 `tools/v2_saveall_checks.py` (SAVE ... ALL).

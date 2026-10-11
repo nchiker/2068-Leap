@@ -1,20 +1,20 @@
-# 2068-Leap V2 release candidate -- status and handoff
+# 2068-Leap V2 Enhanced — Emulator-Qualified Release: status
 
-**Start here.** This is the entry document for the V2 release candidate: what was built, where it
-is, how it was qualified, what is still open, and what the owner has to decide next.
+**Start here.** This is the entry document for the accepted V2 release: what was built, where it
+is, how it was qualified, and what is still open.
 
 | | |
 |---|---|
-| State | **emulator-qualified release candidate, ready for physical TS2068 testing** |
-| Branch | `integration/v2-final-rom` in `~/2068-Leap` (worktree `~/2068-Leap-v2-final-rom`) |
-| Base | `v2-development` at `7ae0599` (untouched) |
-| Merged / pushed | **no** -- both wait for the owner's approval |
-| ROM images last changed | `ef81f49`; every later commit is tests or documents |
-| Hardware | nothing tried on a real TS2068 yet: **HARDWARE PENDING** (`V2_HARDWARE_CHECKLIST.md`) |
+| Designation | **2068-Leap V2 Enhanced — Emulator-Qualified Release** |
+| Meaning | the production ROMs passed the documented emulator qualification; the release is reproducible; the accepted limitations are documented; **physical TS2068 compatibility has not been verified** |
+| Accepted | by the owner, 2026-10-11 |
+| Release source | branch `integration/v2-final-rom`; ROM-producing commit `ef81f49` (every later commit is tests or documents) |
+| Authoritative branch | `v2-development` in `~/2068-Leap` (see section 11 for the merge) |
+| Hardware | **NOT TESTED — PHYSICAL HARDWARE UNAVAILABLE** (`V2_HARDWARE_CHECKLIST.md`): deferred, not a release blocker |
 
-## 1. What the release candidate is
+## 1. What the release is
 
-The V2 compiler/VM ROM pair with every qualification fix and owner decision applied:
+The V2 compiler/VM ROM pair ("V2 Enhanced") with every qualification fix and owner decision applied:
 
 * all qualification defects fixed except two LOW ones (Q-24, Q-26); float `FOR` (owner decision 1,
   variant D); literal rule L-C (decision 3); exact float display; string relations `< > <= >=`;
@@ -76,13 +76,13 @@ real stamped block, not only computed).
 
 ## 4. ROM and RAM
 
-| | Used | Free | Provisional reserve target |
+| | Used | Free (accepted reserve) | Bank limit |
 |---|---|---|---|
-| HOME | 16330 / 16384 | **54** (+6 in the old KTAB space) | 200 |
-| EXROM | 8167 / 8192 | **25** | 150 |
+| HOME | 16330 / 16384 | **54** (+6 in the old KTAB space) | `$0000-$3FFF`, end `$3FCA` |
+| EXROM | 8167 / 8192 | **25** | `$C000-$DFFF`, end `$DFE7` |
 
-The reserve targets (owner decision 4: provisional hardware-release contingencies, not limits) are
-**not met**; the options to restore them, with costs, are in `V2_ROM_RAM_BUDGET.md`. RAM: main pool
+The owner accepted these reserves on 2026-10-11; the provisional 200 / 150 targets of decision 4
+are dropped (`V2_ROM_RAM_BUDGET.md` keeps the options, for reference only). RAM: main pool
 `$825A-$A326` (8397 bytes); the pool a program sees is 154 bytes smaller than in R10.7 (Q-02
 temporaries 74, session gap 80); 251 numeric + 251 string names; compile zone 302, bytecode area
 4011, segment 2 2048 bytes. Nothing in the fixed V2 area moved; new cells `$B82A-$B84A`.
@@ -108,17 +108,17 @@ ROM was not changed after `ef81f49`).
 From `V2_DEFECT_REGISTER.md`: **Q-24** (LOW, `CALL` of a plain label), **Q-26** (LOW, nine ASCII
 glyphs print blank) -- both XFAIL in the corpus; **RC-O1** (cosmetic message for a too-big
 literal); **RC-O2..RC-O4** (documented limits of SAVE ALL and of numeric arrays); **RC-O5** (ROM
-reserve below target); **RC-O6** (a bare `FOR`/`NEXT` iteration is ~45 % slower than in production,
+reserve 54 / 25 bytes, accepted); **RC-O6** (a bare `FOR`/`NEXT` iteration is ~45 % slower than in production,
 the measured cost of the Q-07/Q-19/Q-20 fixes; loops with bodies 0.3-1.5 %); **T-3** (15 legacy
 component tests in no runner). No open defect is above LOW severity. Found and fixed during the
 final qualification, all in tests and tools (no ROM change): RC-10, RC-11, RC-12.
 
 ## 7. Hardware
 
-Nothing has been run on a physical TS2068. `V2_HARDWARE_CHECKLIST.md` lists 26 steps (boot and
+No physical TS2068 was available. `V2_HARDWARE_CHECKLIST.md` keeps the 26 physical tests (boot and
 editor, programs, tape incl. a SAVE ALL power-cycle round trip and a damaged tape) and the
-machine-specific risks (EXROM paging, keyboard bounce, tape margins, AY ports), all **HARDWARE
-PENDING**.
+machine-specific risks (EXROM paging, keyboard bounce, tape margins, AY ports) for the future, all
+marked **NOT TESTED — PHYSICAL HARDWARE UNAVAILABLE** -- neither passes nor failures.
 
 ## 8. Documents
 
@@ -154,13 +154,18 @@ builds `qual-builds/` (366 MB, all reproducible) deleted, the runs the reports c
 tarball and the rest deleted, one already-merged agent branch deleted, and finally the RC worktree
 removed. Nothing has been deleted, moved or pushed.
 
-## 11. What the owner decides next
+## 11. Owner acceptance (2026-10-11)
 
-1. **Approve the merge** of `integration/v2-final-rom` into `v2-development`, and the push of both
-   (nothing is pushed; `v2-development` itself is 3 commits ahead of `origin` from before).
-2. **Hardware**: burn `leap_v2_home.bin` / `leap_v2_exrom.bin` and work through
-   `V2_HARDWARE_CHECKLIST.md`.
-3. **The reserve**: accept 54 / 25 bytes for the hardware release, or choose options from
-   `V2_ROM_RAM_BUDGET.md` (each must then be measured).
-4. **Cleanup**: approve (or edit) `V2_WORKSPACE_CLEANUP_INVENTORY.md`.
-5. **Skills**: review `docs/v2/skills_patches/z80-skills-rc-lessons.patch`.
+Accepted as the V2 Enhanced emulator-qualified release, subject to the release-integrity
+verification in `V2_REGRESSION_REPORT.md` section 9 (done: the rebuilt images match the accepted
+hashes and the qualified builds byte for byte):
+
+1. the 54-byte HOME and 25-byte EXROM reserve (the provisional 200 / 150 targets are dropped; the
+   ROM is not to be changed to recover them);
+2. the 154-byte RAM reduction;
+3. Q-24 and Q-26 as known LOW limitations;
+4. the empty `FOR`/`NEXT` slowdown (RC-O6) as a correctness trade-off;
+5. the current feature set as V2 Enhanced.
+
+Hardware qualification is deferred. The merge, push and release-tag record follows in the closeout
+section below.
