@@ -596,8 +596,7 @@ D3_FAMILIES = {
     "missing-colon": (["x = 1 y = 2", "z = 3"], 64),
     "trailing-rparen": (["x = (1))", "y = 2"], 64),
     "infix-MOD": (["x = 7 MOD 2", "y = 2"], 64),
-    "print-semicolon-list": (["x = 1", "PRINT x; x", "y = 2"], 64),
-    "print-comma-list": (["x = 1", "PRINT x, x", "y = 2"], 64),
+    # STUDY (Enhanced): `PRINT x; x` and `PRINT x, x` are valid statements now (multi-item PRINT)
     "chained-compare": (["x = 1 < 2 < 3", "y = 2"], 64),
     "string-slice": (['a$ = "abcdef"', "b$ = a$(2 TO 3)", "y = 2"], 64),
     "apostrophe-comment": (["x = 1 ' c", "y = 2"], 64),
@@ -752,13 +751,13 @@ _line_case("D4-blank-lines", "blank and REM lines count", ["", "REM c", "", "x =
 _line_case("D4-after-label", "a label line counts as a line", ["start:", "x = 1", "GOTO start 5"], 2, 64)
 # Errors that can only be detected at end of source leave the cursor on the append position (the empty
 # line after the last one, index == number of lines), where the missing NEXT / ENDP / ENDIF / label goes.
-_line_case("D4-eof-for", "an unterminated FOR puts the cursor at the end of the program", ["FOR i = 1 TO 3", "x = i"], 2, 65)
+_line_case("D4-eof-for", "STUDY (N-3): an unterminated FOR puts the cursor on the FOR", ["FOR i = 1 TO 3", "x = i"], 0, 65)
 _line_case("D4-eof-proc", "an unterminated PROC puts the cursor at the end of the program",
            ["PROC p(a):", "x = 1", "y = 2"], 3, 16)
 _line_case("D4-eof-if", "an unterminated block IF puts the cursor at the end of the program", ["IF 1 THEN", "x = 1"], 2, 9)
 _line_case("D4-undefined-label", "an undefined label (checked at the end) puts the cursor at the end of the program",
            ["GOTO nowhere", "x = 1", "y = 2"], 3, 7)
-_line_case("D4-eof-trailing-colon", "end-of-source error after a last line that ends in ':'", ["FOR i = 1 TO 3", "x = i:"], 2, 65)
+_line_case("D4-eof-trailing-colon", "STUDY (N-3): end-of-source error after a last line that ends in ':' reports the FOR", ["FOR i = 1 TO 3", "x = i:"], 0, 65)
 _line_case("D4-stray-endif-late", "a stray ENDIF names its own line", ["x = 1", "y = 2", "z = 3", "ENDIF", "w = 4"], 3, 64)
 _line_case("D4-unclosed-paren", "an unclosed parenthesis names its own line", ["x = 1", "y = (1 + 2", "z = 3"], 1, 66)
 
