@@ -104,6 +104,8 @@ DECOMP_FRAG_TEXT_MAX: equ 31       ; bytes of text per fragment (matches
                                     ; arithmetic more than one level deep)
 DECOMP_FRAG_REC_LEN:  equ 32       ; 1 length byte + 31 text
 DECOMP_FRAG_BASE:     equ $BB00   ; 8*32 = 256 bytes, ends $BC00
+DECOMP_SC_SP:         equ $BDB1   ; RC: open short-circuit AND/OR operators (0-8)
+DECOMP_SC_STACK:      equ $BDB2   ; RC: 8 x [target:2 absolute][opcode:1], ends $BDCA
 DECOMP_OUT_BUF:       equ $BC00   ; reconstructed text output (400
                                     ; bytes, ends $BD90 — generous for
                                     ; this milestone's own test program)
@@ -1018,7 +1020,13 @@ DECOMP_SKIP_OPERAND:
         jr z,.w1                    ; recursion safety)
         cp 57                     ; PARAM_UNBIND
         jr z,.w1
-        jp DECOMP_ERR_UNSUPPORTED_OPCODE
+        cp 71                     ; RC: STR_CMP_GT
+        jr z,.w0
+        cp 72                     ; RC: AND_SC (a 2-byte target inside the expression, not a label)
+        jr z,.w2
+        cp 73                     ; RC: OR_SC
+        jr z,.w2
+        jp DECOMP_ERR_UNSUPPORTED_OPCODE   ; (70, PUSH_FLOAT5: a 5-byte float literal, not decompiled)
 .w0:
         ret
 .w1:
@@ -1616,6 +1624,57 @@ DECOMP_ERR_COMMON:
 ; Destroys everything; this is a top-level driver, not a callee with a
 ; documented register contract to preserve.
 ; ===========================================================================
+; RC: DECOMP_SC_TOP_ADDR -- A = an entry index -> HL = its address in DECOMP_SC_STACK. Keeps BC, DE.
+DECOMP_SC_TOP_ADDR:
+        ld l,a
+        add a,a
+        add a,l
+        ld l,a
+        ld h,0
+        push de
+        ld de,DECOMP_SC_STACK
+        add hl,de
+        pop de
+        ret
+; RC: DECOMP_SC_CHECK -- at an instruction boundary: if the innermost open short-circuit operator's
+; target follows a NOT NOT here, skip the NOT NOT and join "(left AND/OR right)"; repeat for an
+; outer operator ending at the same place.
+DECOMP_SC_CHECK:
+        ld a,(DECOMP_SC_SP)
+        or a
+        ret z
+        ld hl,(DECOMP_IP)
+        ld a,(hl)
+        cp 46
+        ret nz
+        inc hl
+        cp (hl)
+        ret nz
+        inc hl
+        ex de,hl                  ; DE = the position after NOT NOT
+        ld a,(DECOMP_SC_SP)
+        dec a
+        call DECOMP_SC_TOP_ADDR
+        ld a,(hl)
+        cp e
+        ret nz
+        inc hl
+        ld a,(hl)
+        cp d
+        ret nz
+        inc hl
+        ld a,(hl)                 ; the opcode
+        ld (DECOMP_IP),de
+        ld hl,DECOMP_SC_SP
+        dec (hl)
+        cp 72
+        jr nz,.or
+        call DECOMP_OP_AND
+        jr DECOMP_SC_CHECK
+.or:
+        call DECOMP_OP_OR
+        jr DECOMP_SC_CHECK
+
 DECOMPILE_PROGRAM:
         call DECOMP_COLLECT_LABELS
         ld a,(DECOMP_ERROR_CODE)
@@ -1643,7 +1702,10 @@ DECOMPILE_PROGRAM:
         ld (hl),$FF
         inc hl
         djnz .endif_init
+        xor a
+        ld (DECOMP_SC_SP),a
 .loop:
+        call DECOMP_SC_CHECK      ; RC: the end of a short-circuit operator's right operand
         ld hl,(DECOMP_IP)           ; DECOMP_IP is an ABSOLUTE bytecode
                                       ; pointer, but every JMP/JMPZ operand
                                       ; in the bytecode itself (and every
@@ -1777,6 +1839,12 @@ DECOMPILE_PROGRAM:
         jp z,.op_or
         cp 46
         jp z,.op_not
+        cp 71
+        jp z,.op_str_cmpgt
+        cp 72
+        jp z,.op_sc
+        cp 73
+        jp z,.op_sc
         cp 47
         jp z,.op_jmp_else
         cp 48
@@ -3446,6 +3514,37 @@ DECOMPILE_PROGRAM:
         jp DECOMPILE_PROGRAM.loop
 .op_not:
         call DECOMP_OP_NOT
+        jp DECOMPILE_PROGRAM.loop
+.op_str_cmpgt:                    ; RC: a$ > b$ (71)
+        ld hl,STR_GT
+        ld b,1
+        call DECOMP_STR_BINARY_OP
+        jp DECOMPILE_PROGRAM.loop
+; RC: AND_SC / OR_SC (72/73) -- left; SC target; right; NOT; NOT; target:. The left operand is
+; already a fragment; remember (target, opcode) and decode the right operand normally.
+; DECOMP_SC_CHECK joins the two fragments when it meets the NOT NOT that ends at the target.
+.op_sc:
+        ld c,a
+        ld hl,(DECOMP_IP)
+        ld e,(hl)
+        inc hl
+        ld d,(hl)
+        inc hl
+        ld (DECOMP_IP),hl
+        ld hl,VM_CODE_BASE
+        add hl,de
+        ex de,hl                  ; DE = the absolute target
+        ld a,(DECOMP_SC_SP)
+        cp 8
+        jp nc,DECOMP_ERR_FRAG_OVERFLOW
+        call DECOMP_SC_TOP_ADDR   ; HL -> the free entry
+        ld (hl),e
+        inc hl
+        ld (hl),d
+        inc hl
+        ld (hl),c
+        ld hl,DECOMP_SC_SP
+        inc (hl)
         jp DECOMPILE_PROGRAM.loop
 
 ; DECOMP_BUILTIN_FN_NAME -- input: A = fn_index. Output: HL = name text

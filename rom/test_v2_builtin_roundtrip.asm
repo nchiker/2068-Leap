@@ -48,6 +48,7 @@ PROGS:
                                     ; harness EXROM: byte-for-byte round trip only
     dw P_FREE   : db 1
     dw P_STRV   : db 1
+    dw P_VAL    : db 0
     dw P_NEST   : db 1
     dw P_NESTF  : db 0
     dw P_RND    : db 0
@@ -55,10 +56,12 @@ PROGS:
     dw 0
 
 P_INT:   db "A=ABS(-5):B=SGN(-3):C=MOD(17,5):D=DIV(17,5):E=INT(7):F=PEEK(0):G=POINT(5,10):H=ATTR(2,3)", 0
-P_STR:   db "Z$=\"HI\":L=LEN(Z$):M=CODE(Z$):N=VAL(\"123\"):A$=CHR$(65):B$=STR$(42):C$=UPPER$(\"abC\")"
+P_STR:   db "Z$=\"HI\":L=LEN(Z$):M=CODE(Z$):A$=CHR$(65):B$=STR$(42):C$=UPPER$(\"abC\")"
          db ":D$=LOWER$(\"AbC\"):E$=LEFT$(\"HELLO\",2):F$=RIGHT$(\"HELLO\",3):G$=MID$(\"HELLO\",2,3):H$=INKEY$()", 0
 P_STRV:  db "S0$=\"HELLO\":S1$=MID$(S0$,2,3):S2$=LEFT$(S0$,2):S3$=RIGHT$(S0$,2):S4$=UPPER$(S0$)"
-         db ":S5$=LOWER$(S0$):V0=VAL(S0$):V1=CODE(S0$):V2=LEN(MID$(S0$,1,2))", 0
+         db ":S5$=LOWER$(S0$):V1=CODE(S0$):V2=LEN(MID$(S0$,1,2))", 0
+P_VAL:   db "S0$=\"123\":V0=VAL(S0$):V1=VAL(\"123\")", 0   ; RC: VAL parses with the calculator -> bytecode-level only
+                                             ; (its value: test_v2_group6_math_run, the corpus)
 P_FLOAT: db "A=SQR(16):B=PI():C=RAD(90):D=DEG(1):E=SIN(30):F=COS(60):G=TAN(45)", 0
 P_FREE:  db "V0=FREE():V1=FREE(1):V2=FREE(0)", 0   ; names as the decompiler writes them: FREE()
                                               ; depends on the symbol-table size

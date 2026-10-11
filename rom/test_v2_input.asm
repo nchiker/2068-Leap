@@ -49,6 +49,12 @@ TEST_CUSTOM_MAIN:
     ld   hl, (EMIT_PTR)
     ld   (DECOMP_END_ADDR), hl
 
+    ; RC: INPUT parses its number with the calculator (the shared number parser), and the
+    ; harness's 8K EXROM holds either the calculator or the decompiler, not both. So this file
+    ; is built twice: here (decompiler EXROM) it checks the decompiled text, and through
+    ; rom/test_v2_input_run.asm (TEST_V2_PHASE_RUN, calculator EXROM) it runs the program and
+    ; checks the values. Every check below runs in one of the two images.
+    IFDEF TEST_V2_PHASE_RUN
     ld   hl, TEST_KEY_SCRIPT
     ld   (TEST_KEY_PTR), hl
 
@@ -71,6 +77,7 @@ TEST_CUSTOM_MAIN:
     ld   a, (VM_OUTPUT_ROW)
     cp   4
     jp   nz, TEST_FAIL
+    ELSE
 
     call DECOMPILE_PROGRAM
     ld   a, (DECOMP_ERROR_CODE)
@@ -79,6 +86,7 @@ TEST_CUSTOM_MAIN:
 
     call CHECK_DECOMPILED_TEXT
     jp   c, TEST_FAIL
+    ENDIF
 
     jp   TEST_PASS
 

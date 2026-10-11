@@ -215,6 +215,30 @@ def mismatch_jump():
     return ve == 65 and vals(2) == [0, 0] and P.read(BASE, len(blob)) == blob, "vm_err=%d vars=%s" % (ve, vals(2))
 
 
+@case("arr-session-immediate-dim-mismatch", "RC (session): an immediate DIM that mismatches a stored array is refused (65), the session survives")
+def session_dim_mismatch():
+    blob = boot_store([entry("B", 2, A5)], ["x = 7"])
+    P.call_prompt("V2_RUN_STORED")
+    typed(":DIM b(6)")
+    ve = P.read(P.sym("VM_ERROR_CODE"), 1)[0]
+    typed(":y = x * 2")
+    ve2 = P.read(P.sym("VM_ERROR_CODE"), 1)[0]
+    return ve == 65 and ve2 == 0 and vals(2) == [7, 14] and P.read(BASE, len(blob)) == blob, \
+        "dim vm_err=%d then vm_err=%d vars=%s" % (ve, ve2, vals(2))
+
+
+@case("arr-session-stored-array", "RC (session): an immediate statement reads and writes a stored array; the store keeps the value")
+def session_stored_array():
+    boot_store([entry("B", 2, A5)], ["DIM b(5)", "x = b(2)"])
+    P.call_prompt("V2_RUN_STORED")
+    typed(":b(3) = x + 40")
+    typed(":y = b(3)")
+    ve = P.read(P.sym("VM_ERROR_CODE"), 1)[0]
+    stored = P.read(BASE + 4 + 1 + 3 + 2 * 3, 2)
+    return ve == 0 and vals(2)[1] == vals(2)[0] + 40 and stored == u16(vals(2)[1]), \
+        "vm_err=%d vars=%s stored b(3)=%s" % (ve, vals(2), stored.hex())
+
+
 @case("arr-message-65", "error 65 is reported as ARRAY SIZE MISMATCH")
 def message_65():
     boot_store([entry("A", 2, A5)], ["DIM a(6)"])

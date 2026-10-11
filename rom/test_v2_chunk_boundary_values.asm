@@ -83,14 +83,34 @@ COLD_START:
     call CHECK_INT_VAR
     jp   c, FAIL
 
-    ; X$'s stored length must be 31 -- the runtime string-literal clamp
-    ; (COMPILE_STR_FACTOR, unrelated to this change) truncates any
-    ; literal longer than 31 content bytes; the lexer itself scanned all
-    ; 118 filler bytes to find the real closing quote (if that were
-    ; mishandled, this would either fail to compile or Y would never be set).
+    ; X$'s stored length must be 31: RC (L3) -- the literal is the longest one
+    ; accepted (a longer literal used to be cut to 31 silently; now it is compile
+    ; error 70, TEST A2 below).
     xor  a                       ; X$ = STRSYMTAB/STRTAB index 0
     call STRLEN_AT_INDEX
     cp   31
+    jp   nz, FAIL
+
+    ; ---- TEST A2 (RC, L3): the original 118-byte literal straight after a refill ----
+    ; It must be compile error 70 (literal too long). That code also proves the
+    ; lexer scanned all 118 filler bytes to the real closing quote: a scan that
+    ; stopped early would be error 64 (unterminated string) instead.
+    ld   hl, TESTA2_PROGRAM
+    ld   de, PROG_AREA_START
+    ld   bc, TESTA2_PROGRAM_END - TESTA2_PROGRAM
+    ldir
+    ld   hl, PROG_AREA_START
+    ld   de, TESTA2_PROGRAM_END - TESTA2_PROGRAM
+    add  hl, de
+    ld   (PROG_END), hl
+    call SET_ARENA_VARS
+    call DO_BUILD_SOURCE
+    call COMPILER_INIT
+    ld   hl, VM_CODE_BASE
+    ld   (EMIT_PTR), hl
+    call COMPILE_PROGRAM
+    ld   a, (COMPILE_ERROR_CODE)
+    cp   70
     jp   nz, FAIL
 
     ; ---- TEST B: array element values across a refill ----
@@ -345,10 +365,27 @@ RECA1_END:
     DW RECA2_END - RECA2
 RECA2:
     DB 'X$="'
-    DS 118, '.'                  ; 127 content bytes: the longest record the editor allows
+    DS 31, '.'                   ; RC (L3): the longest literal accepted
     DB '":Y=1', $0D
 RECA2_END:
 TESTA_PROGRAM_END:
+
+; TESTA2_PROGRAM -- the same refill engineering with the original maximal record
+; (127 content bytes: the longest record the editor allows): a 118-byte literal.
+TESTA2_PROGRAM:
+    DW RECA21_END - RECA21
+RECA21:
+    DB "Q=1"
+    DS 124, ' '
+    DB $0D
+RECA21_END:
+    DW RECA22_END - RECA22
+RECA22:
+    DB 'X$="'
+    DS 118, '.'
+    DB '":Y=1', $0D
+RECA22_END:
+TESTA2_PROGRAM_END:
 
 ; ----------------------------------------------------------------------
 ; TESTB_PROGRAM -- RECB_PAD's content is exactly 127 bytes ("Q=1" + 124

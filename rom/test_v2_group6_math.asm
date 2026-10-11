@@ -90,6 +90,12 @@ TEST_CUSTOM_MAIN:
     ld   hl, (EMIT_PTR)
     ld   (DECOMP_END_ADDR), hl
 
+    ; RC: VAL parses with the calculator (the shared number parser), and the harness's 8K EXROM
+    ; holds either the calculator or the decompiler, not both. So this file is built twice: here
+    ; (decompiler EXROM) it checks the decompiled text, and through rom/test_v2_group6_math_run.asm
+    ; (TEST_V2_PHASE_RUN, calculator EXROM) it runs the program and checks every value. Every
+    ; check below runs in one of the two images.
+    IFDEF TEST_V2_PHASE_RUN
     ; Seed ATTR_TEST_BUF at (row=2,col=3) with a known byte, exactly
     ; the address BUILTIN_FN_ATTR's real GFX_CELL_ATTR_ADDR call (via
     ; the stub below) will compute for ATTR(2,3) in SOURCE_TEXT.
@@ -247,6 +253,7 @@ TEST_CUSTOM_MAIN:
     ld   a, (hl)
     or   a
     jp   nz, TEST_FAIL
+    ELSE
 
     call DECOMPILE_PROGRAM
     ld   a, (DECOMP_ERROR_CODE)
@@ -255,6 +262,7 @@ TEST_CUSTOM_MAIN:
 
     call TEST_CHECK_DECOMPILED
     jp   c, TEST_FAIL
+    ENDIF
 
     jp   TEST_PASS
 

@@ -45,6 +45,7 @@ migrated_names=(
 # TEST_V2_NEEDS_DECOMPILE-only one every other migrated test uses.
 calc_migrated_names=(
     r10_numeric run_tables chunk_refill_boundary
+    input_run group6_math_run    # RC: the run phases of input / group6_math (calculator-parsed numbers)
 )
 
 # ---------------------------------------------------------------------------
@@ -120,6 +121,7 @@ cleanup() {
 trap cleanup EXIT
 
 pass=0
+failed=()            # RC: run every test, then report all failures (was: stop at the first)
 for name in "${names[@]}"; do
     ts2068-debug --json stop >/dev/null 2>&1 || true
     ts2068-debug --json start \
@@ -129,10 +131,15 @@ for name in "${names[@]}"; do
         'import json,sys; print(json.load(sys.stdin).get("border"))')"
     if [ "$border" != 4 ]; then
         echo "${name}: border=${border} -> FAIL" >&2
-        exit 1
+        failed+=("$name")
+        continue
     fi
     echo "${name}: border=${border} -> PASS"
     pass=$((pass + 1))
 done
 
+if [ ${#failed[@]} -gt 0 ]; then
+    echo "V2 standalone: ${pass}/${#names[@]} PASS, FAILED: ${failed[*]}" >&2
+    exit 1
+fi
 echo "V2 standalone: ${pass}/${#names[@]} PASS (component tests -- see docs/v2/POST_R9_TEST_INFRASTRUCTURE.md; these do NOT boot the real production EXROM build)"
