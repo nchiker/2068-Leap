@@ -104,9 +104,7 @@ V2_COMMAND_LOOP:
     call V2_LOAD_EDIT
 .reenter:                       ; STUDY (D9b): PROGRAM FULL comes back here, not to .loop,
                                 ; so the typed line (EDIT_LINE_BUF, hooks) survives
-    ld hl,(CUR_EDIT_POS)
-    ld a,h
-    cp $FF
+    call V2_POS_IS_APPEND
     jr nz,.edit_existing
     ld hl,(PROG_END)
 .edit_existing:
@@ -114,18 +112,14 @@ V2_COMMAND_LOOP:
     ld a,(EDIT_LINE_BUF)
     or a
     jr z,.loop
-    ld hl,(CUR_EDIT_POS)
-    ld a,h
-    cp $FF
+    call V2_POS_IS_APPEND
     jr nz,.store
     call V2_DISPATCH
     jr nc,.loop
 .store:
     call V2_STORE_EDIT           ; STUDY: the store sequence is now shared with V2_NAV_COMMIT
     jr c,.no_space
-    ld hl,(CUR_EDIT_POS)
-    ld a,h
-    cp $FF
+    call V2_POS_IS_APPEND
     jr nz,.advance
     call V2_COUNT_LINES
     ld (CUR_EDIT_INDEX),de
@@ -147,9 +141,7 @@ V2_STORE_EDIT:
     call V2_CLEAR_ARRAYS         ; a previous RUN lowered VARS_START (its run-time
                                    ; tables); restore the ceiling before the fit check
     call V2_TOKENIZE
-    ld hl,(CUR_EDIT_POS)
-    ld a,h
-    cp $FF
+    call V2_POS_IS_APPEND
     jr nz,.have_pos
     ld hl,(PROG_END)
 .have_pos:
@@ -302,6 +294,13 @@ CHIME_DELAY:
     jr   c, .wait                   ; current < target -- keep waiting
     ret
 
+; STUDY (shrink): Z = the cursor is on the append line (CUR_EDIT_POS = $FFxx); HL = CUR_EDIT_POS
+V2_POS_IS_APPEND:
+    ld hl,(CUR_EDIT_POS)
+    ld a,h
+    cp $FF
+    ret
+
 V2_RESET_EDIT:
     ld hl,$FFFF
     ld (CUR_EDIT_POS),hl
@@ -392,9 +391,7 @@ V2_SET_EDIT_FROM_INDEX:
     jr V2_LOAD_EDIT
 
 V2_LOAD_EDIT:
-    ld hl,(CUR_EDIT_POS)
-    ld a,h
-    cp $FF
+    call V2_POS_IS_APPEND
     jr nz,.existing
     xor a
     ld (EDIT_LINE_BUF),a
@@ -481,9 +478,7 @@ V2_NAV:
     ld (CUR_EDIT_INDEX),hl
     jp V2_SET_EDIT_FROM_INDEX
 .delete:
-    ld hl,(CUR_EDIT_POS)
-    ld a,h
-    cp $FF
+    call V2_POS_IS_APPEND
     ret z
     ld d,h
     ld e,l
@@ -497,9 +492,7 @@ V2_NAV:
 .delete_load:
     jp V2_SET_EDIT_FROM_INDEX
 .insert:
-    ld hl,(CUR_EDIT_POS)
-    ld a,h
-    cp $FF
+    call V2_POS_IS_APPEND
     ret z
     call V2_NAV_COMMIT
     ret c
@@ -519,9 +512,7 @@ V2_NAV_COMMIT:
     ld a,(EDIT_LINE_BUF)
     or a
     ret z                        ; empty: ENTER ignores it too (carry clear)
-    ld hl,(CUR_EDIT_POS)
-    ld a,h
-    cp $FF
+    call V2_POS_IS_APPEND
     jr z,.differs                ; append line with text
     inc hl
     inc hl
@@ -1685,9 +1676,7 @@ V2_REDRAW:
     jr c,.record
     jr .cursor
 .sentinel:
-    ld hl,(CUR_EDIT_POS)
-    ld a,h
-    cp $FF
+    call V2_POS_IS_APPEND
     jr nz,.cursor
     ld a,(V2_DRAW_ROW)
     ld (V2_ACTIVE_ROW),a

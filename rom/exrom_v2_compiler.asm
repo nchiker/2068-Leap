@@ -4321,6 +4321,10 @@ COMPILE_STATEMENT_LIST:
         call COMPILE_ASSIGN_CONTINUED
         jp .after_stmt
 .label:
+        ld a,(LEX_LINE+1)        ; STUDY: a line end is also a TOK_COLON (the lexer's record
+        bit LEX_NEWLINE_PENDING,a ; separator) -- an identifier alone on its line is NOT a label
+        jp nz,ERR_UNEXPECTED_TOKEN ; definition (that needs a real ':'); it used to be accepted silently,
+                                   ; so a mistyped or unsupported command word did nothing
         ld hl,(STMT_IDENT_NAME_PTR)
         ld a,(STMT_IDENT_NAME_LEN)
         ld b,a
