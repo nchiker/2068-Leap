@@ -1542,6 +1542,14 @@ V2_KW_OFFSET_BOLD:
 
 ; The editor hook redraws the authoritative source view.
 V2_REDRAW:
+    ld a,(V2_REDRAW_SCOPE)       ; STUDY (flicker): typing/backspace only changed the active line
+    or a
+    jr z,.full
+    xor a
+    ld (V2_REDRAW_SCOPE),a
+    call V2_REDRAW_ACTIVE
+    ret nc                       ; done, carry clear
+.full:
     call KTAB_GFX_CLS
     ld a,22
     ld (V2_ACTIVE_ROW),a
@@ -1625,6 +1633,8 @@ V2_REDRAW:
                                ; this block takes
     ld hl,EDIT_LINE_BUF
     call EDITOR_WRAP_CALC
+    ld a,(EDIT_WRAP_COUNT)       ; STUDY: remembered for the selective path's geometry check
+    ld (V2_RD_WRAPS),a
     call EDITOR_WRAP_OFFSET_TO_ROWCOL
     ld a,(V2_ACTIVE_ROW)
     add a,b
@@ -1632,6 +1642,68 @@ V2_REDRAW:
     ret nc
     ld b,a
     jp KTAB_GFX_INVERT_ATTR
+
+; STUDY (flicker, audit I1): the active line changed and nothing else did (same record, same view, same
+; row geometry): clear and redraw just its rows, restore their attributes, move the cursor.  No CLS, no
+; other line, no status.  Out: carry clear = done; carry set = the number of wrapped rows changed (the lines
+; below would move) -> the caller does the full redraw.
+V2_REDRAW_ACTIVE:
+    ld hl,EDIT_LINE_BUF
+    call EDITOR_WRAP_CALC
+    ld a,(EDIT_WRAP_COUNT)
+    ld hl,V2_RD_WRAPS
+    cp (hl)
+    scf
+    ret nz
+    ld c,a                       ; C = rows to redo
+.row:
+    ld a,(V2_ACTIVE_ROW)
+    add a,c
+    dec a
+    cp 23
+    jr nc,.next                  ; below the text area
+    push bc
+    ld b,a
+    call KTAB_GFX_CLEAR_ROW_TEXT ; bitmap only
+    pop bc
+    ld a,(V2_ACTIVE_ROW)
+    add a,c
+    dec a
+    ld l,a
+    ld h,0
+    add hl,hl
+    add hl,hl
+    add hl,hl
+    add hl,hl
+    add hl,hl                    ; row * 32
+    ld de,ATTR_ADDR
+    add hl,de
+    ld d,h
+    ld e,l
+    inc de
+    ld (hl),%00111000            ; the editor's own text attribute (clears the old cursor cell too)
+    push bc
+    ld bc,31
+    ldir
+    pop bc
+.next:
+    dec c
+    jr nz,.row
+    xor a
+    ld (V2_DRAW_BOLD_ENABLE),a   ; the active row is always drawn plain
+    ld hl,EDIT_LINE_BUF
+    ld a,(V2_ACTIVE_ROW)
+    ld b,a
+    call V2_DRAW_TEXT
+    call EDITOR_WRAP_OFFSET_TO_ROWCOL
+    ld a,(V2_ACTIVE_ROW)
+    add a,b
+    cp 23
+    ret nc                       ; carry set here too?  see below
+    ld b,a
+    call KTAB_GFX_INVERT_ATTR
+    or a
+    ret
 
 ; V2_DRAW_STATUS -- R10 addition. Composes "LINE n/m" (n = 1-based
 ; cursor line position, m = total line count) into V2_STATUS_BUF and

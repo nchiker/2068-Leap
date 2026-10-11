@@ -1,6 +1,9 @@
 ; R9 production EXROM: retained platform services and V2 interactive shell.
     INCLUDE "include/hardware.inc"
     DEFINE V2_COMPACT_SYSVARS   ; R10.7 P5: drop V1-only sysvars (see include/sysvars.inc)
+    DEFINE V2_FAST_REDRAW       ; STUDY: selective redraw of the active line while typing
+V2_REDRAW_SCOPE EQU $BEC0       ; STUDY: 1 = only the active line changed (set by EDITOR_LOOP, cleared by V2_REDRAW)
+V2_RD_WRAPS     EQU $BEC1       ; STUDY: wrap-row count of the active line at the last full/selective redraw
     INCLUDE "include/sysvars.inc"
     INCLUDE "include/v2_layout.inc"
     INCLUDE "build/v2_crossbank.inc"

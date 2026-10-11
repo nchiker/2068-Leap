@@ -136,6 +136,10 @@ EDITOR_LOOP:
                                    ; (e.g. SYMBOL SHIFT alone) — ignore
                                    ; it rather than insert a NUL
     call EDITOR_INSERT_CHAR
+    IFDEF V2_FAST_REDRAW
+    ld   a, 1
+    ld   (V2_REDRAW_SCOPE), a      ; STUDY: only the active line changed
+    ENDIF
     call EDITOR_REDRAW_SCREEN
     jr   EDITOR_LOOP
 
@@ -251,6 +255,10 @@ EDITOR_LOOP:
 
 .do_backspace:
     call EDITOR_BACKSPACE
+    IFDEF V2_FAST_REDRAW
+    ld   a, 1
+    ld   (V2_REDRAW_SCOPE), a
+    ENDIF
     call EDITOR_REDRAW_SCREEN
     jp   EDITOR_LOOP
 
