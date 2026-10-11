@@ -2081,25 +2081,26 @@ VM_PREPARE_BINARY_OPERANDS:
 VM_FLOAT_BINARY_COMMON:
         ; entry: HL = address of the CALC_*_STUB to invoke for this op
         push hl
-        xor a
-        ld (CALC_SP),a          ; start with a clean calculator stack —
-                                  ; every float op here is self-contained,
-                                  ; not relying on CALC_STACK state
-                                  ; surviving between VM opcodes
-        ld a,(VM_FLOAT_A_TAG)
-        ld (VM_FLOAT_OPERAND_TAG),a
-        ld hl,(VM_FLOAT_A_VAL)
-        ld (VM_FLOAT_OPERAND_VAL),hl
-        call VM_FLOAT_PUSH_OPERAND
-        ld a,(VM_FLOAT_B_TAG)
-        ld (VM_FLOAT_OPERAND_TAG),a
-        ld hl,(VM_FLOAT_B_VAL)
-        ld (VM_FLOAT_OPERAND_VAL),hl
-        call VM_FLOAT_PUSH_OPERAND
+        call VM_CALC_PUSH_AB
         pop hl
         call VM_CALL_USR_TRAMPOLINE   ; indirect call to the stub in HL
         call VM_FLOAT_STORE_RESULT
         jp VM_RUN.loop
+
+; QUAL: VM_CALC_PUSH_AB -- a fresh calculator stack holding [a, b] from VM_FLOAT_A/B_TAG/VAL
+; (shared by the float arithmetic, the float compare, DIV and MOD). Destroys AF, BC, DE, HL.
+VM_CALC_PUSH_AB:
+        xor a
+        ld (CALC_SP),a          ; a clean calculator stack: every float op is self-contained
+        ld a,(VM_FLOAT_A_TAG)
+        ld hl,(VM_FLOAT_A_VAL)
+        call VM_FLOAT_PUSH_TAGGED
+        ld a,(VM_FLOAT_B_TAG)
+        ld hl,(VM_FLOAT_B_VAL)
+VM_FLOAT_PUSH_TAGGED:           ; A = tag, HL = value: push it (INT converted)
+        ld (VM_FLOAT_OPERAND_TAG),a
+        ld (VM_FLOAT_OPERAND_VAL),hl
+        jp VM_FLOAT_PUSH_OPERAND
 
 OP_ADD:
         call VM_PREPARE_BINARY_OPERANDS
@@ -2190,7 +2191,8 @@ OP_DIV:
                                       ; planned fix)
         ld hl,(VM_FLOAT_A_VAL)
         ld de,(VM_FLOAT_B_VAL)
-        call MATH_DIVIDE16      ; existing, already-verified platform
+        call VM_DIV16_CHECKED   ; QUAL (D11-EXT): -32768 / -1 -> carry
+        jr c,.inexact
                                  ; primitive — truncates toward zero
         ld (VM_DIV_QUOTIENT_TMP),hl
         ld de,(VM_FLOAT_B_VAL)
@@ -3108,18 +3110,7 @@ VM_CMP_DISPATCH:
         ld de,(VM_FLOAT_B_VAL)
         jp MATH_COMPARE16
 .float_path:
-        xor a
-        ld (CALC_SP),a
-        ld a,(VM_FLOAT_A_TAG)
-        ld (VM_FLOAT_OPERAND_TAG),a
-        ld hl,(VM_FLOAT_A_VAL)
-        ld (VM_FLOAT_OPERAND_VAL),hl
-        call VM_FLOAT_PUSH_OPERAND
-        ld a,(VM_FLOAT_B_TAG)
-        ld (VM_FLOAT_OPERAND_TAG),a
-        ld hl,(VM_FLOAT_B_VAL)
-        ld (VM_FLOAT_OPERAND_VAL),hl
-        call VM_FLOAT_PUSH_OPERAND
+        call VM_CALC_PUSH_AB
         call VM_CALC_SUB_STUB     ; CALC_STACK[0] = a-b
 VM_CALC_CLASSIFY:                 ; QUAL (float FOR): A = $FF / 0 / 1 for CALC_STACK[0] <0 / =0 / >0
         ld hl,CALC_STACK
@@ -3174,12 +3165,16 @@ VM_POP_COERCE_INT:
         cp TAG_FLOAT
         ret nz
 VM_COERCE_POPPED:               ; QUAL (Q-32): entry with A = TAG_FLOAT, HL = the popped FLOAT
+        call VM_FLOAT_PUSH_FIRST
+        jp CALC_FP_TO_INT        ; HL = truncated int
+
+; QUAL (Q-10): VM_FLOAT_PUSH_FIRST -- A = tag, HL = value: a fresh calculator stack holding it.
+VM_FLOAT_PUSH_FIRST:
         ld (VM_FLOAT_OPERAND_TAG),a
         ld (VM_FLOAT_OPERAND_VAL),hl
         xor a
         ld (CALC_SP),a
-        call VM_FLOAT_PUSH_OPERAND
-        jp CALC_FP_TO_INT        ; HL = truncated int
+        jp VM_FLOAT_PUSH_OPERAND
 
 ; QUAL (Q-32; owner decision 3): VM_POP_ADDR -- an address or a port (POKE, PEEK, USR, IN, OUT).
 ; An INT is its 16-bit pattern, as before. A FLOAT is truncated and accepted from -32768 to 65535
@@ -4014,6 +4009,7 @@ BUILTIN_FN_ABS:
         ld a,0
         sbc a,h
         ld h,a
+        jp m,VM_PUSH_U16         ; QUAL (D11-EXT): ABS(-32768) = 32768, a FLOAT
 .int_push:
         xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
         jp VM_PUSH
@@ -4064,38 +4060,156 @@ BUILTIN_FN_ABS:
 
 ; SGN(x) -- pops one int, pushes -1/0/1. MATH_SGN16: HL in, HL out.
 BUILTIN_FN_SGN:
-        rst $18                 ; HL = value (FLOAT truncated)
+        rst $10                 ; HL = value, A = tag
+        cp TAG_FLOAT
+        jr nz,.int              ; QUAL (Q-10): a FLOAT's sign, not the sign of its truncation
+        ld a,l
+        call VM_FLOAT_ADDR      ; HL -> its 5 bytes
+        ld a,(hl)
+        inc hl
+        or a
+        jr nz,.general
+        inc hl                  ; the small-integer form: bytes 2-3 are the value
+        ld a,(hl)
+        inc hl
+        ld h,(hl)
+        ld l,a
+.int:
         call MATH_SGN16
-        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
-        jp VM_PUSH
+        jr BFN_PUSH_INT_RESULT
+.general:                       ; the general form is never zero: its sign bit decides
+        bit 7,(hl)
+        ld hl,1
+        jr z,BFN_PUSH_INT_RESULT
+        dec hl
+        dec hl                  ; -1
+        jr BFN_PUSH_INT_RESULT
 
-; MOD(dividend,divisor) -- 2 args, compiled left-to-right so the
-; operand stack has divisor on top (pushed last, popped first).
-; MATH_MOD16: HL=dividend, DE=divisor -> HL=remainder.
+; QUAL (Q-10): MOD and DIV take FLOAT operands: DIV(a,b) = a/b truncated toward zero (an INT when it
+; fits, else a FLOAT), MOD(a,b) = a - DIV(a,b)*b (sign of the dividend, as for INTs).
 BUILTIN_FN_MOD:
-        call BFN_POP_DIVISION   ; HL = dividend, DE = divisor (never 0)
+        call BFN_POP_DIVISION   ; NC: HL = dividend, DE = divisor (never 0); C: CALC_STACK[0] = a/b
+        jr c,.float
         call MATH_MOD16
+        jr BFN_PUSH_INT_RESULT
+.float:
+        ld hl,CALC_STACK
+        call FP_TRUNC           ; [q]
+        ld a,(VM_FLOAT_B_TAG)
+        ld hl,(VM_FLOAT_B_VAL)
+        call VM_FLOAT_PUSH_TAGGED
+        call VM_CALC_MUL_STUB   ; [q*b]
+        ld a,(VM_FLOAT_A_TAG)
+        ld hl,(VM_FLOAT_A_VAL)
+        call VM_FLOAT_PUSH_TAGGED
+        ld b,0
+        rst $28
+        db $01,$03,$38          ; exchange, subtract: [a - q*b]
+        jp VM_FLOAT_STORE_RESULT
+
+BUILTIN_FN_INT:
+        rst $10                 ; HL = value, A = tag
+        cp TAG_FLOAT
+        jr nz,BFN_PUSH_INT_RESULT
+        call VM_FLOAT_PUSH_FIRST  ; CALC_STACK[0] = x
+; QUAL (D11-EXT): CALC_STACK[0] truncated toward zero, pushed as an INT when it fits, else as a FLOAT
+; (INT(90000.5) = 90000, which saturated to 32767).
+BFN_TRUNC_PUSH:
+        ld hl,CALC_STACK
+        call FP_TRUNC
+        call CALC_FP_TO_INT     ; HL = the value; carry = not an INT
+        jp c,VM_FLOAT_STORE_RESULT   ; (the record is still at CALC_STACK[0])
         jr BFN_PUSH_INT_RESULT
 
 BUILTIN_FN_DIV:
         call BFN_POP_DIVISION
-        call MATH_DIVIDE16
+        jr c,BFN_TRUNC_PUSH
+        call VM_DIV16_CHECKED
+        jp c,VM_PUSH_U16        ; QUAL (D11-EXT): DIV(-32768,-1) = 32768 (HL is still -32768 = $8000)
 BFN_PUSH_INT_RESULT:
         xor a                    ; TAG_INT
         jp VM_PUSH
 
-; QUAL (Q-13): MOD(x,0) / DIV(x,0) returned 0 silently (MATH_UDIV16's zero guard); the manual
-; documents DIVISION BY ZERO for /, MOD and DIV. Shared operand pop + zero check (the error
-; unwinds through VM_RUN_SP, so the nested call is safe).
+; QUAL (Q-10): NC = both INT: HL = dividend, DE = divisor (error if 0). C = a FLOAT is involved: the
+; operands are in VM_FLOAT_A/B_* and CALC_STACK[0] = a/b (error if b = 0).
 BFN_POP_DIVISION:
-        rst $18                 ; divisor (FLOAT truncated)
-        push hl
-        rst $18                 ; dividend
-        pop de
+        call VM_PREPARE_BINARY_OPERANDS
+        jr nz,.float
+        ld hl,(VM_FLOAT_A_VAL)
+        ld de,(VM_FLOAT_B_VAL)
         ld a,d
-        or e
+        or e                    ; NC
         ret nz
         jp VM_ERR_DIVIDE_BY_ZERO
+.float:
+        ld a,(VM_FLOAT_B_TAG)
+        ld hl,(VM_FLOAT_B_VAL)
+        call VM_FLOAT_TEST_ZERO
+        jp z,VM_ERR_DIVIDE_BY_ZERO
+        call VM_CALC_PUSH_AB
+        call VM_CALC_DIV_STUB   ; [a/b]
+        scf
+        ret
+
+; QUAL (D11-EXT): HL / DE as MATH_DIVIDE16, but carry set (nothing computed, HL unchanged) for
+; -32768 / -1, whose quotient 32768 is not an INT.
+VM_DIV16_CHECKED:
+        ld a,d
+        and e
+        inc a                   ; Z iff DE = -1
+        jr nz,.go
+        ld a,h
+        xor $80
+        or l                    ; Z iff HL = -32768
+        scf
+        ret z
+.go:
+        call MATH_DIVIDE16
+        or a
+        ret
+
+; QUAL (D11-EXT, Q-10): FP_TRUNC -- truncate the 5-byte value at HL toward zero, in place.
+; Destroys AF, B, HL.
+FP_TRUNC:
+        ld a,(hl)
+        or a
+        ret z                   ; the small-integer form is already an integer
+        sub $81                 ; A = e - 1  (value = 0.1mmm... x 2^e)
+        jr c,.zero              ; e <= 0: |x| < 1
+        cp 31
+        ret nc                  ; e >= 32: no fraction bits
+        cpl
+        add a,32                ; A = 32 - e fraction bits to clear (1..31)
+        ld b,a
+        inc hl
+        inc hl
+        inc hl
+        inc hl                  ; -> the least significant mantissa byte
+.byte:
+        ld a,b
+        cp 8
+        jr c,.part
+        ld (hl),0
+        dec hl
+        sub 8
+        ld b,a
+        jr nz,.byte
+        ret
+.part:
+        ld a,$FF
+.mask:
+        add a,a
+        djnz .mask              ; A = $FF << B
+        and (hl)
+        ld (hl),a
+        ret
+.zero:
+        ld b,5
+.z:
+        ld (hl),0
+        inc hl
+        djnz .z
+        ret
 
 ; RND(x) -- pops one int (the upper bound), pushes a random value.
 ; MATH_RND16: HL in, HL out.
@@ -4164,10 +4278,6 @@ BUILTIN_FN_ATTR:
 ; already, so this is now literally that shared routine plus a fresh
 ; INT tag -- closing the "INT(3.7) still yields 3.7" bug (docs/v2/
 ; V2_SEMANTIC_CAPABILITY_AUDIT.md S4).
-BUILTIN_FN_INT:
-        rst $18                 ; HL = value (FLOAT truncated toward zero)
-        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
-        jp VM_PUSH
 
 ; PEEK(addr) -- confirmed via basic.asm's own .call_peek: reads raw
 ; memory directly, deliberately NOT routed through a kernel/ API (the
@@ -4947,10 +5057,8 @@ BUILTIN_FN_PI:
 ; AND more correct than replicating V1's own sign-stripping, not a
 ; scope increase.
 BUILTIN_FN_RAD:
-        rst $18                  ; HL = x (FLOAT truncated)
-        xor a
-        ld (CALC_SP),a
-        call CALC_INT_TO_FP      ; push x
+        rst $10                  ; QUAL (Q-10): x as it is (was truncated)
+        call VM_FLOAT_PUSH_FIRST
         call CALC_PUSH_PI          ; push pi
         call VM_CALC_MUL_STUB        ; x*pi
         ld hl,180
@@ -5281,10 +5389,8 @@ BUILTIN_FN_FREE_N:
         jp VM_PUSH
 
 BUILTIN_FN_DEG:
-        rst $18                  ; HL = x (FLOAT truncated)
-        xor a
-        ld (CALC_SP),a
-        call CALC_INT_TO_FP      ; push x
+        rst $10                  ; QUAL (Q-10): x as it is (was truncated)
+        call VM_FLOAT_PUSH_FIRST
         ld hl,180
         call CALC_INT_TO_FP        ; push 180
         call VM_CALC_MUL_STUB        ; x*180
