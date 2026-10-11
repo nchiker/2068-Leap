@@ -514,8 +514,9 @@ for _l, _w in _PKG_WORDS.items():
         _mk_reject_pkg(_l, _w))
 
 
+# RC: the program-format minor is 1 (SAVE ALL), so "newer" is the ROM's own word + 1, not $8101
 _PROG_WORDS = {"stock-no-autostart-8000": 0x8000, "unversioned-0000": 0x0000, "package-word-8200": 0x8200,
-               "newer-minor-8101": 0x8101, "no-tag-bit-0100": 0x0100}
+               "newer-minor-%04x" % (ABI.fmt_word + 1): ABI.fmt_word + 1, "no-tag-bit-0100": 0x0100}
 
 
 def _mk_reject_prog(label, word, verify):
@@ -532,6 +533,14 @@ for _l, _w in _PROG_WORDS.items():
         _mk_reject_prog(_l, _w, False))
 case("abi-prog-reject-verify", "VERIFY of an unversioned tape reports BAD TAPE VERSION, program untouched")(
     _mk_reject_prog("verify", 0x0000, True))
+
+
+@case("abi-prog-load-older-minor", "a program tape with an older minor of the same major (minor 0, $8100) still LOADs")
+def abi_prog_older_minor():
+    r = P.tape_op(TS.program_tape("TEST", SRC, autostart=0x8100), existing=OLD)
+    data = P.read(P.sym("PROG_AREA_START"), len(SRC))
+    return ABI.fmt_word > 0x8100 and r["msg"] == "LOADED" and data == SRC, \
+        "rom word=%04X msg=%s program-loaded=%s" % (ABI.fmt_word, r["msg"], data == SRC)
 
 
 @case("abi-save-stamps-program", "SAVE stamps the program-format word (type 0)")

@@ -30,8 +30,12 @@ wait
 i=$((i + 1))
 if [ -f tools/study_vm_oracle.py ]; then
   # the oracle checks error 67 on overflow unless ORACLE_PROMOTE=1 (the D11 promotion builds, marked by
-  # FLOAT_BIG_TO_STRING); without it every overflow pair of a promotion build is reported as a mismatch
-  grep -q '^FLOAT_BIG_TO_STRING:' build/exrom.sym && export ORACLE_PROMOTE=1
+  # FLOAT_BIG_TO_STRING in the study builds; the RC's exact float display replaced that routine, so the
+  # promoting ADD in the VM source is the marker too); without it every overflow pair of a promotion
+  # build is reported as a mismatch
+  if grep -q '^FLOAT_BIG_TO_STRING:' build/exrom.sym || grep -q 'promote on signed overflow' rom/exrom_v2_vm_core.asm; then
+    export ORACLE_PROMOTE=1
+  fi
   for m in mul add sub mulop; do one "vm_oracle_$m" $((port + i)) python3 tools/study_vm_oracle.py "$m" 3000 & i=$((i + 1)); done
   wait
 fi

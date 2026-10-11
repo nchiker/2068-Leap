@@ -1,9 +1,10 @@
 # SAVE "name" ALL -- tape format, checks and lifecycle
 
-Status: implemented in the release candidate (`integration/v2-final-rom`, commit `07616e7`).
-Code: `rom/v2_saveall.asm` (HOME: layout, CRC, LOAD checks), `rom/v2_saveall_crc.asm` (HOME, in the
-old KTAB space), `SA_BUILD` in `rom/exrom_v2_shell.asm` (EXROM). Tests: `tools/v2_saveall_checks.py`
-(11 cases, part of `tools/run_v2_prod_tests.sh`).
+Status: implemented in the release candidate (`integration/v2-final-rom`, commit `07616e7`; the
+identity CRC covers the package registry from `ef81f49`). Code: `rom/v2_saveall.asm` (HOME: layout,
+CRC, LOAD checks), `rom/v2_saveall_crc.asm` (HOME, in the old KTAB space), `SA_BUILD` in
+`rom/exrom_v2_shell.asm` (EXROM). Tests: `tools/v2_saveall_checks.py` (13 cases, part of
+`tools/run_v2_prod_tests.sh` and so of `make test`).
 
 ## Commands
 

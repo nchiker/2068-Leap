@@ -157,7 +157,7 @@ def main():
         print("batch %d..%d done, mismatches so far %d" % (i, i + len(chunk), len(bad)), flush=True)
     print("%s: %d pairs (%d fit, %d overflow), mismatches %d" % (mode, len(pairs), nfit, novf, len(bad)))
     for b in bad[:25]:
-        print("  MISMATCH a=%d b=%d exact=%d fits=%s got=%d aux=%d,%d" % b)
+        print("  MISMATCH a=%d b=%d exact=%d fits=%s got=%d err=%d tag=%d float=%s (%r)" % b)
     D("stop")
     return 1 if bad else 0
 
