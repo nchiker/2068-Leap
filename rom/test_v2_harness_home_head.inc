@@ -114,12 +114,15 @@ TEST_V2_SOURCE_END EQU V2_SOURCE_END   ; the canonical include/v2_layout.inc val
 TEST_V2_PACKAGE_LEN EQU $BE82   ; matches rom/exrom_v2_shell.asm's own
                                  ; real V2_PACKAGE_LEN fixed RAM address
 
+    IFNDEF TEST_V2_WITH_KERNEL_MEMORY   ; (qualification study) a test that links the real
+                                        ; kernel/memory/memory.asm gets the real routine
 MEM_FREE_BYTES:
         ld hl,(VARS_START)
         ld de,(ARRAYS_END)
         or a
         sbc hl,de
         ret
+    ENDIF
 
 MEM_CLEAR_V2:
         ld hl,(PROG_END)

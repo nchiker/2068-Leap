@@ -44,7 +44,7 @@ migrated_names=(
 # paired with a separate shared EXROM build below instead of the plain
 # TEST_V2_NEEDS_DECOMPILE-only one every other migrated test uses.
 calc_migrated_names=(
-    r10_numeric run_tables
+    r10_numeric run_tables chunk_refill_boundary
 )
 
 # ---------------------------------------------------------------------------
@@ -61,7 +61,7 @@ calc_migrated_names=(
 # ---------------------------------------------------------------------------
 legacy_names=(
     deffn vm_milestone01
-    chunk_refill_boundary chunk_boundary_values for_first_token chunk_array_reads
+    chunk_boundary_values for_first_token chunk_array_reads
 )
 
 out_dir=build/smoke/v2-standalone
