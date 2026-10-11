@@ -3785,6 +3785,12 @@ COMPILE_FOR:
         ld (hl),a
         inc hl
         ld (hl),a                ; no EXIT FOR recorded yet
+        inc hl
+        ld de,(LEX_LINE)         ; STUDY: the line of this FOR (frame+5), for a missing NEXT
+        res 7,d
+        ld (hl),e
+        inc hl
+        ld (hl),d
         call LEX_NEXT_TOKEN     ; consume FOR
         ld a,(TOK_TYPE)
         cp TOK_IDENT
@@ -4337,8 +4343,16 @@ COMPILE_PROGRAM:
         or a                      ; TOK_EOF
         jp nz,ERR_UNEXPECTED_TOKEN
         call CSTK_TOP
+        jr z,.no_open_for
+        ld de,5                   ; STUDY: report it where the FOR is, not at the end of the source
+        add hl,de
+        ld e,(hl)
+        inc hl
+        ld d,(hl)
+        ld (LEX_LINE),de
         ld a,65                   ; FOR without NEXT
-        jp nz,COMPILE_RAISE_ERROR
+        jp COMPILE_RAISE_ERROR
+.no_open_for:
         call EMIT_OP_HALT
         call LABEL_CHECK_ALL
         ld hl,(EMIT_PTR)

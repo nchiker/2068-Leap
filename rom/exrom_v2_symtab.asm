@@ -481,7 +481,7 @@ LABEL_CHECK_ALL:
 ; V2_SOURCE_END. Used for the FOR loops currently being compiled:
 ;   frame = [var_index:1][top_offset:2][exit_chain_head:2]
 ; ---------------------------------------------------------------------------
-CSTK_FRAME_LEN: equ 5
+CSTK_FRAME_LEN: equ 7           ; STUDY: +2 = the source line of the FOR (frame+5)
 
 ; CSTK_PUSH -- open a frame. Out: carry clear, HL = the new frame; carry set
 ; (error 62 raised) when the arena is full.
