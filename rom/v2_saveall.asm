@@ -12,11 +12,11 @@
 ;                            back afterwards, SA_UNBUILD), so no copy of it needs free memory
 ;   S bytes                  segment 2 (ARR2_BASE .. ARR2_END: Array Store + overflow arrays)
 ;   SA_K_LEN bytes           the session cells $B800 .. SA_AE (counts, table bases, ends, ...)
-;   2                        the CRC of this ROM pair (HOME + EXROM): the image is only valid
-;                            with exactly the ROM that wrote it
+;   2                        the identity CRC (SA_ROM_CRC: HOME + EXROM + the package registry): the
+;                            image is only valid with exactly the ROM and packages that wrote it
 ;   2                        the CRC-16/CCITT of every byte before it (program included)
 ; The image must end at or below V2_CODE_LIMIT (it may run past the pool into the zone and the free
-; code space). LOAD (SA_RESTORE) changes nothing until the block CRC and the ROM CRC match; then
+; code space). LOAD (SA_RESTORE) changes nothing until the block CRC and the identity CRC match; then
 ; installs the cells, requires the addresses in them to form one nondecreasing chain (SA_CHAIN)
 ; and the block to be partitioned exactly as they describe, requires every array pointer (read in
 ; the image) to lie in the arena or segment 2, and only then installs segment 2 and moves the
@@ -29,20 +29,6 @@ SA_END          equ SESS_SAVE               ; scratch (SESS_SAVE only serves an 
 SA_W            equ SESS_SAVE + 2           ;   the block end; W; S; the Array Store's end before the
 SA_S            equ SESS_SAVE + 4           ;   load
 SA_OLD_PAS      equ SESS_SAVE + 6
-
-SA_COPY:                                  ; BC bytes HL -> DE (BC may be 0)
-        ld a,b
-        or c
-        ret z
-        ldir
-        ret
-
-SA_PUT_DE:                                ; (HL) = DE, HL += 2
-        ld (hl),e
-        inc hl
-        ld (hl),d
-        inc hl
-        ret
 
 ; SA_SIZES -- from the live cells: SA_W, SA_S; HL = W + S. Destroys AF, BC, DE.
 SA_SIZES:
@@ -60,7 +46,7 @@ SA_SIZES:
         ret
 
 ; SA_SEAL -- the end of SA_BUILD (rom/exrom_v2_shell.asm): DE = the end of the laid-out image (after
-; the cells). Appends the ROM CRC and the block CRC. Out: BC = the block length from PROG_AREA_START,
+; the cells). Appends the identity CRC and the block CRC. Out: BC = the block length from PROG_AREA_START,
 ; CF clear.
 SA_SEAL:
         push de
@@ -156,7 +142,7 @@ SA_RESTORE:
         ld a,(hl)
         dec hl
         ld l,(hl)
-        ld h,a                            ; the stored ROM CRC
+        ld h,a                            ; the stored identity CRC
         sbc hl,de                         ; (no carry: SA_CRC_GO returns through `or c`)
         ld a,1
         ret nz                            ; written by another ROM

@@ -205,7 +205,8 @@ that label with the current values (it does not resume a stopped `FOR` or proced
 
 Names have up to 10 characters. `SAVE ... ALL` lets you stop work and carry on later: after the
 `LOAD`, `: PRINT`, `: GOTO` and the rest work with the saved values. The variables come back only
-on the same ROM version (on another, the program loads and the message says `NO VARIABLES`); a
+on the same ROM version and with the same package loaded first (otherwise the program loads and
+the message says `NO VARIABLES`); a
 damaged tape gives `LOAD FAILED`. If a very large program plus its overflow arrays cannot be laid
 out for saving, `SAVE ... ALL` says `OUT OF MEMORY` -- `SAVE "name"` still works. A tape written by
 this version cannot be loaded by earlier V2 ROMs.

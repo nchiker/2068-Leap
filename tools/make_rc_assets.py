@@ -52,7 +52,8 @@ def main():
         "commit:      %s (%s)" % (sh("git", "rev-parse", "HEAD"), sh("git", "rev-parse", "--abbrev-ref", "HEAD")),
         "describe:    %s" % sh("git", "describe", "--always", "--dirty"),
         "built:       %s" % sh("date", "-u", "+%Y-%m-%dT%H:%M:%SZ"),
-        "ROM CRC-16 (HOME then EXROM; SAVE ... ALL tapes carry it): $%04X" % crc16(exrom, crc16(home)),
+        "identity CRC-16 (HOME, EXROM, empty package registry -- what SAVE ... ALL stamps with no package "
+        "loaded): $%04X" % crc16(bytes(12 * 14), crc16(exrom, crc16(home))),
         "",
         budget,
     ]

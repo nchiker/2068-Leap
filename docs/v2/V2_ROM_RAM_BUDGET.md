@@ -8,11 +8,11 @@ unless marked *est*.
 
 | Image | Size | Used | Free | Provisional reserve target (owner decision 4) |
 |---|---|---|---|---|
-| HOME ROM | 16384 | 16319 | **65** | 200 |
+| HOME ROM | 16384 | 16330 | **54** | 200 |
 | EXROM | 8192 | 8167 | **25** | 150 |
 
-Additional fragments not counted as free by `make budget`: 4 bytes left in the old KTAB space
-(`$008D-$0090`). The reserve targets are **not met** (owner decision 4 treats them as provisional
+Additional fragments not counted as free by `make budget`: 6 bytes left in the old KTAB space
+(`$008B-$0090`). The reserve targets are **not met** (owner decision 4 treats them as provisional
 hardware-release contingencies, not limits: correctness first). Options to restore reserve are at
 the end.
 
@@ -34,6 +34,7 @@ the end.
 | float overflow = error 67 | `85d59ee` (rc3) | 167 | 49 | RC-1 |
 | session fixes; OP_AND/OR removed; jp->jr | `d404b57` (rc4) | 269 | 42 | |
 | SAVE ALL + space work | `07616e7` (rc6) | 65 | 25 | owner decision 2, part 2 |
+| identity CRC covers the package registry | (rc7) | 54 | 25 | RC-9 |
 
 ### The space work in `07616e7` (each measured on its own)
 
@@ -74,7 +75,7 @@ optional features). Each is an estimate until measured on a branch.
 | Option | HOME | EXROM | Cost / risk |
 |---|---|---|---|
 | Use the 42-byte reserved package-slot room (`$00C6-$00EF`) for code | +~40 *est* | -- | reduces room for future package-ABI slots (append-only growth) |
-| Replace the runtime ROM CRC by a build-time ID | +~10 *est* | -- | weaker: trusts the build to stamp it |
+| Replace the runtime identity CRC by a build-time ID | +~10 *est* | -- | weaker: trusts the build to stamp it |
 | Drop VERIFY support for ALL tapes | -- | +~12 *est* | VERIFY of an ALL tape would always fail |
 | Move the sprite capture/draw services into the SPRITE package | +~60..120 *est* | -- | package ABI major change: every sprite package tape must be rebuilt |
 | Move SIN/COS/TAN (and their support) into a package | +~250 *est* | -- | trigonometry would need `LOAD ... EXT`: a language change |

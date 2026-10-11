@@ -217,6 +217,29 @@ def sa_bad_pointer():
     return r["msg"] == "NO_VARS", "load=%s (pointer at block+%d was %02X%02X)" % (r["msg"], o, data[o + 1], data[o])
 
 
+@case("sa-package-mismatch", "a session saved with a package loaded is not restored without it (identity CRC covers the registry)")
+def sa_package_mismatch():
+    def prep():
+        assert P.install_package("shapes")
+    hdr, data, msg = session_save(["x = 4", "CIRCLE 128,96,10"], prepare=prep)
+    r = load(hdr, data)                                             # fresh boot, no package
+    return msg == "SAVED" and r["msg"] == "NO_VARS" and r["after"] == TS.source_records(["x = 4", "CIRCLE 128,96,10"]), \
+        "save=%s load=%s" % (msg, r["msg"])
+
+
+@case("sa-package-same", "with the same package loaded first, the session comes back and its package statements work")
+def sa_package_same():
+    prog = ["x = 4", "END", "dot:", "CIRCLE 128,96,x * 5"]
+    def prep():
+        assert P.install_package("shapes")
+    hdr, data, msg = session_save(prog, prepare=prep)
+    r = P.tape_op(tape_of(hdr, data), name="ALLT", prepare=lambda: P.install_package("shapes"))
+    x = num_of("x")
+    typed(":GOTO dot")
+    ve = P.read(P.sym("VM_ERROR_CODE"), 1)[0]
+    return r["msg"] == "LOADED" and x == 4 and ve == 0, "load=%s x=%s goto-dot err=%d" % (r["msg"], x, ve)
+
+
 @case("sa-no-room", "SAVE ALL when the image would pass the bytecode area (bytecode + segment 2 > ~3.9K): OUT OF MEMORY, nothing sent")
 def sa_no_room():
     # ~2.4K of bytecode and ~6.8K of source, a(600) fills what is left of the main pool, b(1000) goes

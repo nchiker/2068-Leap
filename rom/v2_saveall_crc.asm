@@ -37,12 +37,31 @@ SA_CRC_GO:
         dec bc
         jr SA_CRC_GO
 
-; SA_ROM_CRC -- DE = the CRC of HOME ($0000-$3FFF) then EXROM ($C000-$DFFF, paged in by the shell).
+; SA_ROM_CRC -- DE = the identity CRC a SAVE ... ALL image is valid for: HOME ($0000-$3FFF), EXROM
+; ($C000-$DFFF, paged in by the shell) and the package registry (EXT2_TABLE: each slot's generation,
+; name and entry). The saved bytecode names package statements by slot and generation, and the
+; generation counter restarts at every boot, so another package could otherwise answer to them.
 SA_ROM_CRC:
         ld hl,0
         ld bc,$4000
         call SA_CRC                       ; returns HL = $4000, BC = 0
         ld h,$C0
         ld b,$20
+        call SA_CRC_GO
+        ld hl,EXT2_TABLE
+        ld bc,EXT2_MAX*EXT2_REC_LEN
         jr SA_CRC_GO
+; (the two small helpers of rom/v2_saveall.asm, here for space)
+SA_COPY:                                  ; BC bytes HL -> DE (BC may be 0)
+        ld a,b
+        or c
+        ret z
+        ldir
+        ret
+SA_PUT_DE:                                ; (HL) = DE, HL += 2
+        ld (hl),e
+        inc hl
+        ld (hl),d
+        inc hl
+        ret
 

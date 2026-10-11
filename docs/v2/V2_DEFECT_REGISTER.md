@@ -15,9 +15,9 @@ case ids (`tools/qual/corpus.py`) or suite case names. Source of the Q-/D-/L-/N-
 | Q-26 | LOW | `[ \ ] ^ \` { | } ~` print as blanks (no glyphs in the ROM font) | deferred: 9 glyphs cost ~72-90 bytes of HOME | `print.font_brackets` (XFAIL) |
 | RC-O1 | LOW | A literal beyond the float range (~1.7E38) is compile error 64, whose message reads "UNEXPECTED TOKEN" | cosmetic; a "NUMBER TOO BIG" message costs ~20 bytes | `lit.float.too_big` (passes on the code) |
 | RC-O2 | LIMIT | `SAVE ... ALL` refuses (`OUT OF MEMORY`) when bytecode + segment 2 + 53 bytes exceed the bytecode area plus free memory | the in-place layout must end at `V2_CODE_LIMIT` | `sa-no-room` |
-| RC-O3 | LIMIT | A `SAVE ... ALL` tape restores its variables only on the exact ROM build that wrote it (another build: program only, `NO VARIABLES`) | by design: the image includes bytecode and layout | `sa-other-rom` |
+| RC-O3 | LIMIT | A `SAVE ... ALL` tape restores its variables only on the exact ROM build, with the same package registration, that wrote it (otherwise: program only, `NO VARIABLES`) | by design: the image includes bytecode, layout and package references | `sa-other-rom`, `sa-package-mismatch` |
 | RC-O4 | LIMIT | Numeric array elements are 16-bit integers: storing a float or a value outside -32768..32767 is runtime error 11 | V2 array format | `arr.float_value` (OkOrErr) |
-| RC-O5 | RESERVE | ROM reserve below the provisional 200 (HOME) / 150 (EXROM) target: 65 / 25 bytes free | SAVE ALL and the language fixes used the space; see `V2_ROM_RAM_BUDGET.md` for options | `make budget` |
+| RC-O5 | RESERVE | ROM reserve below the provisional 200 (HOME) / 150 (EXROM) target: 54 / 25 bytes free | SAVE ALL and the language fixes used the space; see `V2_ROM_RAM_BUDGET.md` for options | `make budget` |
 | T-3 | TEST | 15 legacy component-test sources (`call_fn`, the `compiler_r2` to `compiler_r7` series, `decompiler_phase2`, `editor_integration`, `ext_concurrent`, `graphics_module_ram`, `graphics_pixel`, `print`, `sprite_module`, `sqr`) are in no runner | test debt, unchanged from the study | `tools/run_v2_standalone_tests.sh` |
 
 ## Fixed or decided in the release candidate
@@ -81,6 +81,7 @@ case ids (`tools/qual/corpus.py`) or suite case names. Source of the Q-/D-/L-/N-
 | RC-6 | HIGH | (introduced during the space work, caught by the lifecycle test before commit) relocating a fall-through target (`VM_STORE_VAR_LOOP`) stopped every program after its first store | Fixed before commit (left in place) | `07616e7` |
 | RC-7 | MEDIUM | the first SAVE ALL design copied the session into free memory, so any session with segment-2 arrays could never be saved | Fixed: in-place layout | `07616e7` |
 | RC-8 | TEST | `make test` ran stale smoke images (no `smoke-build` dependency) | Fixed | `7d2d59d` |
+| RC-9 | HIGH | (found reviewing the SAVE ALL design) after a reboot the package generation counter restarts, so a restored session's package statements could be answered by a different package registered in the same slot with the same generation | Fixed: the identity CRC covers the package registry | this commit |
 
 ## Hardware
 

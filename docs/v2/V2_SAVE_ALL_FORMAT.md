@@ -32,7 +32,7 @@ longer than PROGLEN and the rest is the session:
 | ... | W | `VARS_START .. SESS_CODE_END`: the run-time tables, the compile zone and the session's bytecode |
 | ... | S | segment 2, `ARR2_BASE .. ARR2_END`: the Array Store and arrays that overflowed into it |
 | ... | 49 | the session cells `$B800 .. $B830` (symbol counts, table bases, ends, `SESS_*`, `SA_AE` = ARRAYS_END) |
-| ... | 2 | CRC-16 of the ROM pair that wrote it: HOME `$0000-$3FFF` then EXROM `$C000-$DFFF` |
+| ... | 2 | the **identity CRC**: CRC-16 of HOME `$0000-$3FFF`, then EXROM `$C000-$DFFF`, then the package registry `EXT2_TABLE` (168 bytes: each slot's generation, name, entry) |
 | ... | 2 | CRC-16 of every preceding data byte (program included) |
 
 CRC-16/CCITT-FALSE: polynomial `$1021`, initial value `$FFFF`, MSB first, no final XOR, stored low
@@ -57,8 +57,9 @@ longer than the main pool is refused (`LOAD FAILED`). For an ALL block (`SA_REST
 1. the data must be long enough for the 53-byte tail;
 2. **block CRC** -- mismatch: `LOAD FAILED`, the program is cleared (as for any corrupt load: the
    old program was already overwritten);
-3. **ROM CRC** -- the image is only valid with exactly the ROM that wrote it (bytecode and layout
-   depend on it); mismatch: the program is kept, the variables are not loaded (`NO VARIABLES`);
+3. **identity CRC** -- the image is only valid with exactly the ROM and the package registration that
+   wrote it (the bytecode, the layout and the package-statement references depend on them);
+   mismatch: the program is kept, the variables are not loaded (`NO VARIABLES`);
 4. the session cells are installed (the Array Store's end is remembered first);
 5. **address chain** -- these words must be nondecreasing: `PROG_END`, `SYM_BASE_V`, `PROG_END`,
    `SYM_END_V`, `SESS_ARENA_BASE`, `ARRAYS_END`, the five table bases, `V2_SOURCE_END`,
@@ -77,6 +78,12 @@ FAILED` / `ABORTED`, the existing failure classes).
 After a successful LOAD, `: PRINT x`, `: GOTO label`, `CLEAR`, `RUN` behave exactly as after the
 program had run on this machine (`V2_SESSION_VARIABLES.md`).
 
+**Packages.** The saved bytecode names package statements by registry slot and generation, and the
+generation counter restarts at every boot -- so another package could answer to them. The identity
+CRC therefore covers the package registry: load the same package, once, before the ALL tape
+(`LOAD ... EXT` ends any session, so it must come first); with another package or none, the program
+loads and the variables are refused (`NO VARIABLES`) -- `sa-package-mismatch`, `sa-package-same`.
+
 ## VERIFY
 
 `VERIFY "name"` with a session first lays memory out exactly as `SAVE ... ALL` would (CRCs
@@ -93,4 +100,4 @@ success, failure or SPACE abort -- moves the span back first. `SA_BUILT` is zero
 
 The format is a standard header + data pair at the stock speed; nothing here has been tried on a
 real TS2068 and cassette yet -- see `V2_HARDWARE_CHECKLIST.md` (round trip, a long ALL block, a
-deliberately damaged tape, the ROM-CRC timing of ~2.4 s on SAVE, LOAD and VERIFY).
+deliberately damaged tape, the identity-CRC time of ~2.4 s on SAVE, LOAD and VERIFY).

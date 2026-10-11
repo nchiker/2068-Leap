@@ -23,7 +23,6 @@ V2_RST_38:
 ; RC: no KTAB jump table in production (include/v2_ktab.inc); the space holds the CRC routines of
 ; SAVE ... ALL instead.
     INCLUDE "rom/v2_saveall_crc.asm"
-    INCLUDE "rom/v2_session_undo.asm"
     ASSERT $ <= V2_KTAB_MAGIC_ADDR
     DS V2_KTAB_MAGIC_ADDR - $, $FF
     DB V2_KTAB_MAGIC
@@ -103,6 +102,7 @@ MEM_CLEAR_V2 EQU V2_EXROM_CLEAR_ADDR
     INCLUDE "rom/exrom_v2_vm_core.asm"
     INCLUDE "rom/exrom_v2_compiler.asm"
     INCLUDE "rom/v2_saveall.asm"            ; RC: SAVE ... ALL (owner decision 2)
+    INCLUDE "rom/v2_session_undo.asm"
 ; R10.9: the package ABI pins -- every package-visible sysvar / constant must still live
 ; where include/v2_package_abi.inc says (a mismatch fails the build).
     INCLUDE "rom/v2_lowrom_fill.asm"        ; RC shrink: small routines in the RST-slot padding

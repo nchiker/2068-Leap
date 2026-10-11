@@ -13,7 +13,7 @@ timing, keyboard matrix electrics, ULA contention, AY behaviour and EPROM paging
 | `build/release-v2-rc/roms/leap_v2_exrom.bin` | 8192 | the EXROM (the 8K extension ROM, paged into chunk 6, `$C000-$DFFF`) |
 | `build/release-v2-rc/roms/leap_v2_zesarux.bin` | 24576 | HOME + EXROM concatenated, for ZEsarUX `--romfile` only |
 
-Record the SHA-256 of both images and the ROM CRC-16 in `BUILD_INFO.txt` (see `build/release-v2-rc/SHA256SUMS` (made by `make rc-assets`)) with every result.
+Record the SHA-256 of both images and the identity CRC-16 in `BUILD_INFO.txt` (see `build/release-v2-rc/SHA256SUMS` (made by `make rc-assets`)) with every result.
 A DOCK-cartridge build does not exist (`docs/dock_cartridge.md`): the images replace the internal
 ROMs (EPROMs or a ROM-replacement board).
 
@@ -48,7 +48,7 @@ ROMs (EPROMs or a ROM-replacement board).
 |---|---|---|---|
 | 3.1 | `SAVE "T"` a 20-line program; `NEW`; `LOAD "T"` | `SAVED`, `LOADED`, same program | HARDWARE PENDING |
 | 3.2 | `VERIFY "T"` | `VERIFIED` | HARDWARE PENDING |
-| 3.3 | after a `RUN` with variables: `SAVE "S" ALL` | a ~2.4 s pause (ROM CRC) before the tones; `SAVED`; the program and variables still work after | HARDWARE PENDING |
+| 3.3 | after a `RUN` with variables: `SAVE "S" ALL` | a ~2.4 s pause (identity CRC) before the tones; `SAVED`; the program and variables still work after | HARDWARE PENDING |
 | 3.4 | power off / on, `LOAD "S"` | `LOADED`; `: PRINT` shows the saved values; `: GOTO label` continues | HARDWARE PENDING |
 | 3.5 | `VERIFY "S"` right after 3.3 | `VERIFIED` | HARDWARE PENDING |
 | 3.6 | `SAVE "S" ALL` of a program with a big array (the round trip `sa-store`) | a long block; loads back | HARDWARE PENDING |
