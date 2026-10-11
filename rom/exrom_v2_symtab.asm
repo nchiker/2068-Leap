@@ -406,8 +406,9 @@ LABEL_DEFINE:
         dec hl
         or a
         jr z,.walk
-        pop de                  ; already defined: first definition wins
-        ret
+        pop de                  ; already defined
+        ld a,57                 ; QUAL (Q-12): a duplicate label is a compile error (it used to be
+        jp COMPILE_RAISE_ERROR  ; ignored silently: the first definition won, GOTO went there)
 .walk:
         pop de
         push de                 ; DE = offset

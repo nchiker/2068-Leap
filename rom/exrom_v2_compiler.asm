@@ -928,6 +928,9 @@ LEX_SCAN_NUMBER:
         call LEX_ACCUM_DIGIT
         jr c,LEX_NUMBER_TOO_BIG
         ld hl,(CNUM_DIVISOR_TMP)
+        ld a,h                   ; QUAL (Q-09): the divisor 10^k is 16-bit; a 5th fractional digit
+        cp $27                   ; (divisor already 10000 = $2710) wrapped it (0.00001 -> -3.2183 after
+        jr nc,LEX_NUMBER_TOO_BIG ; *100000): error 64, as for an over-long mantissa (L-A)
         ld b,h
         ld c,l
         add hl,hl
@@ -1843,6 +1846,14 @@ COMPILE_FACTOR:
         jp COMPILE_RAISE_ERROR
 .unary_minus:
         call LEX_NEXT_TOKEN     ; consume '-'
+        ld a,(TOK_TYPE)          ; QUAL (Q-05): -<integer literal> is folded at compile time. With
+        cp TOK_NUMBER            ; literal rule L-A, `-32768` used to compile as 0 - $8000, which the
+        jr nz,.neg_expr          ; D11 promotion turned into +32768.0000
+        ld hl,(TOK_VAL)
+        call MATH_NEGATE16
+        ld (TOK_VAL),hl
+        jr .number
+.neg_expr:
         call EMIT_BYTE_OP_PUSH_I8
         xor a
         call EMIT_BYTE           ; push literal 0
@@ -4519,7 +4530,15 @@ COMPILE_PROC:
         ld a,(PROC_PARAM_INDEX_TMP)
         call EMIT_BYTE
         call LEX_NEXT_TOKEN     ; consume ':', prime the body's first token
+        ld hl,(PROC_SKIP_PATCH_TMP)  ; QUAL (Q-11): a PROC or DEF FN defined inside this body reuses
+        push hl                       ; both cells; park them across the body (the enclosing ENDP
+        ld a,(PROC_PARAM_INDEX_TMP)   ; used to unbind the inner parameter and patch the inner skip)
+        push af
         call COMPILE_STATEMENT_LIST
+        pop af
+        ld (PROC_PARAM_INDEX_TMP),a
+        pop hl
+        ld (PROC_SKIP_PATCH_TMP),hl
         ld a,(COMPILE_ERROR_CODE)
         or a
         ret nz

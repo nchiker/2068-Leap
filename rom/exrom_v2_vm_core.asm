@@ -2334,8 +2334,7 @@ OP_JMPZ:
                                  ; re-checked here; a boolean from CMP_*
                                  ; or any int value is a legal condition,
                                  ; same "any nonzero is true" rule V1 uses)
-        ld a,h
-        or l
+        call VM_FLOAT_TEST_ZERO ; QUAL (Q-06): a FLOAT condition is tested by value (was: its slot index)
         jr nz,.no_branch
         ld hl,(VM_IP)
         ld e,(hl)
@@ -3160,6 +3159,8 @@ OP_CLS:
                                       ; no intervening call, so no memory
                                       ; scratch needed for it here
         call GFX_PAINT_ATTR
+        ld hl,0                  ; QUAL (Q-14): CLS homes the PRINT position (it kept the old row/column)
+        ld (VM_OUTPUT_ROW),hl    ; (VM_OUTPUT_ROW, VM_OUTPUT_COL are adjacent)
         jp VM_RUN.loop
 
 OP_BORDER:
@@ -3890,29 +3891,29 @@ BUILTIN_FN_SGN:
 ; operand stack has divisor on top (pushed last, popped first).
 ; MATH_MOD16: HL=dividend, DE=divisor -> HL=remainder.
 BUILTIN_FN_MOD:
-        call VM_POP_COERCE_INT  ; HL = divisor (FLOAT truncated). Hardware
-                                 ; stack parks it across the second call,
-                                 ; same fix pattern this session has
-                                 ; repeatedly needed (VM_POP/VM_POP_COERCE_
-                                 ; INT's own body uses DE internally).
-        push hl
-        call VM_POP_COERCE_INT  ; HL = dividend
-        pop de                  ; DE = divisor
+        call BFN_POP_DIVISION   ; HL = dividend, DE = divisor (never 0)
         call MATH_MOD16
-        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
+        jr BFN_PUSH_INT_RESULT
+
+BUILTIN_FN_DIV:
+        call BFN_POP_DIVISION
+        call MATH_DIVIDE16
+BFN_PUSH_INT_RESULT:
+        xor a                    ; TAG_INT
         jp VM_PUSH
 
-; DIV(dividend,divisor) -- same argument order as MOD above.
-; MATH_DIVIDE16: HL=dividend, DE=divisor -> HL=quotient.
-BUILTIN_FN_DIV:
-        call VM_POP_COERCE_INT  ; HL = divisor (FLOAT truncated)
-        push hl                 ; same VM_POP-destroys-DE fix as
-                                 ; BUILTIN_FN_MOD above
-        call VM_POP_COERCE_INT  ; HL = dividend
-        pop de                  ; DE = divisor
-        call MATH_DIVIDE16
-        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
-        jp VM_PUSH
+; QUAL (Q-13): MOD(x,0) / DIV(x,0) returned 0 silently (MATH_UDIV16's zero guard); the manual
+; documents DIVISION BY ZERO for /, MOD and DIV. Shared operand pop + zero check (the error
+; unwinds through VM_RUN_SP, so the nested call is safe).
+BFN_POP_DIVISION:
+        call VM_POP_COERCE_INT  ; divisor (FLOAT truncated)
+        push hl
+        call VM_POP_COERCE_INT  ; dividend
+        pop de
+        ld a,d
+        or e
+        ret nz
+        jp VM_ERR_DIVIDE_BY_ZERO
 
 ; RND(x) -- pops one int (the upper bound), pushes a random value.
 ; MATH_RND16: HL in, HL out.
@@ -4161,7 +4162,7 @@ BUILTIN_FN_VAL:
         jr nz,.val_check_dot
         ld a,(VM_INPUT_COUNT)
         or a
-        jr nz,.val_loop          ; '-' only accepted as the very first char
+        jr nz,.val_done          ; QUAL (Q-17): '-' after a digit ends the number (manual: VAL stops at the first non-digit)
         ld a,1
         ld (VM_INPUT_NEG_TMP),a
         jr .val_loop
@@ -4176,9 +4177,9 @@ BUILTIN_FN_VAL:
         jr .val_loop
 .val_check_digit:
         cp '0'
-        jr c,.val_loop
+        jr c,.val_done           ; QUAL (Q-17): stop at the first other character
         cp '9'+1
-        jr nc,.val_loop
+        jr nc,.val_done          ; (VAL("12abc34") was 1234)
         sub '0'
         ld b,a                   ; B = digit value 0-9, parked across
                                  ; the writes below -- no call happens
