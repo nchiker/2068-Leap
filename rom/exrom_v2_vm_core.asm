@@ -5052,11 +5052,6 @@ VM_ERR_ARRAY_SPACE:
 ; The loadable ext_mode_module.asm owns its own error codes/reporting,
 ; same as ext_sprite_module.asm already does.
 
-; STUDY (D11): integer overflow is a clean runtime error 67 (NUMERIC OVERFLOW), never a silent wrap.
-VM_ERR_OVERFLOW:
-        ld a,67
-        jr VM_ERR_COMMON
-
 ; STUDY (D11): signed 16x16 multiply with overflow detection, built on MATH_SIGN_PREP / MATH_APPLY_SIGN.
 ; In: HL = a, DE = b.  Out: HL = product, carry clear; carry SET = |a*b| does not fit INT16.
 VM_MUL_CHECKED:

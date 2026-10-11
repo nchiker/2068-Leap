@@ -942,18 +942,23 @@ LEX_SCAN_NUMBER:
         ld (TOK_TYPE),a
         ret
 .is_float:
+        bit 7,d                  ; STUDY: a decimal mantissa >= 32768 would become negative
+        jr nz,LEX_NUMBER_TOO_BIG
         ld (TOK_FLOAT_DIVISOR),hl
         ld a,TOK_FLOAT_NUMBER
         ld (TOK_TYPE),a
         ret
 
-; STUDY (D11, error variant): DE = DE*10 + A (A = digit 0-9).  Carry set = the value would exceed
-; 32767 (a literal is a signed INT16; the old code wrapped modulo 65536 without a word).  Destroys AF BC HL.
+; STUDY (D11, literal policy L-A): DE = DE*10 + A (A = digit 0-9).  Carry set = the value would exceed 65535
+; (the literal no longer fits the 16-bit TOK_VAL: before, it wrapped modulo 65536 without a word).
+; 32768..65535 stay accepted as 16-bit address patterns (POKE 65000,... / USR(61440) keep working);
+; a decimal literal's mantissa is limited to 32767 in LEX_SCAN_NUMBER (it is divided as a SIGNED INT16).
+; Destroys AF BC HL.
 LEX_ACCUM_DIGIT:
         ld c,a
-        ld hl,3277
+        ld hl,6554
         or a
-        sbc hl,de               ; DE >= 3277 -> x10 cannot fit
+        sbc hl,de               ; DE >= 6554 -> x10 cannot fit
         jr c,.ovf
         jr z,.ovf
         ld h,d
@@ -961,11 +966,10 @@ LEX_ACCUM_DIGIT:
         add hl,hl
         add hl,hl
         add hl,de
-        add hl,hl               ; HL = DE*10 (<= 32760)
+        add hl,hl               ; HL = DE*10 (<= 65530)
         ld b,0
         add hl,bc
-        bit 7,h
-        jr nz,.ovf              ; 32768..32769
+        jr c,.ovf
         ex de,hl
         or a
         ret
