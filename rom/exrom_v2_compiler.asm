@@ -1643,27 +1643,46 @@ COMPILE_EXPR:
 .loop:
         ld a,(TOK_TYPE)
         cp TOK_KW_OR
-        jr nz,.done
-        rst $08
+        ret nz
+        ld a,73                  ; RC (L-SC): OR_SC
+        call COMPILE_SC_HEAD
         call COMPILE_BOOL_AND
-        ld a,45        ; QUAL shrink: inlined EMIT_OP_OR
-        rst $20
+        call COMPILE_SC_TAIL
         jr .loop
-.done:
-        ret
 
 COMPILE_BOOL_AND:
         call COMPILE_BOOL_NOT
 .loop:
         ld a,(TOK_TYPE)
         cp TOK_KW_AND
-        jr nz,.done
-        rst $08
+        ret nz
+        ld a,72                  ; RC (L-SC): AND_SC
+        call COMPILE_SC_HEAD
         call COMPILE_BOOL_NOT
-        ld a,44        ; QUAL shrink: inlined EMIT_OP_AND
-        rst $20
+        call COMPILE_SC_TAIL
         jr .loop
-.done:
+
+; RC (L-SC): consume AND/OR, emit A (AND_SC/OR_SC) with a placeholder target, keep the
+; placeholder's address on the stack across the right operand; COMPILE_SC_TAIL normalises the
+; right operand (NOT NOT) and patches the target to land after it.
+COMPILE_SC_HEAD:
+        rst $20
+        rst $08                  ; consume AND/OR
+        call EMIT_PLACEHOLDER_16 ; HL = the operand
+        ex (sp),hl               ; under our own return address
+        jp (hl)
+COMPILE_SC_TAIL:
+        ld a,46
+        rst $20
+        ld a,46
+        rst $20                  ; NOT NOT: the right operand as 0/1
+        call COMPILE_RELATIVE_OFFSET   ; HL = here
+        ex de,hl
+        pop hl                   ; return address
+        ex (sp),hl               ; HL = the placeholder, return address back on the stack
+        ld (hl),e
+        inc hl
+        ld (hl),d
         ret
 
 COMPILE_BOOL_NOT:
@@ -1804,6 +1823,10 @@ COMPILE_FACTOR:
         jr z,.ident
         cp TOK_KW_FN
         jp z,.udf_call           ; post-R9 DEF FN reintegration
+        cp TOK_STRING
+        jp z,COMPILE_STR_RELATION
+        cp TOK_STR_IDENT
+        jp z,COMPILE_STR_RELATION
         ld a,3
         rst $30
 .unary_minus:
@@ -3059,6 +3082,48 @@ COMPILE_INPUT:
 ; stack tag was needed for this.
 ; ===========================================================================
 
+; RC (L-STR, Q-25): a string relation `s$ <op> t$` is a numeric factor (1 = true, 0 = false), so it
+; can be combined with AND/OR/NOT and used anywhere a number can: = < > (opcodes 21 20 71) and
+; <> >= <= (the same followed by NOT).
+COMPILE_STR_RELATION:
+        call COMPILE_STR_EXPR
+        call COMPILE_STR_REL_TAIL
+        ret nc
+        ld a,3                  ; a string where a number was expected
+        rst $30
+; COMPILE_STR_REL_TAIL -- after a string expression: NC = a relation operator followed and the
+; comparison was compiled (a number on the operand stack at run time); C = none followed.
+COMPILE_STR_REL_TAIL:
+        ld a,(TOK_TYPE)
+        ld hl,STR_REL_TABLE
+.find:
+        cp (hl)
+        inc hl
+        jr z,.found
+        inc hl
+        bit 7,(hl)
+        jr z,.find
+        scf
+        ret
+.found:
+        ld a,(hl)
+        push af
+        rst $08                 ; consume the operator
+        call COMPILE_STR_EXPR
+        pop af
+        push af
+        and $7F
+        rst $20
+        pop af
+        rla
+        ret nc
+        ld a,46                 ; NOT
+        rst $20
+        or a
+        ret
+STR_REL_TABLE:                  ; token, opcode (+$80: append NOT); ends at $FF
+        db TOK_ASSIGN, 21, TOK_NE, 21+$80, TOK_LT, 20, TOK_GE, 20+$80, TOK_GT, 71, TOK_LE, 71+$80, $FF
+
 COMPILE_STR_EXPR:
         call COMPILE_STR_FACTOR
 .loop:
@@ -3524,7 +3589,11 @@ COMPILE_PRINT:
         jr .sep
 .str_arg:
         call COMPILE_STR_EXPR
+        call COMPILE_STR_REL_TAIL   ; RC (L-STR): PRINT a$ = b$ prints the comparison (1/0)
+        ld a,35                     ; PRINT_NUM
+        jr nc,.str_emit
         ld a,36        ; QUAL shrink: inlined EMIT_OP_PRINT_STR
+.str_emit:
         rst $20
 .sep:
         ld a,(TOK_TYPE)
@@ -3684,33 +3753,7 @@ COMPILE_GOTO:
 ; mixed, so this one-token peek is sufficient and unambiguous.
 COMPILE_IF:
         rst $08                 ; consume IF
-        ld a,(TOK_TYPE)
-        cp TOK_STRING
-        jr z,.str_condition
-        cp TOK_STR_IDENT
-        jr z,.str_condition
-        call COMPILE_EXPR       ; numeric condition (unchanged)
-        jr .condition_done
-.str_condition:
-        call COMPILE_STR_EXPR
-        ld a,(TOK_TYPE)
-        cp TOK_LT
-        jr z,.str_lt
-        cp TOK_ASSIGN
-        jr z,.str_eq
-        ld a,3                   ; unexpected character (expected a string
-        rst $30
-.str_lt:
-        rst $08
-        call COMPILE_STR_EXPR
-        ld a,20        ; QUAL shrink: inlined EMIT_OP_STR_CMP_LT
-        rst $20
-        jr .condition_done
-.str_eq:
-        rst $08
-        call COMPILE_STR_EXPR
-        ld a,21        ; QUAL shrink: inlined EMIT_OP_STR_CMP_EQ
-        rst $20
+        call COMPILE_EXPR       ; RC (L-STR): string relations are ordinary factors now
 .condition_done:
         ld a,12        ; QUAL shrink: inlined EMIT_OP_JMPZ
         rst $20

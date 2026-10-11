@@ -805,7 +805,7 @@ VM_RUN:
         ld a,(hl)               ; fetch opcode
         inc hl
         ld (VM_IP),hl
-        cp 71                   ; 71 opcodes (OUT = 67, NL = 68, PRINT_COMMA = 69, PUSH_FLOAT5 = 70)
+        cp 74                   ; 74 opcodes (OUT 67, NL 68, PRINT_COMMA 69, PUSH_FLOAT5 70, STR_CMP_GT 71, AND_SC 72, OR_SC 73)
                                  ; (was: 67 opcodes defined (0-66, R8.5 adds
                                  ; 35-38: PRINT_NUM/STR, LPRINT_NUM/STR;
                                  ; 39: CALL_FN (Group 1); 40-43: CMP_LE/
@@ -944,6 +944,9 @@ VM_OP_TABLE:
         dw OP_NL                                            ; 68  STUDY
         dw OP_PRINT_COMMA                                   ; 69  STUDY
         dw OP_PUSH_FLOAT5                                   ; 70  RC: 5-byte literal
+        dw OP_STR_CMP_GT                                    ; 71  RC: string >
+        dw OP_AND_SC                                        ; 72  RC: short-circuit AND
+        dw OP_OR_SC                                         ; 73  RC: short-circuit OR
 
 ; ---------------------------------------------------------------------------
 ; String-table access: index (A) -> HL = record address. Same shape as
@@ -2267,17 +2270,36 @@ OP_OR:
 
 OP_NOT:
         rst $10                  ; HL = value, A = tag
-        cp TAG_FLOAT
-        jp z,VM_ERR_FLOAT_NOT_IMPLEMENTED
-        ld a,h
-        or l
-        jr nz,.false
-        ld hl,1
-        jr .push
-.false:
+        call VM_FLOAT_TEST_ZERO  ; RC: a FLOAT is true when nonzero (was error 4)
         ld hl,0
+        jr nz,.push
+        inc l
 .push:
         jp PUSH_INT_CONTINUE
+
+; RC (L-SC): OP_AND_SC / OP_OR_SC (opcodes 72/73), operand: a 2-byte target. The left operand of
+; AND (OR) is popped; when it already decides the result -- false for AND, true for OR -- that
+; result (0 or 1) is pushed and execution jumps past the right operand, which is then never
+; evaluated; otherwise execution continues into the right operand (compiled as `b NOT NOT`).
+OP_AND_SC:
+        xor a
+        jr VM_LOGIC_SC
+OP_OR_SC:
+        ld a,1
+VM_LOGIC_SC:
+        push af
+        rst $10                  ; HL = a, A = tag
+        call VM_FLOAT_TEST_ZERO
+        ld hl,0
+        jr z,.t
+        inc l                    ; HL = the truth of a (0/1)
+.t:
+        pop af
+        cp l
+        jp nz,OP_JMPZ.no_branch  ; not decided: on to the right operand
+        xor a                    ; TAG_INT
+        call VM_PUSH
+        jp OP_JMP
 
 OP_JMPZ:
         rst $10                 ; HL = condition value, A = tag (not
@@ -2745,45 +2767,35 @@ OP_STR_CONCAT:
         ld h,0
         jp PUSH_STR_CONTINUE
 
+; RC (L-STR): the six string relations compile to these three opcodes (with NOT for <>, >=, <=).
+OP_STR_CMP_GT:                  ; opcode 71
+        call VM_STR_POP_COMPARE
+        dec a                   ; Z iff a > b
+        jr VM_STR_BOOL
 OP_STR_CMP_LT:
-        rst $10                 ; HL = b's index
-        ld a,l
-        call VM_STR_ADDR        ; HL -> b's record
-        ld (VM_STR_RUNNING_DST_TMP),hl  ; NOT "ex de,hl" then rely on DE
-                                           ; surviving the next call — VM_POP
-                                           ; uses DE as its own scratch
-                                           ; internally too (same bug class,
-                                           ; different call site; see
-                                           ; OP_STR_CONCAT's own fix and this
-                                           ; cell's equ comment)
-        rst $10                 ; HL = a's index
-        ld a,l
-        call VM_STR_ADDR        ; HL -> a's record
-        ld de,(VM_STR_RUNNING_DST_TMP)   ; DE = b's record address (restored)
-        call VM_STR_COMPARE     ; A = 0/1/$FF
-        ld hl,0
-        cp $FF
-        jr nz,.not_less
-        inc l
-.not_less:
-        jp PUSH_INT_CONTINUE
-
+        call VM_STR_POP_COMPARE
+        inc a                   ; Z iff a < b
+        jr VM_STR_BOOL
 OP_STR_CMP_EQ:
+        call VM_STR_POP_COMPARE
+        or a                    ; Z iff a = b
+VM_STR_BOOL:
+        ld hl,0
+        jr nz,.f
+        inc l
+.f:
+        jp PUSH_INT_CONTINUE
+; VM_STR_POP_COMPARE -- pops b then a (string indexes): A = 0 / 1 / $FF for a = / > / < b.
+VM_STR_POP_COMPARE:
         rst $10                 ; HL = b's index
         ld a,l
         call VM_STR_ADDR        ; HL -> b's record
-        ld (VM_STR_RUNNING_DST_TMP),hl  ; see OP_STR_CMP_LT's own comment
+        ld (VM_STR_RUNNING_DST_TMP),hl
         rst $10                 ; HL = a's index
         ld a,l
         call VM_STR_ADDR        ; HL -> a's record
-        ld de,(VM_STR_RUNNING_DST_TMP)   ; DE = b's record address (restored)
-        call VM_STR_COMPARE     ; A = 0/1/$FF
-        ld hl,0
-        or a
-        jr nz,.not_equal
-        inc l
-.not_equal:
-        jp PUSH_INT_CONTINUE
+        ld de,(VM_STR_RUNNING_DST_TMP)
+        jp VM_STR_COMPARE
 
 ; VM_STR_COMPARE — input: HL = a's record address, DE = b's record address.
 ; Output: A = 0 if equal, 1 if a>b, $FF if a<b (matches MATH_COMPARE16's
