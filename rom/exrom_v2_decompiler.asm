@@ -929,6 +929,10 @@ DECOMP_SKIP_OPERAND:
         jp z,.w0
         cp 36                     ; PRINT_STR (R8.5)
         jp z,.w0
+        cp 68                     ; STUDY: OP_NL
+        jp z,.w0
+        cp 69                     ; STUDY: OP_PRINT_COMMA
+        jp z,.w0
         cp 40                     ; CMP_LE (R8.5 Group 3)
         jp z,.w0
         cp 41                     ; CMP_GT
@@ -1753,6 +1757,10 @@ DECOMPILE_PROGRAM:
         jp z,.op_print_num
         cp 36
         jp z,.op_print_str
+        cp 68                     ; STUDY: OP_NL / OP_PRINT_COMMA carry no source text
+        jp z,DECOMPILE_PROGRAM.loop
+        cp 69
+        jp z,DECOMPILE_PROGRAM.loop
         cp 39
         jp z,.op_call_fn
         cp 40
