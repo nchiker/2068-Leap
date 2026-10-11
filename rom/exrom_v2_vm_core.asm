@@ -1085,7 +1085,7 @@ VM_POP_CHECK_INT:
 ; DOWN from VARS_START (the carved-table block's bottom) toward ARRAYS_END,
 ; replaces the fixed 12-deep call, 12-deep param-save and 15-deep FOR stacks.
 ; Frames (tag first, lowest address = top):
-;   T_FOR   [1][enclosing limit:2][enclosing step:2]            5 B
+;   T_FOR   [1][var][limit:5][step:5]  (QUAL: calculator form)  12 B
 ;   T_CALL  [2][return address:2]                               3 B
 ;   T_PARAM [3][SYMTAB record:3][FLOATTAB record:5]             9 B
 ; RET / PARAM_UNBIND skip FOR frames above their owner (a GOTO out of a loop
@@ -1278,7 +1278,9 @@ OP_STORE_VAR:
         ld a,(hl)               ; symbol index operand
         inc hl
         ld (VM_IP),hl
-        jr VM_STORE_VAR_BY_INDEX
+VM_STORE_VAR_LOOP:              ; QUAL (float FOR): the store is a subroutine now; FOR_INIT/NEXT reuse it
+        call VM_STORE_VAR_BY_INDEX
+        jp VM_RUN.loop
 
 ; VM_STORE_VAR_BY_INDEX -- input: A = symbol index. Pops one operand-
 ; stack value and stores it into that symbol, tag-aware (float values
@@ -1305,7 +1307,7 @@ VM_STORE_VAR_BY_INDEX:
         ld (hl),e
         inc hl
         ld (hl),d
-        jp VM_RUN.loop
+        ret
 .float_store:
         ; BUG FOUND (real hardware, R6): the first version of this branch
         ; held the source address in DE across a SECOND call to
@@ -1346,7 +1348,7 @@ VM_STORE_VAR_BY_INDEX:
                                    ; borrowed temp reference
         inc hl
         ld (hl),0
-        jp VM_RUN.loop
+        ret
 
 ; ---------------------------------------------------------------------------
 ; OP_PARAM_BIND / OP_PARAM_UNBIND (opcodes 56/57) -- post-R9 PROC/DEF-FN
@@ -1378,7 +1380,7 @@ OP_PARAM_BIND:
         ld hl,(VM_PARAM_SYM_ADDR_TMP)   ; HL = sym addr
         call VM_PARAM_SAVE_PUSH
         ld a,(VM_PARAM_BIND_INDEX_TMP)
-        jr VM_STORE_VAR_BY_INDEX        ; pops the argument, stores it,
+        jr VM_STORE_VAR_LOOP            ; pops the argument, stores it,
                                           ; falls through to VM_RUN.loop
 
 ; OP_PARAM_UNBIND -- restores the parameter symbol's OLD value (both
@@ -2354,14 +2356,22 @@ OP_JMPZ:
         ld (VM_IP),hl
         jp VM_RUN.loop
 
-; QUAL (Q-07/Q-08/Q-19/Q-20): a FOR frame now holds the loop's OWN state,
-; [T_FOR][var][limit:2][step:2], instead of the enclosing loop's limit/step with the current
-; loop in the VM_FOR_LIMIT/VM_FOR_STEP globals. NEXT v finds its own frame (dropping loops
-; abandoned by GOTO above it); FOR v replaces a stale frame of the same variable; FOR skips the
-; body when the start is already past the limit (the 2-byte operand is linked into the loop's
-; EXIT chain by the compiler, so it lands on the loop's FOR_POP); a FLOAT start/limit/step is
-; error 11 instead of a float-table slot index read as an integer.
-VM_FOR_FRAME_LEN:   equ 6
+; QUAL (Q-07/Q-19/Q-20; owner decision 1: floating-point FOR): a FOR frame holds the loop's OWN
+; state, [T_FOR][var][limit:5][step:5]. The limit and the step are kept in the calculator's 5-byte
+; form -- an INT in its small-integer form [0][sign][lo][hi][0] -- so a FLOAT bound needs no second
+; frame type and every frame walker keeps one length. NEXT v finds its own frame (dropping loops
+; abandoned by GOTO above it); FOR v replaces a stale frame of the same variable; FOR skips the body
+; when the start is already past the limit (the 2-byte operand is linked into the loop's EXIT chain
+; by the compiler, so it lands on the loop's FOR_POP).
+; Semantics (the VM's own rules, nothing FOR-specific): FOR stores the start like an assignment;
+; NEXT computes v = v + step like ADD (INT + INT stays INT and promotes to FLOAT on overflow; any
+; FLOAT operand gives FLOAT) and compares v with the limit like the relational operators. The loop
+; is over when v is past the limit in the direction of the step's sign; a zero step counts as
+; ascending (the documented endless loop while v <= limit; BREAK stops it). A float loop variable
+; accumulates the step by repeated addition, as in Sinclair BASIC.
+VM_FOR_FRAME_LEN:   equ 12
+VM_FOR_FRM:         equ VM_FOR_LIMIT        ; scratch: the current loop's frame (2 B)
+VM_FOR_DST:         equ VM_FOR_STEP         ; scratch: VM_FOR_POP5_AT's destination (2 B)
 
 ; VM_FIND_FOR -- C = loop variable. Walks the run of FOR frames on top of the control stack.
 ; Out: Z and HL = that loop's frame; NZ = not found (another kind of frame, or the bottom).
@@ -2403,48 +2413,20 @@ OP_FOR_INIT:
         ld a,VM_FOR_FRAME_LEN
         call VM_CS_ALLOC        ; HL = new frame (C survives)
         jp c,VM_ERR_CALL_STACK_OVERFLOW
+        ld (VM_FOR_FRM),hl
         ld (hl),T_FOR
         inc hl
         ld (hl),c
+        ld de,6
+        add hl,de               ; -> frame+7
+        call VM_FOR_POP5_AT     ; step
+        ld hl,(VM_FOR_FRM)
         inc hl
-        ld (VM_FOR_NEXT_VALADDR),hl   ; scratch: -> the frame's limit field
-        push bc
-        call VM_POP_CHECK_INT   ; step (FLOAT -> error 11; the unwind makes the push harmless)
-        ld (VM_FOR_STEP),hl     ; (scratch now)
-        call VM_POP_CHECK_INT   ; limit
-        ld (VM_FOR_LIMIT),hl
-        call VM_POP_CHECK_INT   ; start
-        push hl
-        ld hl,(VM_FOR_NEXT_VALADDR)
-        ld de,(VM_FOR_LIMIT)
-        ld (hl),e
-        inc hl
-        ld (hl),d
-        inc hl
-        ld de,(VM_FOR_STEP)
-        ld (hl),e
-        inc hl
-        ld (hl),d
-        pop de                  ; DE = start
-        pop bc
-        ld a,c
-        push de
-        call VM_SYM_ADDR
-        pop de
-        xor a                   ; TAG_INT
-        ld (hl),a
-        inc hl
-        ld (hl),e
-        inc hl
-        ld (hl),d               ; var = start
-        ex de,hl                ; HL = start
-        ld de,(VM_FOR_LIMIT)
-        call MATH_COMPARE16     ; A = $FF start<limit, 0 equal, 1 start>limit
-        ld hl,(VM_FOR_STEP)
-        bit 7,h
-        jr z,.up
-        neg                     ; counting down: "past" means start < limit
-.up:
+        inc hl                  ; -> frame+2
+        call VM_FOR_POP5_AT     ; limit
+        call VM_FOR_VAR
+        call VM_STORE_VAR_BY_INDEX   ; v = start (INT or FLOAT, as an assignment)
+        call VM_FOR_PAST
         dec a
         jp z,OP_JMP             ; already past the limit: skip the body (to FOR_POP)
         jp OP_JMPZ.no_branch    ; run the body: step over the operand
@@ -2462,60 +2444,159 @@ OP_FOR_NEXT:
         call VM_FIND_FOR        ; QUAL: this loop's own frame
         jp nz,VM_ERR_CALL_STACK_UNDERFLOW  ; NEXT without its FOR (GOTO into a body, a FOR skipped by IF)
         ld (VM_CSP),hl          ; drop loops abandoned above it by GOTO
-        inc hl
-        inc hl
-        ld e,(hl)
-        inc hl
-        ld d,(hl)
-        inc hl
-        ld (VM_FOR_LIMIT),de
-        ld e,(hl)
-        inc hl
-        ld d,(hl)
-        ld (VM_FOR_STEP),de
+        ld (VM_FOR_FRM),hl
         ld a,c
-        call VM_SYM_ADDR        ; HL -> record
-        ld a,(hl)
-        or a
-        jp nz,VM_ERR_ARRAY_TYPE ; QUAL (Q-08): the body made the loop variable a FLOAT
-        inc hl                  ; -> value_lo (record+1)
+        call VM_FOR_LOAD_VA     ; A = v's tag, DE = its value, HL -> value+1
+        dec hl
         ld (VM_FOR_NEXT_VALADDR),hl
-        ld e,(hl)
+        ld hl,(VM_FOR_FRM)
+        ld bc,7
+        add hl,bc               ; -> step
+        or (hl)                 ; zero iff v is INT and the step a 16-bit integer
+        jr nz,.calc_add
         inc hl
-        ld d,(hl)               ; DE = current value
-        ld hl,(VM_FOR_STEP)
+        inc hl
+        ld a,(hl)
+        inc hl
+        ld h,(hl)
+        ld l,a                  ; HL = step
+        ld b,h                  ; B = the step's high byte (its sign, kept for the compare)
         or a
-        adc hl,de                ; HL = new current value (R8.5 Group 5 --
-                                   ; was a fixed `inc de`/STEP=1 before)
-        jp pe,.past_limit        ; STUDY (D11): the counter would wrap -> the loop is over
-        ld (VM_FOR_NEXT_NEWVAL),hl
-        ld de,(VM_FOR_LIMIT)
-        call MATH_COMPARE16     ; A = 0 if equal, 1 if HL(new)>DE(limit),
-                                 ; $FF if HL(new)<DE(limit); destroys HL
+        adc hl,de               ; HL = v + step
+        jp pe,.calc_add         ; signed overflow: the FLOAT sum (D11 promotion)
+        ex de,hl                ; DE = v + step
         ld hl,(VM_FOR_NEXT_VALADDR)
-        ld de,(VM_FOR_NEXT_NEWVAL)
         ld (hl),e
         inc hl
-        ld (hl),d               ; write the incremented value back
-        ld hl,(VM_FOR_STEP)
-        bit 7,h
-        jr nz,.negative_step
-        cp 1
-        jp z,.past_limit         ; positive/zero step: loop ends once
-                                   ; the new value exceeds the limit
-        jr .continue
-.negative_step:
-        cp $FF
-        jp z,.past_limit         ; negative step: loop ends once the new
-                                   ; value drops below the limit
-.continue:
+        ld (hl),d               ; v = v + step, still INT
+        ld hl,(VM_FOR_FRM)
+        inc hl
+        inc hl                  ; -> limit
+        ld a,(hl)
+        or a
+        jr nz,.test             ; a FLOAT limit: the general compare
+        inc hl
+        inc hl
+        ld a,(hl)
+        inc hl
+        ld h,(hl)
+        ld l,a                  ; HL = limit
+        ex de,hl                ; HL = v, DE = limit
+        call MATH_COMPARE16     ; the all-INT fast path: a 16-bit compare (B survives)
+        bit 7,b
+        jr z,.decide
+        neg                     ; counting down: "past" means v < limit
+        jr .decide
+.calc_add:
+        xor a
+        ld (CALC_SP),a
+        call VM_FLOAT_PUSH_OPERAND   ; v (VM_FOR_LOAD_V left it in VM_FLOAT_OPERAND_*)
+        ld hl,(VM_FOR_FRM)
+        ld de,7
+        add hl,de
+        call VM_FLOAT_PUSH_RAW       ; step
+        call VM_CALC_ADD_STUB
+        call VM_FLOAT_STORE_RESULT   ; the sum, as a FLOAT temp on the operand stack
+        call VM_FOR_VAR
+        call VM_STORE_VAR_BY_INDEX   ; v = the sum
+.test:
+        call VM_FOR_PAST
+.decide:
+        dec a
+        jp z,VM_RUN.loop        ; past the limit: fall through to FOR_POP
         ld de,(VM_FOR_NEXT_BRANCH)
         ld hl,VM_CODE_BASE
         add hl,de
         ld (VM_IP),hl
         jp VM_RUN.loop
-.past_limit:
-        jp VM_RUN.loop
+
+; VM_FOR_VAR -- A = the current loop's variable (from VM_FOR_FRM). Destroys HL.
+VM_FOR_VAR:
+        ld hl,(VM_FOR_FRM)
+        inc hl
+        ld a,(hl)
+        ret
+
+; VM_FOR_LOAD_V -- the loop variable's tag and value into VM_FLOAT_OPERAND_TAG/VAL.
+; Out: A = tag, DE = value, HL -> the record's value high byte. Destroys AF, DE, HL.
+VM_FOR_LOAD_V:
+        call VM_FOR_VAR
+VM_FOR_LOAD_VA:                 ; entry with A = the variable
+        call VM_SYM_ADDR
+        ld a,(hl)
+        ld (VM_FLOAT_OPERAND_TAG),a
+        inc hl
+        ld e,(hl)
+        inc hl
+        ld d,(hl)
+        ld (VM_FLOAT_OPERAND_VAL),de
+        ret
+
+; VM_FOR_PAST -- is the loop variable past the limit, in the direction of the step's sign?
+; Out: A = 1 past, else 0 or $FF. Destroys AF, BC, DE, HL.
+VM_FOR_PAST:
+        call VM_FOR_LOAD_V
+        ld hl,(VM_FOR_FRM)
+        inc hl
+        inc hl                  ; -> limit
+        or (hl)                 ; zero iff v is INT and the limit a 16-bit integer
+        jr nz,.calc
+        inc hl
+        inc hl
+        ld a,(hl)
+        inc hl
+        ld h,(hl)
+        ld l,a                  ; HL = limit
+        ex de,hl                ; HL = v, DE = limit
+        call MATH_COMPARE16     ; A = $FF v<limit, 0 equal, 1 v>limit
+        jr .dir
+.calc:
+        push hl
+        xor a
+        ld (CALC_SP),a
+        call VM_FLOAT_PUSH_OPERAND   ; v
+        pop hl
+        call VM_FLOAT_PUSH_RAW       ; limit
+        call VM_CALC_SUB_STUB        ; v - limit
+        call VM_CALC_CLASSIFY
+.dir:
+        ld hl,(VM_FOR_FRM)
+        ld de,8
+        add hl,de               ; -> step byte 1: bit 7 is the sign in both forms
+        bit 7,(hl)
+        ret z
+        neg                     ; counting down: "past" means v < limit
+        ret
+
+; VM_FOR_POP5_AT -- pops a numeric operand and writes it at HL in the calculator's 5-byte form.
+; Destroys AF, BC, DE, HL.
+VM_FOR_POP5_AT:
+        ld (VM_FOR_DST),hl
+        rst $10                 ; HL = value, A = tag
+        cp TAG_FLOAT
+        jr z,.float
+        ex de,hl                ; DE = INT value
+        ld hl,(VM_FOR_DST)
+        ld (hl),0               ; small-integer form [0][sign][lo][hi][0]
+        inc hl
+        ld a,d
+        rla
+        sbc a,a
+        ld (hl),a
+        inc hl
+        ld (hl),e
+        inc hl
+        ld (hl),d
+        inc hl
+        ld (hl),0
+        ret
+.float:
+        ld a,l
+        call VM_FLOAT_ADDR      ; HL -> its 5 bytes
+        ld de,(VM_FOR_DST)
+        ld bc,FLOAT_REC_LEN
+        ldir
+        ret
 
 ; OP_FOR_POP (opcode 55) -- post-R9 nested FOR/NEXT correction. Pops this
 ; loop's own VM_FOR_STACK frame, restoring the enclosing loop's VM_FOR_
@@ -2880,6 +2961,7 @@ VM_FLOAT_PUSH_OPERAND:
         ; VM_FLOAT_ADDR's own callee touches.
         ld a,(VM_FLOAT_OPERAND_VAL)   ; low byte only — indices are small
         call VM_FLOAT_ADDR             ; HL -> source float record
+VM_FLOAT_PUSH_RAW:                      ; QUAL (float FOR): entry with HL -> any 5-byte value
         ld (VM_FLOAT_SRC_ADDR_TMP),hl   ; park it in this routine's OWN
                                           ; dedicated scratch (see that
                                           ; cell's own header for why not
@@ -3039,6 +3121,7 @@ VM_CMP_DISPATCH:
         ld (VM_FLOAT_OPERAND_VAL),hl
         call VM_FLOAT_PUSH_OPERAND
         call VM_CALC_SUB_STUB     ; CALC_STACK[0] = a-b
+VM_CALC_CLASSIFY:                 ; QUAL (float FOR): A = $FF / 0 / 1 for CALC_STACK[0] <0 / =0 / >0
         ld hl,CALC_STACK
         ld a,(hl)
         or a
