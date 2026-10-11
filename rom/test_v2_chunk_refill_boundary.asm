@@ -35,13 +35,14 @@
 ; TEST2: true EOF / empty program (zero stored records) -- RUN must not
 ; crash; VM_ERROR_CODE must be 0 (a HALT-only program).
 ;
-; TEST3: an unterminated string literal deliberately spanning three
-; records -- must return (not hang), same graceful-degradation contract
-; this mechanism was built to preserve.
+; TEST3: an unterminated string literal on the first of three records --
+; must return (not hang). R10.9 2D: a string never spans a line, so this is
+; now a compile error reported on line 0 (it used to swallow the next two
+; records into the string).
 ;
-; TEST4: a deliberate compile error, checking that CHUNK_CUR_REC_PTR (the
-; state V2_JUMP_TO_ERROR_LINE now uses instead of a byte-offset walk)
-; names the authoritative record actually containing the bad token.
+; TEST4: a deliberate compile error, checking that LEX_LINE (the lexer's own
+; source-line count, which V2_JUMP_TO_ERROR_LINE uses instead of walking the
+; line store) is the index of the record actually containing the bad token.
 ;
 ; TEST5 (source preservation): byte-compares the authoritative line-store
 ; region used by TEST1, before vs. after that RUN, proving neither V2_
@@ -168,10 +169,17 @@ COLD_START:
     add  hl, de
     ld   (PROG_END), hl
     call SET_ARENA_VARS
-    call COMPILE_STORED         ; must return (not hang) -- reaching
-                                  ; TEST4_SETUP below is the real assertion
+    call COMPILE_STORED         ; must return (not hang)
+    ld   a, (COMPILE_ERROR_CODE)
+    or   a
+    jp   z, FAIL                 ; unterminated string: must be an error
+    ld   hl, (LEX_LINE)
+    res  7, h                    ; bit 15 = "CR not counted yet" (V2_JUMP_TO_ERROR_LINE masks it too)
+    ld   a, h
+    or   l
+    jp   nz, FAIL                ; ... on line 0
 
-    ; ---- TEST4: deliberate compile error + CHUNK_CUR_REC_PTR check ----
+    ; ---- TEST4: deliberate compile error + LEX_LINE check ----
     ld   hl, TEST4_PROGRAM
     ld   de, PROG_AREA_START
     ld   bc, TEST4_PROGRAM_END - TEST4_PROGRAM
@@ -186,13 +194,12 @@ COLD_START:
     or   a
     jp   z, FAIL                 ; this program MUST fail to compile
 
-    ; walk the line store ourselves to find TEST4's second record (the
-    ; one with the bad token) and compare its pointer to CHUNK_CUR_REC_PTR
-    call MEM_LINE_FIRST
-    call MEM_LINE_NEXT            ; HL = second record's own pointer
-    ld   de, (CHUNK_CUR_REC_PTR)
-    or   a
-    sbc  hl, de
+    ; the bad token is on TEST4's second record (index 1)
+    ld   hl, (LEX_LINE)
+    res  7, h
+    dec  hl
+    ld   a, h
+    or   l
     jp   nz, FAIL
 
 PASS:
@@ -433,7 +440,7 @@ REC17_END:
 TEST1_PROGRAM_END:
 
 ; ----------------------------------------------------------------------
-; TEST3_PROGRAM -- an unterminated string literal spanning three records.
+; TEST3_PROGRAM -- an unterminated string literal followed by two more records.
 ; ----------------------------------------------------------------------
 TEST3_PROGRAM:
     DW T3R1_END - T3R1

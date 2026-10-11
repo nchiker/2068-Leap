@@ -33,83 +33,10 @@ OLD = ["a = 7", "b = 8", "c = a + b", "d = c * 3", "e = d + 9"]       # same rec
 # D1 / D2 (cassette LOAD/VERIFY failure semantics) were FIXED in R10.9 Phase 2A and their
 # cases moved, as gate tests, to tools/v2_prod_regress.py ("tape failure semantics").
 
-# ------------------------------------------------------------------------ D3
-# Anything that is not a valid program must be a compile error, not a silent stop.
-D3_FAMILIES = {
-    "stray-ENDIF": ["x = 1", "ENDIF", "y = 2"],
-    "stray-ELSE": ["x = 1", "ELSE", "y = 2"],
-    "stray-THEN": ["x = 1", "THEN", "y = 2"],
-    "stray-rparen": ["x = 1", ")", "y = 2"],
-    "stray-TO": ["x = 1", "TO", "y = 2"],
-    "stray-ENDP": ["x = 1", "ENDP", "y = 2"],
-    "leading-line-number": ["10 x = 5", "y = 2"],
-    "missing-colon": ["x = 1 y = 2", "z = 3"],
-    "trailing-rparen": ["x = (1))", "y = 2"],
-    "infix-MOD": ["x = 7 MOD 2", "y = 2"],
-    "print-semicolon-list": ["x = 1", "PRINT x; x", "y = 2"],
-    "print-comma-list": ["x = 1", "PRINT x, x", "y = 2"],
-    "chained-compare": ["x = 1 < 2 < 3", "y = 2"],
-    "string-slice": ['a$ = "abcdef"', "b$ = a$(2 TO 3)", "y = 2"],
-    "apostrophe-comment": ["x = 1 ' c", "y = 2"],
-    "embedded-quote": ['a$ = "a""b"', "y = 2"],
-    "unclosed-paren": ["x = (1 + 2", "y = 2"],
-    "FOR-without-NEXT": ["for i = 1 to 3", "x = i", "y = 2"],
-}
-D3_ALREADY_CORRECT = {
-    "incomplete-expression": ["x = 1 +", "y = 2"],
-    "unknown-statement-word": ["FROBNICATE 1", "y = 2"],
-}
-
-
-def _d3(prog):
-    def fn():
-        ce, ve, msg = P.run_program(prog)
-        return ce != 0, "compile_err=%d vm_err=%d msg=%s" % (ce, ve, msg)
-    return fn
-
-
-for _n, _p in D3_FAMILIES.items():
-    case("D3-" + _n, "malformed program must be a compile error",
-         xfail="D3: compiler silently stops at the first unrecognised token")(_d3(_p))
-for _n, _p in D3_ALREADY_CORRECT.items():
-    case("D3-ok-" + _n, "malformed program is a compile error (positive control)")(_d3(_p))
-
-
-@case("D3-ok-valid-colon-line", "valid multi-statement line compiles (positive control)")
-def d3_valid():
-    ce, ve, msg = P.run_program(["x = 1 : y = 2", "z = x + y"])
-    v = P.variables(3)
-    return ce == 0 and ve == 0 and v[2][1] == 3, "compile_err=%d vals=%s" % (ce, v)
-
-
-# ------------------------------------------------------------------------ D4
-# A compile error must put the cursor on the source line that contains it.
-def _d4_prog(length_stmts, k):
-    ok = " : ".join(["x = 1"] * length_stmts)
-    bad = " : ".join(["x = 1"] * (length_stmts - 1) + ["x = )"])
-    return [bad if i == k else ok for i in range(20)]
-
-
-# Observed at the R10.7 baseline (6151b64): every error line except the last lands on a
-# later line (the lexer's look-ahead record); the last line is correct only because there is
-# nothing after it.  The ASSERTION is always "cursor == the line containing the error".
-D4_KNOWN_BAD = {(n, k) for n in (1, 4, 9) for k in (0, 2, 5, 10)}
-
-
-def _d4(n, k):
-    def fn():
-        ce, ve, msg = P.run_program(_d4_prog(n, k))
-        idx = P.cur_index()
-        return ce != 0 and idx == k, "compile_err=%d cursor_line=%d want=%d" % (ce, idx, k)
-    return fn
-
-
-for _n in (1, 4, 9):                         # ~5, ~29, ~69 characters per line
-    for _k in (0, 2, 5, 10, 19):
-        case("D4-len%d-line%d" % (_n * 8 - 3, _k), "compile error lands on its own source line",
-             xfail=("D4: cursor placed from the lexer look-ahead record, not the failing line"
-                    if (_n, _k) in D4_KNOWN_BAD else None))(_d4(_n, _k))
-
+# ------------------------------------------------------------------------ D3, D4
+# FIXED in R10.9 Phase 2D (strict compilation, exact error-line reporting).  All 18 `D3-*` cases, the
+# `D3-ok-*` positive controls and the whole `D4-*` matrix are gate cases in tools/v2_prod_regress.py
+# now ("strict compilation" / "compile-error line"), with the Phase 2D boundary cases beside them.
 
 # ------------------------------------------------------------------------ D5
 @case("D5b-break-key-editor", "BREAK key (CAPS SHIFT+SPACE) must not insert a character",

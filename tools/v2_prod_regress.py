@@ -582,5 +582,197 @@ def abi_pkg_roundtrip():
         "msg=%s registry=%s MODE 5 -> vm_err=%d" % (m, names, ve)
 
 
+# ----------------------------------------------------- strict compilation (R10.9 2D)
+# D3: anything that is not a valid program is a compile error, never a silent stop.  Compile error
+# codes: 64 unexpected token, 65 FOR without NEXT, 66 missing ')' (docs/v2/R10_9_PHASE2D_REPORT.md).
+D3_FAMILIES = {
+    "stray-ENDIF": (["x = 1", "ENDIF", "y = 2"], 64),
+    "stray-ELSE": (["x = 1", "ELSE", "y = 2"], 64),
+    "stray-THEN": (["x = 1", "THEN", "y = 2"], 64),
+    "stray-rparen": (["x = 1", ")", "y = 2"], 64),
+    "stray-TO": (["x = 1", "TO", "y = 2"], 64),
+    "stray-ENDP": (["x = 1", "ENDP", "y = 2"], 64),
+    "leading-line-number": (["10 x = 5", "y = 2"], 64),
+    "missing-colon": (["x = 1 y = 2", "z = 3"], 64),
+    "trailing-rparen": (["x = (1))", "y = 2"], 64),
+    "infix-MOD": (["x = 7 MOD 2", "y = 2"], 64),
+    "print-semicolon-list": (["x = 1", "PRINT x; x", "y = 2"], 64),
+    "print-comma-list": (["x = 1", "PRINT x, x", "y = 2"], 64),
+    "chained-compare": (["x = 1 < 2 < 3", "y = 2"], 64),
+    "string-slice": (['a$ = "abcdef"', "b$ = a$(2 TO 3)", "y = 2"], 64),
+    "apostrophe-comment": (["x = 1 ' c", "y = 2"], 64),
+    "embedded-quote": (['a$ = "a""b"', "y = 2"], 64),
+    "unclosed-paren": (["x = (1 + 2", "y = 2"], 66),
+    "FOR-without-NEXT": (["for i = 1 to 3", "x = i", "y = 2"], 65),
+}
+D3_ALREADY_CORRECT = {            # these were already compile errors before Phase 2D
+    "incomplete-expression": (["x = 1 +", "y = 2"], 3),
+    "unknown-statement-word": (["FROBNICATE 1", "y = 2"], 2),
+}
+
+
+def _d3(prog, code):
+    def fn():
+        ce, ve, msg = P.run_program(prog)
+        ran = P.variables(1)[0][1] == 1                 # `x = 1` must never have executed
+        return ce == code and ve == 0 and not ran, \
+            "compile_err=%d (want %d) vm_err=%d msg=%s executed=%s" % (ce, code, ve, msg, ran)
+    return fn
+
+
+for _n, (_p, _c) in D3_FAMILIES.items():
+    case("D3-" + _n, "malformed program is a compile error and nothing runs")(_d3(_p, _c))
+for _n, (_p, _c) in D3_ALREADY_CORRECT.items():
+    case("D3-ok-" + _n, "malformed program is a compile error (positive control)")(_d3(_p, _c))
+
+
+@case("D3-ok-valid-colon-line", "valid multi-statement line compiles (positive control)")
+def d3_valid():
+    ce, ve, msg = P.run_program(["x = 1 : y = 2", "z = x + y"])
+    v = P.variables(3)
+    return ce == 0 and ve == 0 and v[2][1] == 3, "compile_err=%d vals=%s" % (ce, v)
+
+
+KITCHEN_SINK = [
+    "REM strict compile control: every closer and separator form",
+    "n = 0 : t = 0",
+    "DEF FN sq(x) = x * x",
+    "PROC addn(k):",
+    "t = t + k",
+    "ENDP",
+    "FOR i = 1 TO 4 STEP 1",
+    "IF i > 2 THEN",
+    "CALL addn(i * i)",
+    "ELSE",
+    "n = n + 1",
+    "ENDIF",
+    "NEXT i",
+    'a$ = "hi: there"',
+    'IF a$ = "hi: there" THEN n = n + 10 : t = t + FN sq(0) ENDIF',
+    "top:",
+    "n = n + 100",
+    "IF n < 100 THEN GOTO top",
+    "REM trailing comment:",
+    "done: n = n + (1 + 2) * 3 : IF NOT (n < 0) AND n > 0 THEN n = n + 1 ENDIF",
+]
+
+
+@case("D3-ok-valid-program", "a program using every closer, ':' continuation and REM compiles and runs")
+def d3_kitchen_sink():
+    ce, ve, msg = P.run_program(KITCHEN_SINK)
+    v = P.variables(2)
+    return (ce, ve) == (0, 0) and v[0][1] == 122 and v[1][1] == 25, \
+        "compile_err=%d vm_err=%d n,t=%s want (122, 25)" % (ce, ve, v)
+
+
+@case("D3-message", "an unexpected token is reported as UNEXPECTED TOKEN")
+def d3_message():
+    ce, ve, msg = P.run_program(["x = 1 2"])
+    return ce == 64 and msg == "UNEXPECTED", "compile_err=%d msg=%s" % (ce, msg)
+
+
+@case("D3-unterminated-string", "an unterminated string literal is an error on its own line, not the rest of the program")
+def d3_string():
+    ce, ve, msg = P.run_program(["x = 1", 'a$ = "abc', "y = 2"])
+    return ce == 64 and msg == "UNEXPECTED" and P.cur_index() == 1, \
+        "compile_err=%d msg=%s cursor=%d" % (ce, msg, P.cur_index())
+
+
+@case("D3-unterminated-string-print", "an unterminated string after PRINT is an error on its own line")
+def d3_string_print():
+    ce, ve, msg = P.run_program(["x = 1", "y = 2", 'PRINT "abc', "z = 3"])
+    return ce == 64 and P.cur_index() == 2, "compile_err=%d cursor=%d" % (ce, P.cur_index())
+
+
+@case("D3-ok-colon-in-string", "':' and keywords inside a string literal are text")
+def d3_colon_string():
+    ce, ve, msg = P.run_program(['a$ = "x: THEN ENDIF )"', "n = LEN(a$)"])
+    v = P.variables(1)
+    return ce == 0 and v[0][1] == 15, "compile_err=%d n=%s" % (ce, v)
+
+
+@case("D3-rem-ending-colon", "a REM line ending in ':' ends at its line instead of commenting out the next line")
+def d3_rem_colon():
+    ce, ve, msg = P.run_program(["REM a note:", "x = )"])
+    return ce == 3 and P.cur_index() == 1, "compile_err=%d cursor=%d" % (ce, P.cur_index())
+
+
+@case("D3-failed-compile-then-good", "a failed compile leaves no program behind and the next compile starts clean")
+def d3_recompile():
+    ce1, ve1, msg1 = P.run_program(["x = 5", "y = 1 2"])
+    ran = P.variables(1)[0][1] == 5
+    P.put_store(["x = 5", "y = 6"])
+    msg2 = P.call_prompt("V2_RUN_STORED")
+    ce2 = P.read(P.sym("COMPILE_ERROR_CODE"), 1)[0]
+    v = P.variables(2)
+    return ce1 == 64 and not ran and ce2 == 0 and v[0][1] == 5 and v[1][1] == 6, \
+        "first: compile_err=%d executed=%s; second: compile_err=%d vals=%s msg=%s" % (ce1, ran, ce2, v, msg2)
+
+
+# ------------------------------------------------------ compile-error line (R10.9 2D)
+# D4: a compile error puts the cursor on the source line that contains it.
+def _d4_prog(length_stmts, k):
+    ok = " : ".join(["x = 1"] * length_stmts)
+    bad = " : ".join(["x = 1"] * (length_stmts - 1) + ["x = )"])
+    return [bad if i == k else ok for i in range(20)]
+
+
+def _d4(n, k):
+    def fn():
+        ce, ve, msg = P.run_program(_d4_prog(n, k))
+        idx = P.cur_index()
+        return ce != 0 and idx == k, "compile_err=%d cursor_line=%d want=%d" % (ce, idx, k)
+    return fn
+
+
+for _n in (1, 4, 9):                         # ~5, ~29, ~69 characters per line
+    for _k in (0, 2, 5, 10, 19):
+        case("D4-len%d-line%d" % (_n * 8 - 3, _k), "compile error lands on its own source line")(_d4(_n, _k))
+
+
+def _line_case(cid, title, prog, want_line, want_code):
+    @case(cid, title)
+    def fn():
+        ce, ve, msg = P.run_program(prog)
+        idx = P.cur_index()
+        return ce == want_code and idx == want_line, \
+            "compile_err=%d (want %d) cursor_line=%d (want %d)" % (ce, want_code, idx, want_line)
+
+
+# error on the last token of a line, on a line that ends in ':' (no CR token), after continuation lines
+_line_case("D4-continuation-before", "line count includes lines that end in ':'",
+           ["a = 1:", "b = 2:", "c = 3", "d = )", "e = 5"], 3, 3)
+_line_case("D4-continuation-on", "error on a line that ends in ':'",
+           ["a = 1:", "b = ):", "c = 3"], 1, 3)
+_line_case("D4-junk-last-line", "trailing junk on the last line", ["x = 1", "y = 2", "z = 3 4"], 2, 64)
+_line_case("D4-junk-first-line", "trailing junk on the first of several lines", ["x = 1 2", "y = 2", "z = 3"], 0, 64)
+_line_case("D4-eol-incomplete", "an expression cut off at the end of its line is that line's error",
+           ["x = 1", "y = 2 +", "z = 3"], 1, 3)
+_line_case("D4-blank-lines", "blank and REM lines count", ["", "REM c", "", "x = )", ""], 3, 3)
+_line_case("D4-after-label", "a label line counts as a line", ["start:", "x = 1", "GOTO start 5"], 2, 64)
+# Errors that can only be detected at end of source leave the cursor on the append position (the empty
+# line after the last one, index == number of lines), where the missing NEXT / ENDP / ENDIF / label goes.
+_line_case("D4-eof-for", "an unterminated FOR puts the cursor at the end of the program", ["FOR i = 1 TO 3", "x = i"], 2, 65)
+_line_case("D4-eof-proc", "an unterminated PROC puts the cursor at the end of the program",
+           ["PROC p(a):", "x = 1", "y = 2"], 3, 16)
+_line_case("D4-eof-if", "an unterminated block IF puts the cursor at the end of the program", ["IF 1 THEN", "x = 1"], 2, 9)
+_line_case("D4-undefined-label", "an undefined label (checked at the end) puts the cursor at the end of the program",
+           ["GOTO nowhere", "x = 1", "y = 2"], 3, 7)
+_line_case("D4-eof-trailing-colon", "end-of-source error after a last line that ends in ':'", ["FOR i = 1 TO 3", "x = i:"], 2, 65)
+_line_case("D4-stray-endif-late", "a stray ENDIF names its own line", ["x = 1", "y = 2", "z = 3", "ENDIF", "w = 4"], 3, 64)
+_line_case("D4-unclosed-paren", "an unclosed parenthesis names its own line", ["x = 1", "y = (1 + 2", "z = 3"], 1, 66)
+
+
+@case("D4-typed-run-path", "typing `run` at the prompt lands the editor on the failing line with its text loaded")
+def d4_typed():
+    P.boot()
+    for t in ("x = 1", "y = 2 3", "z = 4"):
+        P.type_text(t)
+    P.type_text("run")
+    P.key(0x20)                              # dismiss the message
+    idx, line = P.cur_index(), P.edit_line()
+    return idx == 1 and line == b"y = 2 3", "cursor=%d edit line=%r" % (idx, line)
+
+
 if __name__ == "__main__":
     sys.exit(P.run_cases(sys.argv[1:], "prod-regress"))

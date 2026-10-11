@@ -4,15 +4,17 @@
 ; closes the two residual gaps the original rom/test_v2_chunk_refill_
 ; boundary.asm test flagged but didn't directly prove:
 ;
-; TEST A: a string literal whose CLOSING QUOTE is the exact first byte of
-; a freshly-refilled chunk -- not just "an unterminated string spans
-; records" (already proven), but the precise case where LEX_SCAN_STRING's
-; mid-scan refill guard fires and the very next byte it reads after the
-; refill IS the terminator. Engineered, not probabilistic: record A's
-; content is sized so CHUNK_APPEND_ONE_RECORD's own priming/refill
-; arithmetic (CHUNK_MARGIN=128) lands the refill boundary exactly between
-; the string's open quote's last-loaded content byte and its closing
-; quote (see the record-sizing comments below for the exact byte count).
+; TEST A: a long string literal (the longest a record can hold) that
+; starts as the very first token after a refill. R10.9 Phase 2D changed
+; the scenario this used to cover: a string can no longer span records
+; (an unterminated string is a compile error on its own line), so
+; LEX_SCAN_STRING has no mid-scan refill and the "closing quote is the
+; first byte of a freshly-refilled chunk" case cannot occur any more.
+; What remains to prove is that a maximal one-record string compiled
+; straight after a refill is scanned whole and that parsing resumes
+; after its closing quote. Engineered, not probabilistic: the padding
+; record's appended length is exactly CHUNK_MARGIN (128), so priming
+; stops after it and the string's first token triggers a fresh refill.
 ;
 ; TEST B: numeric AND string array element values, asserted (not merely
 ; "compiled and ran without error"), for a DIM+assign+read sequence that
@@ -83,9 +85,8 @@ COLD_START:
     ; X$'s stored length must be 31 -- the runtime string-literal clamp
     ; (COMPILE_STR_FACTOR, unrelated to this change) truncates any
     ; literal longer than 31 content bytes; the lexer itself scanned all
-    ; 123 filler bytes across the refill to find the real closing quote
-    ; (if the boundary were mishandled, this would either fail to
-    ; compile at all, as a missing terminator, or Y would never get set).
+    ; 118 filler bytes to find the real closing quote (if that were
+    ; mishandled, this would either fail to compile or Y would never be set).
     xor  a                       ; X$ = STRSYMTAB/STRTAB index 0
     call STRLEN_AT_INDEX
     cp   31
@@ -323,29 +324,27 @@ EXPECT_WORLDWO:     DB "WORLDWO"
 EXPECT_WORLDWO_LEN: equ 7
 
 ; ----------------------------------------------------------------------
-; TESTA_PROGRAM -- RECA1's content is exactly 127 bytes: `X$="` (4) +
-; 123 filler bytes, no closing quote, NOT ending in ':' (plain filler,
-; so CHUNK_APPEND_ONE_RECORD appends a real separator $0D after it, not
-; a suppressed one). Appended length = 127+1(separator) = 128 =
-; CHUNK_MARGIN exactly -- CHUNK_REFILL's priming loop stops right here
-; (128 >= 128), so the chunk buffer holds precisely this one record when
-; compilation starts. LEX_SCAN_STRING's scan (from TOK_NAME, the byte
-; right after the opening quote) consumes the 123 filler bytes + the one
-; synthesized separator byte (124 bytes total from TOK_NAME) before HL
-; reaches CHUNK_FILL_PTR, triggering the mid-scan refill. CHUNK_APPEND_
-; ONE_RECORD then writes RECA2's content starting exactly at the
-; relocated buffer position the scan resumes from -- RECA2's own first
-; byte (the closing '"') lands exactly where the scan reads next.
+; TESTA_PROGRAM -- RECA1 is padding: `Q=1` + 124 spaces = 127 content bytes,
+; not ending in ':', so CHUNK_APPEND_ONE_RECORD appends a real $0D after it.
+; Appended length = 127+1 = 128 = CHUNK_MARGIN exactly -- CHUNK_REFILL's
+; priming loop stops right here (128 >= 128), so the chunk buffer holds only
+; this record when compilation starts and the first token of RECA2 triggers a
+; fresh refill. RECA2 is the longest record the editor allows (127 content
+; bytes): `X$="`, 118 dots, `":Y=1`. LEX_SCAN_STRING must scan the 118 bytes
+; without any mid-scan refill (the whole record is in the buffer) and parsing
+; must resume at `:Y=1`.
 ; ----------------------------------------------------------------------
 TESTA_PROGRAM:
     DW RECA1_END - RECA1
 RECA1:
-    DB 'X$="'
-    DS 123, '.'
+    DB "Q=1"
+    DS 124, ' '                  ; 127 content bytes + CR = 128 = CHUNK_MARGIN
     DB $0D
 RECA1_END:
     DW RECA2_END - RECA2
 RECA2:
+    DB 'X$="'
+    DS 118, '.'                  ; 127 content bytes: the longest record the editor allows
     DB '":Y=1', $0D
 RECA2_END:
 TESTA_PROGRAM_END:
