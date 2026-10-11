@@ -3173,12 +3173,48 @@ VM_POP_COERCE_INT:
         rst $10                 ; HL = value, A = tag
         cp TAG_FLOAT
         ret nz
+VM_COERCE_POPPED:               ; QUAL (Q-32): entry with A = TAG_FLOAT, HL = the popped FLOAT
         ld (VM_FLOAT_OPERAND_TAG),a
         ld (VM_FLOAT_OPERAND_VAL),hl
         xor a
         ld (CALC_SP),a
         call VM_FLOAT_PUSH_OPERAND
         jp CALC_FP_TO_INT        ; HL = truncated int
+
+; QUAL (Q-32; owner decision 3): VM_POP_ADDR -- an address or a port (POKE, PEEK, USR, IN, OUT).
+; An INT is its 16-bit pattern, as before. A FLOAT is truncated and accepted from -32768 to 65535
+; (a negative value gives its two's-complement pattern, like an INT); anything else is error 15.
+; VM_POP_COERCE_INT saturated every FLOAT above 32767 to 32767, so once D11 promotion made
+; `a + 3370` a FLOAT, `POKE a + 3370, v` wrote to address 32767.
+; Out: HL = the address. Destroys AF, BC, DE.
+VM_POP_ADDR:
+        rst $10                 ; HL = value, A = tag
+        cp TAG_FLOAT
+        ret nz
+        push hl
+        ld a,l
+        call VM_FLOAT_ADDR      ; HL -> its 5 bytes
+        ld a,(hl)               ; exponent byte (0 = the small-integer form)
+        sub $90
+        jr c,.signed            ; |x| < 32768, or the small form: the ordinary conversion
+        jr nz,.range            ; |x| >= 65536 (the error unwinds SP, Q-03 fix)
+        inc hl
+        bit 7,(hl)
+        jr nz,.signed           ; -65535..-32768: CALC_FP_TO_INT keeps -32768 and rejects the rest
+        pop de
+        ld a,(hl)
+        or $80                  ; restore the mantissa's implicit top bit
+        inc hl
+        ld l,(hl)
+        ld h,a                  ; HL = 32768..65535, fraction dropped
+        ret
+.signed:
+        pop hl
+        ld a,TAG_FLOAT
+        call VM_COERCE_POPPED
+        ret nc
+.range:
+        jp BUILTIN_FN_CHR.chr_range_err
 
 ; OP_PUSH_FLOAT_LIT — operand: 2-byte int value (the literal's digits,
 ; decimal point removed) + 2-byte divisor (10^number-of-fractional-
@@ -3499,7 +3535,7 @@ OP_SOUND:
 OP_POKE:
         rst $18                 ; HL = value (FLOAT truncated)
         push hl
-        rst $18                 ; HL = address
+        call VM_POP_ADDR        ; HL = address (QUAL Q-32)
         pop de                    ; DE = value (restored)
         ld a,e                    ; low byte of value — matches V1's own
                                     ; BASIC_STMT_POKE (`ld a,e / ld (hl),a`)
@@ -4118,7 +4154,7 @@ BUILTIN_FN_INT:
 ; here: V2 compiles ahead of time and never evaluates an expression
 ; during compilation, so no equivalent guard is needed.
 BUILTIN_FN_PEEK:
-        rst $18                 ; HL = address (FLOAT truncated)
+        call VM_POP_ADDR        ; HL = address (QUAL Q-32)
         ld a,(hl)
         ld l,a
         ld h,0
@@ -4135,7 +4171,7 @@ BUILTIN_FN_PEEK:
 ; otherwise jump to this ROM's own RST_00 reset vector). That hazard
 ; does not exist here for the same reason PEEK's header above gives.
 BUILTIN_FN_USR:
-        rst $18                 ; HL = address (FLOAT truncated)
+        call VM_POP_ADDR        ; HL = address (QUAL Q-32)
         call VM_CALL_USR_TRAMPOLINE
         xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
         jp VM_PUSH
@@ -4143,7 +4179,7 @@ BUILTIN_FN_USR:
 ; STUDY: IN(port) -- the FULL 16-bit port address goes to BC (`in a,(c)` drives A15-A8 from B), so
 ; IN(65278) reads keyboard half-row 0 ($FEFE) and IN(63486) half-row 1 ($F7FE), unlike a low-byte-only IN.
 BUILTIN_FN_IN:
-        rst $18                 ; HL = port
+        call VM_POP_ADDR        ; HL = port (QUAL Q-32)
         ld b,h
         ld c,l
         in a,(c)
@@ -4181,7 +4217,7 @@ BUILTIN_FN_STICK:
 OP_OUT:
         rst $18                 ; HL = value
         push hl
-        rst $18                 ; HL = port
+        call VM_POP_ADDR        ; HL = port (QUAL Q-32)
         ld b,h
         ld c,l
         pop hl
