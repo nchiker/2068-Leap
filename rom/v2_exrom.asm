@@ -4,6 +4,9 @@
     DEFINE V2_FAST_REDRAW       ; STUDY: selective redraw of the active line while typing
 V2_REDRAW_SCOPE EQU $BEC0       ; STUDY: 1 = only the active line changed (set by EDITOR_LOOP, cleared by V2_REDRAW)
 V2_RD_WRAPS     EQU $BEC1       ; STUDY: wrap-row count of the active line at the last full/selective redraw
+V2_RD_INDEX     EQU $BEC2       ; STUDY: CUR_EDIT_INDEX at the last redraw (2 bytes)
+V2_RD_NEWROW    EQU $BEC4       ; STUDY: scratch of the two-line path
+V2_RD_NEWH      EQU $BEC5
     INCLUDE "include/sysvars.inc"
     INCLUDE "include/v2_layout.inc"
     INCLUDE "build/v2_crossbank.inc"
