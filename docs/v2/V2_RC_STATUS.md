@@ -55,7 +55,7 @@ single-line `IF ... THEN stmt` (only `THEN GOTO`), line numbers -- see `V2_FEATU
 | `c57e968` | test-only DIM aliases bound after their handlers (RC-12); the four logical-float corpus cases expect the exact value -- **final test commit** |
 | (the commit carrying this file) | documents only: regression report, this status, register and budget updates |
 
-95 commits in all after `7ae0599`, including the merged study branches (`study/proto-enh-shrink2`,
+All commits after `7ae0599` (`git log 7ae0599..integration/v2-final-rom`) include the merged study branches (`study/proto-enh-shrink2`,
 `study/decisions-review` and what they contain).
 
 ## 3. Artifacts
