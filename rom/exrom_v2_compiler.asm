@@ -2086,25 +2086,7 @@ COMPILE_FACTOR:
         ; parked is the BUFFER'S OWN CONTENT, since a nested call's own
         ; STASH_IDENT_AND_PEEK overwrites that same fixed buffer. Parked/
         ; restored as a whole-buffer block copy (see below).
-        ld hl,-(STMT_IDENT_NAME_BUF_LEN+1)
-        add hl,sp
-        ld sp,hl                 ; reserve buffer + length byte on the stack
-        ex de,hl                 ; DE = destination
-        ld hl,STMT_IDENT_NAME_BUF
-        ld bc,STMT_IDENT_NAME_BUF_LEN
-        ldir                     ; R10.7 P2: the buffer is now 32 bytes (31-char
-        ld a,(STMT_IDENT_NAME_LEN) ; identifiers), so park all of it with a block
-        ld (de),a                ; copy instead of four pushed words
-        call COMPILE_EXPR       ; argument -> VM operand stack
-        ld hl,0
-        add hl,sp
-        ld de,STMT_IDENT_NAME_BUF
-        ld bc,STMT_IDENT_NAME_BUF_LEN
-        ldir
-        ld a,(hl)
-        ld (STMT_IDENT_NAME_LEN),a
-        inc hl
-        ld sp,hl                 ; release the parked copy
+        call COMPILE_EXPR_KEEPNAME ; argument -> VM operand stack (stashed name preserved)
         ld a,(COMPILE_ERROR_CODE)
         or a
         ret nz
@@ -4459,6 +4441,32 @@ COMPILE_PROC:
         ld (hl),d
         jp LEX_NEXT_TOKEN ; consume ENDP, fetch whatever follows
 
+; COMPILE_EXPR_KEEPNAME -- COMPILE_EXPR with the stashed identifier (STMT_IDENT_NAME_BUF/LEN) preserved:
+; compiling the expression can re-stash it (a nested "FN name(...)"), so its content is parked on the
+; hardware stack across the call (R10.7: the buffer is 32 bytes, so a block copy).  Shared by .udf_call and
+; COMPILE_CALL_STMT.  Destroys: AF, BC, DE, HL.
+COMPILE_EXPR_KEEPNAME:
+        ld hl,-(STMT_IDENT_NAME_BUF_LEN+1)
+        add hl,sp
+        ld sp,hl                 ; reserve buffer + length byte below our return address
+        ex de,hl
+        ld hl,STMT_IDENT_NAME_BUF
+        ld bc,STMT_IDENT_NAME_BUF_LEN
+        ldir
+        ld a,(STMT_IDENT_NAME_LEN)
+        ld (de),a
+        call COMPILE_EXPR
+        ld hl,0
+        add hl,sp
+        ld de,STMT_IDENT_NAME_BUF
+        ld bc,STMT_IDENT_NAME_BUF_LEN
+        ldir
+        ld a,(hl)
+        ld (STMT_IDENT_NAME_LEN),a
+        inc hl
+        ld sp,hl                 ; release the parked copy
+        ret
+
 ; COMPILE_CALL_STMT — CALL name(arg)
 ;
 ; Deliberately does NOT reuse COMPILE_BRANCH_TARGET (GOTO/IF's shared
@@ -4483,7 +4491,9 @@ COMPILE_CALL_STMT:
         jp COMPILE_RAISE_ERROR
 .have_lparen:
         call LEX_NEXT_TOKEN     ; consume '('
-        call COMPILE_EXPR       ; argument -> pushed onto the VM operand stack
+        call COMPILE_EXPR_KEEPNAME ; argument -> pushed onto the VM operand stack. STUDY: a nested
+                                   ; "FN f(x)" in the argument re-stashes STMT_IDENT_NAME_* (it used
+                                   ; to leave "f" there, so the CALL was emitted for the wrong name)
         ld a,(TOK_TYPE)
         cp TOK_RPAREN
         jr z,.have_rparen
