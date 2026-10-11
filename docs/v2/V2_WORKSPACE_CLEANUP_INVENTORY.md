@@ -27,7 +27,7 @@ alternative is lost.
 | `~/2068-Leap-v2-final-rom` | 27 MB | worktree of the RC branch | keep until the merge; then `git worktree remove` |
 | `~/2068-Leap-study/<35 worktrees>` | 9-25 MB each (~520 MB) | worktrees of the `study/*` branches | remove the worktrees (`git worktree remove`, branches stay) -- nothing in them is needed to build or test |
 | `~/2068-Leap-study/qual-builds/` | 366 MB | exported builds of study and RC commits (`QUAL_COMMIT` in each) | delete: every one is reproducible with `tools/qual/build_configs.sh` |
-| `~/2068-Leap-study/qual-runs/` | 331 MB | logs and JSONL of every corpus / gate / battery run | archive the runs the reports cite (`corpus-rc6`, `gate-rc6`, `battery-rc6`, `bytecode-rc5-rc6` for `V2_REGRESSION_REPORT.md`; the study runs cited by `V2_LANGUAGE_CONFORMANCE_REPORT.md`, `V2_OWNER_DECISIONS_REVIEW.md` and `V2_INDEPENDENT_Z80_AUDIT.md`) as one tarball, delete the rest |
+| `~/2068-Leap-study/qual-runs/` | 331 MB | logs and JSONL of every corpus / gate / battery run | archive the runs the reports cite (`fresh-970dc30`, `fresh-c57e968`, `qual-final`, `gate-rc6`, `battery-rc8`, `bytecode-rc6-rc8`, `bytecode-rc5-rc6`, `bench-rc8` for `V2_REGRESSION_REPORT.md`; the study runs cited by `V2_LANGUAGE_CONFORMANCE_REPORT.md`, `V2_OWNER_DECISIONS_REVIEW.md` and `V2_INDEPENDENT_Z80_AUDIT.md`) as one tarball, delete the rest |
 | `~/2068-Leap-study/NOTES.md`, `tools/` | small | the study's running notes, one-off ablation scripts | copy `NOTES.md` into the archive tarball; the scripts are superseded by `tools/qual/` |
 | `~/2068-Leap-Preview` | 8.5 MB | mirror repository of the Release 1 Beta preview | not part of V2; keep (owner) |
 | `~/2068-Leap-C` | 40 KB | an unrelated investigation directory | not part of V2; owner |

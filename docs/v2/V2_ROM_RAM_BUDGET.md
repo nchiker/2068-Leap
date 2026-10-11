@@ -34,7 +34,7 @@ the end.
 | float overflow = error 67 | `85d59ee` (rc3) | 167 | 49 | RC-1 |
 | session fixes; OP_AND/OR removed; jp->jr | `d404b57` (rc4) | 269 | 42 | |
 | SAVE ALL + space work | `07616e7` (rc6) | 65 | 25 | owner decision 2, part 2 |
-| identity CRC covers the package registry | (rc7) | 54 | 25 | RC-9 |
+| identity CRC covers the package registry | `ef81f49` (rc7) | 54 | 25 | RC-9; ROM unchanged after it |
 
 ### The space work in `07616e7` (each measured on its own)
 

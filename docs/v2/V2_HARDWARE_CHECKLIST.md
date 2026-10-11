@@ -13,7 +13,10 @@ timing, keyboard matrix electrics, ULA contention, AY behaviour and EPROM paging
 | `build/release-v2-rc/roms/leap_v2_exrom.bin` | 8192 | the EXROM (the 8K extension ROM, paged into chunk 6, `$C000-$DFFF`) |
 | `build/release-v2-rc/roms/leap_v2_zesarux.bin` | 24576 | HOME + EXROM concatenated, for ZEsarUX `--romfile` only |
 
-Record the SHA-256 of both images and the identity CRC-16 in `BUILD_INFO.txt` (see `build/release-v2-rc/SHA256SUMS` (made by `make rc-assets`)) with every result.
+With every result, record the SHA-256 of both images (`build/release-v2-rc/SHA256SUMS`) and the
+identity CRC-16 (`build/release-v2-rc/BUILD_INFO.txt`); `make rc-assets` makes both. For this
+release candidate: HOME `dddd4cbb...e40dca`, EXROM `c1804641...fb291b527`, identity CRC `$5E95`
+(the value a `SAVE ... ALL` with no package loaded stamps; full hashes in `V2_RC_STATUS.md`).
 A DOCK-cartridge build does not exist (`docs/dock_cartridge.md`): the images replace the internal
 ROMs (EPROMs or a ROM-replacement board).
 

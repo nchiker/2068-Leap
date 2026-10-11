@@ -44,8 +44,8 @@ git checkout integration/v2-final-rom
 make build v2-packages        # build/test_basic.bin (HOME), build/exrom.bin, packages
 make check                    # assemble/lint checks, no emulator
 make budget                   # HOME 54 / EXROM 25 bytes free
-make test                     # headless emulator suites (~45 min)
-make qual                     # corpus (RC expectations) + session lifecycle (~5 min)
+make test                     # headless emulator suites, ends with make qual (~47 min)
+make qual                     # corpus (RC expectations) + session lifecycle alone (~5 min)
 make rc-assets                # build/release-v2-rc/: ROMs, packages, docs, SHA256SUMS, BUILD_INFO
 ```
 
