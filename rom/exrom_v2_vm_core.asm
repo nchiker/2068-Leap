@@ -590,7 +590,8 @@ VM_INPUT_DIGITS:     equ $B6DD  ; numeric INPUT only: up to 6 accepted
                                    ; digit characters (max int magnitude
                                    ; is 5 digits + sign), parsed to a
                                    ; 16-bit value once ENTER closes input
-VM_INPUT_DIGITS_MAX: equ 5      ; -32768..32767 -- 5 digits, sign tracked
+VM_INPUT_DIGITS_MAX: equ 5
+VM_INPUT_TEXT_MAX:   equ 20     ; RC: numeric INPUT text in PRINT_BUF      ; -32768..32767 -- 5 digits, sign tracked
                                    ; separately in VM_INPUT_NEG_TMP
 
 VM_FOR_STEP:         equ $B6E2  ; R8.5 Group 5 -- FOR...STEP. Remembered
@@ -804,7 +805,7 @@ VM_RUN:
         ld a,(hl)               ; fetch opcode
         inc hl
         ld (VM_IP),hl
-        cp 70                   ; STUDY: 70 opcodes (OUT = 67, NL = 68, PRINT_COMMA = 69)
+        cp 71                   ; 71 opcodes (OUT = 67, NL = 68, PRINT_COMMA = 69, PUSH_FLOAT5 = 70)
                                  ; (was: 67 opcodes defined (0-66, R8.5 adds
                                  ; 35-38: PRINT_NUM/STR, LPRINT_NUM/STR;
                                  ; 39: CALL_FN (Group 1); 40-43: CMP_LE/
@@ -942,6 +943,7 @@ VM_OP_TABLE:
         dw OP_OUT                                           ; 67  STUDY
         dw OP_NL                                            ; 68  STUDY
         dw OP_PRINT_COMMA                                   ; 69  STUDY
+        dw OP_PUSH_FLOAT5                                   ; 70  RC: 5-byte literal
 
 ; ---------------------------------------------------------------------------
 ; String-table access: index (A) -> HL = record address. Same shape as
@@ -1865,54 +1867,49 @@ VM_ARENA_SWAP:
 ; primitive, not V1's own KTAB_BASIC_INPUT_SERVICE.
 ; ---------------------------------------------------------------------------
 
-OP_INPUT_NUM:
-        ld hl,(VM_IP)
-        ld a,(hl)
+OP_INPUT_NUM:                   ; RC (Q-15/Q-16): the typed text ('-' first, digits, '.') is
+        ld hl,(VM_IP)           ; collected in PRINT_BUF and read by the shared number parser:
+        ld a,(hl)               ; 1.5 is 1.5 (was 15), 99999 is 99999 (was -31073)
         ld (VM_INPUT_TARGET_TMP),a
         inc hl
         ld (VM_IP),hl
         xor a
         ld (VM_INPUT_COUNT),a
-        ld (VM_INPUT_NEG_TMP),a
 .loop:
         call IO_READ_KEY        ; A = translated key code
         cp KEY_ENTER
         jr z,.done
+        ld c,a
+        ld a,(VM_INPUT_COUNT)
+        cp VM_INPUT_TEXT_MAX
+        jr nc,.loop
+        ld b,a
+        ld a,c
         cp '-'
-        jr z,.maybe_neg
+        jr nz,.not_minus
+        ld a,b
+        or a
+        jr nz,.loop             ; '-' only as the first character
+        ld a,c
+        jr .accept
+.not_minus:
+        cp '.'
+        jr z,.accept
         cp '0'
         jr c,.loop
         cp '9'+1
         jr nc,.loop
-        jr .accept_digit
-.maybe_neg:
-        ld a,(VM_INPUT_COUNT)
-        or a
-        jr nz,.loop              ; '-' only accepted as the very first char
-        ld a,1
-        ld (VM_INPUT_NEG_TMP),a
-        ld a,'-'
-        jr .echo
-.accept_digit:
-        push af
-        ld a,(VM_INPUT_COUNT)
-        cp VM_INPUT_DIGITS_MAX
-        jr nc,.discard
-        ld hl,VM_INPUT_DIGITS
-        ld e,a
+.accept:
+        ld hl,PRINT_BUF
+        ld e,b
         ld d,0
         add hl,de
-        pop af
         ld (hl),a
-        push af
-        ld a,(VM_INPUT_COUNT)
-        inc a
+        inc b
+        ld e,a
+        ld a,b
         ld (VM_INPUT_COUNT),a
-        pop af
-        jr .echo
-.discard:
-        pop af
-        jr .loop
+        ld a,e
 .echo:
         ld (VM_INPUT_CHARBUF),a
         xor a
@@ -1934,69 +1931,15 @@ OP_INPUT_NUM:
         ld (VM_OUTPUT_COL),a
         jr .loop
 .done:
-        call VM_PARSE_INPUT_INT      ; HL = parsed value
-        push hl
+        ld a,(VM_INPUT_COUNT)
+        ld b,a
+        ld hl,PRINT_BUF
+        call NUM_PARSE_CALC
+        call NUM_PUSH_CALC
         ld a,(VM_INPUT_TARGET_TMP)
-        call VM_SYM_ADDR
-        pop de
-        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
-        ld (hl),a
-        inc hl
-        ld (hl),e
-        inc hl
-        ld (hl),d
+        call VM_STORE_VAR_BY_INDEX   ; INT or FLOAT
         call VM_ADVANCE_OUTPUT_ROW
         jp VM_RUN.loop
-
-; VM_PARSE_INPUT_INT -- parses VM_INPUT_DIGITS (the first VM_INPUT_COUNT
-; bytes, ASCII '0'-'9', most-significant first) into HL as a signed
-; 16-bit value, negating if VM_INPUT_NEG_TMP is set. No overflow
-; checking -- matches this VM's existing PUSH_I16 (an out-of-range
-; literal already wraps silently elsewhere; not a new gap). Reuses
-; VM_ARR_VALUE_TMP as its own accumulator scratch -- safe: never live
-; at the same time as an ARR_STORE (a different opcode entirely).
-; Destroys: AF, BC, DE, HL.
-VM_PARSE_INPUT_INT:
-        ld hl,0
-        ld (VM_ARR_VALUE_TMP),hl
-        ld a,(VM_INPUT_COUNT)
-        or a
-        jr z,.done
-        ld b,a
-.digit_loop:
-        push bc
-        ld hl,(VM_ARR_VALUE_TMP)
-        ld de,10
-        call MATH_MULTIPLY16
-        ld (VM_ARR_VALUE_TMP),hl
-        pop bc
-        ld a,(VM_INPUT_COUNT)
-        sub b
-        ld hl,VM_INPUT_DIGITS
-        ld e,a
-        ld d,0
-        add hl,de
-        ld a,(hl)
-        sub '0'
-        ld l,a
-        ld h,0
-        ld de,(VM_ARR_VALUE_TMP)
-        add hl,de
-        ld (VM_ARR_VALUE_TMP),hl
-        dec b
-        jr nz,.digit_loop
-.done:
-        ld hl,(VM_ARR_VALUE_TMP)
-        ld a,(VM_INPUT_NEG_TMP)
-        or a
-        ret z
-        xor a
-        sub l
-        ld l,a
-        ld a,0
-        sbc a,h
-        ld h,a
-        ret
 
 OP_INPUT_STR:
         ld hl,(VM_IP)
@@ -3211,6 +3154,143 @@ VM_POP_ADDR:
 .range:
         jp BUILTIN_FN_CHR.chr_range_err
 
+; ---------------------------------------------------------------------------
+; RC: the shared number parser (literals beyond the 16-bit/value-divisor forms, VAL, INPUT).
+; NUM_PARSE_CALC -- HL -> text, B = its length (or 255). Reads [spaces][-|+]digits[.digits] and stops
+; at the first other character; no digits = 0. Digits accumulate exactly in the calculator (x*10+d,
+; exact up to 2^32); up to 9 fraction digits are kept and divided out once by 10^k (exact, so one
+; rounding). Out: CALC_STACK[0] = the value (CALC_SP = 1), HL -> the first character not used,
+; NP_FRAC = the number of fraction digits. Destroys AF, BC, DE.
+NP_FRAC:        equ VM_INPUT_COUNT
+NP_FLAGS:       equ VM_INPUT_NEG_TMP     ; bit 0 '-', bit 1 '.' seen
+NUM_PARSE_CALC:
+        xor a
+        ld (NP_FLAGS),a
+        ld (NP_FRAC),a
+        ld (CALC_SP),a
+        push hl
+        push bc
+        ld l,a
+        ld h,a
+        call CALC_INT_TO_FP      ; [0]
+        pop bc
+        pop hl
+        inc b
+.skip:
+        dec b
+        jr z,.end
+        ld a,(hl)
+        cp ' '
+        jr nz,.sign
+        inc hl
+        jr .skip
+.sign:
+        cp '+'
+        jr z,.adv
+        cp '-'
+        jr nz,.loop1
+        ld a,1
+        ld (NP_FLAGS),a
+.adv:
+        inc hl
+        dec b
+.loop1:
+        inc b
+.loop:
+        dec b
+        jr z,.end
+        ld a,(hl)
+        cp '.'
+        jr nz,.digit
+        ld a,(NP_FLAGS)
+        bit 1,a
+        jr nz,.end               ; a second '.' ends the number
+        set 1,a
+        ld (NP_FLAGS),a
+        jr .next
+.digit:
+        sub '0'
+        cp 10
+        jr nc,.end
+        ld c,a
+        ld a,(NP_FLAGS)
+        bit 1,a
+        jr z,.acc
+        ld a,(NP_FRAC)
+        cp 9
+        jr nc,.next              ; fraction digits beyond the 9th are ignored
+        inc a
+        ld (NP_FRAC),a
+.acc:
+        push hl
+        push bc
+        ld hl,10
+        call CALC_INT_TO_FP
+        call VM_CALC_MUL_STUB
+        pop bc
+        push bc
+        ld l,c
+        ld h,0
+        call CALC_INT_TO_FP
+        call VM_CALC_ADD_STUB    ; [x*10 + d]
+        pop bc
+        pop hl
+.next:
+        inc hl
+        jr .loop
+.end:
+        push hl
+        ld a,(NP_FRAC)
+        or a
+        jr z,.signed
+        push af
+        ld hl,1
+        call CALC_INT_TO_FP      ; [x, 1] (destroys BC)
+        pop bc                   ; B = the fraction digit count
+.p10:
+        push bc
+        ld hl,10
+        call CALC_INT_TO_FP
+        call VM_CALC_MUL_STUB
+        pop bc
+        djnz .p10                ; [x, 10^k]
+        call VM_CALC_DIV_STUB
+.signed:
+        ld a,(NP_FLAGS)
+        rra
+        jr nc,.done
+        ld hl,0
+        call CALC_INT_TO_FP
+        ld b,0
+        rst $28
+        db $01,$03,$38           ; exchange, subtract: [0 - x]
+.done:
+        pop hl
+        ret
+
+; NUM_PUSH_CALC -- push CALC_STACK[0] (CALC_SP = 1): an INT when NP_FRAC = 0 and it fits, else a FLOAT.
+NUM_PUSH_CALC:
+        ld a,(NP_FRAC)
+        or a
+        jp nz,VM_FLOAT_STORE_RESULT
+        ld b,0
+        rst $28
+        db $31,$38               ; duplicate
+        call CALC_FP_TO_INT      ; HL; carry = not an INT
+        jp c,VM_FLOAT_STORE_RESULT
+        xor a
+        jp VM_PUSH
+
+; OP_PUSH_FLOAT5 (opcode 70) -- RC: a literal as its 5-byte calculator value (operand: 5 bytes).
+OP_PUSH_FLOAT5:
+        ld hl,(VM_IP)
+        ld de,CALC_STACK
+        ld bc,5
+        ldir
+        ld (VM_IP),hl
+        call VM_FLOAT_STORE_RESULT
+        jp VM_RUN.loop
+
 ; OP_PUSH_FLOAT_LIT — operand: 2-byte int value (the literal's digits,
 ; decimal point removed) + 2-byte divisor (10^number-of-fractional-
 ; digits, computed by the compiler). Computes value/divisor as a real
@@ -3228,15 +3308,8 @@ OP_PUSH_FLOAT_LIT:
         ld d,(hl)               ; DE = divisor
         inc hl
         ld (VM_IP),hl
-        ld a,d
-        or e
-        jr z,.u16                ; QUAL (L-C): divisor 0 = an unsigned literal 32768..65535
         ld (VM_FLOAT_B_VAL),de
         jp VM_DIV_VIA_FLOAT
-.u16:
-        ld hl,(VM_FLOAT_A_VAL)
-        call VM_PUSH_U16
-        jp VM_RUN.loop
 
 ; QUAL (L-C): VM_PUSH_U16 -- HL = 32768..65535, pushed as that FLOAT. Its calculator form is
 ; exactly [$90][H AND $7F][L][0][0] (exponent 16, the mantissa's top bit is the sign).
@@ -4433,130 +4506,14 @@ BUILTIN_FN_CODE:
 ; VM_ARR_VALUE_TMP borrow already established).
 VM_VAL_SEEN_DOT:   equ VM_INPUT_TARGET_TMP
 VM_VAL_FRAC_COUNT: equ VM_INPUT_CHARBUF
-BUILTIN_FN_VAL:
-        rst $10
+BUILTIN_FN_VAL:                 ; RC (Q-17): the shared number parser (stops at the first other
+        rst $10                 ; character; values beyond 32767 and decimals are FLOATs)
         ld a,l
-        call VM_STR_ADDR        ; HL = record address
-        ld a,(hl)               ; length byte
-        ld c,a                  ; C = remaining chars
-        inc hl                  ; HL -> content
-        xor a
-        ld (VM_INPUT_COUNT),a
-        ld (VM_INPUT_NEG_TMP),a
-        ld (VM_VAL_SEEN_DOT),a
-        ld (VM_VAL_FRAC_COUNT),a
-.val_loop:
-        ld a,c
-        or a
-        jr z,.val_done
-        dec c
-        ld a,(hl)
+        call VM_STR_ADDR        ; HL -> [len][content]
+        ld b,(hl)
         inc hl
-        cp '-'
-        jr nz,.val_check_dot
-        ld a,(VM_INPUT_COUNT)
-        or a
-        jr nz,.val_done          ; QUAL (Q-17): '-' after a digit ends the number (manual: VAL stops at the first non-digit)
-        ld a,1
-        ld (VM_INPUT_NEG_TMP),a
-        jr .val_loop
-.val_check_dot:
-        cp '.'
-        jr nz,.val_check_digit
-        ld a,1
-        ld (VM_VAL_SEEN_DOT),a   ; a second '.' just re-sets the same
-                                  ; flag, harmless -- only the first one
-                                  ; matters (same tolerant-scan spirit
-                                  ; as this routine's other char rules)
-        jr .val_loop
-.val_check_digit:
-        cp '0'
-        jr c,.val_done           ; QUAL (Q-17): stop at the first other character
-        cp '9'+1
-        jr nc,.val_done          ; (VAL("12abc34") was 1234)
-        sub '0'
-        ld b,a                   ; B = digit value 0-9, parked across
-                                 ; the writes below -- no call happens
-                                 ; between here and its use, so a plain
-                                 ; register park is safe (not the
-                                 ; across-a-call clobber class this
-                                 ; rewrite keeps finding elsewhere)
-        ld a,(VM_INPUT_COUNT)
-        cp VM_INPUT_DIGITS_MAX
-        jr nc,.val_loop          ; discard once full -- same behavior
-                                 ; OP_INPUT_NUM's own scanner already has
-        push hl
-        push bc
-        ld hl,VM_INPUT_DIGITS
-        ld e,a
-        ld d,0
-        add hl,de
-        ld a,b
-        add a,'0'
-        ld (hl),a
-        pop bc
-        pop hl
-        ld a,(VM_INPUT_COUNT)
-        inc a
-        ld (VM_INPUT_COUNT),a
-        ld a,(VM_VAL_SEEN_DOT)
-        or a
-        jr z,.val_loop
-        ld a,(VM_VAL_FRAC_COUNT)
-        inc a
-        ld (VM_VAL_FRAC_COUNT),a
-        jr .val_loop
-.val_done:
-        call VM_PARSE_INPUT_INT ; HL = parsed value (digits w/o the '.',
-                                  ; sign already applied)
-        ld a,(VM_VAL_FRAC_COUNT)
-        or a
-        jr z,.val_int_result
-        ld (VM_FLOAT_A_VAL),hl
-        ld b,a                    ; B = fractional-digit count
-        ld de,1
-.val_pow10_loop:
-        ld h,d
-        ld l,e
-        add hl,hl
-        add hl,hl
-        add hl,de
-        add hl,hl                ; HL = DE*10
-        ex de,hl
-        djnz .val_pow10_loop     ; DE = 10^frac_count (same value/
-                                  ; divisor shape OP_PUSH_FLOAT_LIT's
-                                  ; compiler-side literal already uses)
-        ld (VM_FLOAT_B_VAL),de
-        jp VM_DIV_VIA_FLOAT
-.val_int_result:
-        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
-        jp VM_PUSH
-
-; ---------------------------------------------------------------------------
-; R8.5 Group 6 -- CHR$/STR$/UPPER$/LOWER$/LEFT$/RIGHT$/INKEY$: the first
-; built-in functions whose RESULT is a string, not numeric. A string
-; RESULT is, per this VM's own established convention (see OP_STR_
-; CONCAT's own header), just a STRTAB index pushed as a plain TAG_INT
-; value -- OP_CALL_FN's generic dispatch/push mechanism needs no change
-; for this, only these handlers' own bodies differ from the numeric-
-; result functions above.
-;
-; Fresh, V2-native bodies (tag-aware VM_POP/VM_STR_ADDR, the shared
-; VM_STR_ALLOC_TEMP below), NOT ports of rom/exrom_strfuncs.asm's own
-; V1-era routines -- that file's actual transform ALGORITHMS were
-; checked and reused as reference (they're already proven correct), but
-; calling it directly was rejected: its STR$ path is self-contained
-; (rom/exrom_format.asm's BASIC_NUM_TO_STRING_EXROM, already part of
-; this build), but its INKEY$ path calls KTAB_IO_READ_KEY_NONBLOCK, a
-; basic.asm-resident gateway already independently confirmed NOT
-; reusable post-R9 by this milestone's own INPUT work (see docs/v2/
-; ARCHITECTURE_B_IMPLEMENTATION_PLAN.md's Group 2 status note) --
-; INKEY$ below reaches kernel/io/io.asm's own real, already-kernel-
-; resident IO_READ_KEY_NONBLOCK directly instead, matching INPUT's own
-; precedent exactly, and its own calling convention (a [length][content]
-; buffer + a byte "budget") doesn't fit this VM's tag-aware operand-
-; stack model any more cleanly than writing these directly.
-; ---------------------------------------------------------------------------
+        call NUM_PARSE_CALC
+        jp NUM_PUSH_CALC
 
 ; VM_STR_ALLOC_TEMP -- allocates the next round-robin STRTAB temp slot,
 ; same allocation OP_STR_CONCAT's own body already performs inline (see

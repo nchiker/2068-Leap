@@ -593,6 +593,9 @@ TOK_KW_AT:          equ 62   ; R10.7 standalone cursor statements
 TOK_KW_TAB:         equ 63
 TOK_KW_CLEAR:       equ 64   ; R10.7
 TOK_KW_OUT:         equ 65   ; STUDY
+TOK_FLOAT5:         equ 67   ; RC: a literal held as a 5-byte value (TOK_FLOAT5_BUF)
+TOK_FLOAT5_BUF:     equ CALC_STACK + 35   ; calculator slot 7 (unused at compile time)
+LEX_NUM_START:      equ TOK_FLOAT_DIVISOR ; LEX_SCAN_NUMBER's start (the field is set only at its end)
 TOK_SEMI:           equ 66   ; STUDY: ';' (PRINT/INPUT separator)
 
 ; ---------------------------------------------------------------------------
@@ -892,6 +895,8 @@ LEX_NEXT_TOKEN_CORE:
 ; compile time (this compiler never decodes or encodes the calculator's
 ; own float byte format itself).
 LEX_SCAN_NUMBER:
+        ld hl,(SRC_PTR)
+        ld (LEX_NUM_START),hl
         ld de,0
         ld hl,1
         ld (CNUM_DIVISOR_TMP),hl
@@ -987,10 +992,21 @@ LEX_ACCUM_DIGIT:
         scf
         ret
 ; The oversized literal is reported where it is: an unexpected token, error 64, on its own line.
+; RC (literal rule L-C, completed): a literal outside the 16-bit and value/divisor forms (more than
+; 65535, more than 4 decimals, a mantissa above 32767) is parsed whole by the shared number parser
+; into a 5-byte value (was error 64): 1000.25, 3.14159265, 100000 are literals.
 LEX_NUMBER_TOO_BIG:
-        ld a,TOK_UNKNOWN
+        ld hl,(LEX_NUM_START)
+        ld b,255
+        call NUM_PARSE_CALC      ; CALC_STACK[0] = the value, HL -> after it
+        ld (SRC_PTR),hl
+        ld hl,CALC_STACK
+        ld de,TOK_FLOAT5_BUF
+        ld bc,5
+        ldir
+        ld a,TOK_FLOAT5
         ld (TOK_TYPE),a
-        jp ERR_UNEXPECTED_TOKEN
+        ret
 
 ; R8 identifier cleanup: a leading letter, then any mix of letters and
 ; DIGITS (classic BASIC's own convention -- "A1", "TOTAL2", "P3" are
@@ -1782,6 +1798,8 @@ COMPILE_FACTOR:
         jr z,.number
         cp TOK_FLOAT_NUMBER
         jr z,.float_number
+        cp TOK_FLOAT5
+        jr z,.float5
         cp TOK_IDENT
         jr z,.ident
         cp TOK_KW_FN
@@ -1827,6 +1845,9 @@ COMPILE_FACTOR:
         jp LEX_NEXT_TOKEN
 .float_number:
         call COMPILE_FLOAT_LITERAL
+        jp LEX_NEXT_TOKEN
+.float5:
+        call COMPILE_FLOAT5
         jp LEX_NEXT_TOKEN
 .ident:
         ; R8.5 Group 6 (DIMN) -- DIMN(name) returns an array's declared
@@ -2403,15 +2424,31 @@ COMPILE_NUMBER_LITERAL:
         ld de,(TOK_VAL)
         bit 7,d
         jr z,COMPILE_INT_LITERAL
-        ld a,22        ; QUAL shrink: inlined EMIT_BYTE_OP_PUSH_FLOAT_LIT
-        rst $20
-        ld a,e                             ; OP_PUSH_FLOAT_LIT with divisor 0 builds it exactly
-        rst $20
+        ld hl,TOK_FLOAT5_BUF               ; L-C: 32768..65535 is that number, a FLOAT: its exact
+        ld (hl),$90                        ; value [$90][hi AND $7F][lo][0][0]
+        inc hl
         ld a,d
-        rst $20
+        and $7F
+        ld (hl),a
+        inc hl
+        ld (hl),e
+        inc hl
         xor a
+        ld (hl),a
+        inc hl
+        ld (hl),a
+; COMPILE_FLOAT5 -- emit OP_PUSH_FLOAT5 with the 5 bytes at TOK_FLOAT5_BUF.
+COMPILE_FLOAT5:
+        ld a,70                            ; OP_PUSH_FLOAT5
         rst $20
-        jp EMIT_BYTE
+        ld de,TOK_FLOAT5_BUF
+        ld b,5
+.f5:
+        ld a,(de)
+        rst $20
+        inc de
+        djnz .f5
+        ret
 COMPILE_INT_LITERAL:                       ; DE = a signed 16-bit value
         ld a,d
         or a
