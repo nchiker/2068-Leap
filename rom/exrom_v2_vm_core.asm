@@ -2611,8 +2611,12 @@ OP_PUSH_STR_LIT:
         inc de
         djnz .copy_loop
 .no_copy:
-        xor a
-        ld (hl),a               ; null-terminate the content -- HL is
+                                ; QUAL (Q-28): no NUL any more. A 31-character literal filled the
+                                ; 32-byte record and the NUL landed on the NEXT record's length byte
+                                ; -- after the last temp slot that is ARR_PTR_TABLE[0]'s low byte
+                                ; (array 0 then read/wrote the wrong memory). OP_PRINT_STR now
+                                ; prints by the length byte (Q-27).
+                                ; (was: xor a / ld (hl),a -- null-terminate the content; HL is
                                   ; still the destination record's write
                                   ; cursor here (real bug found via a real
                                   ; ZEsarUX run: this terminator was never
@@ -2703,8 +2707,8 @@ OP_STR_CONCAT:
         inc c
         djnz .b_copy_loop
 .b_copy_done:
-        xor a
-        ld (de),a               ; null-terminate the combined content --
+                                ; QUAL (Q-28): no NUL (a 31-character result put it past the record)
+                                ; (was: xor a / ld (de),a -- null-terminate the combined content --
                                   ; same real bug class as OP_PUSH_STR_LIT's
                                   ; own fix: DE is still the write cursor
                                   ; right after the last copied byte here
@@ -3691,18 +3695,21 @@ OP_PRINT_NUM:
 
 OP_PRINT_STR:
         call VM_POP                 ; HL = STRTAB index, A = tag
-                                       ; (ignored -- string-only opcode)
         ld a,l
         call VM_STR_ADDR             ; HL -> record
-        inc hl                        ; -> content (skip length byte;
-                                        ; GFX_PRINT_STRING_ATTR wants
-                                        ; null-terminated text, and
-                                        ; VM_STR_COPY/OP_PUSH_STR_LIT's
-                                        ; own convention already null-
-                                        ; terminates every record's
-                                        ; content past its real length
-                                        ; -- see STRTAB's own record
-                                        ; layout comment)
+        ld c,(hl)                    ; QUAL (Q-27/Q-28): print exactly `length` characters.
+        ld b,0                       ; LEFT$/RIGHT$/MID$/CHR$/STR$/string-array reads never wrote a
+        inc hl                       ; NUL, so PRINT showed the stale tail of an earlier string in the
+        ld de,PRINT_BUF              ; temp slot (a$="abcdefgh": PRINT LEFT$("q",1) -> "qbcdefgh");
+        push de                      ; the writers that did write one could put it past the record.
+        ld a,c
+        or a
+        jr z,.empty                  ; (LDIR with BC = 0 would copy 64K)
+        ldir
+.empty:
+        xor a
+        ld (de),a                    ; PRINT_BUF is 64 B; a string is at most 31
+        pop hl
         jr VM_PRINT_COMMON
 
 ; VM_PRINT_COMMON — input: HL = null-terminated text to print. Shared
