@@ -3659,7 +3659,8 @@ OP_CALL_EXT:
         ld (VM_EXT_REMAINING),a   ; A = the arg index this value fills
                                     ; (argcount-1 on the first iteration,
                                     ; counting down to 0)
-        rst $10                    ; HL = value, A = tag (ignored)
+        call VM_POP_ADDR           ; QUAL (Q-33): HL = the value as a 16-bit int (a FLOAT is
+                                     ; truncated; it used to arrive as its slot index)
         ld (VM_EXT_POPVAL),hl
         ld a,(VM_EXT_REMAINING)
         cp 4                        ; the 5th slot (index 4, GRAB's own
