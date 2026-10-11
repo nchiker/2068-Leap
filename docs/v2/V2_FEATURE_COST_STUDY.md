@@ -355,7 +355,7 @@ All headless (ZEsarUX through ts2068-debug); `make -n test | grep -ci fuse` = 0;
 | Array Store gate | 98 PASS | **98 PASS** | **98 PASS** |
 | Known-defect suite | 3 PASS + **14 XFAIL** | **15 PASS, 0 XFAIL**: D5b, D5 (re-written for the real keyboard matrix), D9 ×2, D11 ×4, U6, D7 ×3 are now gate cases; 3 controls; the two pathological D7 scenarios are exact but exceed the harness's cap (§B.1) and were left out, not hidden | **15 PASS, 0 XFAIL** |
 | Study suites (focused) | – | break 6/6, edit-preserve 9/9, u6 4/4, callfn 7/7, d11 prints 15/15, literals 13/13, lang_hw 6/6, oracle `+ − * *` 4 × 9 476 pairs 0 mismatches, flicker differential 12 scenarios 0 mismatches | the same plus `eof-for` 5/5, `lang-print` 13/13; flicker differential 12 scenarios (incl. `append-up`) 0 mismatches |
-| One uninterrupted `make test` on the final tree | – | @@FINALTEST@@ | not applicable as-is (needs the `chunk_refill_boundary` migration) |
+| One uninterrupted `make test` on the final tree | – | **exit status 0**, 2 395 s: smoke 9/9, standalone 38/38, production checks 19/19, FILL 10/10, gate 115, Array Store 98, known-defect suite 15 PASS / 0 XFAIL (`docs/v2/V2_FEATURE_COST_STUDY_LOGS/final_make_test_essential.log`; commit `0dedab3`) | not applicable as-is (needs the `chunk_refill_boundary` migration) |
 
 Honest limits of this evidence: the production tests drive the key latch directly for most editor paths (as in Phases 1–2D) — the one exception here is BREAK, which was run through the emulated keyboard *matrix*;
 the tape path is a synthesised EAR stream; STICK directions, hi-res/ULAplus return, visible flicker and real-clock FILL time are untested; the study suites and the oracle live on the branches, not in the gate.
@@ -383,6 +383,40 @@ the tape path is a synthesised EAR stream; STICK directions, hi-res/ULAplus retu
 * `PRINT a; b` / `PRINT a, b` are accepted (Enhanced) — they were an error since Phase 2D and a silent truncation before.
 * Results of `+`, `−`, `*` that leave the 16-bit range are now floats (printed as `90000.0000`), not wrapped integers.
 * The editor now ignores control codes below `$20` and keeps uncommitted edits across `UP`/`DOWN`/insert-line.
+
+---------------------------------------------------------------------------------------------------------------------------
+
+## F. Prototype inventory
+
+All branches are local (`git branch --list 'study/*'`), each with a worktree at `~/2068-Leap-study/<name>`; none was pushed. Helper scripts used by these runs are in `tools/study/` on `study/report` (and in the individual `tools/` directories); the running log of the study is `docs/v2/V2_FEATURE_COST_STUDY_NOTES.md`. Every measurement was made on the real production image/package (`make build`, `make v2-packages`) — `make budget` for sizes.
+
+| Branch / worktree | Commit | Purpose | Build | Test command | Measured | Known limitations |
+|---|---|---|---|---|---|---|
+| `study/baseline` | `a4524e1` | Phase 2D reference (+ tool copies only) | `make budget` | `python3 tools/v2_known_defects.py` | 565 / 802 free; 3 PASS + 14 XFAIL | none |
+| `study/break` | `8ee4f1a` | D5/D5b BREAK | `make build` | `python3 tools/study_break_matrix.py`; `python3 tools/v2_known_defects.py D5` | HOME −21, EXROM −13; 6/6 real-matrix cases ×2; D5b XPASS | INPUT key wait and package loops (FILL aside) are not polled; BREAK keycap unverified; the old latch-poking D5 case stays XFAIL |
+| `study/edit-preserve` | `2c6bca6` | D9a/D9b | `make build` | `python3 tools/study_edit_preserve.py`; `v2_known_defects.py D9` | EXROM −83 (D9b alone −0); 9/9; both D9 cases XPASS | compare-based commit; the no-compare variant (−55) rejected |
+| `study/u6-display` | `2358ac5` | U6 | `make build v2-packages` | `python3 tools/study_u6.py`; `v2_known_defects.py U6` | EXROM −4; 4/4; U6 XPASS | ULAplus palette state not reset/verified |
+| `study/fill-d7` | `1a9736a` | D7 FILL (package) | `make v2-packages` | `python3 tools/v2_fill_check.py`; `python3 tools/study_fill_time.py <scenario>`; `python3 tools/study_fill_break.py` | package 795 → 1007 B; fixtures 10/10; 4 adversarial scenarios exact, 2 exact but 453–787 s emulated | 17 B left in the window; pathological images are minutes-slow |
+| `study/d11-error` | `84ac49b` | D11 error variant | `make build` | `python3 tools/study_vm_oracle.py mul|mulop|add|sub 100000`; `v2_known_defects.py D11` | HOME −101, EXROM −23; 4 × 105 476 oracle pairs, 0 mismatches | breaks address literals > 32 767 (literal rule L-B) |
+| `study/d11-promote` | `5c2c075` | D11 promotion (arithmetic + display) | `make build` | oracle with `ORACLE_PROMOTE=1`; `python3 tools/study_d11_print.py` | arith HOME −76; display EXROM −106; 3 × 105 476 pairs, 0 mismatches; 15/15 prints | literals still the error variant's |
+| `study/d11-promote-lit` | `85a0f25` | D11 promotion + literal rule L-A (final) | `make build` | `ORACLE_PROMOTE=1 python3 tools/study_vm_oracle.py add|sub|mulop`; `study_d11_print.py`; `study_d11_literals.py` | HOME −99, EXROM −111 | fraction of floats ≥ 32 768 not shown; ≥ 2³² saturates; `ABS(-32768)`, `-32768/-1` still wrap |
+| `study/bugfix-callfn` | `c57f604` | N-1 CALL p(FN f(x)) | `make build` | `python3 tools/study_callfn.py` | HOME −4; 7/7 (5 fail on baseline) | – |
+| `study/bare-ident` | `712afec` | N-2 bare word | `make build` | `python3 tools/study_bare_ident.py` | HOME −8; 13/13 | – |
+| `study/lang-hw` | `9f0bb59` | core OUT / IN() / STICK() + COMPILE_2ARG_STMT | `make build` | `python3 tools/study_lang_hw.py`; `python3 tools/check_builtin_tables.py` | HOME −123 (−80 with the shrink); 6/6 | STICK directions unverified; OUT truncates (no range check); reserves `OUT`/`IN`/`STICK` |
+| `study/lang-hw-exrom` | `b8c093e` | IN/STICK handlers in EXROM | `make build` | `python3 tools/study_lang_hw.py` | HOME −32, EXROM −54 for all three | component tests not run |
+| `study/extfn` | `7c349f2` | ABI 2.1 function packages + HW package | `make build v2-packages` | `python3 tools/study_extfn.py`; `python3 tools/check_package_abi.py` | HOME −95; package 110 B; 8/9 (1 expected code difference) | one package resident at a time; statement-typed names used as functions are not rejected |
+| `study/lang-print` | `bc5ad09` | multi-item PRINT, bare PRINT, INPUT prompt | `make build` | `python3 tools/study_lang_print.py` | HOME −150; 13/13 (screen read back) | bytecode-asserting component tests not run on this branch alone; decompiler lacks the new opcodes |
+| `study/eof-for-line` | `63ace54` | N-3 FOR opening line | `make build` | `python3 tools/study_eof_for.py` | HOME −23; 5/5 | PROC / IF / label not done |
+| `study/list-abort` | `63df1d0` | ED5 | `make build` | – | EXROM −3 | behaviour not run |
+| `study/shrink-pos` | `907ac1b` | V2_POS_IS_APPEND | `make build` | `make check`-level (assembled; behaviour unchanged by construction) | EXROM +17 back | – |
+| `study/flicker-i1` | `4fce1bf` | I1 typing redraw | `make build` | `python3 tools/study_flicker.py --diff` | EXROM −123; 591 k → 70 k T/key; 0 mismatches | row blank ≈ 7 ms remains |
+| `study/flicker-i1b` | `75fa9c3` | I1b cell-level typing redraw | `make build` | `python3 tools/study_flicker.py --diff type-10lines type-wrapchg mixed-session` | EXROM −341; → 40 k T/key; 0 mismatches | +218 B for the last blank interval |
+| `study/flicker-i2` | `cdff627` | I2 UP/DOWN redraw (on I1) | `make build` | `python3 tools/study_flicker.py --diff` | EXROM −361 (I1+I2); 583 k → 167 k T/key; 0 mismatches (12 scenarios) | D9 interaction fixed only in the combined branch |
+| `study/combined-essential` | `0dedab3` | V2 Essential (merge) | `make build v2-packages` | `make check`; `make test`; `tools/study/study_run_all.sh <worktree> <port> <out>` | HOME 353 / EXROM 488 free | see §E.3 |
+| `study/combined-enhanced` | `8379ab5` | V2 Enhanced (merge) | `make build v2-packages` | `make check`; `make test`; `study_run_all.sh … enhanced` | HOME 180 / EXROM 239 free | see §E.3 |
+| `study/report` | `601f9cc` | this report + study notes + helper scripts | – | `python3 tools/check_docs.py` | – | – |
+
+Notes: `study/baseline` carries one extra commit that only adds copies of the study tools to `tools/` (no ROM source differs from `7ae0599`). `study/report` is based on it. The `combined-*` branches contain merge commits of the isolated branches plus the integration edits listed in §E.4.
 
 ---------------------------------------------------------------------------------------------------------------------------
 
@@ -423,7 +457,7 @@ ergonomics trial), run-from-anywhere (I4), status codes (I9), `NEW`/`LOAD` confi
 3. **`OUT` value range:** truncation to a byte (as `POKE`) or an error for > 255 (V1's `tests/out_bad_value.txt` expects an error; ≈ +10…14 B, ESTIMATED).
 4. **`PRINT` grammar scope:** which of bare `PRINT`, `,` zones, prompted `INPUT` are worth their bytes (29 / 41 / 20 B); the bytecode semantics of `OP_PRINT_*` change (they no longer end the line).
 5. **FILL:** accept an exact-but-slow worst case, or spend design effort on a faster exact algorithm (not studied).
-6. **Reserve policy:** Essential leaves HOME 353 / EXROM 488; Enhanced HOME ~188 / EXROM ~220 — both are physically fine, Enhanced is below *both* historical targets (350 / 800). R10.10's editor budget (HOME +75…+140, EXROM +385…+655) no longer fits next to Enhanced.
+6. **Reserve policy:** Essential leaves HOME 353 / EXROM 488; Enhanced HOME 180 / EXROM 239 — both are physically fine; Essential meets the HOME target and misses the EXROM one, Enhanced is below *both* historical targets (350 / 800). R10.10's editor budget (HOME +75…+140, EXROM +385…+655) no longer fits next to Enhanced.
 
 ---------------------------------------------------------------------------------------------------------------------------
 

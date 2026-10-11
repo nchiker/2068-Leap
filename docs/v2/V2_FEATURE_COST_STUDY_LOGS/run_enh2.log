@@ -1,0 +1,279 @@
+===== python3 tools/study_break_matrix.py
+PASS  brk-goto-loop                BREAK interrupts `top: GOTO top` and shows the BREAK message -- running=True back_at_prompt=True vm_error=66 pc=0443  (9s)
+PASS  brk-for-loop                 BREAK interrupts a long FOR loop -- running=True back_at_prompt=True vm_error=66 pc=0443  (9s)
+PASS  brk-pause                    BREAK interrupts PAUSE 5000 -- running=True back_at_prompt=True vm_error=66 pc=0443  (9s)
+PASS  brk-recursion-print          BREAK interrupts a PRINT loop -- running=True back_at_prompt=True vm_error=66 pc=0443  (9s)
+PASS  brk-editor-inert             BREAK in the editor inserts nothing and a following RUN is unaffected -- edit_line=b'' vm_error=0 a=5 msg=None  (6s)
+PASS  brk-rerun-after-break        after a BREAK the program can be run again and finishes -- vm_error=0 a=7  (11s)
+study-break: 6 PASS, 0 XFAIL (known defects reproduced), 0 FAIL, 0 XPASS  [54s]
+rc=0
+===== python3 tools/study_edit_preserve.py
+PASS  ep-up-commits-edit           an edit on a stored line is stored when UP leaves it -- store=['a = 1', '9b = 2'] edit=b'a = 1'  (15s)
+PASS  ep-down-commits-edit         an edit on a stored line is stored when DOWN leaves it; arrays untouched when nothing changed -- store=['7a = 1', 'b = 2'] edit=b'b = 2'  (16s)
+PASS  ep-append-line-up            text typed on the append line is stored when UP leaves it -- store=['a = 1', 'b = 2', 'c = 3'] edit=b'c = 3' idx=2  (17s)
+PASS  ep-append-line-down-noop     DOWN on the append line keeps the typed text uncommitted -- store=['a = 1'] edit=b'zz'  (10s)
+PASS  ep-unchanged-nav-stores-nothing navigating over unchanged lines does not rewrite the store -- store=['a = 1', 'b = 2']  (16s)
+PASS  ep-nav-keeps-arrays-when-unchanged UP/DOWN over an unchanged line does not discard DIM'd arrays -- ARRAYS_END 8270 -> 8270  (6s)
+PASS  ep-insert-line-commits       CAPS+ENTER (insert line) keeps an edit -- store=['a = 1', '', '9b = 2'] edit=b''  (15s)
+PASS  ep-full-on-nav-keeps-buffer  PROGRAM FULL while navigating keeps the buffer and the cursor -- msg=FULL typed=b'yyyyyyx = 1' after=b'yyyyyyx = 1' idx=0->0  (12s)
+PASS  ep-full-enter-reenters-same-line ENTER on a full store keeps the line (D9b) and a second ENTER does not corrupt -- msg=FULL typed=b'y = 123456' after=b'y = 123456' lines=1049  (14s)
+study-edit-preserve: 9 PASS, 0 XFAIL (known defects reproduced), 0 FAIL, 0 XPASS  [120s]
+rc=0
+===== python3 tools/study_u6.py
+PASS  u6-colour-state-restored     INK/PAPER/FLASH/BRIGHT/OVER/INVERSE and BORDER are default again in the editor -- during={'INK': 2, 'PAPER': 5, 'BRIGHT': 1, 'FLASH': 1, 'OVER': 1, 'INVERSE': 1} back={'INK': 0, 'PAPER': 7, 'BRIGHT': 0, 'FLASH': 0, 'OVER': 0,
+PASS  u6-mode1-return              MODE 1 program: editor comes back in video mode 0 with the status bar attribute -- mode bits run=2 editor=0 status-bar attr=07  (6s)
+PASS  u6-border                    BORDER set by a program is white again in the editor -- border during=2 back=7  (5s)
+PASS  u6-second-run-clean          a second RUN does not inherit colours from the first -- INK after second run=0  (7s)
+study-u6: 4 PASS, 0 XFAIL (known defects reproduced), 0 FAIL, 0 XPASS  [24s]
+rc=0
+===== python3 tools/study_callfn.py
+PASS  def fn f(x) = x * 2 : proc p(a) : print a : endp : call p(fn f(3))                         -> ['6'] ce=0 ve=0
+PASS  def fn f(x) = x * 2 : proc p(a) : print a : endp : call p(fn f(fn f(5)))                   -> ['20'] ce=0 ve=0
+PASS  def fn f(x) = x * 2 : proc p(a) : print a : endp : call p(fn f(3) + 1)                     -> ['7'] ce=0 ve=0
+PASS  def fn f(x) = x * 2 : call p(fn f(4)) : end : proc p(a) : print a : endp                   -> ['8'] ce=0 ve=0
+PASS  def fn f(x) = x + 1 : def fn g(y) = y * 3 : proc p(a) : print a : endp : call p(fn g(fn f(2))) -> ['9'] ce=0 ve=0
+PASS  proc p(a) : print a : endp : call p(7) : call p(8)                                         -> ['7', '8'] ce=0 ve=0
+PASS  def fn f(x) = x * 2 : print fn f(fn f(2))                                                  -> ['8'] ce=0 ve=0
+rc=0
+===== python3 tools/study_d11_print.py
+PASS  PRINT 30000 * 3                                              -> ['90000.0000'] (ce=0 ve=0)
+PASS  PRINT 32767 + 1                                              -> ['32768.0000'] (ce=0 ve=0)
+PASS  a = -32767 : PRINT a - 2                                     -> ['-32769.0000'] (ce=0 ve=0)
+PASS  PRINT 181 * 181                                              -> ['32761'] (ce=0 ve=0)
+PASS  PRINT 182 * 182                                              -> ['33124.0000'] (ce=0 ve=0)
+PASS  a = 32767 : PRINT a * a                                      -> ['1073676289.0000'] (ce=0 ve=0)
+PASS  a = -32767 - 1 : PRINT a * a                                 -> ['1073741824.0000'] (ce=0 ve=0)
+PASS  a = -32767 - 1 : PRINT 0 - a                                 -> ['32768.0000'] (ce=0 ve=0)
+PASS  a = 30000 * 3 : PRINT a + 10                                 -> ['90010.0000'] (ce=0 ve=0)
+PASS  a = 30000 * 3 : PRINT a / 3                                  -> ['30000.0000'] (ce=0 ve=0)
+PASS  a = 1000 : b = a * a : PRINT b                               -> ['1000000.0000'] (ce=0 ve=0)
+PASS  a = 1000 : b = a * a : c = b * a : PRINT c                   -> ['1000000000.0000'] (ce=0 ve=0)
+PASS  a = 30000 * 3 : b = a - 30000 - 30000 - 20000 : PRINT b      -> ['10000.0000'] (ce=0 ve=0)
+PASS  PRINT 200 * 100                                              -> ['20000'] (ce=0 ve=0)
+PASS  FOR i = 32765 TO 32767 : PRINT i : NEXT i : PRINT 99         -> ['32765', '32766', '32767', '99'] (ce=0 ve=0)
+rc=0
+===== python3 tools/study_d11_literals.py
+PASS  POKE 65000, 42 : PRINT PEEK(65000)                           -> ['42'] ce=0 ve=0
+PASS  POKE 61440, 33 : POKE 61441, 5 : POKE 61442, 0 : POKE 61443, 201 : PRINT USR(61440) -> ['5'] ce=0 ve=0
+PASS  PRINT 32767                                                  -> ['32767'] ce=0 ve=0
+PASS  PRINT 65535                                                  -> ['-1'] ce=0 ve=0
+PASS  PRINT 65536                                                  -> [] ce=64 ve=0
+PASS  PRINT 100000                                                 -> [] ce=64 ve=0
+PASS  x = 99999999                                                 -> [] ce=64 ve=0
+PASS  PRINT 3000.5                                                 -> ['3000.5000'] ce=0 ve=0
+PASS  PRINT 12345.5                                                -> [] ce=64 ve=0
+PASS  PRINT 3276.7                                                 -> ['3276.6999'] ce=0 ve=0
+PASS  PRINT 3276.8                                                 -> [] ce=64 ve=0
+PASS  PRINT 0.5                                                    -> ['0.5000'] ce=0 ve=0
+PASS  PRINT 7                                                      -> ['7'] ce=0 ve=0
+rc=0
+===== python3 tools/study_lang_hw.py
+PASS  OUT/IN AY register round trip                a=5 b=12 ce=0 ve=0
+PASS  IN uses the full 16-bit port (key '1' down)  IN($F7FE)=BE IN($FEFE)=BF IN($FDFE)=BF IN(254)=BE ce=0 ve=0
+PASS  STICK idle returns 0                         STICK(1)=0 STICK(2)=0
+PASS  OUT 254,2 runs                               a=[7]
+PASS  OUT with one argument is a compile error     ce=22
+PASS  IN() without argument is a compile error     ce=3
+rc=0
+===== python3 tools/study_eof_for.py
+PASS  eof-for-simple               unterminated FOR -> cursor on the FOR -- compile_err=65 (want 65) cursor_line=0 (want 0)  (5s)
+PASS  eof-for-later                unterminated FOR -> cursor on the FOR -- compile_err=65 (want 65) cursor_line=2 (want 2)  (5s)
+PASS  eof-for-nested-inner-closed  unterminated FOR -> cursor on the FOR -- compile_err=65 (want 65) cursor_line=1 (want 1)  (5s)
+PASS  eof-for-nested-outer-closed  unterminated FOR -> cursor on the FOR -- compile_err=65 (want 65) cursor_line=5 (want 5)  (5s)
+PASS  eof-for-continuation         unterminated FOR -> cursor on the FOR -- compile_err=65 (want 65) cursor_line=2 (want 2)  (5s)
+study-eof-for: 5 PASS, 0 XFAIL (known defects reproduced), 0 FAIL, 0 XPASS  [23s]
+rc=0
+===== python3 tools/study_lang_print.py
+PASS  single string                      ce=0 ve=0 rows=['hello']
+PASS  single number                      ce=0 ve=0 rows=['42']
+PASS  semicolon list                     ce=0 ve=0 rows=['a1b2']
+PASS  comma zones                        ce=0 ve=0 rows=['ab              cd', 'ef']
+PASS  trailing semicolon                 ce=0 ve=0 rows=['xy']
+PASS  bare PRINT = blank line            ce=0 ve=0 rows=['a', '', 'b']
+PASS  number expressions                 ce=0 ve=0 rows=['3+6=9']
+PASS  string var + concat                ce=0 ve=0 rows=['hi!7']
+PASS  mixed separators                   ce=0 ve=0 rows=['12              3']
+PASS  PRINT in IF/ELSE block             ce=0 ve=0 rows=['yes!']
+PASS  error: junk after item             ce=64 ve=0 rows=['']
+PASS  error: INPUT prompt w/o separator  ce=22 ve=0 rows=['']
+PASS  INPUT "N? "; a                     rows=['N? 7', 'got 7'] a=7 ve=0
+rc=0
+===== python3 tools/study_vm_oracle.py add 4000
+batch 0..250 done, mismatches so far 0
+batch 250..500 done, mismatches so far 0
+batch 500..750 done, mismatches so far 0
+batch 750..1000 done, mismatches so far 0
+batch 1000..1250 done, mismatches so far 0
+batch 1250..1500 done, mismatches so far 0
+batch 1500..1750 done, mismatches so far 0
+batch 1750..2000 done, mismatches so far 0
+batch 2000..2250 done, mismatches so far 0
+batch 2250..2500 done, mismatches so far 0
+batch 2500..2750 done, mismatches so far 0
+batch 2750..3000 done, mismatches so far 0
+batch 3000..3250 done, mismatches so far 0
+batch 3250..3500 done, mismatches so far 0
+batch 3500..3750 done, mismatches so far 0
+batch 3750..4000 done, mismatches so far 0
+batch 4000..4250 done, mismatches so far 0
+batch 4250..4500 done, mismatches so far 0
+batch 4500..4750 done, mismatches so far 0
+batch 4750..5000 done, mismatches so far 0
+batch 5000..5250 done, mismatches so far 0
+batch 5250..5500 done, mismatches so far 0
+batch 5500..5750 done, mismatches so far 0
+batch 5750..6000 done, mismatches so far 0
+batch 6000..6250 done, mismatches so far 0
+batch 6250..6500 done, mismatches so far 0
+batch 6500..6750 done, mismatches so far 0
+batch 6750..7000 done, mismatches so far 0
+batch 7000..7250 done, mismatches so far 0
+batch 7250..7500 done, mismatches so far 0
+batch 7500..7750 done, mismatches so far 0
+batch 7750..8000 done, mismatches so far 0
+batch 8000..8250 done, mismatches so far 0
+batch 8250..8500 done, mismatches so far 0
+batch 8500..8750 done, mismatches so far 0
+batch 8750..9000 done, mismatches so far 0
+batch 9000..9250 done, mismatches so far 0
+batch 9250..9476 done, mismatches so far 0
+add: 9476 pairs (8540 fit, 936 overflow), mismatches 0
+rc=0
+===== python3 tools/study_vm_oracle.py sub 4000
+batch 0..250 done, mismatches so far 0
+batch 250..500 done, mismatches so far 0
+batch 500..750 done, mismatches so far 0
+batch 750..1000 done, mismatches so far 0
+batch 1000..1250 done, mismatches so far 0
+batch 1250..1500 done, mismatches so far 0
+batch 1500..1750 done, mismatches so far 0
+batch 1750..2000 done, mismatches so far 0
+batch 2000..2250 done, mismatches so far 0
+batch 2250..2500 done, mismatches so far 0
+batch 2500..2750 done, mismatches so far 0
+batch 2750..3000 done, mismatches so far 0
+batch 3000..3250 done, mismatches so far 0
+batch 3250..3500 done, mismatches so far 0
+batch 3500..3750 done, mismatches so far 0
+batch 3750..4000 done, mismatches so far 0
+batch 4000..4250 done, mismatches so far 0
+batch 4250..4500 done, mismatches so far 0
+batch 4500..4750 done, mismatches so far 0
+batch 4750..5000 done, mismatches so far 0
+batch 5000..5250 done, mismatches so far 0
+batch 5250..5500 done, mismatches so far 0
+batch 5500..5750 done, mismatches so far 0
+batch 5750..6000 done, mismatches so far 0
+batch 6000..6250 done, mismatches so far 0
+batch 6250..6500 done, mismatches so far 0
+batch 6500..6750 done, mismatches so far 0
+batch 6750..7000 done, mismatches so far 0
+batch 7000..7250 done, mismatches so far 0
+batch 7250..7500 done, mismatches so far 0
+batch 7500..7750 done, mismatches so far 0
+batch 7750..8000 done, mismatches so far 0
+batch 8000..8250 done, mismatches so far 0
+batch 8250..8500 done, mismatches so far 0
+batch 8500..8750 done, mismatches so far 0
+batch 8750..9000 done, mismatches so far 0
+batch 9000..9250 done, mismatches so far 0
+batch 9250..9476 done, mismatches so far 0
+sub: 9476 pairs (8541 fit, 935 overflow), mismatches 0
+rc=0
+===== python3 tools/study_vm_oracle.py mulop 4000
+batch 0..250 done, mismatches so far 0
+batch 250..500 done, mismatches so far 0
+batch 500..750 done, mismatches so far 0
+batch 750..1000 done, mismatches so far 0
+batch 1000..1250 done, mismatches so far 0
+batch 1250..1500 done, mismatches so far 0
+batch 1500..1750 done, mismatches so far 0
+batch 1750..2000 done, mismatches so far 0
+batch 2000..2250 done, mismatches so far 0
+batch 2250..2500 done, mismatches so far 0
+batch 2500..2750 done, mismatches so far 0
+batch 2750..3000 done, mismatches so far 0
+batch 3000..3250 done, mismatches so far 0
+batch 3250..3500 done, mismatches so far 0
+batch 3500..3750 done, mismatches so far 0
+batch 3750..4000 done, mismatches so far 0
+batch 4000..4250 done, mismatches so far 0
+batch 4250..4500 done, mismatches so far 0
+batch 4500..4750 done, mismatches so far 0
+batch 4750..5000 done, mismatches so far 0
+batch 5000..5250 done, mismatches so far 0
+batch 5250..5500 done, mismatches so far 0
+batch 5500..5750 done, mismatches so far 0
+batch 5750..6000 done, mismatches so far 0
+batch 6000..6250 done, mismatches so far 0
+batch 6250..6500 done, mismatches so far 0
+batch 6500..6750 done, mismatches so far 0
+batch 6750..7000 done, mismatches so far 0
+batch 7000..7250 done, mismatches so far 0
+batch 7250..7500 done, mismatches so far 0
+batch 7500..7750 done, mismatches so far 0
+batch 7750..8000 done, mismatches so far 0
+batch 8000..8250 done, mismatches so far 0
+batch 8250..8500 done, mismatches so far 0
+batch 8500..8750 done, mismatches so far 0
+batch 8750..9000 done, mismatches so far 0
+batch 9000..9250 done, mismatches so far 0
+batch 9250..9476 done, mismatches so far 0
+mulop: 9476 pairs (2380 fit, 7096 overflow), mismatches 0
+rc=0
+===== python3 tools/study_vm_oracle.py mul 4000
+batch 0..250 done, mismatches so far 0
+batch 250..500 done, mismatches so far 0
+batch 500..750 done, mismatches so far 0
+batch 750..1000 done, mismatches so far 0
+batch 1000..1250 done, mismatches so far 0
+batch 1250..1500 done, mismatches so far 0
+batch 1500..1750 done, mismatches so far 0
+batch 1750..2000 done, mismatches so far 0
+batch 2000..2250 done, mismatches so far 0
+batch 2250..2500 done, mismatches so far 0
+batch 2500..2750 done, mismatches so far 0
+batch 2750..3000 done, mismatches so far 0
+batch 3000..3250 done, mismatches so far 0
+batch 3250..3500 done, mismatches so far 0
+batch 3500..3750 done, mismatches so far 0
+batch 3750..4000 done, mismatches so far 0
+batch 4000..4250 done, mismatches so far 0
+batch 4250..4500 done, mismatches so far 0
+batch 4500..4750 done, mismatches so far 0
+batch 4750..5000 done, mismatches so far 0
+batch 5000..5250 done, mismatches so far 0
+batch 5250..5500 done, mismatches so far 0
+batch 5500..5750 done, mismatches so far 0
+batch 5750..6000 done, mismatches so far 0
+batch 6000..6250 done, mismatches so far 0
+batch 6250..6500 done, mismatches so far 0
+batch 6500..6750 done, mismatches so far 0
+batch 6750..7000 done, mismatches so far 0
+batch 7000..7250 done, mismatches so far 0
+batch 7250..7500 done, mismatches so far 0
+batch 7500..7750 done, mismatches so far 0
+batch 7750..8000 done, mismatches so far 0
+batch 8000..8250 done, mismatches so far 0
+batch 8250..8500 done, mismatches so far 0
+batch 8500..8750 done, mismatches so far 0
+batch 8750..9000 done, mismatches so far 0
+batch 9000..9250 done, mismatches so far 0
+batch 9250..9476 done, mismatches so far 0
+mul: 9476 pairs (2380 fit, 7096 overflow), mismatches 0
+rc=0
+===== python3 tools/study_flicker.py --diff --json /home/charlie.day/.claude/jobs/1a79d5ac/tmp/run-enh2/flicker.json
+{"scenario": "type-10lines", "keys": 17, "tstates_total": 1221397, "tstates_mean": 71846, "tstates_max": 81146, "cls": 0, "drawtext": 17, "rowclr": 17, "diff_mismatches": 0}
+{"scenario": "type-20lines", "keys": 17, "tstates_total": 2470907, "tstates_mean": 145347, "tstates_max": 946012, "cls": 1, "drawtext": 36, "rowclr": 25, "diff_mismatches": 0}
+{"scenario": "type-wrapchg", "keys": 19, "tstates_total": 4069808, "tstates_mean": 214200, "tstates_max": 223978, "cls": 0, "drawtext": 19, "rowclr": 57, "diff_mismatches": 0}
+{"scenario": "lr-10lines", "keys": 12, "tstates_total": 23340, "tstates_mean": 1945, "tstates_max": 2558, "cls": 0, "drawtext": 0, "rowclr": 0, "diff_mismatches": 0}
+{"scenario": "updown-10lines", "keys": 6, "tstates_total": 1009270, "tstates_mean": 168211, "tstates_max": 205813, "cls": 0, "drawtext": 12, "rowclr": 18, "diff_mismatches": 0}
+{"scenario": "updown-20lines", "keys": 6, "tstates_total": 1125337, "tstates_mean": 187556, "tstates_max": 205624, "cls": 0, "drawtext": 12, "rowclr": 18, "diff_mismatches": 0}
+{"scenario": "updown-ends", "keys": 16, "tstates_total": 2259634, "tstates_mean": 141227, "tstates_max": 200286, "cls": 0, "drawtext": 28, "rowclr": 40, "diff_mismatches": 0}
+{"scenario": "updown-wrapped", "keys": 17, "tstates_total": 3912148, "tstates_mean": 230126, "tstates_max": 524570, "cls": 0, "drawtext": 20, "rowclr": 58, "diff_mismatches": 0}
+{"scenario": "updown-typed", "keys": 7, "tstates_total": 1495126, "tstates_mean": 213589, "tstates_max": 521313, "cls": 2, "drawtext": 23, "rowclr": 11, "diff_mismatches": 0}
+{"scenario": "updown-deep", "keys": 9, "tstates_total": 5123141, "tstates_mean": 569237, "tstates_max": 1059985, "cls": 4, "drawtext": 102, "rowclr": 19, "diff_mismatches": 0}
+{"scenario": "append-up", "keys": 11, "tstates_total": 1186344, "tstates_mean": 107849, "tstates_max": 460669, "cls": 1, "drawtext": 19, "rowclr": 17, "diff_mismatches": 0}
+{"scenario": "mixed-session", "keys": 13, "tstates_total": 2678046, "tstates_mean": 206003, "tstates_max": 608191, "cls": 3, "drawtext": 41, "rowclr": 17, "diff_mismatches": 0}
+rc=0
+ALL DONE

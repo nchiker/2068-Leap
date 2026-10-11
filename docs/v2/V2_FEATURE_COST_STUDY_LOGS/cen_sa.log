@@ -1,0 +1,238 @@
+SjASMPlus Z80 Cross-Assembler v1.23.1 (https://github.com/z00m128/sjasmplus)
+Pass 1 complete (0 errors)
+Pass 2 complete (0 errors)
+Pass 3 complete
+Errors: 0, warnings: 0, compiled: 7967 lines, work time: 0.061 seconds
+SjASMPlus Z80 Cross-Assembler v1.23.1 (https://github.com/z00m128/sjasmplus)
+Pass 1 complete (0 errors)
+Pass 2 complete (0 errors)
+test_v2_harness_exrom.asm(123): warning: Negative BLOCK moves PC backwards
+test_v2_harness_exrom.asm(123): warning[shortblock]: init data for block truncated to length: -1690
+Pass 3 complete
+Errors: 0, warnings: 2, compiled: 9741 lines, work time: 0.063 seconds
+SjASMPlus Z80 Cross-Assembler v1.23.1 (https://github.com/z00m128/sjasmplus)
+Pass 1 complete (0 errors)
+Pass 2 complete (0 errors)
+Pass 3 complete
+Errors: 0, warnings: 0, compiled: 15841 lines, work time: 0.096 seconds
+SjASMPlus Z80 Cross-Assembler v1.23.1 (https://github.com/z00m128/sjasmplus)
+Pass 1 complete (0 errors)
+Pass 2 complete (0 errors)
+Pass 3 complete
+Errors: 0, warnings: 0, compiled: 15831 lines, work time: 0.096 seconds
+SjASMPlus Z80 Cross-Assembler v1.23.1 (https://github.com/z00m128/sjasmplus)
+Pass 1 complete (0 errors)
+Pass 2 complete (0 errors)
+Pass 3 complete
+Errors: 0, warnings: 0, compiled: 15689 lines, work time: 0.095 seconds
+SjASMPlus Z80 Cross-Assembler v1.23.1 (https://github.com/z00m128/sjasmplus)
+Pass 1 complete (0 errors)
+Pass 2 complete (0 errors)
+Pass 3 complete
+Errors: 0, warnings: 0, compiled: 15934 lines, work time: 0.096 seconds
+SjASMPlus Z80 Cross-Assembler v1.23.1 (https://github.com/z00m128/sjasmplus)
+Pass 1 complete (0 errors)
+Pass 2 complete (0 errors)
+Pass 3 complete
+Errors: 0, warnings: 0, compiled: 15866 lines, work time: 0.097 seconds
+SjASMPlus Z80 Cross-Assembler v1.23.1 (https://github.com/z00m128/sjasmplus)
+Pass 1 complete (0 errors)
+Pass 2 complete (0 errors)
+Pass 3 complete
+Errors: 0, warnings: 0, compiled: 16069 lines, work time: 0.100 seconds
+SjASMPlus Z80 Cross-Assembler v1.23.1 (https://github.com/z00m128/sjasmplus)
+Pass 1 complete (0 errors)
+Pass 2 complete (0 errors)
+Pass 3 complete
+Errors: 0, warnings: 0, compiled: 15845 lines, work time: 0.095 seconds
+SjASMPlus Z80 Cross-Assembler v1.23.1 (https://github.com/z00m128/sjasmplus)
+Pass 1 complete (0 errors)
+Pass 2 complete (0 errors)
+Pass 3 complete
+Errors: 0, warnings: 0, compiled: 16323 lines, work time: 0.099 seconds
+SjASMPlus Z80 Cross-Assembler v1.23.1 (https://github.com/z00m128/sjasmplus)
+Pass 1 complete (0 errors)
+Pass 2 complete (0 errors)
+Pass 3 complete
+Errors: 0, warnings: 0, compiled: 16623 lines, work time: 0.118 seconds
+SjASMPlus Z80 Cross-Assembler v1.23.1 (https://github.com/z00m128/sjasmplus)
+Pass 1 complete (0 errors)
+Pass 2 complete (0 errors)
+Pass 3 complete
+Errors: 0, warnings: 0, compiled: 15754 lines, work time: 0.113 seconds
+SjASMPlus Z80 Cross-Assembler v1.23.1 (https://github.com/z00m128/sjasmplus)
+Pass 1 complete (0 errors)
+Pass 2 complete (0 errors)
+Pass 3 complete
+Errors: 0, warnings: 0, compiled: 15697 lines, work time: 0.096 seconds
+SjASMPlus Z80 Cross-Assembler v1.23.1 (https://github.com/z00m128/sjasmplus)
+Pass 1 complete (0 errors)
+Pass 2 complete (0 errors)
+Pass 3 complete
+Errors: 0, warnings: 0, compiled: 16882 lines, work time: 0.102 seconds
+SjASMPlus Z80 Cross-Assembler v1.23.1 (https://github.com/z00m128/sjasmplus)
+Pass 1 complete (0 errors)
+Pass 2 complete (0 errors)
+Pass 3 complete
+Errors: 0, warnings: 0, compiled: 15676 lines, work time: 0.098 seconds
+SjASMPlus Z80 Cross-Assembler v1.23.1 (https://github.com/z00m128/sjasmplus)
+Pass 1 complete (0 errors)
+Pass 2 complete (0 errors)
+Pass 3 complete
+Errors: 0, warnings: 0, compiled: 15903 lines, work time: 0.097 seconds
+SjASMPlus Z80 Cross-Assembler v1.23.1 (https://github.com/z00m128/sjasmplus)
+Pass 1 complete (0 errors)
+Pass 2 complete (0 errors)
+Pass 3 complete
+Errors: 0, warnings: 0, compiled: 16157 lines, work time: 0.099 seconds
+SjASMPlus Z80 Cross-Assembler v1.23.1 (https://github.com/z00m128/sjasmplus)
+Pass 1 complete (0 errors)
+Pass 2 complete (0 errors)
+Pass 3 complete
+Errors: 0, warnings: 0, compiled: 16159 lines, work time: 0.098 seconds
+SjASMPlus Z80 Cross-Assembler v1.23.1 (https://github.com/z00m128/sjasmplus)
+Pass 1 complete (0 errors)
+Pass 2 complete (0 errors)
+Pass 3 complete
+Errors: 0, warnings: 0, compiled: 16096 lines, work time: 0.098 seconds
+SjASMPlus Z80 Cross-Assembler v1.23.1 (https://github.com/z00m128/sjasmplus)
+Pass 1 complete (0 errors)
+Pass 2 complete (0 errors)
+Pass 3 complete
+Errors: 0, warnings: 0, compiled: 16113 lines, work time: 0.098 seconds
+SjASMPlus Z80 Cross-Assembler v1.23.1 (https://github.com/z00m128/sjasmplus)
+Pass 1 complete (0 errors)
+Pass 2 complete (0 errors)
+Pass 3 complete
+Errors: 0, warnings: 0, compiled: 16132 lines, work time: 0.097 seconds
+SjASMPlus Z80 Cross-Assembler v1.23.1 (https://github.com/z00m128/sjasmplus)
+Pass 1 complete (0 errors)
+Pass 2 complete (0 errors)
+Pass 3 complete
+Errors: 0, warnings: 0, compiled: 16786 lines, work time: 0.112 seconds
+SjASMPlus Z80 Cross-Assembler v1.23.1 (https://github.com/z00m128/sjasmplus)
+Pass 1 complete (0 errors)
+Pass 2 complete (0 errors)
+Pass 3 complete
+Errors: 0, warnings: 0, compiled: 16313 lines, work time: 0.149 seconds
+SjASMPlus Z80 Cross-Assembler v1.23.1 (https://github.com/z00m128/sjasmplus)
+Pass 1 complete (0 errors)
+Pass 2 complete (0 errors)
+Pass 3 complete
+Errors: 0, warnings: 0, compiled: 16325 lines, work time: 0.105 seconds
+SjASMPlus Z80 Cross-Assembler v1.23.1 (https://github.com/z00m128/sjasmplus)
+Pass 1 complete (0 errors)
+Pass 2 complete (0 errors)
+Pass 3 complete
+Errors: 0, warnings: 0, compiled: 16195 lines, work time: 0.099 seconds
+SjASMPlus Z80 Cross-Assembler v1.23.1 (https://github.com/z00m128/sjasmplus)
+Pass 1 complete (0 errors)
+Pass 2 complete (0 errors)
+Pass 3 complete
+Errors: 0, warnings: 0, compiled: 15736 lines, work time: 0.095 seconds
+SjASMPlus Z80 Cross-Assembler v1.23.1 (https://github.com/z00m128/sjasmplus)
+Pass 1 complete (0 errors)
+Pass 2 complete (0 errors)
+Pass 3 complete
+Errors: 0, warnings: 0, compiled: 16194 lines, work time: 0.103 seconds
+SjASMPlus Z80 Cross-Assembler v1.23.1 (https://github.com/z00m128/sjasmplus)
+Pass 1 complete (0 errors)
+Pass 2 complete (0 errors)
+Pass 3 complete
+Errors: 0, warnings: 0, compiled: 16213 lines, work time: 0.099 seconds
+SjASMPlus Z80 Cross-Assembler v1.23.1 (https://github.com/z00m128/sjasmplus)
+Pass 1 complete (0 errors)
+Pass 2 complete (0 errors)
+Pass 3 complete
+Errors: 0, warnings: 0, compiled: 15839 lines, work time: 0.109 seconds
+SjASMPlus Z80 Cross-Assembler v1.23.1 (https://github.com/z00m128/sjasmplus)
+Pass 1 complete (0 errors)
+Pass 2 complete (0 errors)
+Pass 3 complete
+Errors: 0, warnings: 0, compiled: 16165 lines, work time: 0.108 seconds
+SjASMPlus Z80 Cross-Assembler v1.23.1 (https://github.com/z00m128/sjasmplus)
+Pass 1 complete (0 errors)
+Pass 2 complete (0 errors)
+Pass 3 complete
+Errors: 0, warnings: 0, compiled: 16992 lines, work time: 0.099 seconds
+SjASMPlus Z80 Cross-Assembler v1.23.1 (https://github.com/z00m128/sjasmplus)
+Pass 1 complete (0 errors)
+Pass 2 complete (0 errors)
+Pass 3 complete
+Errors: 0, warnings: 0, compiled: 16120 lines, work time: 0.097 seconds
+SjASMPlus Z80 Cross-Assembler v1.23.1 (https://github.com/z00m128/sjasmplus)
+Pass 1 complete (0 errors)
+Pass 2 complete (0 errors)
+Pass 3 complete
+Errors: 0, warnings: 0, compiled: 15664 lines, work time: 0.095 seconds
+SjASMPlus Z80 Cross-Assembler v1.23.1 (https://github.com/z00m128/sjasmplus)
+Pass 1 complete (0 errors)
+Pass 2 complete (0 errors)
+Pass 3 complete
+Errors: 0, warnings: 0, compiled: 16257 lines, work time: 0.104 seconds
+SjASMPlus Z80 Cross-Assembler v1.23.1 (https://github.com/z00m128/sjasmplus)
+Pass 1 complete (0 errors)
+Pass 2 complete (0 errors)
+Pass 3 complete
+Errors: 0, warnings: 0, compiled: 17260 lines, work time: 0.108 seconds
+SjASMPlus Z80 Cross-Assembler v1.23.1 (https://github.com/z00m128/sjasmplus)
+Pass 1 complete (0 errors)
+Pass 2 complete (0 errors)
+test_v2_local_dim.inc(17): warning: Label has different value in pass 3: previous value 12348 not equal 12476
+test_v2_local_dim.inc(18): warning: Label has different value in pass 3: previous value 12394 not equal 12522
+Pass 3 complete
+Errors: 0, warnings: 2, compiled: 16696 lines, work time: 0.110 seconds
+SjASMPlus Z80 Cross-Assembler v1.23.1 (https://github.com/z00m128/sjasmplus)
+Pass 1 complete (0 errors)
+Pass 2 complete (0 errors)
+Pass 3 complete
+Errors: 0, warnings: 0, compiled: 18003 lines, work time: 0.113 seconds
+SjASMPlus Z80 Cross-Assembler v1.23.1 (https://github.com/z00m128/sjasmplus)
+Pass 1 complete (0 errors)
+Pass 2 complete (0 errors)
+Pass 3 complete
+Errors: 0, warnings: 0, compiled: 17649 lines, work time: 0.110 seconds
+SjASMPlus Z80 Cross-Assembler v1.23.1 (https://github.com/z00m128/sjasmplus)
+Pass 1 complete (0 errors)
+Pass 2 complete (0 errors)
+Pass 3 complete
+Errors: 0, warnings: 0, compiled: 17849 lines, work time: 0.116 seconds
+arrays: border=4 -> PASS
+block_if: border=4 -> PASS
+decompiler: border=4 -> PASS
+for_nested: border=4 -> PASS
+for_step: border=4 -> PASS
+group6_math: border=4 -> PASS
+input: border=4 -> PASS
+mode_module: border=4 -> PASS
+printer_module: border=4 -> PASS
+proc_recursion: border=4 -> PASS
+relational: border=4 -> PASS
+save_load: border=4 -> PASS
+sqr_decomp: border=4 -> PASS
+strfuncs: border=4 -> PASS
+shapes_circle: border=4 -> PASS
+graphics_module: border=4 -> PASS
+dynamic_arrays: border=4 -> PASS
+string_arrays: border=4 -> PASS
+ext_demo: border=4 -> PASS
+array_save_load: border=4 -> PASS
+case_insensitive: border=4 -> PASS
+identifier_length: border=4 -> PASS
+scalar_capacity32: border=4 -> PASS
+recursion_depth12: border=4 -> PASS
+for_recursion_guard: border=4 -> PASS
+control_stack: border=4 -> PASS
+builtin_roundtrip: border=4 -> PASS
+identifier_toolong: border=4 -> PASS
+nesting_guard: border=4 -> PASS
+label_capacity: border=4 -> PASS
+r10_numeric: border=4 -> PASS
+run_tables: border=4 -> PASS
+deffn: border=4 -> PASS
+vm_milestone01: border=4 -> PASS
+chunk_boundary_values: border=4 -> PASS
+for_first_token: border=4 -> PASS
+chunk_array_reads: border=4 -> PASS
+V2 standalone: 37/37 PASS (component tests -- see docs/v2/POST_R9_TEST_INFRASTRUCTURE.md; these do NOT boot the real production EXROM build)
+rc=0

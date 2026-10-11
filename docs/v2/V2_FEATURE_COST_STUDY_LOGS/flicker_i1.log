@@ -1,0 +1,6 @@
+{"scenario": "type-10lines", "keys": 17, "tstates_total": 1182561, "tstates_mean": 69562, "tstates_max": 76782, "cls": 0, "drawtext": 17, "rowclr": 17, "diff_mismatches": 0}
+{"scenario": "type-20lines", "keys": 17, "tstates_total": 2410165, "tstates_mean": 141774, "tstates_max": 942067, "cls": 1, "drawtext": 36, "rowclr": 25, "diff_mismatches": 0}
+{"scenario": "type-wrapchg", "keys": 19, "tstates_total": 3862944, "tstates_mean": 203312, "tstates_max": 212043, "cls": 0, "drawtext": 19, "rowclr": 57, "diff_mismatches": 0}
+{"scenario": "lr-10lines", "keys": 12, "tstates_total": 23349, "tstates_mean": 1945, "tstates_max": 2559, "cls": 0, "drawtext": 0, "rowclr": 0, "diff_mismatches": 0}
+{"scenario": "updown-10lines", "keys": 6, "tstates_total": 3508974, "tstates_mean": 584829, "tstates_max": 594291, "cls": 6, "drawtext": 60, "rowclr": 6, "diff_mismatches": 0}
+{"scenario": "updown-20lines", "keys": 6, "tstates_total": 5601250, "tstates_mean": 933541, "tstates_max": 944502, "cls": 6, "drawtext": 120, "rowclr": 6, "diff_mismatches": 0}
