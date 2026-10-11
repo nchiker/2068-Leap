@@ -1850,9 +1850,15 @@ COMPILE_FACTOR:
         cp TOK_NUMBER            ; literal rule L-A, `-32768` used to compile as 0 - $8000, which the
         jr nz,.neg_expr          ; D11 promotion turned into +32768.0000
         ld hl,(TOK_VAL)
-        call MATH_NEGATE16
-        ld (TOK_VAL),hl
-        jr .number
+        ld de,32769
+        or a
+        sbc hl,de
+        jr nc,.neg_expr          ; QUAL (L-C): -32769 and below: 0 - <the FLOAT literal>
+        add hl,de
+        call MATH_NEGATE16       ; -1 .. -32768: an INT
+        ex de,hl
+        call COMPILE_INT_LITERAL
+        jp LEX_NEXT_TOKEN
 .neg_expr:
         call EMIT_BYTE_OP_PUSH_I8
         xor a
@@ -2445,6 +2451,17 @@ BUILTIN_FN_TABLE:
 ; correct); 0-127 still uses PUSH_I8 unchanged.
 COMPILE_NUMBER_LITERAL:
         ld de,(TOK_VAL)
+        bit 7,d
+        jr z,COMPILE_INT_LITERAL
+        call EMIT_BYTE_OP_PUSH_FLOAT_LIT   ; QUAL (L-C): 32768..65535 is that number, a FLOAT --
+        ld a,e                             ; OP_PUSH_FLOAT_LIT with divisor 0 builds it exactly
+        rst $20
+        ld a,d
+        rst $20
+        xor a
+        rst $20
+        jp EMIT_BYTE
+COMPILE_INT_LITERAL:                       ; DE = a signed 16-bit value
         ld a,d
         or a
         jr nz,.wide

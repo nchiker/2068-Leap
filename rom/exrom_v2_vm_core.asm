@@ -3233,8 +3233,33 @@ OP_PUSH_FLOAT_LIT:
         ld d,(hl)               ; DE = divisor
         inc hl
         ld (VM_IP),hl
+        ld a,d
+        or e
+        jr z,.u16                ; QUAL (L-C): divisor 0 = an unsigned literal 32768..65535
         ld (VM_FLOAT_B_VAL),de
         jp VM_DIV_VIA_FLOAT
+.u16:
+        ld hl,(VM_FLOAT_A_VAL)
+        call VM_PUSH_U16
+        jp VM_RUN.loop
+
+; QUAL (L-C): VM_PUSH_U16 -- HL = 32768..65535, pushed as that FLOAT. Its calculator form is
+; exactly [$90][H AND $7F][L][0][0] (exponent 16, the mantissa's top bit is the sign).
+VM_PUSH_U16:
+        ex de,hl
+        ld hl,CALC_STACK
+        ld (hl),$90
+        inc hl
+        ld a,d
+        and $7F
+        ld (hl),a
+        inc hl
+        ld (hl),e
+        inc hl
+        ld (hl),0
+        inc hl
+        ld (hl),0
+        jp VM_FLOAT_STORE_RESULT
 
 ; ===========================================================================
 ; PLATFORM INTEGRATION (R7 addition) — native-call opcodes reaching real,
@@ -4173,6 +4198,8 @@ BUILTIN_FN_PEEK:
 BUILTIN_FN_USR:
         call VM_POP_ADDR        ; HL = address (QUAL Q-32)
         call VM_CALL_USR_TRAMPOLINE
+        bit 7,h
+        jp nz,VM_PUSH_U16        ; QUAL (L-C): BC is unsigned, 0..65535
         xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
         jp VM_PUSH
 
