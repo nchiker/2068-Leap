@@ -75,19 +75,8 @@ V2_ARRAY_IS_STR   EQU $BEBF
 ; pre-R10.9 pool-path V2_LOAD_ARRAY and its 8-character name fold; free again in Phase 2C.)
 
 V2_COMMAND_LOOP:
-    xor a
-    ld (CURRENT_INK),a
-    ld (CURRENT_BRIGHT),a
-    ld (CURRENT_FLASH),a
-    ld (CURRENT_INVERSE),a
-    ld (CURRENT_OVER),a
-    ld a,7
-    ld (CURRENT_PAPER),a
     call KTAB_GFX_CLS
-    ld a,7
-    call KTAB_GFX_SET_BORDER
-    xor a
-    call KTAB_GFX_SET_MODE
+    call V2_RESET_DISPLAY        ; STUDY (U6): the same reset now also runs on every return to the editor
     call V2_RESET_EDIT
     call STARTUP_CHIME          ; R10.7: one-time boot chime -- this is
                                   ; V2_COMMAND_LOOP's own one-time head,
@@ -106,6 +95,7 @@ V2_COMMAND_LOOP:
     call V2_LOAD
     ENDIF
 .loop:
+    call V2_RESET_DISPLAY        ; STUDY (U6): video mode 0, white border, default colour state
     call EDITOR_INIT
     ld hl,V2_REDRAW
     ld (EDITOR_REDRAW_HOOK),hl
@@ -165,6 +155,20 @@ V2_COMMAND_LOOP:
     ld hl,V2_MSG_FULL
     call V2_SHOW_MESSAGE
     jr .loop
+
+; STUDY (U6): the editor's display state: attribute state variables, border, video mode 0.
+V2_RESET_DISPLAY:
+    xor a
+    ld (CURRENT_INK),a
+    ld (CURRENT_BRIGHT),a
+    ld (CURRENT_FLASH),a
+    ld (CURRENT_INVERSE),a
+    ld (CURRENT_OVER),a
+    ld a,7
+    ld (CURRENT_PAPER),a
+    call KTAB_GFX_SET_BORDER
+    xor a
+    jp KTAB_GFX_SET_MODE
 
 ; Convert EDIT_LINE_BUF into the generic record format. This is the same
 ; verbatim copy V1 called tokenization, with no V1 language processing.
