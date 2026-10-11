@@ -1,6 +1,6 @@
 # 2068-Leap V2 — Remaining completion budget (qualification study, Phase C)
 
-**Status: INCOMPLETE** only in §2.3 / “Gate results” (gate battery on `b1463c7` and `b716d4e` still running at commit time; partial logs had 0 FAIL). Otherwise complete for the scope below. The anchor points in §1 are measured on assembled production images. Everything after them is a projection,
+**Status:** complete for the scope below. The anchor points in §1 are measured on assembled production images. Everything after them is a projection,
 marked **[E]**. No projection is presented as a saving or a cost that was assembled. Nothing is integrated: `~/2068-Leap` / `v2-development` stay at `7ae0599`,
 nothing was pushed.
 
@@ -16,7 +16,8 @@ Companion reports: `V2_LANGUAGE_CONFORMANCE_REPORT.md` (what is wrong, by test),
 
 1. **The budget question is settled by one measured change.** Essential with **every fix this study measured** plus the **RST-vector shrink** builds at
    **HOME 741 free / EXROM 482 free [M]** (`study/qualification-final`, `b716d4e`; `make check` rc 0). That is more HOME than the Phase 2D baseline had (565) and
-   twice what Essential has today (353).
+   twice what Essential has today (353). **Enhanced with the same fixes and shrink was built too: HOME 578 / EXROM 233 free [M]**
+   (`study/qualification-enh-final`, `162dd59`; `make check` rc 0, corpus identical to Essential-final in every status).
 2. **Correctness costs HOME −157 / EXROM −6 / package +2 / RAM +74 [M].** The fixes cover all 6 critical defects, 7 of the 8 high ones (Q-10 is still open, and Q-08 is
    only *mitigated*: a float `FOR` is now a clean error 11 instead of a wrong result) and 9 medium/low ones.
    The single largest item is the `FOR` frame redesign (−102). The temporary-slot fix (Q-02) *saves* 40.
@@ -29,18 +30,17 @@ Companion reports: `V2_LANGUAGE_CONFORMANCE_REPORT.md` (what is wrong, by test),
    | **Storage goal 2: save/restore the program with its current variables** (§5) | −15 … −30 | −140 … −250 |
    | Optional (`ELSEIF`, bare `NEXT`, `INSTR`, 9 glyphs, D11-DISP …) | −152 … −200 | −40 … −80 |
 
-4. **Projected final configurations (§6), both fitting 16 KB + 8 KB:**
+4. **Projected final configurations (§6), from the measured fixes + RST builds:**
 
    | Final configuration | HOME free | EXROM free |
    |---|---:|---:|
    | **Essential** + fixes + RST + required + spec + goal 2 | **≈ 342 … 520 [E]** | **≈ 212 … 332 [E]** |
-   | **Enhanced** + the same, goal 2 in EXROM | ≈ 156 … 357 [E] | **≈ −37 … +83 [E]** (may not fit) |
-   | **Enhanced** + the same, goal 2 in HOME | **≈ −94 … +217 [E]** (may not fit) | ≈ 213 … 223 [E] |
-   | **Enhanced**, goal 2 in HOME + the further HOME shrink candidates (§3) | ≈ 118 … 532 [E] | ≈ 213 … 223 [E] |
+   | **Enhanced** + the same, goal 2 in EXROM | ≈ 179 … 357 [E] | **≈ −37 … +83 [E]** (may not fit) |
+   | **Enhanced** + the same, goal 2 in HOME | **≈ −71 … +217 [E]** (may not fit) | ≈ 213 … 223 [E] |
+   | **Enhanced**, goal 2 in HOME + the further HOME shrink candidates (§3) | ≈ 141 … 532 [E] | ≈ 213 … 223 [E] |
 
-   **Essential fits with room at every end of the ranges. Enhanced fits only with more shrink.** Its EXROM (239 free today) cannot take goal 2 at the
+   **Essential fits with room at every end of the ranges. Enhanced fits only with more shrink.** Its EXROM (233 free with the fixes, measured) cannot take goal 2 at the
    pessimistic estimate. Its HOME can take goal 2 only together with the further HOME shrink candidates (`EMIT_OP` inlining and the rest, [E] +212 … +315).
-   Enhanced + fixes + RST must be built and measured before goal 2's placement is decided.
 5. **Reserve policy (§7):** the 350/800 figures are planning targets, not limits. The study recommends a *release* reserve of **≥ 200 HOME / ≥ 150 EXROM** for
    hardware-qualification fixes. Every projected Essential range meets it, through goal 2 and before the optional items. Enhanced meets it only with goal 2 in HOME
    *and* the further shrink candidates, at the middle of their ranges or better.
@@ -57,6 +57,8 @@ Companion reports: `V2_LANGUAGE_CONFORMANCE_REPORT.md` (what is wrong, by test),
 | Essential + RST shrink | `ff7f0be` `study/qualification-shrink` | **912** (+559) | 488 | `make check`, 38/38, gate 115, arrays 98, defects, prodchecks 19/19, FILL 10/10, corpus identical to Essential |
 | Essential + all measured fixes | `b1463c7` `study/qualification-costs` | **196** (−157) | **482** (−6) | `make check` rc 0; corpus with the fixes' markers dropped: §2.2; gate: §2.3 |
 | **Essential + fixes + RST** | `b716d4e` `study/qualification-final` | **741** | **482** | `make check` rc 0; corpus and gate: §2.3 |
+| Enhanced + all measured fixes | `c461d7c` `study/qualification-enh-final~1` | **23** (−157) | **233** (−6) | corpus identical to Enhanced-final |
+| **Enhanced + fixes + RST** | `162dd59` `study/qualification-enh-final` | **578** (+555) | **233** | `make check` rc 0; corpus: 551 PASS / 61 XFAIL / 5 FAIL (the same 5 as Essential); gate: §2.3 |
 
 Per-commit figures are from `make budget` on each commit's own export. The RST saving measured on top of the fixes is **+545**, against +559 on plain Essential.
 The fix branch has 85 `VM_POP`/`VM_POP_COERCE_INT` call sites against 89 (typed pops such as `VM_POP_CHECK_INT` replaced some), and a different set of raise sites.
@@ -93,7 +95,10 @@ Run `qual-runs/costs5` + `supp3` (619 cases, Essential expectations, markers of 
 
 ### 2.3 Gate battery
 
-*(see “Gate results” at the end of this file — filled in from `qual-runs/gate-costs3` and `qual-runs/gate-final`)*
+Identical on `b1463c7` (fixes) and `b716d4e` (fixes + RST) **[M]**: gate 115 PASS, Array Store gate 98 PASS, known-defect suite 15 PASS, FILL 10/10, production checks
+17/19, `make check` rc 0. The two failing production checks (`253-vars`, `free-1`) assert the scalar cap and the `FREE` window that the Q-02 fix changes by design
+(cap 253 → 251, `FREE` 893). They are left failing until the owner accepts the new capacities. The corpus runs on the two builds agree case for case (0 status, 0 output
+differences). Details: conformance report §6.2.
 
 ---------------------------------------------------------------------------------------------------------------------------
 
@@ -215,27 +220,25 @@ All rows after the first two of each block are **[E]**; ranges add the low and h
 
 ### 6.2 V2 Enhanced
 
-Not built with the fixes. Enhanced differs from Essential by HOME −173 / EXROM −249 [M] (multi-item `PRINT`/prompted `INPUT`, `FOR` error line, redraw I1b/I2, LIST
-abort …). The fix set overlaps Enhanced's extra code in two places, and merge conflicts are expected there:
-
-* the compiler's `FOR` handling (N-3 against the `FOR` redesign);
-* `VM_PRINT_COMMON` / `OP_PRINT_STR` (multi-item `PRINT` against Q-27/Q-28).
-
-The fix cost is therefore taken as Essential's plus a small margin, −157 … −170 HOME. The RST saving is taken as +545 … +555. Enhanced has 3 more
-`call LEX_NEXT_TOKEN` and 2 more raise sites than Essential [S], about 5–10 B more saving.
+**Built and measured** (`study/qualification-enh-final`, from `study/qualification-b` = Enhanced + the test-infrastructure commits). The nine fix commits
+cherry-picked without a conflict. I had expected conflicts where the fixes overlap Enhanced's extra code: the compiler's `FOR` handling (N-3 against the `FOR`
+redesign) and `VM_PRINT_COMMON` / `OP_PRINT_STR` (multi-item `PRINT` against Q-27/Q-28). There were none textually, and the corpus shows no semantic one:
+against unfixed Enhanced, every status change is a case of a fixed defect, and all 11 Enhanced-specific cases (multi-item `PRINT`, prompted `INPUT`, the `FOR` error line) still PASS.
+The RST rule was re-applied with `tools/qual/apply_rst_rule.py`.
 
 | Step | HOME free | EXROM free |
 |---|---:|---:|
 | Enhanced today | 180 [M] | 239 [M] |
-| + fixes + RST | 555 … 578 | 233 |
-| − required − spec | 186 … 372 | 213 … 223 |
-| − goal 2 in **EXROM** (HOME −15 … −30, EXROM −140 … −250) | 156 … 357 | **−37 … +83** (may not fit) |
-| − goal 2 in **HOME** (HOME −155 … −280) | **−94 … +217** (may not fit) | 213 … 223 |
-| … and the further HOME shrink candidates (§3, +212 … +315) | 118 … 532 | 213 … 223 |
+| + fixes (`c461d7c`) | **23 [M]** (−157, exactly as on Essential) | **233 [M]** (−6) |
+| + RST (`162dd59`) | **578 [M]** (+555) | **233 [M]** |
+| − required − spec | 209 … 372 | 213 … 223 |
+| − goal 2 in **EXROM** (HOME −15 … −30, EXROM −140 … −250) | 179 … 357 | **−37 … +83** (may not fit) |
+| − goal 2 in **HOME** (HOME −155 … −280) | **−71 … +217** (may not fit) | 213 … 223 |
+| … and the further HOME shrink candidates (§3, +212 … +315) | 141 … 532 | 213 … 223 |
 
-For Enhanced, goal 2 must not take EXROM. It should be placed in HOME, which has room only because of RST. Alternatively it can be a loadable package (0 ROM, but
-needs the tape path to load it first), or EXROM must be shrunk first (not studied). Enhanced + fixes + RST must be **built and measured** before this projection is used
-for a decision. The procedure is the one used for `study/qualification-final`: cherry-pick the fix commits, re-apply the RST rule.
+**Enhanced + fixes alone leaves 23 bytes of HOME.** The fixes are not affordable in Enhanced without the RST shrink (or an equivalent). For Enhanced, goal 2
+must not take EXROM. It should be placed in HOME together with further HOME shrink. Alternatively it can be a loadable package (0 ROM, but needs the tape path
+to load it first), or EXROM must be shrunk first (not studied).
 
 ---------------------------------------------------------------------------------------------------------------------------
 
@@ -256,14 +259,10 @@ for a decision. The procedure is the one used for `study/qualification-final`: c
 
 ## 8. Next step (recommendation)
 
-1. **Adopt the critical fixes and the RST shrink first.** Apply the eight commits of `study/qualification-costs` and the RST change of `study/qualification-final`
-   to whichever prototype set is chosen. On Essential this is measured at 741/482 with `make check` passing.
-2. **Build Enhanced + fixes + RST** with the same procedure, and measure it before deciding goal 2's placement.
+1. **Adopt the critical fixes and the RST shrink together.** Apply the nine fix commits of `study/qualification-costs` (with the two test-infrastructure
+   commits) and the RST change to whichever prototype set is chosen. Measured: Essential 741/482 (`study/qualification-final`), Enhanced 578/233
+   (`study/qualification-enh-final`), `make check` passing on both. In Enhanced the fixes do not fit comfortably without the shrink (23 B HOME left).
+2. **Place goal 2 by configuration:** in Essential anywhere; in Enhanced in HOME, together with further HOME shrink, or as a package (§6.2).
 3. Owner decisions, in order: integer-only `FOR` (Q-08); the goal-2 semantics (§5.2 point 3); L-A vs L-C; the reserve (§7).
 4. Implement §4.1, then L-STR/L-SC, then goal 2 (G2-A), re-measuring after each.
 
----------------------------------------------------------------------------------------------------------------------------
-
-## Gate results
-
-*(filled in when the runs complete)*

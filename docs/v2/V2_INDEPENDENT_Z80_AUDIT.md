@@ -2,7 +2,7 @@
 
 **Status:** complete for the scope in §1; nothing here is integrated. Branches: `study/qualification-a` (this report, tools),
 `study/qualification-costs` (measured correctness fixes), `study/qualification-shrink` (measured shrink prototype),
-`study/qualification-b` (test infrastructure). `~/2068-Leap` / `v2-development` (`7ae0599`) untouched; nothing pushed.
+`study/qualification-final` (fixes + shrink together), `study/qualification-b` (test infrastructure). `~/2068-Leap` / `v2-development` (`7ae0599`) untouched; nothing pushed.
 
 **Evidence classes.** **[M]** measured on an assembled production image and/or observed on the real ROM in ZEsarUX through the
 qualification harness (`tools/qual/`), with the case or command named; **[S]** read from current source (file:line given against
@@ -13,8 +13,8 @@ study: “HOME −8” = 8 bytes consumed, “HOME +40” = 40 bytes freed. Ever
 
 ## 0. Summary
 
-* **Seven release-critical defects, all pre-existing in the Phase 2D baseline and present unchanged in V2 Essential and V2 Enhanced** (none was introduced by the overnight prototypes).
-  Four corrupt memory or destroy the program, three silently give wrong answers in ordinary programs:
+* **Six critical defects and one closely related high one (Q-27), all pre-existing in the Phase 2D baseline and present unchanged in V2 Essential and V2 Enhanced**
+  (none was introduced by the overnight prototypes). Four corrupt memory or destroy the program, three silently give wrong answers in ordinary programs:
 
   | ID | Defect | Minimal reproduction (real ROM) | Fix measured on `study/qualification-costs` |
   |---|---|---|---|
@@ -28,11 +28,18 @@ study: “HOME −8” = 8 bytes consumed, “HOME +40” = 40 bytes freed. Ever
 
   Two of them share one root pattern — **errors are raised with `jp VM_ERR_*` from inside called subroutines and `VM_ERR_COMMON` returns into the caller,
   which carries on** (§3.1). One 11-byte change (save SP at `VM_RUN`, restore it in `VM_ERR_COMMON`) closes the whole class.
-* **Seven further high-severity semantic defects** (Q-06 float `IF` condition, Q-07 `FOR` zero-trip, Q-08 float `FOR` bounds, Q-10 float arguments truncated by
-  `SGN/SQR/RAD/DEG/SIN…`, Q-20 `GOTO` out of an inner `FOR`, Q-27, plus D11/N-1/N-2 already known) and a list of medium/low ones (§2).
-* **All critical and the listed high defects have measured fixes** on `study/qualification-costs` (Essential base): HOME 353 → **208** free (−145 for 18 defects), EXROM 488 → 482 (−6).
-  The fixed build passes `make check`, 38/38 component tests, the 115-case gate, the 98-case Array Store gate, the known-defect suite and FILL 10/10;
-  17/19 production checks (the two failures are capacity constants that the Q-02 fix changes by design, §3.2).
+* **Further high-severity semantic defects:** Q-06 float `IF` condition, Q-07 `FOR` zero-trip, Q-08 float `FOR` bounds, Q-10 float arguments truncated by
+  `SGN/SQR/RAD/DEG/SIN…`, Q-20 `GOTO` out of an inner `FOR`, Q-29 SPRITE `MOVE` (package), Q-30 float arguments of `CHR$ LEFT$ RIGHT$ MID$ PAUSE BORDER` used as
+  their slot index — plus D11/N-1/N-2 already known — and a list of medium/low ones (§2).
+* **Every critical and high defect except Q-10 has a measured fix** on `study/qualification-costs` (`b1463c7`, Essential base); Q-08 is *mitigated* (a float `FOR`
+  bound is a clean error 11 instead of a wrong loop). 22 defect ids in all: HOME 353 → **196** free (−157), EXROM 488 → 482 (−6), SPRITE package +2, RAM +74.
+  The fixed build passes `make check`, the 115-case gate, the 98-case Array Store gate, the 15-case known-defect suite and FILL 10/10; 17/19 production checks
+  (the two failures are capacity constants that the Q-02 fix changes by design, §3.2); corpus 551 PASS / 61 XFAIL / 5 FAIL (the 5 are Q-08 mitigated-only and
+  Q-17 partly fixed — conformance report §6.2).
+* **Fixes and shrink together are measured too:** `study/qualification-final` (`b716d4e`) = the fix branch + the RST change re-applied by its mechanical rule:
+  **HOME 741 / EXROM 482 free [M]**, `make check` rc 0, the same gate results and the same corpus results as the fix branch, case for case.
+  The same procedure on Enhanced (`study/qualification-enh-final`, `162dd59`): fixes alone **HOME 23 / EXROM 233**, fixes + RST **HOME 578 / EXROM 233 [M]**,
+  `make check` rc 0, corpus with the same 5 known FAILs and no other change.
 * **A large, safe shrink exists that the earlier shrink passes did not find** (§4.1): the HOME ROM bytes `$0004–$0027` and `$002B–$0037` are `$FF` fill, i.e. five free
   RST vectors. Routing the five hottest call targets through them (`LEX_NEXT_TOKEN`, `VM_POP`, `VM_POP_COERCE_INT`, `EMIT_BYTE`, tail jumps to `COMPILE_RAISE_ERROR`)
   frees **HOME +559 B** on V2 Essential (353 → 912 free) **[M]**, at **+0.1 … +0.3 %** emulated run time **[M]**; the full project battery passes and the 555-case corpus gives
@@ -51,8 +58,11 @@ study: “HOME −8” = 8 bytes consumed, “HOME +40” = 40 bytes freed. Ever
 | Phase 2D baseline | `7ae0599` | 565 | 802 | `ce66832c9aebffca` | `tools/qual/build_configs.sh` (git archive → `make build v2-packages`, `make budget`) **[M]** |
 | V2 Essential | `0dedab3` `study/combined-essential` | 353 | 488 | `b0fbbf6b0537f34b` | same **[M]**; byte-identical to the overnight worktree build |
 | V2 Enhanced | `8379ab5` `study/combined-enhanced` | 180 | 239 | `f70d20fbb62143af` | same **[M]** |
-| Fixes (this study) | `b478b31` `study/qualification-costs` | 208 | 482 | — | Essential + the fixes of §2 **[M]** |
+| Fixes (this study) | `b1463c7` `study/qualification-costs` | 196 | 482 | `38e8b2309a76eb1a` | Essential + the fixes of §2 **[M]** |
 | Shrink (this study) | `ff7f0be` `study/qualification-shrink` | 912 | 488 | `26605e6699b86f64` | Essential + RST vectors **[M]** |
+| Fixes + shrink (this study) | `b716d4e` `study/qualification-final` | **741** | 482 | `f29b2309f04b4b9f` | fix branch + RST vectors **[M]** |
+| Enhanced + fixes (this study) | `c461d7c` `study/qualification-enh-final~1` | 23 | 233 | `9b2f424ec90e5948` | Enhanced + the same fix commits **[M]** |
+| Enhanced + fixes + shrink | `162dd59` `study/qualification-enh-final` | **578** | 233 | `b448576c701da746` | + RST vectors (`tools/qual/apply_rst_rule.py`) **[M]** |
 
 ### 1.2 What was reviewed, and how deeply
 
@@ -116,6 +126,9 @@ observed on all three configurations unless the *Configs* column narrows it. “
 | Q-24 | LOW | all | `CALL` of a plain label accepted | shared label namespace | `proc.goto_label` | [E] −10…−20 |
 | Q-25 | LOW | all | string comparison cannot be combined (`AND`) or used as a value | `COMPILE_IF` | `str.cmp_and` | part of L-STR |
 | Q-26 | LOW | all | `[ \ ] ^ ` `{ | } ~` print blank | font punctuation subset | `print.font_brackets` | document [E] or −72…−90 |
+| Q-29 | HIGH | all | SPRITE `MOVE` restores the background at a garbage position and leaves the old image | `SPR_MOVE_EXEC` indexes `SPRITE_SLOT_ROW/COL` with `DE` after `SPR_COMPUTE_ADDRS` left `D = HIGH(SPRITE_SLOT_BG_BUF)` (the other three callers reload `D`) | `pkg.sprite.move_restore`, `pkg.sprite.cycle` | `ld d,0`, **package +2** [M] |
+| Q-30 | HIGH | all | a FLOAT argument of `CHR$ LEFT$ RIGHT$ MID$ PAUSE BORDER` is its slot index (`LEFT$(a$,5/2)` = `""`, `CHR$(65.6)` = `CHR$(0)`, `PAUSE 20.5` ≈ no pause) | these handlers `call VM_POP` instead of `VM_POP_COERCE_INT` | `tag.left_float`, `tag.chr_float`, `tag.pause_frames` | 7 call targets changed, **0 B** [M] |
+| Q-31 | LOW | all | `MID$` start uses its low byte (`MID$(s$,257,1)` = first character; −256 means 1) | `BUILTIN_FN_MID` tests `L` only | `tag.mid_bigstart*` | test `H`, **HOME −12** [M] |
 
 Not defects but recorded: **DD-1** (manual: string array elements hold 31 characters; default width 16 holds 15); **DEC-PLOT** (PLOT/POINT x/y wrap modulo 256).
 
@@ -248,8 +261,10 @@ None of these interacts with the overnight prototypes' semantics.
 
 ### 4.3 Bank placement
 
-No measured candidate needed EXROM. HOME is the pressure point in every configuration, and §4.1 changes that picture completely: with it, V2 Enhanced would have
-≈ 739 B of HOME free **[E]** (180 + 559), more than enough for every remaining required item in `V2_REMAINING_COMPLETION_BUDGET.md`. The EXROM-placed hardware
+No measured candidate needed EXROM. HOME is the pressure point today, and §4.1 changes that picture: Essential + every measured fix + RST is **741 HOME free [M]**;
+V2 Enhanced + the same is **578 HOME / 233 EXROM free [M]** (`study/qualification-enh-final`); without RST the fixes leave Enhanced 23 B of HOME. Once the remaining
+required items and storage goal 2 are counted,
+**Enhanced's EXROM (239 free) becomes the binding constraint** — see `V2_REMAINING_COMPLETION_BUDGET.md` §6. The EXROM-placed hardware
 functions (`study/lang-hw-exrom`) — a HOME-for-EXROM trade of 48 for 54 bytes — are not worth taking once §4.1 is in.
 
 ---------------------------------------------------------------------------------------------------------------------------
@@ -283,8 +298,8 @@ Combined builds: the merges are faithful (costs exactly additive per the cost st
 1. **Error handling is the weakest contract** (§3.1): an error is a *flag plus a return*, with every caller expected to cope. The SP-restore fix turns it into a
    proper non-local exit for the VM; the compiler has the same shape (errors set `COMPILE_ERROR_CODE` and every routine checks and returns) but it is consistent there.
 2. **No single representation contract for strings** (§3.3): some producers terminate, some do not, `PRINT` relied on termination. Length-only is the cheaper and safer rule.
-3. **Float values flow into integer-only consumers unchecked**: `JMPZ`, `FOR_INIT`, `BORDER`, `PAUSE`, `CHR$` pop with `VM_POP` and use the slot index; others coerce by
-   truncation (`VM_POP_COERCE_INT`) where mathematics needs the float (Q-10). A rule — “every consumer either coerces or rejects a float, explicitly” — would have prevented Q-06/Q-08/Q-10.
+3. **Float values flow into integer-only consumers unchecked**: `JMPZ`, `FOR_INIT`, `BORDER`, `PAUSE`, `CHR$`, `LEFT$`, `RIGHT$`, `MID$` pop with `VM_POP` and use the
+   slot index (Q-06, Q-08, Q-30 — all three fixed or mitigated on the fix branch); others coerce by truncation (`VM_POP_COERCE_INT`) where mathematics needs the float (Q-10). A rule — “every consumer either coerces or rejects a float, explicitly” — would have prevented Q-06/Q-08/Q-10.
 4. **Fixed 2-slot temporaries** were never adequate (§3.2).
 5. The build is otherwise lean (the R10.7 consolidation audits hold up): no dead routines were found; the large saving available is structural (RST vectors), not de-duplication.
 
@@ -294,7 +309,8 @@ Combined builds: the merges are faithful (costs exactly additive per the cost st
 
 1. **Q-03 + Q-18** (SP restore, 11 B), **Q-01** (0 B), **Q-04** (8+6 B), **Q-27 + Q-28** (12 B), **Q-02** (frees 40 B, RAM +74): the critical set, 0 net HOME cost together (−11 −8 −12 +40 = +9 B freed).
 2. **RST vectors** (§4.1): +559 HOME, takes the budget question off the table for the rest of V2.
-3. **Q-06** (1 B), **Q-07/Q-08/Q-19/Q-20** (FOR redesign, 102 B — worth tightening), **Q-10** (SGN/SQR/RAD/DEG float arguments).
+3. **Q-06** (1 B), **Q-30** (0 B), **Q-29** (package +2), **Q-07/Q-08/Q-19/Q-20** (FOR redesign, 102 B — worth tightening; Q-08 needs the integer-only-`FOR`
+   decision), **Q-10** (SGN/SQR/RAD/DEG float arguments).
 4. Medium items: Q-05, Q-09, Q-11, Q-13, Q-15/16, D10.
 5. Low items and decisions: §2.
 
@@ -305,7 +321,7 @@ All Q fixes apply to the Phase 2D code and are independent of which prototype se
 ```
 cd ~/2068-Leap-study/qualification-a
 tools/qual/build_configs.sh ~/2068-Leap-study/qual-builds                       # baseline / essential / enhanced
-tools/qual/build_configs.sh ~/2068-Leap-study/qual-builds costs=study/qualification-costs shrink=study/qualification-shrink
+tools/qual/build_configs.sh ~/2068-Leap-study/qual-builds costs=study/qualification-costs shrink=study/qualification-shrink final=study/qualification-final
 python3 tools/qual/qprobe.py essential -- 'k$ = "n"' 'IF k$ = "y" THEN' 'PRINT "yes"' 'ELSE' 'PRINT "no"' 'ENDIF'   # Q-01
 python3 tools/qual/qrun.py --out /tmp/q --cfg essential --filter crash.,mem.,dim.big,strrec.               # critical set
 python3 tools/qual/qbench.py essential shrink                                                              # RST speed

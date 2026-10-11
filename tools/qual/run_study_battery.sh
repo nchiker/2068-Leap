@@ -29,6 +29,9 @@ wait
 [ -f tools/study_flicker.py ] && one flicker $((port + i)) python3 tools/study_flicker.py --diff --json "$out/flicker.json"
 i=$((i + 1))
 if [ -f tools/study_vm_oracle.py ]; then
+  # the oracle checks error 67 on overflow unless ORACLE_PROMOTE=1 (the D11 promotion builds, marked by
+  # FLOAT_BIG_TO_STRING); without it every overflow pair of a promotion build is reported as a mismatch
+  grep -q '^FLOAT_BIG_TO_STRING:' build/exrom.sym && export ORACLE_PROMOTE=1
   for m in mul add sub mulop; do one "vm_oracle_$m" $((port + i)) python3 tools/study_vm_oracle.py "$m" 3000 & i=$((i + 1)); done
   wait
 fi

@@ -19,7 +19,7 @@ harness, results read back from the machine (screen through the ROM's own font, 
 * **The language surface was inventoried from the source tables** (keyword table, statement dispatch, expression parser, built-in function table, VM
   opcode table, shell commands, package registrations): **118 items** — 52 implemented and documented, 3 implemented but undocumented, 33 partially
   implemented, 8 documented but missing, 9 intentionally unsupported, 13 needing physical hardware for full qualification (§2).
-* **A 615-case conformance corpus** with independent expectations (exact rational arithmetic, the manual and the V2 design decisions — never the ROM's own output)
+* **A 619-case conformance corpus** with independent expectations (exact rational arithmetic, the manual and the V2 design decisions — never the ROM's own output)
   was run on all three configurations on the real production images (§3):
 
   | Configuration | Cases | PASS | XFAIL (documented defect reproduced) | FAIL (unexplained) | XPASS | N/A | BLOCKED |
@@ -29,12 +29,14 @@ harness, results read back from the machine (screen through the ROM's own font, 
   | V2 Enhanced `8379ab5` | 619 | 477 | 140 | 0 | 0 | 2 | 0 |
   | Essential + fixes `b1463c7` (22 ids marked fixed) | 619 | 551 | 61 | 5 | 0 | 2 | 0 |
   | Essential + fixes + RST `b716d4e` (same) | 619 | 551 | 61 | 5 | 0 | 2 | 0 |
+  | Enhanced + fixes `c461d7c` (same, Enhanced expectations) | 619 | 551 | 61 | 5 | 0 | 2 | 0 |
+  | Enhanced + fixes + RST `162dd59` (same) | 619 | 551 | 61 | 5 | 0 | 2 | 0 |
 
   Merged from `qual-runs/full3` + `supp1..4` (`tools/qual/qmerge.py`; every record re-checked against the current markers). The 5 FAILs on the fixed builds are
   Q-08 mitigated only (float `FOR` → error 11, 4 cases) and Q-17 partly fixed (`VAL("99999")` wraps).
 * **Correctness is not at release level in any configuration.** The corpus exposed **31 defects not previously recorded** (Q-01 … Q-31), **6 of them critical**
-  (silent memory corruption or loss of the program) and **8 high** (incl. Q-29 SPRITE `MOVE`, Q-30 float arguments of `CHR$ LEFT$ RIGHT$ MID$ PAUSE BORDER` used as their slot index) (silently wrong results in ordinary programs). **All of them are pre-existing in the
-  Phase 2D baseline**; none was introduced by the overnight prototypes. The critical ones, each reproduced on the real ROM:
+  (silent memory corruption or loss of the program) and **8 high** (silently wrong results in ordinary programs — among them Q-29 SPRITE `MOVE` and Q-30, float
+  arguments of `CHR$ LEFT$ RIGHT$ MID$ PAUSE BORDER` used as their slot index). **All of them are pre-existing in the Phase 2D baseline**; none was introduced by the overnight prototypes. The critical ones, each reproduced on the real ROM:
 
   | ID | What a user sees |
   |---|---|
@@ -45,12 +47,15 @@ harness, results read back from the machine (screen through the ROM's own font, 
   | Q-18 | `DIM a(5): a(5)=99` → error, but `a(0)` is now 99; `a(-1)=2` changes the array's size |
   | Q-28 | `DIM a(3): a(0)=7: s$="x": t$="<31 characters>": PRINT a(0)` → `0` |
 
-* **Every critical and high defect except Q-10 (float arguments of `SGN/SQR/RAD/DEG/SIN…`) and Q-15/Q-16 (`INPUT` of decimals/large numbers) has a measured fix**
-  on `study/qualification-costs` (V2 Essential base): HOME 353 → 208 free, EXROM 488 → 482, SPRITE package +2 B; on the fixed build the corpus shows those
-  defects gone and no new failure (§6), and the project's gate battery passes (§6.2).
+* **Every critical and high defect except Q-10 (float arguments of `SGN/SQR/RAD/DEG/SIN…`) has a measured fix** on `study/qualification-costs` (`b1463c7`,
+  V2 Essential base; Q-08 only *mitigated*: a float `FOR` bound is now a clean error 11): HOME 353 → 196 free, EXROM 488 → 482, SPRITE package +2 B. With the RST
+  shrink on top (`study/qualification-final`, `b716d4e`) the same fixes build at **HOME 741 / EXROM 482**; on Enhanced (`study/qualification-enh-final`)
+  at **HOME 578 / EXROM 233** (fixes alone: 23 / 233). On both fixed builds every fixed defect's cases PASS, no
+  other case changed status, and the project's gate battery passes (§6.2).
 * **Prototype retests (A3):** BREAK, edit preservation, display restoration, D11 promotion and literals, big-float display, nested FN/PROC calls, bare words,
   `IN/OUT/STICK`, multi-item `PRINT`, prompted `INPUT`, `FOR` error line, FILL and the shrink changes behave as the cost study reported on their own
-  ground; their *edges* add Q-05 (`-32768`), Q-09 (5+ decimals) and Q-23 (`STICK(5)`) (§4).
+  ground. The cost study's own tools were re-run on both combined builds: every case passed, the integer oracle found 0 mismatches in 4 × 8 476 pairs, and the
+  selective-redraw diff found 0 mismatches in 12 scenarios (§4.1). The prototypes' *edges* add Q-05 (`-32768`), Q-09 (5+ decimals) and Q-23 (`STICK(5)`) (§4).
 * **Test infrastructure (A5):** `chunk_refill_boundary` migrated to the two-bank harness (38/38 on Enhanced, mutation-checked); a further silent defect found and fixed —
   the CALC variant of the component-test EXROM was 1653–1670 B over 8 KB and truncated without error; 15 component-test sources are never run; the test-only
   decompiler does not reconstruct multi-item `PRINT` and rejects `OUT` (§5).
@@ -143,7 +148,10 @@ hardware), the `PACKAGE_ABI.md` slot 15 record description `[len][content…, NU
 
 ### 3.1 Totals
 
-*(filled in §3.1 table of §0 from the merged final run; see `V2_LANGUAGE_CASES.csv` for every case)*
+The totals are the table in §0. They merge the full run `qual-runs/full3` with four supplementary runs (`supp1` … `supp4`: cases added or re-marked after
+full3). `tools/qual/qmerge.py` merges case by case (later run wins) and reports cases no run covered (none). Every merged record was re-checked against the
+current markers and expectations; the one stale record (`strrec.31_vs_array_write`, a control whose marker was removed) was re-run. Every case with its program,
+expectation, observed output per configuration and defect id: `V2_LANGUAGE_CASES.csv`.
 
 ### 3.2 Results by area
 
@@ -220,7 +228,34 @@ port state where readable).
 
 ### 4.1 Study-tool battery
 
-*(filled from the re-run of the cost study's own tools on the Essential and Enhanced exports; see §4.1 results below)*
+The cost study's own prototype tools (`tools/study_*.py` of each combined build) were re-run on frozen copies of the Essential and Enhanced exports by
+`tools/qual/run_study_battery.sh` (logs: `qual-runs/a3-essential`, `qual-runs/a3-enhanced`) **[M]**:
+
+| Tool (prototype) | Essential | Enhanced |
+|---|---|---|
+| `study_break_matrix` (D5/D5b BREAK through the real keyboard matrix) | 6 PASS | 6 PASS |
+| `study_edit_preserve` (D9a/D9b) | 9 PASS | 9 PASS |
+| `study_u6` (display/attribute reset) | 4 PASS | 4 PASS |
+| `study_bare_ident` (N-2) | 13 PASS | 13 PASS |
+| `study_callfn` (N-1 nested FN in CALL) | 7 PASS | 7 PASS |
+| `study_d11_literals` (L-A) | 13 PASS | 13 PASS |
+| `study_d11_print` (promotion + big-float display) | 15 PASS | 15 PASS |
+| `study_lang_hw` (`OUT`/`IN`/`STICK`) | 6 PASS | 6 PASS |
+| `study_eof_for` (N-3) | — (not in Essential) | 5 PASS |
+| `study_lang_print` (multi-item `PRINT`, prompted `INPUT`) | — (not in Essential) | 13 PASS |
+| `study_fill_break` (BREAK interrupts FILL) | running before BREAK, returned after BREAK ✓ | ✓ |
+| `study_flicker --diff` (I1/I1b/I2: selective redraw == full redraw) | 12 scenarios, 0 mismatches | 12 scenarios, 0 mismatches |
+| `study_vm_oracle` mul / add / sub / mulop (real VM, exact reference; 8 476 pairs each) | 0 / 0 / 0 / 0 mismatches | 0 / 0 / 0 / 0 mismatches |
+
+Two harness notes, both mine or the tool's, neither the ROM's:
+
+* The first battery pass ran `study_vm_oracle` add/sub/mulop without `ORACLE_PROMOTE=1`. In that mode the tool expects error 67 on overflow, so it reported exactly
+  the overflow pairs (855 / 845 / 6 277) as mismatches. Every one of them had promoted to the exact value. The runner now sets the variable for promotion builds.
+* The tool's own mismatch report line crashes (`TypeError`: a 9-field tuple formatted with 7 placeholders), so a real mismatch would have been reported only as a
+  count. This is a defect in the cost study's tool, recorded here; it is not fixed in the prototype branches, which this study does not modify.
+
+Not re-run: the D11 *error* variant and the core-vs-EXROM / ABI 2.1 hardware-function alternatives. These are alternatives that neither combined build contains.
+Abortable LIST has no tool.
 
 ---------------------------------------------------------------------------------------------------------------------------
 
@@ -262,10 +297,29 @@ port state where readable).
 | `3eb57e0`/`f0d62ca` | Q-07, Q-08, Q-19, Q-20 (FOR redesign) | 220 | 482 | |
 | `b478b31` | Q-27, Q-28 | 208 | 482 | |
 | `00cb2a5` | Q-29 | 208 | 482 | SPRITE 832 → 834 |
+| `b1463c7` | Q-30 (0), Q-31 (−12) | **196** | **482** | |
+| `b716d4e` (`study/qualification-final`) | all of the above + RST shrink | **741** | **482** | |
+| `c461d7c` (`study/qualification-enh-final~1`) | the same nine fix commits on **Enhanced** | 23 | 233 | SPRITE 834 |
+| `162dd59` (`study/qualification-enh-final`) | + RST shrink, on **Enhanced** | **578** | **233** | |
 
 ### 6.2 Verification of the fixed build
 
-*(filled from the corpus run with `--fixed` and the gate battery on `00cb2a5`/`b478b31`, below)*
+Both fixed builds were exported and run exactly like the three configurations **[M]**. They are `b1463c7` (fixes) and `b716d4e` (fixes + RST).
+
+* **Corpus** (619 cases, Essential expectations; the markers of the 22 fixed ids were dropped, so their cases must PASS): **551 PASS, 61 XFAIL, 5 FAIL, 0 XPASS, 2 N/A**
+  on both builds. Compared case by case, the two runs have 0 status differences and 0 differences in observed output. All cases of Q-01 … Q-07, Q-09, Q-11 … Q-14,
+  Q-18 … Q-20 and Q-27 … Q-31 PASS. The 61 XFAILs are defects still open (D10, D11-EXT, D11-DISP, L-A, L-STR and the other L-items, Q-10, Q-15, Q-16,
+  Q-21 … Q-26, N-4, DD-1, DEC-PLOT). The 5 FAILs are reported as failures, with no expectation changed:
+  * `for.float_step`, `for.float_limit`, `for.float_start`, `for.float_var_limit`: Q-08 is **mitigated, not fixed**. A float `FOR` bound is now runtime error 11
+    instead of a wrong loop. R10.8 documents “float STEP accepted”, so this needs the owner decision integer-only `FOR` vs float loops.
+  * `str.val_big`: Q-17 is **partly fixed**: `VAL` stops at a non-digit, but `VAL("99999")` still wraps to −31073.
+* **Project gate battery** (`tools/qual/run_gate_suites.sh` on frozen copies; `qual-runs/gate-costs3`, `qual-runs/gate-final`), identical on both builds:
+  `v2_prod_regress` **115 PASS**, `v2_prod_arrays` **98 PASS**, `v2_known_defects` **15 PASS**, `v2_fill_check` **10/10**, `v2_production_checks` **17/19**.
+  The two failing production checks are `253-vars` (a 253rd scalar is now a compile error: the cap is 251) and `free-1` (`FREE` = 893, outside the
+  check's 900–1100 window). Both are capacity constants that the Q-02 fix changes by design (+74 B RAM for 8 temp slots). The checks were not edited.
+* **`make check`** rc 0 on both (assembly, docs, package-ABI, storage-contract, basic-source, calculator-dispatcher and SPRITE checks).
+* **Standalone component tests** (`tools/run_v2_standalone_tests.sh`): see the line below.
+* An earlier gate run on the intermediate `b478b31` was stopped after 38 gate cases (0 FAIL) once `b1463c7` superseded it (`qual-runs/gate-costs2.SUPERSEDED`).
 
 ---------------------------------------------------------------------------------------------------------------------------
 
@@ -278,6 +332,6 @@ hi-res mode, string arrays in the Array Store across `RUN` (98-case gate), and e
 
 ## 8. Recommended corrections
 
-In order: the seven critical defects (Q-01, Q-02, Q-03, Q-04, Q-18, Q-28, Q-29 — measured fixes exist, net HOME cost ≈ 0 for the first six together); then
-Q-06, Q-07/Q-08/Q-19/Q-20, Q-27, Q-10; then the medium items; then decisions (INT rounding, DEC-PLOT, `MID$` start 0, `POKE` value range, literal rule L-C).
+In order: the six critical defects with Q-27 (Q-01, Q-02, Q-03, Q-04, Q-18, Q-27/Q-28 — measured fixes, HOME +9 net together); then the high ones,
+Q-06, Q-30, Q-29, Q-07/Q-08/Q-19/Q-20 (with the integer-only-`FOR` decision), Q-10; then the medium items; then decisions (INT rounding, DEC-PLOT, `MID$` start 0, `POKE` value range, literal rule L-C).
 Costs, dependencies and the overall budget: `V2_REMAINING_COMPLETION_BUDGET.md`. Root causes and code review: `V2_INDEPENDENT_Z80_AUDIT.md`.
