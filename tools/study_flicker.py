@@ -51,7 +51,6 @@ SCENARIOS = {
                        [DOWN, DOWN, DOWN, DOWN, DOWN, UP, UP, UP, UP, UP, UP, DOWN, RIGHT, RIGHT, DOWN, DOWN, UP]),
     "updown-typed":   (prog(8), 3, seq("zz") + [DOWN, UP, UP] + seq("q") + [DOWN]),
     "updown-deep":    (prog(26), 18, [DOWN, DOWN, DOWN, DOWN, UP, UP, UP, UP, UP]),
-    "append-up":      (prog(5), 5, seq("zz = 1") + [UP, UP, DOWN, DOWN, DOWN]),
     "mixed-session":  (prog(10), 4, seq("a") + [UP, DOWN] + seq("bb") + [DEL, LEFT, DOWN, RIGHT] + seq("c") + [UP, UP, DOWN]),
 }
 

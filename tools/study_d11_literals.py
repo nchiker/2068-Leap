@@ -12,8 +12,8 @@ CASES = [  # (program, want printed, want compile error)
   (["PRINT 100000"], [], 64),
   (["x = 99999999"], [], 64),
   (["PRINT 3000.5"], ["3000.5000"], 0),
-  (["PRINT 12345.5"], ["12345.5000"], 0),            # mantissa 123455 > 32767 -> now an error, was garbage
-  (["PRINT 3276.7"], ["3276.7000"], 0),
+  (["PRINT 12345.5"], [], 64),                        # mantissa 123455 does not fit 16 bits -> error (was garbage)
+  (["PRINT 3276.7"], ["3276.6999"], 0),            # mantissa 32767 is the largest accepted; 3276.6999 is the pre-existing D10 truncation
   (["PRINT 3276.8"], [], 64),                         # mantissa 32768 would be negative
   (["PRINT 0.5"], ["0.5000"], 0),
   (["PRINT 7"], ["7"], 0),
