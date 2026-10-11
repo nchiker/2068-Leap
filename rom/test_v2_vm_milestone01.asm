@@ -53,6 +53,8 @@
 RST_00:
     di
     jp   COLD_START
+    DEFINE V2_RST_VM_ONLY             ; no compiler in this image
+    INCLUDE "rom/v2_rst_vectors.inc"   ; QUAL shrink: RST call vectors
     DS   $0100 - $, $FF
 
 COLD_START:

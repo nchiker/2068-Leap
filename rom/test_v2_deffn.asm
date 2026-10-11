@@ -58,7 +58,7 @@
 RST_00:
     di
     jp   COLD_START
-    DS   $0028 - $, $FF
+    INCLUDE "rom/v2_rst_vectors.inc"   ; QUAL shrink: RST call vectors (ends at $0028)
     ; RST $28 -- the real calculator's real entry vector, per rom/
     ; exrom_calc.asm's own documented "ENTRY CONTRACT" header: a plain
     ; `jp CALC_EXROM_ENTRY` is exactly right here, no paging trampoline
@@ -67,6 +67,7 @@ RST_00:
     ; and rom/test_v2_vm_milestone01.asm (both also include the real
     ; calculator).
     jp   CALC_EXROM_ENTRY
+    INCLUDE "rom/v2_rst30.inc"         ; QUAL shrink: RST $30
     DS   $0100 - $, $FF
 
 COLD_START:

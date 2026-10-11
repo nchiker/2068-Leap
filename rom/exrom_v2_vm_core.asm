@@ -1071,7 +1071,7 @@ VM_POP:                        ; output: HL = value, A = tag
 ; Out: HL = value, A = TAG_INT (on success); jumps to VM_ERR_ARRAY_TYPE
 ; directly otherwise, same as the inlined version did. Destroys: AF.
 VM_POP_CHECK_INT:
-        call VM_POP
+        rst $10
         cp TAG_INT
         jp nz,VM_ERR_ARRAY_TYPE
         ret
@@ -1290,7 +1290,7 @@ OP_STORE_VAR:
 ; Falls through to VM_RUN.loop exactly like the original inline body did.
 VM_STORE_VAR_BY_INDEX:
         ld c,a                  ; save index
-        call VM_POP             ; HL = value, A = tag
+        rst $10                 ; HL = value, A = tag
         ld (VM_FLOAT_A_TAG),a
         ld (VM_FLOAT_A_VAL),hl
         cp TAG_FLOAT
@@ -1694,7 +1694,7 @@ OP_STRARR_STORE:
         ld (VM_STRARR_COUNT_TMP),de
         inc hl
         ld (VM_IP),hl
-        call VM_POP             ; QUAL (Q-02): the value is a string index (TAG_STR for a temp)
+        rst $10                 ; QUAL (Q-02): the value is a string index (TAG_STR for a temp)
         ld a,l
         ld (VM_STRARR_VALUE_IDX_TMP),a  ; STRTAB indices are always small
         call VM_POP_CHECK_INT
@@ -2065,10 +2065,10 @@ OP_INPUT_STR:
 ; existing VM_CALL_USR_TRAMPOLINE `jp (hl)` idiom. Behavior unchanged
 ; (same flags/ops/order); see docs/v2/R10_5_SHRINK.md.
 VM_PREPARE_BINARY_OPERANDS:
-        call VM_POP             ; HL = b, A = tag_b
+        rst $10                 ; HL = b, A = tag_b
         ld (VM_FLOAT_B_TAG),a
         ld (VM_FLOAT_B_VAL),hl
-        call VM_POP             ; HL = a, A = tag_a
+        rst $10                 ; HL = a, A = tag_a
         ld (VM_FLOAT_A_TAG),a
         ld (VM_FLOAT_A_VAL),hl
         ld c,a
@@ -2277,10 +2277,10 @@ OP_CMP_NE:
         jp PUSH_INT_CONTINUE
 
 OP_AND:
-        call VM_POP             ; HL = b, A = tag_b
+        rst $10                 ; HL = b, A = tag_b
         ld c,a
         push hl
-        call VM_POP              ; HL = a, A = tag_a
+        rst $10                  ; HL = a, A = tag_a
         or c
         jp nz,VM_ERR_FLOAT_NOT_IMPLEMENTED
         pop de                   ; DE = b
@@ -2298,10 +2298,10 @@ OP_AND:
         jp PUSH_INT_CONTINUE
 
 OP_OR:
-        call VM_POP
+        rst $10
         ld c,a
         push hl
-        call VM_POP
+        rst $10
         or c
         jp nz,VM_ERR_FLOAT_NOT_IMPLEMENTED
         pop de
@@ -2319,7 +2319,7 @@ OP_OR:
         jp PUSH_INT_CONTINUE
 
 OP_NOT:
-        call VM_POP              ; HL = value, A = tag
+        rst $10                  ; HL = value, A = tag
         cp TAG_FLOAT
         jp z,VM_ERR_FLOAT_NOT_IMPLEMENTED
         ld a,h
@@ -2333,7 +2333,7 @@ OP_NOT:
         jp PUSH_INT_CONTINUE
 
 OP_JMPZ:
-        call VM_POP             ; HL = condition value, A = tag (not
+        rst $10                 ; HL = condition value, A = tag (not
                                  ; re-checked here; a boolean from CMP_*
                                  ; or any int value is a legal condition,
                                  ; same "any nonzero is true" rule V1 uses)
@@ -2643,7 +2643,7 @@ OP_STORE_STR_VAR:
         inc hl
         ld (VM_IP),hl
         ld (VM_STR_TARGET_TMP),a
-        call VM_POP             ; HL = source index, A = tag (ignored --
+        rst $10                 ; HL = source index, A = tag (ignored --
                                  ; this opcode set is string-only end to
                                  ; end for R5's scope)
         ld a,l
@@ -2660,10 +2660,10 @@ OP_STR_CONCAT:
         call VM_STR_ALLOC_TEMP  ; QUAL (Q-02): destination picked while both operands are still on
         ld (VM_STR_DST_ADDR_TMP),hl ; the stack, so it is neither of them (b must survive the copy of a)
         ld (VM_STR_LIT_TEMPIDX_TMP),a
-        call VM_POP             ; HL = b's index
+        rst $10                 ; HL = b's index
         ld a,l
         ld (VM_STR_CONCAT_B_TMP),a
-        call VM_POP             ; HL = a's index
+        rst $10                 ; HL = a's index
         ld a,l
         call VM_STR_ADDR        ; HL -> a's record
         ld (VM_STR_SRC_ADDR_TMP),hl
@@ -2720,7 +2720,7 @@ OP_STR_CONCAT:
         jp PUSH_STR_CONTINUE
 
 OP_STR_CMP_LT:
-        call VM_POP             ; HL = b's index
+        rst $10                 ; HL = b's index
         ld a,l
         call VM_STR_ADDR        ; HL -> b's record
         ld (VM_STR_RUNNING_DST_TMP),hl  ; NOT "ex de,hl" then rely on DE
@@ -2730,7 +2730,7 @@ OP_STR_CMP_LT:
                                            ; different call site; see
                                            ; OP_STR_CONCAT's own fix and this
                                            ; cell's equ comment)
-        call VM_POP             ; HL = a's index
+        rst $10                 ; HL = a's index
         ld a,l
         call VM_STR_ADDR        ; HL -> a's record
         ld de,(VM_STR_RUNNING_DST_TMP)   ; DE = b's record address (restored)
@@ -2743,11 +2743,11 @@ OP_STR_CMP_LT:
         jp PUSH_INT_CONTINUE
 
 OP_STR_CMP_EQ:
-        call VM_POP             ; HL = b's index
+        rst $10                 ; HL = b's index
         ld a,l
         call VM_STR_ADDR        ; HL -> b's record
         ld (VM_STR_RUNNING_DST_TMP),hl  ; see OP_STR_CMP_LT's own comment
-        call VM_POP             ; HL = a's index
+        rst $10                 ; HL = a's index
         ld a,l
         call VM_STR_ADDR        ; HL -> a's record
         ld de,(VM_STR_RUNNING_DST_TMP)   ; DE = b's record address (restored)
@@ -3012,10 +3012,10 @@ VM_FLOAT_TEST_ZERO:
 ; contract, so every caller's existing post-compare branch (cp $FF /
 ; cp 1 / or a) needs no change. Destroys: AF, BC, DE, HL.
 VM_CMP_DISPATCH:
-        call VM_POP              ; HL = b, A = tag_b
+        rst $10                  ; HL = b, A = tag_b
         ld (VM_FLOAT_B_TAG),a
         ld (VM_FLOAT_B_VAL),hl
-        call VM_POP              ; HL = a, A = tag_a
+        rst $10                  ; HL = a, A = tag_a
         ld (VM_FLOAT_A_TAG),a
         ld (VM_FLOAT_A_VAL),hl
         ld c,a
@@ -3087,7 +3087,7 @@ VM_CMP_DISPATCH:
 ; already park it on the hardware stack, matching every other call in
 ; this file.
 VM_POP_COERCE_INT:
-        call VM_POP             ; HL = value, A = tag
+        rst $10                 ; HL = value, A = tag
         cp TAG_FLOAT
         ret nz
         ld (VM_FLOAT_OPERAND_TAG),a
@@ -3198,7 +3198,7 @@ OP_CLS:
         jp VM_RUN.loop
 
 OP_BORDER:
-        call VM_POP_COERCE_INT  ; HL = value (QUAL Q-30) (any numeric value
+        rst $18                 ; HL = value (QUAL Q-30) (any numeric value
                                   ; is accepted, same as V1's BORDER)
         ld a,l
         call GFX_SET_BORDER      ; masks to the low 3 bits itself
@@ -3213,14 +3213,14 @@ OP_BORDER:
 ; renumbering of anything else was needed).
 
 OP_INK:
-        call VM_POP_COERCE_INT
+        rst $18
         ld a,l
         and $07
         ld (CURRENT_INK),a
         jp VM_RUN.loop
 
 OP_PAPER:
-        call VM_POP_COERCE_INT
+        rst $18
         ld a,l
         and $07
         ld (CURRENT_PAPER),a
@@ -3232,28 +3232,28 @@ OP_PAPER:
 ; means on" convention, basic/basic.asm's own BASIC_STMT_FLASH/BRIGHT/
 ; INVERSE/OVER — AND $01, not $07).
 OP_FLASH:
-        call VM_POP_COERCE_INT
+        rst $18
         ld a,l
         and $01
         ld (CURRENT_FLASH),a
         jp VM_RUN.loop
 
 OP_BRIGHT:
-        call VM_POP_COERCE_INT
+        rst $18
         ld a,l
         and $01
         ld (CURRENT_BRIGHT),a
         jp VM_RUN.loop
 
 OP_OVER:
-        call VM_POP_COERCE_INT
+        rst $18
         ld a,l
         and $01
         ld (CURRENT_OVER),a
         jp VM_RUN.loop
 
 OP_INVERSE:
-        call VM_POP_COERCE_INT
+        rst $18
         ld a,l
         and $01
         ld (CURRENT_INVERSE),a
@@ -3268,11 +3268,11 @@ OP_INVERSE:
 ; remains out of reach (needs item-list grammar) -- this is the
 ; standalone-statement form only, matching R10.25's own B-class scope.
 OP_AT:
-        call VM_POP_COERCE_INT   ; HL = col
+        rst $18                  ; HL = col
         ld a,l
         and $1F
         ld (VM_OUTPUT_COL),a
-        call VM_POP_COERCE_INT   ; HL = row
+        rst $18                  ; HL = row
         ld a,l
         cp 24
         jr c,.row_ok
@@ -3285,7 +3285,7 @@ OP_AT:
 ; VM_OUTPUT_COL only, row untouched -- same masked-1-arg shape as
 ; OP_BORDER/OP_INK/OP_PAPER.
 OP_TAB:
-        call VM_POP_COERCE_INT
+        rst $18
         ld a,l
         and $1F
         ld (VM_OUTPUT_COL),a
@@ -3308,11 +3308,11 @@ OP_CLEAR:
 ; convention (see this file's header) is never to trust a register
 ; across one.
 OP_PLOT:
-        call VM_POP_COERCE_INT   ; HL = y (FLOAT truncated)
+        rst $18                  ; HL = y (FLOAT truncated)
         ld a,l
         call VM_CLAMP_Y191       ; A = clamped y
         ld (VM_PLOT_Y_TMP),a
-        call VM_POP_COERCE_INT   ; HL = x (FLOAT truncated)
+        rst $18                  ; HL = x (FLOAT truncated)
         ld a,l
         ld (VM_PLOT_X_TMP),a
         call VM_COMPUTE_PRINT_ATTR
@@ -3352,18 +3352,18 @@ OP_PLOT:
 ; immediately, before the NEXT VM_POP/call, so nothing is ever held in a
 ; register across a call here.
 OP_LINE:
-        call VM_POP_COERCE_INT  ; HL = y1 (FLOAT truncated)
+        rst $18                 ; HL = y1 (FLOAT truncated)
         ld a,l
         call VM_CLAMP_Y191
         ld (GFX_LINE_Y1),a
-        call VM_POP_COERCE_INT  ; HL = x1
+        rst $18                 ; HL = x1
         ld a,l
         ld (GFX_LINE_X1),a
-        call VM_POP_COERCE_INT  ; HL = y0
+        rst $18                 ; HL = y0
         ld a,l
         call VM_CLAMP_Y191
         ld (GFX_LINE_Y0),a
-        call VM_POP_COERCE_INT  ; HL = x0
+        rst $18                 ; HL = x0
         ld a,l
         ld (GFX_LINE_X0),a
         ld a,(CURRENT_OVER)
@@ -3379,9 +3379,9 @@ OP_LINE:
 ; the same safe, already-established technique OP_FOR_INIT's own `push
 ; hl / call ... / pop de` uses, not a bare register held across a call.
 OP_BEEP:
-        call VM_POP_COERCE_INT  ; HL = pitch (FLOAT truncated)
+        rst $18                 ; HL = pitch (FLOAT truncated)
         push hl
-        call VM_POP_COERCE_INT  ; HL = duration
+        rst $18                 ; HL = duration
         pop bc                   ; BC = pitch (SOUND_BEEP's own register)
         ex de,hl                  ; DE = duration (SOUND_BEEP's own
                                     ; register); HL now holds whatever
@@ -3399,9 +3399,9 @@ OP_BEEP:
 ; directly. An out-of-range register (SOUND_EXROM's own real 1-16 check)
 ; is a real, caught VM error, not silently ignored.
 OP_SOUND:
-        call VM_POP_COERCE_INT  ; HL = data (FLOAT truncated)
+        rst $18                 ; HL = data (FLOAT truncated)
         push hl
-        call VM_POP_COERCE_INT  ; HL = register
+        rst $18                 ; HL = register
         ld a,l
         ld b,a                    ; B = register
         pop hl                    ; HL = data (restored)
@@ -3414,9 +3414,9 @@ OP_SOUND:
 ; OP_POKE — pops value then address (compiler pushes address,value,
 ; matching "POKE address,value"'s real V1 argument order).
 OP_POKE:
-        call VM_POP_COERCE_INT  ; HL = value (FLOAT truncated)
+        rst $18                 ; HL = value (FLOAT truncated)
         push hl
-        call VM_POP_COERCE_INT  ; HL = address
+        rst $18                 ; HL = address
         pop de                    ; DE = value (restored)
         ld a,e                    ; low byte of value — matches V1's own
                                     ; BASIC_STMT_POKE (`ld a,e / ld (hl),a`)
@@ -3432,7 +3432,7 @@ OP_POKE:
 ; documents "Destroys: HL" only, so DE (the target) safely survives
 ; across the repeated call in .wait_loop without any extra scratch cell.
 OP_PAUSE:
-        call VM_POP_COERCE_INT  ; HL = n (QUAL Q-30: a FLOAT was its slot index)
+        rst $18                 ; HL = n (QUAL Q-30: a FLOAT was its slot index)
         ld a,h
         or l
         jr z,.wait_key
@@ -3460,7 +3460,7 @@ OP_PAUSE:
 ; MATH_RND_SEED (kernel/math). No register survives past this one call
 ; (HL is MATH_RND_SEED's own input register, consumed immediately).
 OP_RANDOMISE:
-        call VM_POP_COERCE_INT  ; HL = n (FLOAT truncated)
+        rst $18                 ; HL = n (FLOAT truncated)
         call MATH_RND_SEED
         jp VM_RUN.loop
 
@@ -3515,7 +3515,7 @@ OP_CALL_EXT:
         ld (VM_EXT_REMAINING),a   ; A = the arg index this value fills
                                     ; (argcount-1 on the first iteration,
                                     ; counting down to 0)
-        call VM_POP                ; HL = value, A = tag (ignored)
+        rst $10                    ; HL = value, A = tag (ignored)
         ld (VM_EXT_POPVAL),hl
         ld a,(VM_EXT_REMAINING)
         cp 4                        ; the 5th slot (index 4, GRAB's own
@@ -3685,7 +3685,7 @@ VM_NUM_TO_TEXT:
         ret                                   ; pointer for exactly this
 
 OP_PRINT_NUM:
-        call VM_POP                 ; HL = value, A = tag
+        rst $10                     ; HL = value, A = tag
         call VM_NUM_TO_TEXT          ; VM_NUM_TO_TEXT's own entry now
                                        ; parks HL into VM_PRINT_TEXT_TMP
                                        ; itself (its float path's real
@@ -3694,7 +3694,7 @@ OP_PRINT_NUM:
         jr VM_PRINT_COMMON
 
 OP_PRINT_STR:
-        call VM_POP                 ; HL = STRTAB index, A = tag
+        rst $10                     ; HL = STRTAB index, A = tag
         ld a,l
         call VM_STR_ADDR             ; HL -> record
         ld c,(hl)                    ; QUAL (Q-27/Q-28): print exactly `length` characters.
@@ -3858,7 +3858,7 @@ BUILTIN_FN_JUMP_TABLE:
 ; variable's own FLOATTAB slot if OP_LOAD_VAR ever pushes a variable's
 ; real index rather than a copy.
 BUILTIN_FN_ABS:
-        call VM_POP             ; HL = value, A = tag
+        rst $10                 ; HL = value, A = tag
         cp TAG_FLOAT
         jr z,.float
         bit 7,h
@@ -3919,7 +3919,7 @@ BUILTIN_FN_ABS:
 
 ; SGN(x) -- pops one int, pushes -1/0/1. MATH_SGN16: HL in, HL out.
 BUILTIN_FN_SGN:
-        call VM_POP_COERCE_INT  ; HL = value (FLOAT truncated)
+        rst $18                 ; HL = value (FLOAT truncated)
         call MATH_SGN16
         xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
         jp VM_PUSH
@@ -3943,9 +3943,9 @@ BFN_PUSH_INT_RESULT:
 ; documents DIVISION BY ZERO for /, MOD and DIV. Shared operand pop + zero check (the error
 ; unwinds through VM_RUN_SP, so the nested call is safe).
 BFN_POP_DIVISION:
-        call VM_POP_COERCE_INT  ; divisor (FLOAT truncated)
+        rst $18                 ; divisor (FLOAT truncated)
         push hl
-        call VM_POP_COERCE_INT  ; dividend
+        rst $18                 ; dividend
         pop de
         ld a,d
         or e
@@ -3955,7 +3955,7 @@ BFN_POP_DIVISION:
 ; RND(x) -- pops one int (the upper bound), pushes a random value.
 ; MATH_RND16: HL in, HL out.
 BUILTIN_FN_RND:
-        call VM_POP_COERCE_INT  ; HL = value (FLOAT truncated)
+        rst $18                 ; HL = value (FLOAT truncated)
         call MATH_RND16
         xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
         jp VM_PUSH
@@ -3967,9 +3967,9 @@ BUILTIN_FN_RND:
 ; power of 2), same as V1's own real behavior; X's full 0-255 range is
 ; already the whole valid screen width, no clamp needed.
 BUILTIN_FN_POINT:
-        call VM_POP_COERCE_INT  ; HL = y (FLOAT truncated)
+        rst $18                 ; HL = y (FLOAT truncated)
         push hl                 ; same fix as BUILTIN_FN_MOD/DIV above
-        call VM_POP_COERCE_INT  ; HL = x
+        rst $18                 ; HL = x
         pop de                  ; DE = y
         ld b,l                  ; B = x (low byte)
         ld a,e
@@ -3991,9 +3991,9 @@ BUILTIN_FN_POINT:
 ; matching POINT's deliberately forgiving screen-query behavior --
 ; not an error condition.
 BUILTIN_FN_ATTR:
-        call VM_POP_COERCE_INT  ; HL = col (FLOAT truncated)
+        rst $18                 ; HL = col (FLOAT truncated)
         push hl
-        call VM_POP_COERCE_INT  ; HL = row
+        rst $18                 ; HL = row
         pop de                  ; DE = col
         ld a,h
         or d
@@ -4020,7 +4020,7 @@ BUILTIN_FN_ATTR:
 ; INT tag -- closing the "INT(3.7) still yields 3.7" bug (docs/v2/
 ; V2_SEMANTIC_CAPABILITY_AUDIT.md S4).
 BUILTIN_FN_INT:
-        call VM_POP_COERCE_INT  ; HL = value (FLOAT truncated toward zero)
+        rst $18                 ; HL = value (FLOAT truncated toward zero)
         xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
         jp VM_PUSH
 
@@ -4035,7 +4035,7 @@ BUILTIN_FN_INT:
 ; here: V2 compiles ahead of time and never evaluates an expression
 ; during compilation, so no equivalent guard is needed.
 BUILTIN_FN_PEEK:
-        call VM_POP_COERCE_INT  ; HL = address (FLOAT truncated)
+        rst $18                 ; HL = address (FLOAT truncated)
         ld a,(hl)
         ld l,a
         ld h,0
@@ -4052,7 +4052,7 @@ BUILTIN_FN_PEEK:
 ; otherwise jump to this ROM's own RST_00 reset vector). That hazard
 ; does not exist here for the same reason PEEK's header above gives.
 BUILTIN_FN_USR:
-        call VM_POP_COERCE_INT  ; HL = address (FLOAT truncated)
+        rst $18                 ; HL = address (FLOAT truncated)
         call VM_CALL_USR_TRAMPOLINE
         xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
         jp VM_PUSH
@@ -4060,7 +4060,7 @@ BUILTIN_FN_USR:
 ; STUDY: IN(port) -- the FULL 16-bit port address goes to BC (`in a,(c)` drives A15-A8 from B), so
 ; IN(65278) reads keyboard half-row 0 ($FEFE) and IN(63486) half-row 1 ($F7FE), unlike a low-byte-only IN.
 BUILTIN_FN_IN:
-        call VM_POP_COERCE_INT  ; HL = port
+        rst $18                 ; HL = port
         ld b,h
         ld c,l
         in a,(c)
@@ -4072,7 +4072,7 @@ BUILTIN_FN_IN:
 ; STUDY: STICK(n) -- Timex joystick through AY register 14 (I/O port A), the removed V1 STICK_READ
 ; algorithm: stick 1 = low nibble (direction bits, active high), stick 2 = one bit (hardware asymmetry).
 BUILTIN_FN_STICK:
-        call VM_POP_COERCE_INT  ; HL = 1 or 2
+        rst $18                 ; HL = 1 or 2
         ld a,$0E
         out (PORT_AY_REG),a      ; select AY register 14
         ld c,PORT_AY_DATA
@@ -4096,9 +4096,9 @@ BUILTIN_FN_STICK:
 
 ; STUDY: OUT port,value -- pops value then port (compiler pushed port,value, like POKE).
 OP_OUT:
-        call VM_POP_COERCE_INT  ; HL = value
+        rst $18                 ; HL = value
         push hl
-        call VM_POP_COERCE_INT  ; HL = port
+        rst $18                 ; HL = port
         ld b,h
         ld c,l
         pop hl
@@ -4120,7 +4120,7 @@ VM_CALL_USR_TRAMPOLINE:
 
 ; LEN(a$) -- the record's own length byte, directly.
 BUILTIN_FN_LEN:
-        call VM_POP             ; HL = string index (L; H=0 always --
+        rst $10                 ; HL = string index (L; H=0 always --
                                  ; STRSYM_FIND_OR_CREATE's own indices
                                  ; are always small)
         ld a,l
@@ -4134,7 +4134,7 @@ BUILTIN_FN_LEN:
 ; CODE(a$) -- the ASCII code of the first character, or 0 for an empty
 ; string (V1's own real .str_arg_code behavior, matched exactly).
 BUILTIN_FN_CODE:
-        call VM_POP
+        rst $10
         ld a,l
         call VM_STR_ADDR        ; HL = record address
         ld a,(hl)               ; length byte
@@ -4177,7 +4177,7 @@ BUILTIN_FN_CODE:
 VM_VAL_SEEN_DOT:   equ VM_INPUT_TARGET_TMP
 VM_VAL_FRAC_COUNT: equ VM_INPUT_CHARBUF
 BUILTIN_FN_VAL:
-        call VM_POP
+        rst $10
         ld a,l
         call VM_STR_ADDR        ; HL = record address
         ld a,(hl)               ; length byte
@@ -4362,7 +4362,7 @@ VM_TEMP_PICK:
 ; behavior and the SGN/MOD/DIV/RND family's already-established "this
 ; is a pure-integer BASIC" precedent for this class of function.
 BUILTIN_FN_CHR:
-        call VM_POP_COERCE_INT    ; HL = value (QUAL Q-30: a FLOAT was its slot index)
+        rst $18                   ; HL = value (QUAL Q-30: a FLOAT was its slot index)
         ld a,h
         or a
         jr nz,.chr_range_err      ; h<>0 -- outside 0-255 in either
@@ -4386,7 +4386,7 @@ BUILTIN_FN_CHR:
 ; STR$(n) -- n formatted as a decimal string, reusing the real VM_NUM_
 ; TO_TEXT conversion PRINT/LPRINT already use (see its own header).
 BUILTIN_FN_STR:
-        call VM_POP                ; HL = value, A = tag
+        rst $10                    ; HL = value, A = tag
         call VM_NUM_TO_TEXT         ; HL = null-terminated decimal text
                                        ; (PRINT_BUF)
         ld (VM_STR_SRC_ADDR_TMP),hl
@@ -4423,7 +4423,7 @@ BUILTIN_FN_STR:
 ; UPPER$(s) -- case-convert, byte for byte. Result length always equals
 ; the source length.
 BUILTIN_FN_UPPER:
-        call VM_POP                 ; HL = string index
+        rst $10                     ; HL = string index
         ld a,l
         call VM_STR_ADDR            ; HL -> src record
         ld (VM_STR_SRC_ADDR_TMP),hl
@@ -4457,7 +4457,7 @@ BUILTIN_FN_UPPER:
 ; LOWER$(s) -- case-convert, byte for byte. Mirrors UPPER$ exactly with
 ; the fold direction reversed.
 BUILTIN_FN_LOWER:
-        call VM_POP
+        rst $10
         ld a,l
         call VM_STR_ADDR
         ld (VM_STR_SRC_ADDR_TMP),hl
@@ -4492,7 +4492,7 @@ BUILTIN_FN_LOWER:
 ; length; n<0 -> 0 characters). Compiled left-to-right (s then n), so
 ; the operand stack has n on top (popped first).
 BUILTIN_FN_LEFT:
-        call VM_POP_COERCE_INT      ; HL = n (QUAL Q-30)
+        rst $18                     ; HL = n (QUAL Q-30)
         ld a,h
         bit 7,a
         jr nz,.left_n_neg
@@ -4512,7 +4512,7 @@ BUILTIN_FN_LEFT:
                                         ; way
 .left_have_n:
         ld (BFN_STR_TMP),a
-        call VM_POP                  ; HL = string index (s)
+        rst $10                      ; HL = string index (s)
         ld a,l
         call VM_STR_ADDR             ; HL -> src record
         ld (VM_STR_SRC_ADDR_TMP),hl
@@ -4549,7 +4549,7 @@ BUILTIN_FN_LEFT:
 ; RIGHT$(s,n) -- the last n characters of s. Same n-resolution as
 ; LEFT$'s own; differs only in the source content's own start offset.
 BUILTIN_FN_RIGHT:
-        call VM_POP_COERCE_INT       ; HL = n (QUAL Q-30)
+        rst $18                      ; HL = n (QUAL Q-30)
         ld a,h
         bit 7,a
         jr nz,.right_n_neg
@@ -4564,7 +4564,7 @@ BUILTIN_FN_RIGHT:
         ld a,255
 .right_have_n:
         ld (BFN_STR_TMP),a
-        call VM_POP                   ; HL = string index (s)
+        rst $10                       ; HL = string index (s)
         ld a,l
         call VM_STR_ADDR              ; HL -> src record
         ld (VM_STR_SRC_ADDR_TMP),hl
@@ -4617,7 +4617,7 @@ BUILTIN_FN_RIGHT:
 ; remains -- no error raised for any of these, matching LEFT$/RIGHT$'s
 ; own precedent of forgiving-clamp over hard error).
 BUILTIN_FN_MID:
-        call VM_POP_COERCE_INT      ; HL = len (QUAL Q-30)
+        rst $18                     ; HL = len (QUAL Q-30)
         ld a,h
         bit 7,a
         jr nz,.mid_len_neg
@@ -4634,7 +4634,7 @@ BUILTIN_FN_MID:
                                         ; remainder" -- clamped below
 .mid_have_len:
         ld (BFN_STR_TMP),a           ; requested len (pre-clamp)
-        call VM_POP_COERCE_INT       ; HL = start (1-based) (QUAL Q-30)
+        rst $18                      ; HL = start (1-based) (QUAL Q-30)
         ld a,h                       ; QUAL Q-31: the whole 16-bit start, not
         or a                         ; its low byte (257 meant 1, -256 meant 1)
         jr z,.mid_start_lo
@@ -4651,7 +4651,7 @@ BUILTIN_FN_MID:
 .mid_start_ok:
         dec a                        ; convert to a 0-based offset
         ld (BFN_MID_START_TMP),a
-        call VM_POP                  ; HL = string index (s)
+        rst $10                      ; HL = string index (s)
         ld a,l
         call VM_STR_ADDR             ; HL -> src record
         ld (VM_STR_SRC_ADDR_TMP),hl
@@ -4744,7 +4744,7 @@ BUILTIN_FN_INKEY:
 ; BASIC_SQR_FLOAT already owns for the identical purpose -- real,
 ; permanent RAM already budgeted, not a second scratch cell.
 BUILTIN_FN_SQR:
-        call VM_POP_COERCE_INT   ; HL = n (FLOAT truncated)
+        rst $18                  ; HL = n (FLOAT truncated)
         ld (SQR_ARG_N),hl
         call MATH_SQRT16           ; HL = floor(sqrt(n)), 0 for n<=0
         ld a,h
@@ -4800,7 +4800,7 @@ BUILTIN_FN_PI:
 ; AND more correct than replicating V1's own sign-stripping, not a
 ; scope increase.
 BUILTIN_FN_RAD:
-        call VM_POP_COERCE_INT   ; HL = x (FLOAT truncated)
+        rst $18                  ; HL = x (FLOAT truncated)
         xor a
         ld (CALC_SP),a
         call CALC_INT_TO_FP      ; push x
@@ -4862,7 +4862,7 @@ SIN_PEEK_POP:
 ; the very end, not a new architecture), and required for this
 ; milestone's own SIN(-x)~=-SIN(x) symmetry test to pass at all.
 BUILTIN_FN_SIN:
-        call VM_POP                  ; HL = value, A = tag
+        rst $10                      ; HL = value, A = tag
         ; SIN's own argument grammar is a plain COMPILE_EXPR (like SQR/
         ; RAD/DEG), which V2's unified int/float expression type allows
         ; to evaluate to EITHER tag at runtime -- unlike those three
@@ -5040,7 +5040,7 @@ SIN_DIVISOR_TABLE: dw 6, 20, 42, 72
 ; (same tolerance SIN itself already extends), matching R10.25's own
 ; audit note.
 BUILTIN_FN_COS:
-        call VM_POP                  ; HL = value, A = tag
+        rst $10                      ; HL = value, A = tag
         cp TAG_FLOAT
         jr nz,.cos_int
         ld (VM_FLOAT_OPERAND_TAG),a
@@ -5061,7 +5061,7 @@ BUILTIN_FN_COS:
 ; in this file rely on the same behavior), so no new error path is
 ; invented here.
 BUILTIN_FN_TAN:
-        call VM_POP                  ; HL = value, A = tag -- held on the
+        rst $10                      ; HL = value, A = tag -- held on the
                                         ; Z80 stack across both SIN/COS
                                         ; calls below (each of which pops
                                         ; its OWN copy from the VM
@@ -5121,7 +5121,7 @@ BUILTIN_FN_FREE:
 ; FREE(n) -- R10.7 P5.5. FREE(1) = bytes free in array segment 2 ($E000-$E7FF);
 ; any other argument behaves as FREE() (the main pool, up to the control stack).
 BUILTIN_FN_FREE_N:
-        call VM_POP_COERCE_INT   ; HL = n
+        rst $18                  ; HL = n
         dec hl
         ld a,h
         or l
@@ -5134,7 +5134,7 @@ BUILTIN_FN_FREE_N:
         jp VM_PUSH
 
 BUILTIN_FN_DEG:
-        call VM_POP_COERCE_INT   ; HL = x (FLOAT truncated)
+        rst $18                  ; HL = x (FLOAT truncated)
         xor a
         ld (CALC_SP),a
         call CALC_INT_TO_FP      ; push x

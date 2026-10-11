@@ -22,7 +22,8 @@
 RST_00:
     di
     jp   COLD_START
-    DS   $0038 - $, $FF
+    INCLUDE "rom/v2_rst_vectors.inc"   ; QUAL shrink: RST call vectors
+    INCLUDE "rom/v2_rst30.inc"         ; QUAL shrink: RST $30 (ends at $0038)
 RST_38:
     ei
     reti

@@ -137,9 +137,9 @@ MEM_CLEAR_V2:
     ORG $0000
     di
     jp TEST_COLD_START
-    DS $0028 - $, $FF
+    INCLUDE "rom/v2_rst_vectors.inc"
     jp TEST_CALC_ENTRY
-    DS $0038 - $, $FF
+    INCLUDE "rom/v2_rst30.inc"
 TEST_RST_38:
     ei
     reti

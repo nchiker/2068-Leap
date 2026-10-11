@@ -1666,8 +1666,8 @@ EMIT_PLACEHOLDER_16:
         ld hl,(EMIT_PTR)
         push hl
         xor a
-        call EMIT_BYTE
-        call EMIT_BYTE
+        rst $20
+        rst $20
         pop hl
         ret
 
@@ -1697,7 +1697,7 @@ COMPILE_EXPR:
         ld a,(TOK_TYPE)
         cp TOK_KW_OR
         jr nz,.done
-        call LEX_NEXT_TOKEN
+        rst $08
         call COMPILE_BOOL_AND
         call EMIT_OP_OR
         jr .loop
@@ -1710,7 +1710,7 @@ COMPILE_BOOL_AND:
         ld a,(TOK_TYPE)
         cp TOK_KW_AND
         jr nz,.done
-        call LEX_NEXT_TOKEN
+        rst $08
         call COMPILE_BOOL_NOT
         call EMIT_OP_AND
         jr .loop
@@ -1721,7 +1721,7 @@ COMPILE_BOOL_NOT:
         ld a,(TOK_TYPE)
         cp TOK_KW_NOT
         jr nz,COMPILE_RELATIONAL
-        call LEX_NEXT_TOKEN
+        rst $08
         call COMPILE_BOOL_NOT   ; recurses on itself, not COMPILE_RELATIONAL
                                   ; directly, so "NOT NOT X" (double
                                   ; negation) also parses, same reasoning
@@ -1756,27 +1756,27 @@ COMPILE_RELATIONAL:
         jr z,.do_ne
         ret
 .do_lt:
-        call LEX_NEXT_TOKEN
+        rst $08
         call COMPILE_ADDITIVE
         jp EMIT_OP_CMP_LT
 .do_le:
-        call LEX_NEXT_TOKEN
+        rst $08
         call COMPILE_ADDITIVE
         jp EMIT_OP_CMP_LE
 .do_eq:
-        call LEX_NEXT_TOKEN
+        rst $08
         call COMPILE_ADDITIVE
         jp EMIT_OP_CMP_EQ
 .do_ge:
-        call LEX_NEXT_TOKEN
+        rst $08
         call COMPILE_ADDITIVE
         jp EMIT_OP_CMP_GE
 .do_gt:
-        call LEX_NEXT_TOKEN
+        rst $08
         call COMPILE_ADDITIVE
         jp EMIT_OP_CMP_GT
 .do_ne:
-        call LEX_NEXT_TOKEN
+        rst $08
         call COMPILE_ADDITIVE
         jp EMIT_OP_CMP_NE
 
@@ -1790,12 +1790,12 @@ COMPILE_ADDITIVE:
         jr z,.do_sub
         ret
 .do_add:
-        call LEX_NEXT_TOKEN
+        rst $08
         call COMPILE_TERM
         call EMIT_OP_ADD
         jr .loop
 .do_sub:
-        call LEX_NEXT_TOKEN
+        rst $08
         call COMPILE_TERM
         call EMIT_OP_SUB
         jr .loop
@@ -1810,12 +1810,12 @@ COMPILE_TERM:
         jr z,.do_div
         ret
 .do_mul:
-        call LEX_NEXT_TOKEN
+        rst $08
         call COMPILE_FACTOR
         call EMIT_OP_MUL
         jr .loop
 .do_div:
-        call LEX_NEXT_TOKEN
+        rst $08
         call COMPILE_FACTOR
         call EMIT_OP_DIV
         jr .loop
@@ -1843,9 +1843,9 @@ COMPILE_FACTOR:
         cp TOK_KW_FN
         jp z,.udf_call           ; post-R9 DEF FN reintegration
         ld a,3
-        jp COMPILE_RAISE_ERROR
+        rst $30
 .unary_minus:
-        call LEX_NEXT_TOKEN     ; consume '-'
+        rst $08                 ; consume '-'
         ld a,(TOK_TYPE)          ; QUAL (Q-05): -<integer literal> is folded at compile time. With
         cp TOK_NUMBER            ; literal rule L-A, `-32768` used to compile as 0 - $8000, which the
         jr nz,.neg_expr          ; D11 promotion turned into +32768.0000
@@ -1856,20 +1856,20 @@ COMPILE_FACTOR:
 .neg_expr:
         call EMIT_BYTE_OP_PUSH_I8
         xor a
-        call EMIT_BYTE           ; push literal 0
+        rst $20                  ; push literal 0
         call COMPILE_FACTOR      ; the operand -X applies to
         ld a,(COMPILE_ERROR_CODE)
         or a
         ret nz
         jp EMIT_OP_SUB
 .paren:
-        call LEX_NEXT_TOKEN
+        rst $08
         call COMPILE_EXPR
         ld a,(TOK_TYPE)         ; R10.9 2D (defect D3): ')' is now required
         cp TOK_RPAREN
         jp z,LEX_NEXT_TOKEN     ; consume ')'
         ld a,66                 ; expected ')' to close a parenthesised expression
-        jp COMPILE_RAISE_ERROR
+        rst $30
 .number:
         call COMPILE_NUMBER_LITERAL
         jp LEX_NEXT_TOKEN
@@ -1968,14 +1968,14 @@ COMPILE_FACTOR:
         ld (CFN_REMAINING),a
         ld a,(BFN_FOUND_ARGTYPE)
         ld (CFN_ARGTYPE),a
-        call LEX_NEXT_TOKEN       ; consume the function name
+        rst $08                   ; consume the function name
         ld a,(TOK_TYPE)
         cp TOK_LPAREN
         jr z,.fn_have_lparen
         ld a,29                    ; expected '(' after a built-in
-        jp COMPILE_RAISE_ERROR
+        rst $30
 .fn_have_lparen:
-        call LEX_NEXT_TOKEN         ; consume '('
+        rst $08                     ; consume '('
         ld a,(CFN_INDEX)
         cp 25                        ; FREE: "FREE()" or "FREE(n)" (P5.5)
         jr nz,.fn_not_free
@@ -2067,18 +2067,18 @@ COMPILE_FACTOR:
         cp TOK_COMMA
         jr z,.fn_have_comma
         ld a,30                     ; expected ',' between a built-in
-        jp COMPILE_RAISE_ERROR
+        rst $30
 .fn_have_comma:
-        call LEX_NEXT_TOKEN
+        rst $08
         jr .fn_arg_loop
 .fn_rparen:
         ld a,(TOK_TYPE)
         cp TOK_RPAREN
         jr z,.fn_have_rparen
         ld a,31                      ; expected ')' to close a built-in
-        jp COMPILE_RAISE_ERROR
+        rst $30
 .fn_have_rparen:
-        call LEX_NEXT_TOKEN            ; consume ')'
+        rst $08                        ; consume ')'
         call EMIT_OP_CALL_FN
         ld a,(CFN_INDEX)
         jp EMIT_BYTE
@@ -2090,20 +2090,20 @@ COMPILE_FACTOR:
 ; resolve/fixup logic almost verbatim, differing only in what opcode it
 ; emits and that it's an expression factor, not a statement.
 .udf_call:
-        call LEX_NEXT_TOKEN     ; consume FN
+        rst $08                 ; consume FN
         ld a,(TOK_TYPE)
         cp TOK_IDENT
         jr z,.udf_have_name
         ld a,50                  ; expected a function name (shared with
-        jp COMPILE_RAISE_ERROR    ; DEF FN's own identical error)
+        rst $30                   ; DEF FN's own identical error)
 .udf_have_name:
         call STASH_IDENT_AND_PEEK
         cp TOK_LPAREN
         jr z,.udf_have_lparen
         ld a,51                  ; expected '(' after a name
-        jp COMPILE_RAISE_ERROR
+        rst $30
 .udf_have_lparen:
-        call LEX_NEXT_TOKEN     ; consume '('
+        rst $08                 ; consume '('
         ; Because compiling the argument expression can itself
         ; recursively compile a NESTED "FN othername(...)" call using the
         ; SAME shared STMT_IDENT_NAME_PTR/LEN scratch cells, park this
@@ -2131,9 +2131,9 @@ COMPILE_FACTOR:
         cp TOK_RPAREN
         jr z,.udf_have_rparen
         ld a,53                  ; expected ')'
-        jp COMPILE_RAISE_ERROR
+        rst $30
 .udf_have_rparen:
-        call LEX_NEXT_TOKEN     ; consume ')'
+        rst $08                 ; consume ')'
         call EMIT_OP_CALL_UDF
         call EMIT_PLACEHOLDER_16   ; HL = patch address
         ex de,hl                 ; DE = the operand slot just emitted
@@ -2177,14 +2177,14 @@ COMPILE_FACTOR:
 COMPILE_ARR_READ_COMMON:
         ld (CARR_INDEX),a
         ld (CARR_SIZE),hl
-        call LEX_NEXT_TOKEN         ; consume the array name, fetch next
+        rst $08                     ; consume the array name, fetch next
         ld a,(TOK_TYPE)
         cp TOK_LPAREN
         jr z,.have_lparen
         ld a,40
-        jp COMPILE_RAISE_ERROR
+        rst $30
 .have_lparen:
-        call LEX_NEXT_TOKEN          ; consume '('
+        rst $08                      ; consume '('
         ld a,(CARR_INDEX)
         ld b,a
         ld de,(CARR_SIZE)
@@ -2200,9 +2200,9 @@ COMPILE_ARR_READ_COMMON:
         cp TOK_RPAREN
         jr z,.have_rparen
         ld a,41
-        jp COMPILE_RAISE_ERROR
+        rst $30
 .have_rparen:
-        call LEX_NEXT_TOKEN           ; consume ')'
+        rst $08                       ; consume ')'
         ld a,(COMPILE_ARR_ASSIGN_IS_STR)
         or a
         jr nz,.emit_str
@@ -2219,9 +2219,9 @@ COMPILE_ARR_READ_COMMON:
 ; caller). Input: B = array index, D/E = declared count, high/low.
 EMIT_ARR_OPERAND:
         ld a,b
-        call EMIT_BYTE
+        rst $20
         ld a,e
-        call EMIT_BYTE
+        rst $20
         ld a,d
         jp EMIT_BYTE
 
@@ -2457,7 +2457,7 @@ COMPILE_NUMBER_LITERAL:
 .wide:
         call EMIT_BYTE_OP_PUSH_I16
         ld a,e
-        call EMIT_BYTE
+        rst $20
         ld a,d
         jp EMIT_BYTE
 
@@ -2470,12 +2470,12 @@ COMPILE_FLOAT_LITERAL:
         call EMIT_BYTE_OP_PUSH_FLOAT_LIT
         ld de,(TOK_VAL)
         ld a,e
-        call EMIT_BYTE
+        rst $20
         ld a,d
-        call EMIT_BYTE
+        rst $20
         ld de,(TOK_FLOAT_DIVISOR)
         ld a,e
-        call EMIT_BYTE
+        rst $20
         ld a,d
         jp EMIT_BYTE
 
@@ -2545,7 +2545,7 @@ STASH_IDENT_NAME:
 ; Destroys: AF, BC, DE, HL.
 STASH_IDENT_AND_PEEK:
         call STASH_IDENT_NAME
-        call LEX_NEXT_TOKEN
+        rst $08
         ld a,(TOK_TYPE)
         ret
 
@@ -2583,7 +2583,7 @@ COMPILE_ASSIGN_CONTINUED:
         jr z,.have_assign
         jp ERR_EXPECTED_ASSIGN
 .have_assign:
-        call LEX_NEXT_TOKEN     ; consume '='
+        rst $08                 ; consume '='
         call COMPILE_EXPR
         call EMIT_BYTE_OP_STORE_VAR
         ld a,(ASSIGN_TARGET_INDEX)
@@ -2606,14 +2606,14 @@ COMPILE_ASSIGN_CONTINUED:
 
 ; COMPILE_DIM — entry: TOK_TYPE is TOK_KW_DIM (not yet consumed).
 COMPILE_DIM:
-        call LEX_NEXT_TOKEN       ; consume DIM, fetch the array name
+        rst $08                   ; consume DIM, fetch the array name
         ld a,(TOK_TYPE)
         cp TOK_IDENT
         jr z,.have_ident
         cp TOK_STR_IDENT          ; Dynamic Data Phase 2 -- DIM A$(n[,w])
         jr z,COMPILE_DIM_STR
         ld a,32
-        jp COMPILE_RAISE_ERROR
+        rst $30
 .have_ident:
         ; R10.7 source-staging-architecture change: this used to stash
         ; TOK_NAME directly into ARRSYM_FIND_NAME_PTR (ARRSYM_FIND_OR_
@@ -2630,14 +2630,14 @@ COMPILE_DIM:
         ; STASH_IDENT_NAME copies into the same safe, fixed buffer that
         ; mechanism already uses.
         call STASH_IDENT_NAME
-        call LEX_NEXT_TOKEN       ; consume the name, fetch next
+        rst $08                   ; consume the name, fetch next
         ld a,(TOK_TYPE)
         cp TOK_LPAREN
         jr z,.have_lparen
         ld a,33
-        jp COMPILE_RAISE_ERROR
+        rst $30
 .have_lparen:
-        call LEX_NEXT_TOKEN       ; consume '(', fetch the size literal
+        rst $08                   ; consume '(', fetch the size literal
         ld a,(TOK_TYPE)
         cp TOK_NUMBER
         jr z,.have_size
@@ -2652,16 +2652,16 @@ COMPILE_DIM:
         or l
         jr nz,.size_nonzero
         ld a,35
-        jp COMPILE_RAISE_ERROR
+        rst $30
 .size_nonzero:
         ld (ARR_SIZE_TMP),hl
-        call LEX_NEXT_TOKEN       ; consume the size literal, fetch next
+        rst $08                   ; consume the size literal, fetch next
         ld a,(TOK_TYPE)
         cp TOK_RPAREN
         jr z,.have_rparen
         jp ERR_DIM_EXPECTED_SEP
 .have_rparen:
-        call LEX_NEXT_TOKEN       ; consume ')'
+        rst $08                   ; consume ')'
         ld hl,(STMT_IDENT_NAME_PTR)   ; the safe copy (see .have_ident)
         ld a,(STMT_IDENT_NAME_LEN)
         ld b,a
@@ -2711,14 +2711,14 @@ COMPILE_DIM_STR:
         ; even more intervening LEX_NEXT_TOKEN calls than COMPILE_DIM,
         ; since it also parses an optional comma-width argument).
         call STASH_IDENT_NAME
-        call LEX_NEXT_TOKEN       ; consume the array name, fetch next
+        rst $08                   ; consume the array name, fetch next
         ld a,(TOK_TYPE)
         cp TOK_LPAREN
         jr z,.have_lparen
         ld a,33
-        jp COMPILE_RAISE_ERROR
+        rst $30
 .have_lparen:
-        call LEX_NEXT_TOKEN       ; consume '(', fetch the size literal
+        rst $08                   ; consume '(', fetch the size literal
         ld a,(TOK_TYPE)
         cp TOK_NUMBER
         jr z,.have_size
@@ -2729,12 +2729,12 @@ COMPILE_DIM_STR:
         or l
         jr nz,.size_nonzero
         ld a,35
-        jp COMPILE_RAISE_ERROR
+        rst $30
 .size_nonzero:
         ld (STRARR_SIZE_TMP),hl
         ld a,STRARR_DEFAULT_WIDTH
         ld (STRARR_WIDTH_TMP),a
-        call LEX_NEXT_TOKEN       ; consume the size literal, fetch next
+        rst $08                   ; consume the size literal, fetch next
         ld a,(TOK_TYPE)
         cp TOK_COMMA
         jr z,.have_comma
@@ -2742,7 +2742,7 @@ COMPILE_DIM_STR:
         jr z,.have_rparen
         jr ERR_DIM_EXPECTED_SEP
 .have_comma:
-        call LEX_NEXT_TOKEN       ; consume ',', fetch the width literal
+        rst $08                   ; consume ',', fetch the width literal
         ld a,(TOK_TYPE)
         cp TOK_NUMBER
         jr z,.have_width
@@ -2760,13 +2760,13 @@ COMPILE_DIM_STR:
         jr ERR_DIM_EXPECTED_NUMBER
 .width_ok:
         ld (STRARR_WIDTH_TMP),a
-        call LEX_NEXT_TOKEN        ; consume the width literal, fetch next
+        rst $08                    ; consume the width literal, fetch next
         ld a,(TOK_TYPE)
         cp TOK_RPAREN
         jr z,.have_rparen
         jr ERR_DIM_EXPECTED_SEP
 .have_rparen:
-        call LEX_NEXT_TOKEN        ; consume ')'
+        rst $08                    ; consume ')'
         ld hl,(STMT_IDENT_NAME_PTR)   ; the safe copy (see this routine's
         ld a,(STMT_IDENT_NAME_LEN)    ; own top-of-routine comment)
         ld b,a
@@ -2793,9 +2793,9 @@ COMPILE_DIM_STR:
 ; STR's own .dim_emit (COMPILE_DIM_STR emits one further width byte of
 ; its own afterward). Input: A = array index, DE = declared count.
 EMIT_IDX_COUNT:
-        call EMIT_BYTE
+        rst $20
         ld a,e
-        call EMIT_BYTE
+        rst $20
         ld a,d
         jp EMIT_BYTE
 
@@ -2821,7 +2821,7 @@ COMPILE_ARRAY_ASSIGN:
         call ARRSYM_LOOKUP
         jr nc,.found
         ld a,42
-        jp COMPILE_RAISE_ERROR
+        rst $30
 .found:
         ld b,a
         ld de,(ARR_SIZE_TMP)      ; R10.7 -- widened to 2 bytes (was in C)
@@ -2862,7 +2862,7 @@ COMPILE_ARRAY_ASSIGN:
 COMPILE_ARR_ASSIGN_COMMON:
         push bc                    ; B = array index (C unused/don't-care)
         push de                    ; D/E = declared size, low/high
-        call LEX_NEXT_TOKEN        ; consume '(', fetch the index expr's
+        rst $08                    ; consume '(', fetch the index expr's
                                      ; first token
         call COMPILE_EXPR
         ld a,(COMPILE_ERROR_CODE)
@@ -2874,14 +2874,14 @@ COMPILE_ARR_ASSIGN_COMMON:
         ld a,41
         jr .raise_err
 .have_rparen:
-        call LEX_NEXT_TOKEN         ; consume ')'
+        rst $08                     ; consume ')'
         ld a,(TOK_TYPE)
         cp TOK_ASSIGN
         jr z,.have_assign
         ld a,2
         jr .raise_err
 .have_assign:
-        call LEX_NEXT_TOKEN          ; consume '='
+        rst $08                      ; consume '='
         ld a,(COMPILE_ARR_ASSIGN_IS_STR)
         or a
         jr nz,.str_value
@@ -2926,19 +2926,19 @@ COMPILE_ARR_ASSIGN_COMMON:
 ; identical" decompile bar, just for a larger class of input than
 ; earlier examples (e.g. unary minus's own "(0-X)" rendering).
 COMPILE_DIMN:
-        call LEX_NEXT_TOKEN       ; consume DIMN
+        rst $08                   ; consume DIMN
         ld a,(TOK_TYPE)
         cp TOK_LPAREN
         jr z,.have_lparen
         ld a,46                    ; expected '(' after DIMN
-        jp COMPILE_RAISE_ERROR
+        rst $30
 .have_lparen:
-        call LEX_NEXT_TOKEN         ; consume '('
+        rst $08                     ; consume '('
         ld a,(TOK_TYPE)
         cp TOK_IDENT
         jr z,.have_ident
         ld a,47                     ; DIMN's argument must be a DIM'd
-        jp COMPILE_RAISE_ERROR       ; array name
+        rst $30                      ; array name
 .have_ident:
         ld hl,(TOK_NAME)
         ld a,(TOK_LEN)
@@ -2946,18 +2946,18 @@ COMPILE_DIMN:
         call ARRSYM_LOOKUP
         jr nc,.have_size
         ld a,47                     ; not a DIM'd array (same code --
-        jp COMPILE_RAISE_ERROR       ; same real failure either way)
+        rst $30                      ; same real failure either way)
 .have_size:
         ld hl,(ARR_SIZE_TMP)      ; R10.7 -- widened to 2 bytes (was 1)
         ld (DIMN_SIZE_TMP),hl
-        call LEX_NEXT_TOKEN         ; consume the array name
+        rst $08                     ; consume the array name
         ld a,(TOK_TYPE)
         cp TOK_RPAREN
         jr z,.have_rparen
         ld a,48                      ; expected ')' to close DIMN
-        jp COMPILE_RAISE_ERROR
+        rst $30
 .have_rparen:
-        call LEX_NEXT_TOKEN           ; consume ')'
+        rst $08                       ; consume ')'
         ; R10.7: always PUSH_I16, not PUSH_I8 -- a DIM'd size of 128+
         ; (routine, now that the old 16-element ceiling is gone) would
         ; sign-extend through PUSH_I8 (OP_PUSH_I8's own real behavior,
@@ -2967,7 +2967,7 @@ COMPILE_DIMN:
         call EMIT_BYTE_OP_PUSH_I16
         ld de,(DIMN_SIZE_TMP)     ; DE, not HL -- EMIT_BYTE destroys HL
         ld a,e
-        call EMIT_BYTE
+        rst $20
         ld a,d
         jp EMIT_BYTE
 
@@ -2982,7 +2982,7 @@ DIMN_KEYWORD_TEXT: db "DIMN"
 ; assigned variable, matching V1's own real behavior.
 ; ===========================================================================
 COMPILE_INPUT:
-        call LEX_NEXT_TOKEN       ; consume INPUT, fetch the target token
+        rst $08                   ; consume INPUT, fetch the target token
         ld a,(TOK_TYPE)
         cp TOK_STRING             ; STUDY: INPUT "prompt"; v  /  INPUT "prompt", v
         jr nz,.no_prompt
@@ -2994,9 +2994,9 @@ COMPILE_INPUT:
         cp TOK_COMMA
         jr z,.prompt_sep
         ld a,22                   ; expected ';' or ',' after the prompt
-        jp COMPILE_RAISE_ERROR
+        rst $30
 .prompt_sep:
-        call LEX_NEXT_TOKEN
+        rst $08
 .no_prompt:
         ld a,(TOK_TYPE)
         cp TOK_IDENT
@@ -3004,7 +3004,7 @@ COMPILE_INPUT:
         cp TOK_STR_IDENT
         jr z,.string
         ld a,43
-        jp COMPILE_RAISE_ERROR
+        rst $30
 .numeric:
         ld hl,(TOK_NAME)
         ld a,(TOK_LEN)
@@ -3012,7 +3012,7 @@ COMPILE_INPUT:
         ld b,a
         call CSYM_FIND_OR_CREATE
         ld (CINPUT_INDEX_TMP),a
-        call LEX_NEXT_TOKEN        ; consume the target identifier
+        rst $08                    ; consume the target identifier
         call EMIT_OP_INPUT_NUM
         ld a,(CINPUT_INDEX_TMP)
         jp EMIT_BYTE
@@ -3023,7 +3023,7 @@ COMPILE_INPUT:
         ld b,a
         call STRSYM_FIND_OR_CREATE
         ld (CINPUT_INDEX_TMP),a
-        call LEX_NEXT_TOKEN        ; consume the target identifier
+        rst $08                    ; consume the target identifier
         call EMIT_OP_INPUT_STR
         ld a,(CINPUT_INDEX_TMP)
         jp EMIT_BYTE
@@ -3047,7 +3047,7 @@ COMPILE_STR_EXPR:
         ld a,(TOK_TYPE)
         cp TOK_PLUS
         jr nz,.done
-        call LEX_NEXT_TOKEN
+        rst $08
         call COMPILE_STR_FACTOR
         call EMIT_OP_STR_CONCAT
         jr .loop
@@ -3061,7 +3061,7 @@ COMPILE_STR_FACTOR:
         cp TOK_STR_IDENT
         jr z,.ident
         ld a,3                   ; unexpected character (factor could not
-        jp COMPILE_RAISE_ERROR
+        rst $30
 .literal:
         ld a,(TOK_LEN)
         cp 32
@@ -3074,7 +3074,7 @@ COMPILE_STR_FACTOR:
         ld (CSTR_LIT_LEN_TMP),a
         call EMIT_BYTE_OP_PUSH_STR_LIT
         ld a,(CSTR_LIT_LEN_TMP)
-        call EMIT_BYTE            ; the length byte
+        rst $20                   ; the length byte
         ld de,(TOK_NAME)          ; DE, not HL — EMIT_BYTE uses HL
                                     ; internally as the EMIT_PTR pointer,
                                     ; clobbering it; an earlier version kept
@@ -3097,7 +3097,7 @@ COMPILE_STR_FACTOR:
         ld b,a
 .lit_copy_loop:
         ld a,(de)
-        call EMIT_BYTE
+        rst $20
         inc de
         djnz .lit_copy_loop
 .lit_no_content:
@@ -3158,9 +3158,9 @@ COMPILE_STR_FACTOR:
         ld (CSTR_IDENT_INDEX_TMP),a
         call EMIT_BYTE_OP_PUSH_I16
         ld a,(CSTR_IDENT_INDEX_TMP)
-        call EMIT_BYTE
+        rst $20
         xor a
-        call EMIT_BYTE            ; high byte: always 0, indices are small
+        rst $20                   ; high byte: always 0, indices are small
         jp LEX_NEXT_TOKEN
 .strarr_read:
         ; thin wrapper around the shared COMPILE_ARR_READ_COMMON skeleton
@@ -3208,7 +3208,7 @@ COMPILE_STR_ASSIGN_CONTINUED:
         jr z,.have_assign
         jp ERR_EXPECTED_ASSIGN
 .have_assign:
-        call LEX_NEXT_TOKEN       ; consume '='
+        rst $08                   ; consume '='
         call COMPILE_STR_EXPR
         call EMIT_OP_STORE_STR_VAR
         ld a,(CSTR_ASSIGN_TARGET_TMP)
@@ -3227,7 +3227,7 @@ COMPILE_STRARR_ASSIGN:
         call STRARRSYM_LOOKUP
         jr nc,.found
         ld a,42
-        jp COMPILE_RAISE_ERROR
+        rst $30
 .found:
         ld b,a
         ld de,(STRARR_SIZE_TMP)
@@ -3270,7 +3270,7 @@ COMPILE_BRANCH_TARGET:
 
 ; COMPILE_CLS — CLS (no arguments)
 COMPILE_CLS:
-        call LEX_NEXT_TOKEN     ; consume CLS
+        rst $08                 ; consume CLS
         jp EMIT_OP_CLS
 
 ; COMPILE_BORDER / COMPILE_INK / COMPILE_PAPER — KEYWORD <expr>, one
@@ -3291,7 +3291,7 @@ COMPILE_CLS:
 COMPILE_1ARG_STMT:
         push hl                  ; save the emit target -- LEX_NEXT_TOKEN/
                                    ; COMPILE_EXPR both freely destroy HL
-        call LEX_NEXT_TOKEN
+        rst $08
         call COMPILE_EXPR
         pop hl
         jp (hl)
@@ -3333,14 +3333,14 @@ COMPILE_TAB:
 
 ; COMPILE_AT — AT <expr>,<expr>, same 2-arg comma shape as COMPILE_PLOT.
 COMPILE_AT:
-        call LEX_NEXT_TOKEN     ; consume AT
+        rst $08                 ; consume AT
         call COMPILE_EXPR       ; row -> VM operand stack
         call COMPILE_EXPECT_COMMA_EXPR  ; col -> VM operand stack
         jp EMIT_OP_AT
 
 ; COMPILE_CLEAR — CLEAR, no arguments (R10.7).
 COMPILE_CLEAR:
-        call LEX_NEXT_TOKEN     ; consume CLEAR
+        rst $08                 ; consume CLEAR
         jp EMIT_OP_CLEAR
 
 ; COMPILE_EXPECT_COMMA_EXPR — expects the current token to be ',',
@@ -3352,15 +3352,15 @@ COMPILE_EXPECT_COMMA_EXPR:
         cp TOK_COMMA
         jr z,.have_comma
         ld a,22
-        jp COMPILE_RAISE_ERROR
+        rst $30
 .have_comma:
-        call LEX_NEXT_TOKEN
+        rst $08
         jp COMPILE_EXPR
 
 ; STUDY (shrink): <KEYWORD> <expr>,<expr>.  HL = the emit routine for the opcode (as COMPILE_1ARG_STMT).
 COMPILE_2ARG_STMT:
         push hl
-        call LEX_NEXT_TOKEN     ; consume the keyword
+        rst $08                 ; consume the keyword
         call COMPILE_EXPR       ; first argument
         call COMPILE_EXPECT_COMMA_EXPR  ; second argument
         pop hl
@@ -3398,31 +3398,31 @@ COMPILE_PLOT:
 ; COMPILE_LINE — LINE <x0>,<y0> TO <x1>,<y1>  (matches V1's own
 ; BASIC_STMT_LINE/BASIC_PARSE_LINE_ARGS argument order and "TO" keyword)
 COMPILE_LINE:
-        call LEX_NEXT_TOKEN     ; consume LINE
+        rst $08                 ; consume LINE
         call COMPILE_EXPR       ; x0
         ld a,(TOK_TYPE)
         cp TOK_COMMA
         jr z,.have_comma1
         ld a,23                  ; expected ',' after LINE's x0
-        jp COMPILE_RAISE_ERROR
+        rst $30
 .have_comma1:
-        call LEX_NEXT_TOKEN     ; consume ','
+        rst $08                 ; consume ','
         call COMPILE_EXPR       ; y0
         ld a,(TOK_TYPE)
         cp TOK_KW_TO
         jr z,.have_to
         ld a,24                  ; expected TO in LINE
-        jp COMPILE_RAISE_ERROR
+        rst $30
 .have_to:
-        call LEX_NEXT_TOKEN     ; consume TO
+        rst $08                 ; consume TO
         call COMPILE_EXPR       ; x1
         ld a,(TOK_TYPE)
         cp TOK_COMMA
         jr z,.have_comma2
         ld a,25                  ; expected ',' after LINE's x1
-        jp COMPILE_RAISE_ERROR
+        rst $30
 .have_comma2:
-        call LEX_NEXT_TOKEN     ; consume ','
+        rst $08                 ; consume ','
         call COMPILE_EXPR       ; y1
         jp EMIT_OP_LINE
 
@@ -3472,7 +3472,7 @@ COMPILE_RANDOMISE:
 ; ";"-suppressed newline: this dialect's PRINT never had either).
 ; ===========================================================================
 COMPILE_PRINT:
-        call LEX_NEXT_TOKEN     ; consume PRINT
+        rst $08                 ; consume PRINT
 .item:
         ld a,(TOK_TYPE)
         or a
@@ -3504,10 +3504,10 @@ COMPILE_PRINT:
         jr z,.comma
         cp TOK_SEMI
         jr nz,.nl               ; no separator: the item ends the line
-        call LEX_NEXT_TOKEN
+        rst $08
         jr .after_sep
 .comma:
-        call LEX_NEXT_TOKEN
+        rst $08
         call EMIT_OP_PRINT_COMMA
 .after_sep:
         ld a,(TOK_TYPE)         ; a trailing separator ends the statement WITHOUT a newline
@@ -3553,7 +3553,7 @@ COMPILE_PRINT:
 ; NEXT_TOKEN` (there is no separate keyword token left to consume here;
 ; LPRINT itself was already consumed by this routine's own first line).
 COMPILE_LPRINT:
-        call LEX_NEXT_TOKEN     ; consume LPRINT
+        rst $08                 ; consume LPRINT
         ld a,(TOK_TYPE)
         cp TOK_STRING
         jr z,.str_arg
@@ -3576,7 +3576,7 @@ COMPILE_LPRINT:
         jr COMPILE_LPRINT_EMIT
 .not_loaded:
         ld a,32                  ; LPRINT used but the printer package
-        jp COMPILE_RAISE_ERROR
+        rst $30
 
 LPRINT_NUM_NAME: db "LPRINT",0
 LPRINT_NUM_NAME_LEN: equ $-LPRINT_NUM_NAME-1
@@ -3621,14 +3621,14 @@ COMPILE_LPRINT_EMIT:
 
 ; COMPILE_GOTO — GOTO <label>
 COMPILE_GOTO:
-        call LEX_NEXT_TOKEN     ; consume GOTO
+        rst $08                 ; consume GOTO
         call EMIT_OP_JMP
         call EMIT_PLACEHOLDER_16   ; HL = patch address
         ld a,(TOK_TYPE)
         cp TOK_IDENT
         jr z,.have_target
         ld a,12                 ; expected a label name after GOTO
-        jp COMPILE_RAISE_ERROR
+        rst $30
 .have_target:
         jp COMPILE_BRANCH_TARGET
 
@@ -3652,7 +3652,7 @@ COMPILE_GOTO:
 ; BASIC expressions are always either all-numeric or all-string, never
 ; mixed, so this one-token peek is sufficient and unambiguous.
 COMPILE_IF:
-        call LEX_NEXT_TOKEN     ; consume IF
+        rst $08                 ; consume IF
         ld a,(TOK_TYPE)
         cp TOK_STRING
         jr z,.str_condition
@@ -3668,14 +3668,14 @@ COMPILE_IF:
         cp TOK_ASSIGN
         jr z,.str_eq
         ld a,3                   ; unexpected character (expected a string
-        jp COMPILE_RAISE_ERROR
+        rst $30
 .str_lt:
-        call LEX_NEXT_TOKEN
+        rst $08
         call COMPILE_STR_EXPR
         call EMIT_OP_STR_CMP_LT
         jr .condition_done
 .str_eq:
-        call LEX_NEXT_TOKEN
+        rst $08
         call COMPILE_STR_EXPR
         call EMIT_OP_STR_CMP_EQ
 .condition_done:
@@ -3686,9 +3686,9 @@ COMPILE_IF:
         cp TOK_KW_THEN
         jr z,.have_then
         ld a,8                   ; expected THEN
-        jp COMPILE_RAISE_ERROR
+        rst $30
 .have_then:
-        call LEX_NEXT_TOKEN     ; consume THEN
+        rst $08                 ; consume THEN
         ld a,(TOK_TYPE)
         cp TOK_KW_GOTO
         jr z,.have_goto
@@ -3697,12 +3697,12 @@ COMPILE_IF:
                                     ; block IF's own THEN-body (see
                                     ; COMPILE_IF_BLOCK's own header)
 .have_goto:
-        call LEX_NEXT_TOKEN     ; consume GOTO
+        rst $08                 ; consume GOTO
         ld a,(TOK_TYPE)
         cp TOK_IDENT
         jr z,.have_target
         ld a,12
-        jp COMPILE_RAISE_ERROR
+        rst $30
 .have_target:
         call EMIT_OP_JMP
         call EMIT_PLACEHOLDER_16   ; HL = patch address for the real target
@@ -3796,7 +3796,7 @@ COMPILE_IF_BLOCK:
                                              ; else-skip patch address
                                              ; across the ELSE-body's own
                                              ; recursive call
-        call LEX_NEXT_TOKEN            ; consume ELSE
+        rst $08                        ; consume ELSE
         call COMPILE_STATEMENT_LIST     ; compiles the ELSE-body
         ld a,(COMPILE_ERROR_CODE)
         or a
@@ -3861,12 +3861,12 @@ COMPILE_FOR:
         ld (hl),e
         inc hl
         ld (hl),d
-        call LEX_NEXT_TOKEN     ; consume FOR
+        rst $08                 ; consume FOR
         ld a,(TOK_TYPE)
         cp TOK_IDENT
         jr z,.have_var
         ld a,10                  ; expected a loop variable
-        jp COMPILE_RAISE_ERROR
+        rst $30
 .have_var:
         ld hl,(TOK_NAME)
         ld a,(TOK_LEN)
@@ -3875,36 +3875,36 @@ COMPILE_FOR:
         ld (FOR_LOOP_VAR_INDEX),a
         ld hl,(FOR_FRAME_ADDR_TMP)
         ld (hl),a                  ; frame+0 = var_index
-        call LEX_NEXT_TOKEN     ; consume the identifier
+        rst $08                 ; consume the identifier
         ld a,(TOK_TYPE)
         cp TOK_ASSIGN
         jr z,.have_assign
         jp ERR_EXPECTED_ASSIGN
 .have_assign:
-        call LEX_NEXT_TOKEN     ; consume '='
+        rst $08                 ; consume '='
         call COMPILE_EXPR       ; initial value -> VM operand stack
         ld a,(TOK_TYPE)
         cp TOK_KW_TO
         jr z,.have_to
         ld a,11                  ; expected TO
-        jp COMPILE_RAISE_ERROR
+        rst $30
 .have_to:
-        call LEX_NEXT_TOKEN     ; consume TO
+        rst $08                 ; consume TO
         call COMPILE_EXPR       ; limit value -> VM operand stack
         ld a,(TOK_TYPE)
         cp TOK_KW_STEP
         jr z,.have_step
         call EMIT_BYTE_OP_PUSH_I8   ; R8.5 Group 5 -- no STEP written:
         ld a,1                       ; compile a literal step of 1, same
-        call EMIT_BYTE                ; as OP_FOR_INIT/OP_FOR_NEXT always
+        rst $20                       ; as OP_FOR_INIT/OP_FOR_NEXT always
         jr .emit_init                  ; expect a real step operand now
 .have_step:
-        call LEX_NEXT_TOKEN     ; consume STEP
+        rst $08                 ; consume STEP
         call COMPILE_EXPR       ; step value -> VM operand stack
 .emit_init:
         call EMIT_OP_FOR_INIT
         ld a,(FOR_LOOP_VAR_INDEX)
-        call EMIT_BYTE
+        rst $20
         call EMIT_PLACEHOLDER_16 ; QUAL (Q-07): skip-the-body target, the first node of this
         ex de,hl                 ; loop's EXIT chain (frame+3/+4), so NEXT patches it with the
         ld hl,(FOR_FRAME_ADDR_TMP) ; FOR_POP address like an EXIT FOR
@@ -3930,17 +3930,17 @@ COMPILE_FOR:
 ; FIXUPTAB already uses). Post-R9: scoped to the innermost open loop's
 ; own per-depth exit-patch table, not a single shared one.
 COMPILE_EXIT_FOR:
-        call LEX_NEXT_TOKEN     ; consume EXIT
+        rst $08                 ; consume EXIT
         ld a,(TOK_TYPE)
         cp TOK_KW_FOR
         jr z,.have_for
         ld a,44
-        jp COMPILE_RAISE_ERROR
+        rst $30
 .have_for:
         call CSTK_TOP            ; innermost open FOR frame
         jr nz,.record
         ld a,63                  ; EXIT FOR with no FOR open
-        jp COMPILE_RAISE_ERROR
+        rst $30
 .record:
         push hl                  ; the frame
         call EMIT_OP_JMP
@@ -3964,12 +3964,12 @@ COMPILE_EXIT_FOR:
 
 ; COMPILE_NEXT — NEXT <ident>
 COMPILE_NEXT:
-        call LEX_NEXT_TOKEN     ; consume NEXT
+        rst $08                 ; consume NEXT
         ld a,(TOK_TYPE)
         cp TOK_IDENT
         jr z,.have_var
         ld a,10
-        jp COMPILE_RAISE_ERROR
+        rst $30
 .have_var:
         ld hl,(TOK_NAME)
         ld a,(TOK_LEN)
@@ -3991,14 +3991,14 @@ COMPILE_NEXT:
 .mismatch:
         ld a,56                     ; NEXT variable doesn't match the
                                       ; innermost open FOR
-        jp COMPILE_RAISE_ERROR
+        rst $30
 .verified:
         ld a,(NEXT_VAR_INDEX_TMP)
         ld (FOR_LOOP_VAR_INDEX),a
-        call LEX_NEXT_TOKEN     ; consume the identifier
+        rst $08                 ; consume the identifier
         call EMIT_OP_FOR_NEXT
         ld a,(FOR_LOOP_VAR_INDEX)
-        call EMIT_BYTE
+        rst $20
         ld hl,(FOR_LOOP_TOP_OFFSET)
         ld a,h
         ld (FOR_NEXT_HIGH_TMP),a  ; EMIT_BYTE itself uses HL internally (as
@@ -4020,9 +4020,9 @@ COMPILE_NEXT:
                                     ; can clobber the register you still
                                     ; need.
         ld a,l
-        call EMIT_BYTE
+        rst $20
         ld a,(FOR_NEXT_HIGH_TMP)
-        call EMIT_BYTE
+        rst $20
         ; R8.5 Group 5 -- resolve every pending EXIT FOR from this loop's
         ; own body now: the loop's real exit point is exactly here, the
         ; first bytecode position past NEXT's own operand -- the SAME
@@ -4196,7 +4196,7 @@ COMPILE_STATEMENT_LIST:
                                    ; "cleanly" and silently drop the rest of
                                    ; the program.
 .skip_separator:
-        call LEX_NEXT_TOKEN
+        rst $08
         jp .loop
 .cls:
         call COMPILE_CLS
@@ -4262,7 +4262,7 @@ COMPILE_STATEMENT_LIST:
         call COMPILE_LPRINT
         jp .after_stmt
 .end_stmt:
-        call LEX_NEXT_TOKEN     ; consume END/STOP
+        rst $08                 ; consume END/STOP
         call EMIT_OP_HALT
         jp .after_stmt
 .rem:
@@ -4289,7 +4289,7 @@ COMPILE_STATEMENT_LIST:
         jr .rem_scan
 .rem_done:
         ld (SRC_PTR),hl
-        call LEX_NEXT_TOKEN
+        rst $08
         jp .loop                 ; R10.9 2D: not .after_stmt -- a comment that ends at
                                   ; an LF is followed by the next line's first token
                                   ; with no ':' between them
@@ -4352,7 +4352,7 @@ COMPILE_STATEMENT_LIST:
         ld a,(COMPILE_ERROR_CODE)
         or a
         ret nz
-        call LEX_NEXT_TOKEN        ; consume the ':', fetch the next
+        rst $08                    ; consume the ':', fetch the next
                                     ; statement's first token
         jp .loop
 .goto:
@@ -4382,7 +4382,7 @@ COMPILE_STATEMENT_LIST:
         ld a,(TOK_TYPE)
         cp TOK_COLON
         jr nz,.not_colon
-        call LEX_NEXT_TOKEN
+        rst $08
         jp .loop
 .not_colon:
         ; R10.9 2D (defect D3): a statement must be followed by ':' / end of
@@ -4419,7 +4419,7 @@ COMPILE_STATEMENT_LIST:
 ; genuine RUNTIME, long after any test harness's own COLD_START) work
 ; correctly by construction, with no separate step to remember.
 COMPILE_PROGRAM:
-        call LEX_NEXT_TOKEN
+        rst $08
         call COMPILE_STATEMENT_LIST
         ld a,(COMPILE_ERROR_CODE)
         or a
@@ -4439,7 +4439,7 @@ COMPILE_PROGRAM:
         ld d,(hl)
         ld (LEX_LINE),de
         ld a,65                   ; FOR without NEXT
-        jp COMPILE_RAISE_ERROR
+        rst $30
 .no_open_for:
         call EMIT_OP_HALT
         call LABEL_CHECK_ALL
@@ -4475,15 +4475,15 @@ COMPILE_PROGRAM:
 ; ===========================================================================
 
 COMPILE_PROC:
-        call LEX_NEXT_TOKEN     ; consume PROC
+        rst $08                 ; consume PROC
         ld a,(TOK_TYPE)
         cp TOK_IDENT
         jr z,.have_name
         ld a,17                  ; expected a procedure name
-        jp COMPILE_RAISE_ERROR
+        rst $30
 .have_name:
         call STASH_IDENT_NAME
-        call LEX_NEXT_TOKEN     ; consume the procedure name
+        rst $08                 ; consume the procedure name
         call EMIT_OP_JMP
         call EMIT_PLACEHOLDER_16   ; HL = patch address for the skip-over
         ld (PROC_SKIP_PATCH_TMP),hl
@@ -4491,33 +4491,33 @@ COMPILE_PROC:
         cp TOK_LPAREN
         jr z,.have_lparen
         ld a,18                  ; expected '(' after procedure name
-        jp COMPILE_RAISE_ERROR
+        rst $30
 .have_lparen:
-        call LEX_NEXT_TOKEN     ; consume '('
+        rst $08                 ; consume '('
         ld a,(TOK_TYPE)
         cp TOK_IDENT
         jr z,.have_param
         ld a,19                  ; expected a parameter name
-        jp COMPILE_RAISE_ERROR
+        rst $30
 .have_param:
         ld hl,(TOK_NAME)
         ld a,(TOK_LEN)
         ld b,a
         call CSYM_FIND_OR_CREATE
         ld (PROC_PARAM_INDEX_TMP),a
-        call LEX_NEXT_TOKEN     ; consume the parameter name
+        rst $08                 ; consume the parameter name
         ld a,(TOK_TYPE)
         cp TOK_RPAREN
         jr z,.have_rparen
         ld a,20                  ; expected ')' after the parameter
-        jp COMPILE_RAISE_ERROR
+        rst $30
 .have_rparen:
-        call LEX_NEXT_TOKEN     ; consume ')'
+        rst $08                 ; consume ')'
         ld a,(TOK_TYPE)
         cp TOK_COLON
         jr z,.have_colon
         ld a,21                  ; expected ':' before the procedure body
-        jp COMPILE_RAISE_ERROR
+        rst $30
 .have_colon:
         ; define the CALL-entry label HERE — at the bytecode position that
         ; consumes the caller's pushed argument — not at PROC's own
@@ -4537,8 +4537,8 @@ COMPILE_PROC:
         ; matching OP_PARAM_UNBIND (below, right before RET) restores it.
         call EMIT_OP_PARAM_BIND
         ld a,(PROC_PARAM_INDEX_TMP)
-        call EMIT_BYTE
-        call LEX_NEXT_TOKEN     ; consume ':', prime the body's first token
+        rst $20
+        rst $08                 ; consume ':', prime the body's first token
         ld hl,(PROC_SKIP_PATCH_TMP)  ; QUAL (Q-11): a PROC or DEF FN defined inside this body reuses
         push hl                       ; both cells; park them across the body (the enclosing ENDP
         ld a,(PROC_PARAM_INDEX_TMP)   ; used to unbind the inner parameter and patch the inner skip)
@@ -4555,11 +4555,11 @@ COMPILE_PROC:
         cp TOK_KW_ENDP
         jr z,.have_endp
         ld a,16                  ; unterminated PROC (hit EOF, not ENDP)
-        jp COMPILE_RAISE_ERROR
+        rst $30
 .have_endp:
         call EMIT_OP_PARAM_UNBIND
         ld a,(PROC_PARAM_INDEX_TMP)
-        call EMIT_BYTE
+        rst $20
         call EMIT_OP_RET
         call COMPILE_RELATIVE_OFFSET  ; HL = relative offset (current position)
         ex de,hl                  ; DE = relative offset
@@ -4605,20 +4605,20 @@ COMPILE_EXPR_KEEPNAME:
 ; immediately if found, else record a fixup) is duplicated in miniature
 ; rather than awkwardly parameterized, since it's small.
 COMPILE_CALL_STMT:
-        call LEX_NEXT_TOKEN     ; consume CALL
+        rst $08                 ; consume CALL
         ld a,(TOK_TYPE)
         cp TOK_IDENT
         jr z,.have_name
         ld a,13                  ; expected a procedure name after CALL
-        jp COMPILE_RAISE_ERROR
+        rst $30
 .have_name:
         call STASH_IDENT_AND_PEEK
         cp TOK_LPAREN
         jr z,.have_lparen
         ld a,14                  ; expected '(' after the procedure name
-        jp COMPILE_RAISE_ERROR
+        rst $30
 .have_lparen:
-        call LEX_NEXT_TOKEN     ; consume '('
+        rst $08                 ; consume '('
         call COMPILE_EXPR_KEEPNAME ; argument -> pushed onto the VM operand stack. STUDY: a nested
                                    ; "FN f(x)" in the argument re-stashes STMT_IDENT_NAME_* (it used
                                    ; to leave "f" there, so the CALL was emitted for the wrong name)
@@ -4626,9 +4626,9 @@ COMPILE_CALL_STMT:
         cp TOK_RPAREN
         jr z,.have_rparen
         ld a,15                  ; expected ')' after the argument
-        jp COMPILE_RAISE_ERROR
+        rst $30
 .have_rparen:
-        call LEX_NEXT_TOKEN     ; consume ')'
+        rst $08                 ; consume ')'
         call EMIT_OP_CALL
         call EMIT_PLACEHOLDER_16   ; HL = patch address
         ex de,hl                 ; DE = the operand slot just emitted
@@ -4650,22 +4650,22 @@ COMPILE_CALL_STMT:
 ; COMPILE_FACTOR below).
 ; ===========================================================================
 COMPILE_DEF_FN:
-        call LEX_NEXT_TOKEN     ; consume DEF
+        rst $08                 ; consume DEF
         ld a,(TOK_TYPE)
         cp TOK_KW_FN
         jr z,.have_fn
         ld a,49                  ; expected FN after DEF
-        jp COMPILE_RAISE_ERROR
+        rst $30
 .have_fn:
-        call LEX_NEXT_TOKEN     ; consume FN
+        rst $08                 ; consume FN
         ld a,(TOK_TYPE)
         cp TOK_IDENT
         jr z,.have_name
         ld a,50                  ; expected a function name
-        jp COMPILE_RAISE_ERROR
+        rst $30
 .have_name:
         call STASH_IDENT_NAME
-        call LEX_NEXT_TOKEN     ; consume the function name
+        rst $08                 ; consume the function name
         call EMIT_OP_JMP_DEFFN
         call EMIT_PLACEHOLDER_16   ; HL = patch address for the skip-over
         ld (PROC_SKIP_PATCH_TMP),hl
@@ -4673,33 +4673,33 @@ COMPILE_DEF_FN:
         cp TOK_LPAREN
         jr z,.have_lparen
         ld a,51                  ; expected '(' after a name
-        jp COMPILE_RAISE_ERROR
+        rst $30
 .have_lparen:
-        call LEX_NEXT_TOKEN     ; consume '('
+        rst $08                 ; consume '('
         ld a,(TOK_TYPE)
         cp TOK_IDENT
         jr z,.have_param
         ld a,52                  ; expected a parameter name
-        jp COMPILE_RAISE_ERROR
+        rst $30
 .have_param:
         ld hl,(TOK_NAME)
         ld a,(TOK_LEN)
         ld b,a
         call CSYM_FIND_OR_CREATE
         ld (PROC_PARAM_INDEX_TMP),a
-        call LEX_NEXT_TOKEN     ; consume the parameter name
+        rst $08                 ; consume the parameter name
         ld a,(TOK_TYPE)
         cp TOK_RPAREN
         jr z,.have_rparen
         ld a,53                  ; expected ')'
-        jp COMPILE_RAISE_ERROR
+        rst $30
 .have_rparen:
-        call LEX_NEXT_TOKEN     ; consume ')'
+        rst $08                 ; consume ')'
         ld a,(TOK_TYPE)
         cp TOK_ASSIGN
         jr z,.have_assign
         ld a,54                  ; expected '=' before body
-        jp COMPILE_RAISE_ERROR
+        rst $30
 .have_assign:
         ; define the CALL-entry label HERE -- at the PARAM_BIND position,
         ; the real call target -- same convention COMPILE_PROC's own
@@ -4713,8 +4713,8 @@ COMPILE_DEF_FN:
         ret nz
         call EMIT_OP_PARAM_BIND
         ld a,(PROC_PARAM_INDEX_TMP)
-        call EMIT_BYTE
-        call LEX_NEXT_TOKEN     ; consume '=', prime the body expr's own
+        rst $20
+        rst $08                 ; consume '=', prime the body expr's own
                                   ; first token
         call COMPILE_EXPR       ; body -> result left on the VM operand
                                   ; stack, on purpose (RET_DEFFN pops
@@ -4724,7 +4724,7 @@ COMPILE_DEF_FN:
         ret nz
         call EMIT_OP_PARAM_UNBIND
         ld a,(PROC_PARAM_INDEX_TMP)
-        call EMIT_BYTE
+        rst $20
         call EMIT_OP_RET_DEFFN
         call COMPILE_RELATIVE_OFFSET  ; HL = relative offset (current position)
         ex de,hl                  ; DE = relative offset
@@ -4775,7 +4775,7 @@ COMPILE_EXT_CALL:
         pop hl
         ld a,(CEXT_ARGCOUNT)
         ld (CEXT_REMAINING),a
-        call LEX_NEXT_TOKEN         ; consume the extension keyword
+        rst $08                     ; consume the extension keyword
         ld a,(CEXT_REMAINING)
         or a
         jr z,.emit                  ; 0-argument extension — nothing to
@@ -4814,16 +4814,16 @@ COMPILE_EXT_CALL:
         jr z,.have_comma
         ld a,28                     ; expected ',' between an
                                     ; extension call's own arguments
-        jr COMPILE_RAISE_ERROR
+        rst $30
 .have_comma:
-        call LEX_NEXT_TOKEN         ; consume ','
+        rst $08                     ; consume ','
         jr .arg_loop
 .emit:
         call EMIT_OP_CALL_EXT
         ld a,(CEXT_SLOT)
-        call EMIT_BYTE
+        rst $20
         ld a,(CEXT_GEN)
-        call EMIT_BYTE
+        rst $20
         ld a,(CEXT_ARGCOUNT)
         jp EMIT_BYTE
 

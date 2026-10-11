@@ -243,7 +243,7 @@ ARRSYM_FIND_OR_CREATE:
         call SYM_FIND
         jr c,.nf
         ld a,38
-        jp COMPILE_RAISE_ERROR
+        rst $30                 ; QUAL shrink: rst $30
 .nf:
         ld e,2
         call SYM_ADD
@@ -279,7 +279,7 @@ STRARRSYM_FIND_OR_CREATE:
         call SYM_FIND
         jr c,.nf
         ld a,38
-        jp COMPILE_RAISE_ERROR
+        rst $30                 ; QUAL shrink: rst $30
 .nf:
         ld e,3
         call SYM_ADD
@@ -338,7 +338,7 @@ LABEL_REF:
         call SYM_ADD
         jr nc,.have2
         pop de
-        jp COMPILE_RAISE_ERROR  ; A = the error code
+        rst $30                 ; QUAL shrink: rst $30  ; A = the error code
 .have:
         ld de,4
         add hl,de
@@ -408,7 +408,7 @@ LABEL_DEFINE:
         jr z,.walk
         pop de                  ; already defined
         ld a,57                 ; QUAL (Q-12): a duplicate label is a compile error (it used to be
-        jp COMPILE_RAISE_ERROR  ; ignored silently: the first definition won, GOTO went there)
+        rst $30                 ; ignored silently: the first definition won, GOTO went there)
 .walk:
         pop de
         push de                 ; DE = offset
@@ -445,7 +445,7 @@ LABEL_DEFINE:
         ret
 .full:
         pop de
-        jp COMPILE_RAISE_ERROR  ; A = the error code
+        rst $30                 ; QUAL shrink: rst $30  ; A = the error code
 
 ; LABEL_CHECK_ALL -- after the compile: raise error 7 if any label was
 ; referenced but never defined.
@@ -470,7 +470,7 @@ LABEL_CHECK_ALL:
         or a
         jr nz,.next
         ld a,7
-        jp COMPILE_RAISE_ERROR
+        rst $30                 ; QUAL shrink: rst $30
 .next:
         add hl,de
         jr .rec
