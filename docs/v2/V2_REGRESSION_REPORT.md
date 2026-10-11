@@ -182,5 +182,5 @@ production source changed after the qualification):
 | `SHA256SUMS` (ROMs and the five packages and tapes) | every entry verifies; identical to the qualified worktree's manifest |
 | the images vs. the builds the qualification ran on | byte-identical to `rc7` (`ef81f49`), `rc8` and the fresh clone of `970dc30` (gates, battery, `make test`) and the fresh clone of `c57e968` |
 | identity CRC | `BUILD_INFO.txt` `$5E95`; a real `SAVE ... ALL` on the rebuilt image stamps `$5E95`, block CRC valid |
-| open defects | only LOW, LIMIT, RESERVE, PERF and TEST items (`V2_DEFECT_REGISTER.md`); the HIGH entries D11, N-1, N-2 of the defect list are production-baseline defects fixed in Essential/Enhanced (their corpus markers apply to the baseline only and the cases pass on the release) |
-
+| open defects | only LOW, LIMIT, RESERVE, PERF, SPACE and TEST items (`V2_DEFECT_REGISTER.md`; RC-O7 was added after this check); the HIGH entries D11, N-1, N-2 of the defect list are production-baseline defects fixed in Essential/Enhanced (their corpus markers apply to the baseline only and the cases pass on the release) |
+| after the fast-forward of `v2-development` to `f4cabad` | fresh clone of `v2-development`: images identical, `make check` clean, `make rc-assets` manifest identical, `make qual` 663 PASS / 2 XFAIL / 2 N/A / 0 FAIL / 0 XPASS, lifecycle 23 / 23 (`qual-runs/fresh-v2dev-f4cabad/`) |

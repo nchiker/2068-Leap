@@ -1,11 +1,13 @@
 # V2 skills retention review
 
-Which skill methods earned their place in the V2 qualification and release-candidate work, which
-should change, and what is new. Proposed changes to the shared skills are a patch for review --
-`docs/v2/skills_patches/z80-skills-rc-lessons.patch` (against `~/z80-skills` at `ea73e2e`) -- **not
-applied**: the installed and shared skills are unchanged.
+Which skill methods earned their place in the V2 qualification and release work, which should
+change, and what is new. **Applied at the closeout (2026-10-11)** to `~/z80-skills` -- commit
+`54bc4f2` on its `main`, local only (its `origin` is the upstream `ignacioMonge/z80-skills`; nothing
+pushed) -- after review against the installed versions (section "Applied"). The prepared patch
+`docs/v2/skills_patches/z80-skills-rc-lessons.patch` is kept as the historical proposal; the commit
+supersedes it.
 
-Classes: **KEEP** (worked as is), **IMPROVE** (worked, with a gap the patch addresses), **NEW**
+Classes: **KEEP** (worked as is), **IMPROVE** (worked, with a gap now addressed), **NEW**
 (a method this work needed that no skill had), **RETIRE** (not worth keeping).
 
 ## z80-skills: shrink-z80
@@ -18,7 +20,7 @@ Classes: **KEEP** (worked as is), **IMPROVE** (worked, with a gap the patch addr
 | jp -> jr | IMPROVE | must be iterated to a fixed point (each pass brings more in range: 63 then 2 then 1) |
 | `z80_pattern_scan.py` | IMPROVE | lists generic patterns across test sources too; it found none of the four biggest wins below |
 | Dead-code scan (textual references) | IMPROVE | counts references from legacy/test builds that share a source file; misses code dead only in the shipped image |
-| Production-image reachability (listings, precise fall-through, entry roots, EQU aliases) | NEW | found ~170 bytes of legacy-only routines; proposed `scripts/production_reachability.py` |
+| Production-image reachability (listings, precise fall-through, entry roots, EQU aliases) | NEW (applied) | found ~170 bytes of legacy-only routines during the release work; now `scripts/production_reachability.py` |
 | Cross-bank slot-table packing | NEW | +153 bytes EXROM (unused slots and padding) |
 | Removing indirection made redundant by full linking (the KTAB) | NEW | +81 bytes HOME |
 | RST tail calls (`rst n : ret` for a tail `jp X`) | NEW | +41 bytes HOME |
@@ -32,7 +34,7 @@ Classes: **KEEP** (worked as is), **IMPROVE** (worked, with a gap the patch addr
 |---|---|---|
 | Independent read-only audit with evidence tags, promotion gate | KEEP | `V2_INDEPENDENT_Z80_AUDIT.md` (study) found real CRITICAL defects (Q-32, Q-33) |
 | Register-clobber / ABI checks | KEEP | still the most common Z80 bug class in this codebase (memory note: audit-z80 should become part of the build workflow) |
-| Contract checks for code *being changed* | IMPROVE | five of this RC's regressions (RC-2..RC-6) broke unwritten contracts: saved-SP unwinding vs tail jumps, flag pass-through ("keeps carry"), skip-trick lengths, ignored status outputs, fall-through into relocated code -- the patch adds them to `references/asm-abi.md` |
+| Contract checks for code *being changed* | IMPROVE (applied) | five of this release's regressions (RC-2..RC-6) broke unwritten contracts: saved-SP unwinding vs tail jumps, flag pass-through ("keeps carry"), skip-trick lengths, ignored status outputs, fall-through into relocated code -- now in `references/asm-abi.md` |
 
 ## z80-skills: debug-z80 and 2068-debug (ts2068-debug)
 
@@ -55,8 +57,38 @@ Classes: **KEEP** (worked as is), **IMPROVE** (worked, with a gap the patch addr
 | `build_configs.sh`, `run_gate_suites.sh`, `run_study_battery.sh` | KEEP for qualification runs on exported commits |
 | one-off ablation scripts in `~/2068-Leap-study/tools` | RETIRE (superseded) |
 
-## Recommended follow-ups
+## Applied (closeout, `~/z80-skills` `54bc4f2`)
 
-1. Review and apply the patch to `~/z80-skills` (or reject parts of it).
-2. Wire `audit-z80` into the build workflow for changed files (owner request on record).
-3. Add a memory-diff command to `ts2068-debug`.
+`~/z80-skills` was clean at `ea73e2e` (the version the patch was written against); the patch
+applied cleanly; its own test suite passed before (102 + 1 skipped) and after (105 + 1 skipped).
+
+| Skill | File | Change |
+|---|---|---|
+| shrink-z80 | `scripts/production_reachability.py` (new) | the reachability tool, **rewritten** before adding: roots given explicitly (`--root`, `--root-prefix`, `--roots-below`; the patch had 2068-Leap symbol names as defaults), and four defects of the proposed version fixed: lines of false `IF` blocks (sjasmplus `~`) were parsed as labels; labels sharing an address were sized as separate code (an end marker took the next routine's bytes); `EQU` aliases were never followed although the docstring said so; `halt` was treated as a transfer. Validated on the release listings: with the real roots it reports one 3-byte candidate (`EDITOR_BLOCK_DELETE`, RC-O7); the ROM was not changed |
+| shrink-z80 | `references/high-impact.md` | "Multi-image / banked ROM sets": bank-aware accounting, production-only reachability, slot packing, redundant indirection, RST tail calls, IY dispatch, padding reuse, jp->jr fixed point, bytecode-identity proof |
+| shrink-z80 | `references/dispatcher.md` | routes the new script (baseline list, `deadcode` mode) |
+| audit-z80 | `references/asm-abi.md` | "Contracts that inserted code breaks silently": saved-SP unwinding, flag pass-through, skip tricks, library status outputs, relocated fall-through, dispatch registers, temporaries, persisted-image validation |
+| develop-z80 | `references/verification.md` | "Qualifying a ROM, interpreter, or compiler release": strict PASS/FAIL/XFAIL/XPASS accounting and expectation ledger, arithmetic oracles, output identity, T-state bisection, frozen `git archive` configurations, reproducible-release checks, emulator-qualified designation, branch integration and worktree removal |
+| ts2068-debug | `references/gotchas.md` | parallel suites (ports, load-induced ZRCP drops, orphaned emulators); SAVE capture / LOAD replay for tape formats |
+| (repository) | `scripts/test_production_reachability.py`, `CHANGELOG.md` | unit test with a synthetic listing; changelog entry |
+
+Skills created: none (existing skills improved instead). These lessons are generic Z80/sjasmplus
+practice and apply to the Pascal, Forth V2 and C implementations as well.
+
+## Not applied, and pending proposals
+
+1. **`~/.claude/skills/2068-debug`** (the globally installed copy of the TS2068 debugging skill) was
+   not modified: it is a separate, already diverged copy of `z80-skills`' `ts2068-debug`. Proposal:
+   retire it in favour of the plugin's skill, or copy the new gotcha section into it.
+2. **Memory diff in `ts2068-debug`** (the tool, `~/ts2068-debug`): a code change in another project,
+   not a skill edit -- still proposed.
+3. **`audit-z80` in the build workflow** for changed files (owner request on record): a project
+   workflow change, deferred.
+4. **One harness**: `tools/qual/qharness.py` and `ts2068-debug` should share symbol loading and the
+   message map -- 2068-Leap project work.
+5. Pushing `~/z80-skills`: its remote is the upstream project; contributing upstream is the
+   owner's decision.
+
+Retained in the 2068-Leap repository (project-specific): `tools/qual/` (corpus, expectations,
+lifecycle, bytecode identity, benchmark, oracles, exports), the production gates and their
+harnesses, `tools/make_rc_assets.py`.

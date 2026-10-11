@@ -9,7 +9,7 @@ is, how it was qualified, and what is still open.
 | Meaning | the production ROMs passed the documented emulator qualification; the release is reproducible; the accepted limitations are documented; **physical TS2068 compatibility has not been verified** |
 | Accepted | by the owner, 2026-10-11 |
 | Release source | branch `integration/v2-final-rom`; ROM-producing commit `ef81f49` (every later commit is tests or documents) |
-| Authoritative branch | `v2-development` in `~/2068-Leap` (see section 11 for the merge) |
+| Authoritative branch | `v2-development` in `~/2068-Leap`, merged and pushed (section 12) |
 | Hardware | **NOT TESTED — PHYSICAL HARDWARE UNAVAILABLE** (`V2_HARDWARE_CHECKLIST.md`): deferred, not a release blocker |
 
 ## 1. What the release is
@@ -53,7 +53,9 @@ single-line `IF ... THEN stmt` (only `THEN GOTO`), line numbers -- see `V2_FEATU
 | `ef81f49` | identity CRC covers the package registry (RC-9) -- **last ROM change** |
 | `970dc30` | gate checks follow the packed EXROM slots and format minor 1; battery checks promotion on the RC (RC-10, RC-11) |
 | `c57e968` | test-only DIM aliases bound after their handlers (RC-12); the four logical-float corpus cases expect the exact value -- **final test commit** |
-| (the commit carrying this file) | documents only: regression report, this status, register and budget updates |
+| `7ecffcf` `a4e4641` `118e148` | documents: regression report, this status, register and budget updates |
+| `f4cabad` | the release designation (documents, `BUILD_INFO`) and the closeout integrity check -- **release source** (`integration/v2-final-rom` ends here; `v2-development` fast-forwarded to it) |
+| `2c79b44` and the closeout documents (on `v2-development` only) | qualification-tool defaults; handoff, inventory, skills review, authoritative source, README note |
 
 All commits after `7ae0599` (`git log 7ae0599..integration/v2-final-rom`) include the merged study branches (`study/proto-enh-shrink2`,
 `study/decisions-review` and what they contain).
@@ -109,7 +111,8 @@ From `V2_DEFECT_REGISTER.md`: **Q-24** (LOW, `CALL` of a plain label), **Q-26** 
 glyphs print blank) -- both XFAIL in the corpus; **RC-O1** (cosmetic message for a too-big
 literal); **RC-O2..RC-O4** (documented limits of SAVE ALL and of numeric arrays); **RC-O5** (ROM
 reserve 54 / 25 bytes, accepted); **RC-O6** (a bare `FOR`/`NEXT` iteration is ~45 % slower than in production,
-the measured cost of the Q-07/Q-19/Q-20 fixes; loops with bodies 0.3-1.5 %); **T-3** (15 legacy
+the measured cost of the Q-07/Q-19/Q-20 fixes; loops with bodies 0.3-1.5 %); **RC-O7** (a 3-byte
+unreachable EXROM stub found at the closeout, left unchanged); **T-3** (15 legacy
 component tests in no runner). No open defect is above LOW severity. Found and fixed during the
 final qualification, all in tests and tools (no ROM change): RC-10, RC-11, RC-12.
 
@@ -131,6 +134,7 @@ marked **NOT TESTED — PHYSICAL HARDWARE UNAVAILABLE** -- neither passes nor fa
 | `V2_DEFECT_REGISTER.md` | every defect: open, fixed, decided |
 | `V2_ROM_RAM_BUDGET.md` | measured space history and reserve options |
 | `V2_REGRESSION_REPORT.md` | the test evidence |
+| `V2_DOCUMENTATION_HANDOFF.md` | documentation status, verified gaps, plan for the manual |
 | `V2_HARDWARE_CHECKLIST.md` | what to do on the real machine |
 | `AUTHORITATIVE_SOURCE.md` | where V2 lives; build and test from a fresh clone |
 | `V2_WORKSPACE_CLEANUP_INVENTORY.md` | what can be retired, for approval |
@@ -141,18 +145,19 @@ marked **NOT TESTED — PHYSICAL HARDWARE UNAVAILABLE** -- neither passes nor fa
 
 ## 9. Skills
 
-Reviewed in `V2_SKILLS_RETENTION_REVIEW.md`. Proposed changes to the shared `~/z80-skills`
-(contract checks in `audit-z80`, fixed-point jp->jr and production reachability in `shrink-z80`)
-are a patch, **not applied**: `docs/v2/skills_patches/z80-skills-rc-lessons.patch`. No installed
-or shared skill was modified.
+Applied at the closeout to `~/z80-skills` (commit `54bc4f2`, local; not pushed -- its remote is
+the upstream project): `shrink-z80` (new, validated `production_reachability.py` with a test;
+banked-ROM lessons), `audit-z80` (code-change contracts), `develop-z80` (release qualification),
+`ts2068-debug` (parallel-suite gotchas). Details, what was not applied and why:
+`V2_SKILLS_RETENTION_REVIEW.md`.
 
-## 10. Retirement list (nothing deleted)
+## 10. Workspace
 
-`V2_WORKSPACE_CLEANUP_INVENTORY.md`: after the merge, the 35 study worktrees under
-`~/2068-Leap-study` (~520 MB) can be removed (branches kept or tagged `archive/`), the exported
-builds `qual-builds/` (366 MB, all reproducible) deleted, the runs the reports cite archived as one
-tarball and the rest deleted, one already-merged agent branch deleted, and finally the RC worktree
-removed. Nothing has been deleted, moved or pushed.
+Consolidated at the closeout (`V2_WORKSPACE_CLEANUP_INVENTORY.md`): 19 clean, fully integrated study
+worktrees removed (branches kept), the 32 exported builds and 21 frozen tree copies removed after
+verification (their logs kept), `~/2068-Leap-study` 1.3 GB -> 357 MB. Kept: the release-source
+worktree, 16 study worktrees whose branches hold unmerged commits, all run logs, notes and every
+branch.
 
 ## 11. Owner acceptance (2026-10-11)
 
@@ -169,3 +174,24 @@ hashes and the qualified builds byte for byte):
 
 Hardware qualification is deferred. The merge, push and release-tag record follows in the closeout
 section below.
+
+## 12. Closeout record (2026-10-11)
+
+| Action | Result |
+|---|---|
+| release-integrity check (before the merge) | passed: `V2_REGRESSION_REPORT.md` s9 |
+| release designation | commit `f4cabad` on `integration/v2-final-rom` (documents and the `BUILD_INFO` designation only; ROM images unchanged) |
+| merge | `v2-development` **fast-forwarded** `7ae0599` -> `f4cabad` (no merge commit, no history rewritten) |
+| verification after the merge | fresh clone of `v2-development`: identical images and `SHA256SUMS`, `make check`, `make rc-assets`, `make qual` 663 PASS / 2 XFAIL / 2 N/A / 0 FAIL, lifecycle 23/23 |
+| push | `origin` (`github.com/nchiker/2068-Leap`): `v2-development` `6789f36..f4cabad` (fast-forward), `integration/v2-final-rom` new at `f4cabad`; later closeout commits pushed on `v2-development` |
+| after the release commit, on `v2-development` | `2c79b44` qualification tools default to an in-repository export root, `build_configs.sh` fixed for the main checkout; then the closeout documents (this section, handoff, inventory, skills review, authoritative source, README release note, RC-O7) |
+| release tag | **not created**: the existing tags (`v0.1.0-preview.1`, `v1.0.0-beta.1`, the checkpoint `v2-r10.9-pre-array-store`) do not determine a name for an emulator-qualified release. Recommended: an annotated `v2.0.0-emu.1` on the release source `f4cabad` (semver pre-release, like `v1.0.0-beta.1`; `v2.0.0` kept for a hardware-qualified release): `git tag -a v2.0.0-emu.1 f4cabad -m "2068-Leap V2 Enhanced — Emulator-Qualified Release"` then `git push origin v2.0.0-emu.1` |
+| skills | `~/z80-skills` `54bc4f2` (section 9) |
+| workspace | section 10 |
+| documentation | `V2_DOCUMENTATION_HANDOFF.md`: the manual is authoritative but thin; 13 verified gaps (README examples with line numbers, `LPRINT` is a package statement, packages undocumented, `INPUT` prompts, five missing messages, ...) and a plan for a QL-User-Guide-style manual |
+
+Release identity, for every future reference: HOME SHA-256
+`dddd4cbba2e74e4d260be517499759d9e5d32d016d36644c50b0972549e40dca`, EXROM SHA-256
+`c180464120cb94af517ae5448c47c86806cb746fdabc83deb73679afb291b527`, identity CRC `$5E95`, built
+from `ef81f49` (and every later commit).
+

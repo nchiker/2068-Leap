@@ -2,7 +2,16 @@
 
 ### ▶ [Try it now, live in your browser — no install](https://nchiker.github.io/TSRun/?rom=leap)
 
-### 📖 [User Manual](docs/user_manual.md) ([Word/DOCX version](docs/2068_Leap_Users_Manual.docx))
+> **2068-Leap V2 Enhanced — Emulator-Qualified Release** (branch `v2-development`). Start with
+> [`docs/v2/V2_RC_STATUS.md`](docs/v2/V2_RC_STATUS.md); the V2 manual is
+> [`docs/v2/V2_USER_MANUAL.md`](docs/v2/V2_USER_MANUAL.md) and the language reference
+> [`docs/v2/V2_LANGUAGE_REFERENCE.md`](docs/v2/V2_LANGUAGE_REFERENCE.md). V2 has no line numbers:
+> the numbered "Try it" examples, the manual linked just below and the demo programs describe the
+> earlier V1 "Release 1 Beta" ROM (a V2 documentation update is planned:
+> [`docs/v2/V2_DOCUMENTATION_HANDOFF.md`](docs/v2/V2_DOCUMENTATION_HANDOFF.md)). Physical TS2068
+> hardware: not tested.
+
+### 📖 [V1 User Manual (Release 1 Beta)](docs/user_manual.md) ([Word/DOCX version](docs/2068_Leap_Users_Manual.docx))
 
 2068-Leap is an alternate-history ROM for the Timex Sinclair 2068: a
 structured BASIC, a real full-screen editor, AY sound, and TS2068-specific
