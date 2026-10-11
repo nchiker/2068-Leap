@@ -112,6 +112,8 @@ V2_COMMAND_LOOP:
     ld hl,V2_NAV
     ld (EDITOR_NAV_HOOK),hl
     call V2_LOAD_EDIT
+.reenter:                       ; STUDY (D9b): PROGRAM FULL comes back here, not to .loop,
+                                ; so the typed line (EDIT_LINE_BUF, hooks) survives
     ld hl,(CUR_EDIT_POS)
     ld a,h
     cp $FF
@@ -129,24 +131,7 @@ V2_COMMAND_LOOP:
     call V2_DISPATCH
     jr nc,.loop
 .store:
-    call V2_CLEAR_ARRAYS         ; a previous RUN lowered VARS_START (its run-time
-                                   ; tables); restore the ceiling before the fit check
-    call V2_TOKENIZE
-    ld hl,(CUR_EDIT_POS)
-    ld a,h
-    cp $FF
-    jr nz,.have_pos
-    ld hl,(PROG_END)
-.have_pos:
-    ld de,TOKEN_BUF
-    call KTAB_MEM_LINE_STORE
-    call V2_CLEAR_ARRAYS         ; R10.7 P0: the line store grows at PROG_END,
-                                   ; exactly where DIM'd arrays live. Discard
-                                   ; them AFTER the store (so ARRAYS_END ==
-                                   ; the new PROG_END); V2_CLEAR_ARRAYS keeps
-                                   ; the carry from the store intact
-                                   ; (docs/v2/R10_7_WORKSPACE_MANAGER_
-                                   ; FEASIBILITY.md s8)
+    call V2_STORE_EDIT           ; STUDY: the store sequence is now shared with V2_NAV_COMMIT
     jr c,.no_space
     ld hl,(CUR_EDIT_POS)
     ld a,h
@@ -164,7 +149,23 @@ V2_COMMAND_LOOP:
 .no_space:
     ld hl,V2_MSG_FULL
     call V2_SHOW_MESSAGE
-    jr .loop
+    jr .reenter                  ; STUDY (D9b): keep the typed line (was `jr .loop`)
+
+; STUDY (D9): store EDIT_LINE_BUF at CUR_EDIT_POS (replace) or at PROG_END (append).
+; Out: carry set = PROGRAM FULL.  The V2_CLEAR_ARRAYS pair is unchanged from the command loop.
+V2_STORE_EDIT:
+    call V2_CLEAR_ARRAYS         ; a previous RUN lowered VARS_START (its run-time
+                                   ; tables); restore the ceiling before the fit check
+    call V2_TOKENIZE
+    ld hl,(CUR_EDIT_POS)
+    ld a,h
+    cp $FF
+    jr nz,.have_pos
+    ld hl,(PROG_END)
+.have_pos:
+    ld de,TOKEN_BUF
+    call KTAB_MEM_LINE_STORE
+    jp V2_CLEAR_ARRAYS           ; R10.7 P0: discard DIM'd arrays AFTER the store; keeps carry
 
 ; Convert EDIT_LINE_BUF into the generic record format. This is the same
 ; verbatim copy V1 called tokenization, with no V1 language processing.
@@ -420,7 +421,7 @@ V2_NAV:
     cp EDIR_DELETE_LINE
     jr z,.delete
     cp EDIR_INSERT_LINE
-    jr z,.insert
+    jp z,.insert
     cp EDIR_UP
     jr z,.wrap_up
     cp EDIR_DOWN
@@ -458,6 +459,8 @@ V2_NAV:
     or a
     sbc hl,de
     ret nc
+    call V2_NAV_COMMIT           ; STUDY (D9a): keep an uncommitted edit
+    ret c
     ld hl,(CUR_EDIT_INDEX)
     inc hl
     ld (CUR_EDIT_INDEX),hl
@@ -467,6 +470,9 @@ V2_NAV:
     ld a,h
     or l
     ret z
+    call V2_NAV_COMMIT
+    ret c
+    ld hl,(CUR_EDIT_INDEX)
     dec hl
     ld (CUR_EDIT_INDEX),hl
     jp V2_SET_EDIT_FROM_INDEX
@@ -491,11 +497,60 @@ V2_NAV:
     ld a,h
     cp $FF
     ret z
+    call V2_NAV_COMMIT
+    ret c
+    ld hl,(CUR_EDIT_POS)
     ld de,V2_BLANK_RECORD
     call KTAB_MEM_LINE_INSERT
     ret c
     jp V2_LOAD_EDIT
 V2_BLANK_RECORD: DB 1,0,$0D
+
+; STUDY (D9a): leaving a line with UP/DOWN/insert must not discard what was typed.  If the buffer is
+; non-empty and differs from the stored record (or there is no record: the append line), store it first
+; -- exactly what ENTER would store, minus command dispatch.  Out: carry set = PROGRAM FULL (message
+; shown; the caller must not move, so the buffer and the cursor are kept).  After an append the index is
+; that of the new append line, so UP then lands on the line just stored.
+V2_NAV_COMMIT:
+    ld a,(EDIT_LINE_BUF)
+    or a
+    ret z                        ; empty: ENTER ignores it too (carry clear)
+    ld hl,(CUR_EDIT_POS)
+    ld a,h
+    cp $FF
+    jr z,.differs                ; append line with text
+    inc hl
+    inc hl
+    ld de,EDIT_LINE_BUF
+.cmp:
+    ld a,(de)
+    or a
+    jr z,.end
+    cp (hl)
+    jr nz,.differs
+    inc hl
+    inc de
+    jr .cmp
+.end:
+    ld a,(hl)
+    cp $0D
+    ret z                        ; identical to the record (carry clear)
+.differs:
+    call V2_STORE_EDIT
+    jr c,.full
+    ld hl,(CUR_EDIT_POS)
+    ld a,h
+    inc a                        ; Z = append line (carry stays clear)
+    ret nz
+    call V2_COUNT_LINES
+    ld (CUR_EDIT_INDEX),de
+    or a
+    ret
+.full:
+    ld hl,V2_MSG_FULL
+    call V2_SHOW_MESSAGE
+    scf
+    ret
 
 ; R10.7 source-staging-architecture change (docs/v2/R10_7_SOURCE_STAGING_
 ; ARCHITECTURE_AUDIT.md): V2_BUILD_SOURCE no longer flattens the whole
