@@ -4,7 +4,7 @@
 |---|---|---|
 | `make check` | assemble/lint of every build, doc and fixture checks, `tools/check_test_targets.sh` | **No** |
 | `make test` | **default, fully headless** (ts2068-debug/ZEsarUX, no display): kernel smoke ROMs, V2 standalone component tests (`tools/run_v2_standalone_tests.sh`), production-ROM checks (`tools/v2_production_checks.py`), FILL checks, and (R10.9) the production-ROM regression gate + strict known-defect suite (`tools/run_v2_prod_tests.sh`) | **No** |
-| `make test-prod` | only the last item above | **No** |
+| `make test-prod` | only the last item above (production gate, Array Store gate and known-defect suite, concurrently) | **No** |
 | `make test-legacy` | the V1 tests that drive a real Fuse window under X11: `run_editor_auto_test.sh` (wrap, insert) and the `run_storage_named_load_test.sh` family | **Yes** |
 | `make test-all` | `test` then `test-legacy` | Yes |
 
@@ -22,7 +22,7 @@ user asks. Do not use `pkill -f` (it kills the invoking shell).
 
 ## Production-ROM regression gate and known-defect suite (R10.9 Phase 1)
 
-`tools/run_v2_prod_tests.sh` (`make test-prod`, also part of `make test`) runs two suites
+`tools/run_v2_prod_tests.sh` (`make test-prod`, also part of `make test`) runs three suites
 concurrently on the **real production image** (`build/ts2068rom_zesarux.bin`, HOME + EXROM as
 shipped) and prints both logs. Library: `tools/v2_prod.py`; tape synthesiser:
 `tools/tape_synth.py`; package-ABI reader: `tools/v2_abi.py`.
@@ -73,7 +73,26 @@ Isolate a manual run from `make test` with `TS2068_DEBUG_STATE_DIR=<dir> TS2068_
   tape / bad checksum / abort, and package-tape failure. Each asserts the message *and* the resulting state (program
   intact, or the known-safe empty state, `STORAGE_VERIFY_MODE` cleared). Policy: `docs/v2/R10_9_PHASE2A_REPORT.md` §3.
 * `D12`–`D15` (DIM zero-fill, `SAVE ... ARRAY` header type, array names > 8 characters, `LOAD ... ARRAY`
-  descriptor validation) are strict expected failures in `tools/v2_known_defects.py`; positive controls (8-character
-  names, well-formed tapes, `dim_count` normalisation) sit beside them. Nothing there is repaired yet (Phase 2C).
+  descriptor validation) were strict expected failures in Phase 2A and are **repaired in Phase 2C**: they are gate cases in
+  `tools/v2_prod_arrays.py` now (see the Array Store section below).
 * `P.press_space()`, `P.capture_save()` and `tape_op(prepare=...)` are the new harness helpers (`tools/v2_prod.py`).
 
+
+## Array Store (R10.9 Phase 2C)
+
+`tools/v2_prod_arrays.py` is a third production-image suite (run by `tools/run_v2_prod_tests.sh` next to the gate and the
+known-defect suite, on its own ZEsarUX port/state dir). All its cases are **gate** cases (each must `PASS`). It holds the
+former known defects D6, D8, D12, D13, D14, D15 and D16 as fixed behaviour, plus the lifecycle, boundary, replacement and
+banking cases of the Phase 2B proposal (`docs/v2/R10_9_PHASE2B_REPORT.md` §3, §11). It exercises the **real** EXROM Array Store
+service (`rom/exrom_v2_arrstore.asm`): bind at `RUN`, the EXROM `DIM`/`DIM$` handlers, the validating loader, the saver and the
+repaired `CLEAR`. Stores are either hand-built in RAM (`PAS_END` + entries at `$E000`) or created by `LOAD ... ARRAY` from a
+synthesised tape; run one case with `TS2068_DEBUG_STATE_DIR=<dir> TS2068_V2_PORT=<port> python3 tools/v2_prod_arrays.py <substring>`.
+
+**Component tests vs production DIM.** The standalone component tests (`tools/run_v2_standalone_tests.sh`) assemble a
+private HOME with a private EXROM that has no Array Store service. They bind opcodes 63/64 to the **test-only** handlers in
+`rom/test_v2_local_dim.inc` (the pre-2C allocate-only handlers plus the D12 zero-fill). Those tests therefore still cover the
+compiler, the VM and the allocator, but **not** the production `DIM` code, the adopt/bind logic or the store; that is
+`v2_prod_arrays.py`'s job. The two sets overlap only in the allocator (`ARENA_ALLOC_*`), which both use unchanged.
+
+Known synthetic limits (unchanged from above): the tape path is a synthesised EAR stream, not a recorder; the
+`ARRAY STORE FULL` / capacity cases poke `PAS_END` directly to place the store boundary.

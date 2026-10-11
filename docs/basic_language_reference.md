@@ -710,6 +710,12 @@ Home ROM, confirming the ~40-60 byte estimate made once string
 scalars' own real cost was known — see `docs/programmers_reference.
 md`'s `basic/` "String concatenation" section for the implementation.
 
+**Persistent arrays (R10.9 Phase 2C)**: `LOAD "f" ARRAY name` places an array in the
+Array Store (segment 2, `$E000` up) where it survives `RUN`, `CLEAR`, edits, immediate statements and
+program `LOAD`; `NEW` clears it. A matching `DIM` adopts the stored array (same name, kind and size/width;
+otherwise `ARRAY SIZE MISMATCH` before the first statement); see `docs/user_manual.md` "Persistent arrays".
+`CLEAR` is run-scoped: it zeroes scalars, strings and ordinary arrays, keeps the program, packages and store.
+
 **Arrays — implemented**: `DIM name(n)` declares a numeric array of `n`
 zero-initialized elements, and `DIM name$(n)` declares a string array
 whose elements hold up to 31 characters. Both use indices **0 to n-1**

@@ -577,6 +577,42 @@ free RAM, reflected in `FREE()`.
 
 There is no multi-dimensional (`DIM name(rows,cols)`) support.
 
+#### Persistent arrays (the Array Store)
+
+`LOAD "file" ARRAY name` (or `ARRAY name$` for a string array) reads an array from
+tape into the **Array Store**, a 2 KB area of memory that is *not* part of your program. The array
+then belongs to the store, not to one run:
+
+- It **survives `RUN`** (as often as you like), editing the program, immediate statements
+  (`: ...`), `CLEAR`, and `LOAD "program"` (successful or not).
+- A program picks it up by `DIM`-ing the same name with the **same size** (and, for strings, the same
+  width): `DIM scores(10)` *adopts* the stored array without clearing it. The program may even
+  jump over the `DIM`: stored arrays are bound by name when the program starts.
+- Writes made by the program go straight into the store, so the next `RUN` (or `SAVE "file" ARRAY name`) sees
+  them.
+- If a stored array has the same name as one in the program but a different size or width, the `RUN` stops
+  before its first statement with `ARRAY SIZE MISMATCH` and nothing is changed. Names are matched
+  ignoring case, and `a` and `a$` are different arrays. Use another name, or `LOAD` a tape of the right
+  size, or `NEW`.
+- Loading a name that is already in the store **replaces** it, atomically. If the tape is bad the old
+  array is kept.
+- **`NEW` empties the store.** Nothing else does.
+- Arrays that are not in the store behave as before: a plain `DIM` gives you zeros every `RUN`
+  (`DIM` now clears the array it creates; it used to keep stale values).
+
+`SAVE "file" ARRAY name` writes a stored (or currently live) array to tape. Array names may be up to 31
+characters long. The store holds about 2 KB in total, shared with the arrays that do not fit in the
+main program area. An array tape is checked completely before anything is stored:
+`BAD ARRAY TAPE` means the contents are not a well-formed numeric or string array (wrong kind,
+wrong length, a string element longer than 31 characters or than its width), `ARRAY STORE FULL` means
+there is no room for another entry, and a tape written by another version reports `BAD TAPE VERSION`.
+Replacing an array needs room for the old and the new copy at the same moment.
+The Array Store saves and loads **arrays**; it is not a snapshot of all variables.
+
+`CLEAR` (in a program) now only resets what the running program owns: scalar and string variables and
+non-stored arrays go back to zero or empty. The program, loaded packages (`LOAD ... EXT`) and the Array
+Store are untouched.
+
 ## 7. Expressions and operators
 
 Expressions calculate values for assignment, `PRINT`, `IF`, loop bounds,
@@ -1378,6 +1414,9 @@ text, not a new statement.
 | `SAVED` / `LOADED` | Success |
 | `LOAD FAILED` | Unreadable, incomplete or wrong tape. If the failure happened before any data was stored the program in memory is kept; if it happened part-way through the block the partly overwritten program is discarded (the program area is left empty, as after `NEW`) |
 | `VERIFIED` / `VERIFY FAILED` | `VERIFY` compares the tape with the program in memory and never changes it; the tape must match the whole program (same length) |
+| `BAD ARRAY TAPE` | A `LOAD ... ARRAY` tape is not a well-formed array of the requested kind; nothing was stored |
+| `ARRAY STORE FULL` | The Array Store has no room for the entry (it holds about 2 KB; replacing an array needs the old and the new copy together) |
+| `ARRAY SIZE MISMATCH` | The program was started with a stored array whose size or width differs from the program's `DIM` for that name; the `RUN` stopped before running anything |
 | `ABORTED` | SPACE was pressed during `LOAD`/`VERIFY`. As for `LOAD FAILED`, a `LOAD` aborted part-way leaves an empty program |
 | `BAD TAPE VERSION` | The tape was not written by this ROM's format (older or newer); nothing was changed |
 | `SAVE FAILED` | An extension SAVE was requested with no module installed |

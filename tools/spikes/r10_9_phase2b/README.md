@@ -1,6 +1,6 @@
 # R10.9 Phase 2B — Array Store architecture prototypes
 
-**Not part of any build target and not production code.** These are the measurement prototypes and probes behind
+**Not part of any build target and not production code.** (Phase 2C implemented architecture C in `rom/exrom_v2_arrstore.asm`; the production code differs from these prototypes — see `docs/v2/R10_9_PHASE2C_REPORT.md` §8 for the defects the prototype had, e.g. the `count >= 8` validator bug and the header write past `ARR2_LIMIT`. Do not re-apply the `mk_*.py` scripts to the current tree.) These are the measurement prototypes and probes behind
 [`docs/v2/R10_9_PHASE2B_REPORT.md`](../../../docs/v2/R10_9_PHASE2B_REPORT.md). Nothing here is assembled by `make`, `make check` or `make test`.
 
 ## How a prototype is applied

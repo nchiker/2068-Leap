@@ -51,7 +51,7 @@ tell *unversioned* (bit 15 clear, or major 0) from *versioned*.
 |---|---|---|---|
 | Program | 0 | **`$8100`** | program format 1.0: the line store verbatim, `[len:2][text][CR]` records (§7.1) |
 | Package (`SAVE/LOAD … EXT`) | 4 | **`$8200`** | package ABI 2.0 (this document). Major 1 was the unversioned raw-address ABI |
-| Array (`… ARRAY`) | 8 | **`$8100`** | array format 1.0. Array persistence is an intentional V2 feature (the replacement for `DATA/READ/RESTORE`); the identifier, version word and check are preserved. The array *semantics* (what a loaded array's lifetime is across `RUN`) are known-defective (D6) and are the subject of a separate architecture audit; they are not specified here |
+| Array (`… ARRAY`) | 8 | **`$8100`** | array format 1.0. Array persistence is an intentional V2 feature (the replacement for `DATA/READ/RESTORE`). R10.9 Phase 2C implements the persistent Array Store (§7.3): the header type, version word and check are unchanged, `SAVE ... ARRAY` now actually writes type 8 (D13) |
 
 **Acceptance rule** (`STORAGE_LOAD`, `.name_ok`): *tag bit and major must equal the ROM's; the tape's
 minor must not exceed the ROM's.* Anything else is refused with the new clean failure
@@ -118,7 +118,7 @@ Contract for an execute routine:
 | failed or refused (`BAD TAPE VERSION`) package load | cleared | length 0 |
 | program `LOAD` | kept | kept |
 | `NEW` | cleared | length 0; HOME also zeroes `SPRITE_SLOT_DEFINED/SHOWN`, `SPRITE_DISPLAY_DEPTH` |
-| `CLEAR` statement | **cleared (known defect D8; S-1 will stop this)** | length 0 |
+| `CLEAR` statement | **kept** (R10.9 Phase 2C repaired D8: `CLEAR` is run-scoped and no longer touches packages) | kept |
 | edit / `RUN` | kept | kept |
 
 ## 3. Service table (callable HOME routines)
@@ -280,13 +280,20 @@ are rebuilt by that target and their `.tzx` stamped `$8200`. This is a one-time,
 (R10.8 plan M-6). Package *sizes* are unchanged (mode 165, sprite 832, printer 345, shapes 795,
 graphics 467 bytes) [M].
 
-### 7.3 Array tapes
+### 7.3 Array tapes and the Array Store (R10.9 Phase 2C)
 
-`SAVE/LOAD … ARRAY` is untouched in Phase 1. Array tapes are stamped and checked with the format word like
-programs; header type 8 and the `$8100` word are preserved. The body format and the load-time semantics are
-**not frozen by this document**: they await the array-persistence architecture audit (work sequence step 2.5),
-which may need a format minor/major bump. A bump is cheap and safe here — the version check already refuses
-old tapes cleanly.
+Array tapes keep header type 8 and the `$8100` format word; **the format did not change**, so ABI 2.0 and the tape
+version words are unchanged. Phase 2C repaired the writer (`SAVE ... ARRAY` wrote a type-0 header before, D13) and
+specified the body, which `LOAD ... ARRAY` now validates before anything is stored (`docs/v2/R10_9_PHASE2C_REPORT.md` §3):
+
+* numeric: `[1][count:2][count x 2]`, `1 <= count < 2048`, length exactly `3 + 2*count`;
+* string: `[1][count:2][width:1][count x width]`, `width >= 2`, every element's length byte `<= 31` and `< width`,
+  length exactly `4 + count*width`.
+
+A loaded array lives in the **Array Store**: segment 2 (`$E000` up to `PAS_END`), outside the edit-volatile pool. The
+store is private to the Leap ROM (`PAS_END` is not a pinned package cell, no service slot touches it); packages must keep
+treating `$E000-$E7FF` as off limits, as in §5.5. `NEW` clears it; `RUN`, `CLEAR`, edits, immediate statements and program
+`LOAD` (successful or failed) keep it.
 
 ## 8. Automated guard rails
 
