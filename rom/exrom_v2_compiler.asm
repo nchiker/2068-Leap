@@ -1007,9 +1007,13 @@ LEX_ACCUM_DIGIT:
 ; 65535, more than 4 decimals, a mantissa above 32767) is parsed whole by the shared number parser
 ; into a 5-byte value (was error 64): 1000.25, 3.14159265, 100000 are literals.
 LEX_NUMBER_TOO_BIG:
+        ld hl,.ovf
+        push hl
+        ld (VM_RUN_SP),sp        ; RC: a literal beyond the float range (VM_CALC_CHECK) unwinds to .ovf
         ld hl,(LEX_NUM_START)
         ld b,255
         call NUM_PARSE_CALC      ; CALC_STACK[0] = the value, HL -> after it
+        pop de
         ld (SRC_PTR),hl
         ld hl,CALC_STACK
         ld de,TOK_FLOAT5_BUF
@@ -1018,6 +1022,11 @@ LEX_NUMBER_TOO_BIG:
         ld a,TOK_FLOAT5
         ld (TOK_TYPE),a
         ret
+.ovf:
+        xor a
+        ld (TOK_TYPE),a          ; TOK_EOF: nothing more is read
+        ld a,64                  ; number too big (as the other literal-range errors)
+        rst $30
 
 ; R8 identifier cleanup: a leading letter, then any mix of letters and
 ; DIGITS (classic BASIC's own convention -- "A1", "TOTAL2", "P3" are

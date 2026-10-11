@@ -1,20 +1,25 @@
 #!/usr/bin/env python3
-"""STUDY D11 literal policy L-A: address literals keep working, silent wraps are errors."""
+"""STUDY D11 literal policy, final rules (L-C): address literals keep working, large and decimal literals are exact."""
 import os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from study_util import *
 CASES = [  # (program, want printed, want compile error)
+  # RC (final rules): literal rule L-C (owner decision 3) -- 32768..65535 are positive FLOAT values and
+  # still work as addresses; larger literals and decimals are exact 5-byte floats (Q-15/Q-16, D10); only a
+  # literal beyond the float range (about 1.7E38) is error 64. The L-A/D11 expectations this tool had
+  # (65535 -> -1, 65536 -> error 64, 3276.7 -> 3276.6999) are superseded.
   (["POKE 65000, 42", "PRINT PEEK(65000)"], ["42"], 0),
   (["POKE 61440, 33", "POKE 61441, 5", "POKE 61442, 0", "POKE 61443, 201", "PRINT USR(61440)"], ["5"], 0),
   (["PRINT 32767"], ["32767"], 0),
-  (["PRINT 65535"], ["-1"], 0),                      # still a 16-bit pattern (documented): addresses
-  (["PRINT 65536"], [], 64),
-  (["PRINT 100000"], [], 64),
-  (["x = 99999999"], [], 64),
+  (["PRINT 65535"], ["65535.0000"], 0),              # L-C: positive; a FLOAT prints 4 decimals
+  (["PRINT 65536"], ["65536.0000"], 0),
+  (["PRINT 100000"], ["100000.0000"], 0),
+  (["x = 99999999", "PRINT x"], ["99999999.0000"], 0),
   (["PRINT 3000.5"], ["3000.5000"], 0),
-  (["PRINT 12345.5"], [], 64),                        # mantissa 123455 does not fit 16 bits -> error (was garbage)
-  (["PRINT 3276.7"], ["3276.6999"], 0),            # mantissa 32767 is the largest accepted; 3276.6999 is the pre-existing D10 truncation
-  (["PRINT 3276.8"], [], 64),                         # mantissa 32768 would be negative
+  (["PRINT 12345.5"], ["12345.5000"], 0),
+  (["PRINT 3276.7"], ["3276.7000"], 0),              # D10 fixed: rounded, not truncated
+  (["PRINT 3276.8"], ["3276.8000"], 0),
+  (["PRINT 1" + "0" * 40], [], 64),                   # beyond the float range
   (["PRINT 0.5"], ["0.5000"], 0),
   (["PRINT 7"], ["7"], 0),
 ]

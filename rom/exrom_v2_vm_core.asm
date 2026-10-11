@@ -3069,22 +3069,31 @@ VM_CALC_ADD_STUB:
         ld b,0
         rst $28
         db $0F,$38              ; add, end-calc
-        ret
+        jr VM_CALC_CHECK
 VM_CALC_SUB_STUB:
         ld b,0
         rst $28
         db $03,$38              ; subtract, end-calc
-        ret
+        jr VM_CALC_CHECK
 VM_CALC_MUL_STUB:
         ld b,0
         rst $28
         db $04,$38              ; multiply, end-calc
-        ret
+        jr VM_CALC_CHECK
 VM_CALC_DIV_STUB:
         ld b,0
         rst $28
         db $05,$38              ; divide, end-calc
-        ret
+; RC: the calculator aborts an operation whose result is beyond the 5-byte range (about 1.7E38) and
+; leaves an operand behind; that used to become the result silently (4294967296^4 printed 2^96).
+; Now it is runtime error 67, the code the non-promoting builds already use for overflow. A literal
+; or VAL/INPUT text that overflows reaches the same check through NUM_PARSE_CALC.
+VM_CALC_CHECK:
+        ld a,(CALC_ERROR_CODE)
+        or a
+        ret z
+        ld a,67
+        jp VM_ERR_COMMON
 
 ; VM_DIV_VIA_FLOAT — R10.5 shrink: three call sites (OP_DIV's own inexact-
 ; quotient fallback, plus two other integer-pair-to-FLOAT-division paths)

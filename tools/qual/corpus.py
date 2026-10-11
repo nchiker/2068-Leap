@@ -68,6 +68,8 @@ for v in (65536, 99999, 100000):
 T("lit.addr.poke", "literal.integer.address", ["POKE 65000,77", "PRINT PEEK(65000)"], Num(77, "int"),
   note="address literal > 32767 (test corpus relies on it)")
 T("lit.dec.0p5", "literal.decimal", ["PRINT 0.5"], Num(Fr(1, 2), "float"))
+T("lit.float.too_big", "literal.range", ["PRINT 1" + "0" * 40], CErr(64), note="RC: beyond the float range (about 1.7E38)")
+T("lit.float.1e38", "literal.range", ["PRINT 1" + "0" * 38 + " / 1" + "0" * 37], Num(10))
 T("lit.dec.1p25", "literal.decimal", ["PRINT 1.25"], Num(Fr(5, 4), "float"))
 T("lit.dec.10p5", "literal.decimal", ["PRINT 10.5"], Num(Fr(21, 2), "float"))
 T("lit.dec.3p1416", "literal.decimal", ["PRINT 3.1416"], Num(Fr(31416, 10000), "float"))
@@ -164,6 +166,13 @@ T("arith.div0", "expr.div0", ["PRINT 1/0"], RErr(5))
 T("arith.div0.var", "expr.div0", ["z = 0", "PRINT 5/z"], RErr(5))
 T("arith.div0.float", "expr.div0", ["PRINT 1.5/0"], RErr(5))
 T("arith.div0.float2", "expr.div0", ["z = 0.0", "PRINT 2/z"], RErr(5))
+# RC: results beyond the 5-byte float range (about 1.7E38) are runtime error 67; they used to leave an
+# operand behind as the result (4294967296^4 printed 2^96).
+T("arith.overflow.mul", "expr.overflow", ["a = 4294967296", "PRINT a * a * a * a"], RErr(67))
+T("arith.overflow.add", "expr.overflow", ["a = 4294967296", "b = a * a * a * (a / 4)", "PRINT b + b"], RErr(67))
+T("arith.overflow.sub", "expr.overflow", ["a = 4294967296", "b = a * a * a * (a / 4)", "PRINT 0 - b - b"], RErr(67))
+T("arith.overflow.div", "expr.overflow", ["a = 4294967296", "b = a * a * a * (a / 4)", "PRINT b / 0.5"], RErr(67))
+T("arith.big.ok", "expr.overflow", ["a = 4294967296", "b = a * a * a * (a / 4)", "PRINT b / b"], Num(1))
 T("arith.assign_chain", "expr.assign", ["a = 5", "b = a * 2", "a = b - a", "PRINT a", "PRINT b"], Lines(I(5), I(10)))
 T("arith.selfref", "expr.assign", ["x = 1", "x = x + x + x", "PRINT x"], Num(3, "int"))
 T("arith.uninit", "variable.default", ["PRINT q + 1"], Num(1, "int"), note="unassigned numeric scalar reads 0")
