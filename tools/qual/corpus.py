@@ -363,7 +363,8 @@ T("str.cmp_in_expr", "string.compare", ['x = ("a" = "a")', "PRINT x"], OkOrErr("
   note="string comparison as a value outside IF")
 T("str.cmp_and", "string.compare", ['a$ = "x"', 'IF a$ = "x" AND 1 = 1 THEN', 'PRINT "y"', "ENDIF"], Out("y"),
   note="string comparison combined with AND")
-T("str.instr", "fn.INSTR", ['PRINT INSTR("hello","ll")'], Num(3, "int"), known="L-INSTR", note="documented in the manual, absent in V2")
+T("str.instr", "fn.INSTR", ['PRINT INSTR("hello","ll")'], CErr(),
+  note="V2 decision (RC, L-INSTR): INSTR is not in the V2 ROM (no room; the V1 manual entry is withdrawn); search with MID$ in a loop")
 T("str.slice", "string.slice", ['a$ = "hello"', "PRINT a$(2 TO 3)"], CErr(), note="slicing unsupported (MID$)")
 T("str.chr_range", "fn.CHR", ["PRINT CHR$(256)"], RErr(15))
 T("str.chr_neg", "fn.CHR", ["PRINT CHR$(-1)"], RErr(15))
@@ -435,8 +436,10 @@ T("if.nested", "stmt.IF.block", ["a = 1 : b = 2", "IF a = 1 THEN", "IF b = 2 THE
                                   'PRINT "2"', "ENDIF"], Out("11"))
 T("if.elseif_chain", "stmt.IF.elseif", ["x = 2", "IF x = 1 THEN", 'PRINT "one"', "ELSE IF x = 2 THEN", 'PRINT "two"', "ELSE", 'PRINT "other"',
                                          "ENDIF", "ENDIF"], Out("two"))
-T("if.elseif_kw", "stmt.IF.elseif", ["x = 2", "IF x = 1 THEN", 'PRINT "one"', "ELSEIF x = 2 THEN", 'PRINT "two"', "ENDIF"], Out("two"),
-  known="L-ELIF", note="V1/manual ELSEIF; V2 error")
+T("if.elseif_kw", "stmt.IF.elseif", ["x = 2", "IF x = 1 THEN", 'PRINT "one"', "ELSEIF x = 2 THEN", 'PRINT "two"', "ENDIF"], CErr(),
+  note="V2 decision (RC, L-ELIF): no ELSEIF keyword (the V1 manual entry is withdrawn); ELSE + a nested IF does the same")
+T("if.else_if_nested", "stmt.IF.elseif", ["x = 2", "IF x = 1 THEN", 'PRINT "one"', "ELSE", "IF x = 2 THEN", 'PRINT "two"', "ENDIF",
+  "ENDIF"], Out("two"), note="the V2 spelling of ELSEIF")
 T("if.single_line", "stmt.IF.single", ["IF 1 THEN PRINT 5", 'PRINT "after"'], CErr(9),
   note="V2 decision (R10.8 L1): IF is always a block; the V1 manual documents single-line IF")
 T("if.single_line_endif", "stmt.IF.block", ['IF 1 THEN PRINT "y" ENDIF'], OkOrErr("y"), note="a block IF on one line")
@@ -581,8 +584,9 @@ T("arr.name_scalar_collision", "namespace.array_scalar", ["DIM a(3)", "a = 5", "
 T("arr.many", "array.numeric", ["DIM a(2)", "DIM b(2)", "DIM c(2)", "DIM d(2)", "DIM e(2)", "a(1)=1:b(1)=2:c(1)=3:d(1)=4:e(1)=5",
                                  "PRINT a(1)+b(1)+c(1)+d(1)+e(1)"], Num(15, "int"))
 T("arr.str_basic", "array.string", ['DIM n$(3)', 'n$(0) = "RED"', 'n$(2) = UPPER$("blue")', "PRINT n$(0) + n$(2)"], Out("REDBLUE"))
-T("arr.str_default_width", "array.string", ['DIM n$(2)', 'n$(0) = "' + "w" * 20 + '"', "PRINT LEN(n$(0))"], Num(20, "int"),
-  note="manual: each element can hold 31 characters (implementation default width 16 -> 15)")
+T("arr.str_default_width", "array.string", ['DIM n$(2)', 'n$(0) = "' + "w" * 20 + '"', "PRINT LEN(n$(0))"], Num(15, "int"),
+  note="V2 design (R10.7 s11.1): DIM n$(n) elements are 16 bytes, 15 characters; DIM n$(n,32) holds 31. "
+       "DD-1 was the manual's error (corrected), not the ROM's")
 T("arr.str_width", "array.string", ['DIM n$(2,5)', 'n$(1) = "abcdefgh"', "PRINT n$(1)"], Out("abcd"))
 T("arr.str_width_big", "array.string", ['DIM n$(2,32)', 'n$(1) = "' + "z" * 31 + '"', "PRINT LEN(n$(1))"], Num(31, "int"))
 T("arr.str_width1", "array.string", ['DIM n$(2,1)'], CErr(34))

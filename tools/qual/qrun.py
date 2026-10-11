@@ -81,8 +81,18 @@ def main():
     ap.add_argument("--filter", default="")
     ap.add_argument("--port", type=int, default=10440)
     ap.add_argument("--workers-per-cfg", type=int, default=1)
-    ap.add_argument("--fixed", default="", help="comma list of defect ids fixed in this build (markers dropped)")
+    ap.add_argument("--fixed", default="", help="comma list of defect ids fixed in this build (markers dropped); "
+                                                 "'rc' = defects.RC_FIXED")
+    ap.add_argument("--tree", default=None, help="run the build in this source tree (e.g. .) instead of --root/--cfg; "
+                                                "--cfg then names only the expectations (default enhanced)")
     a = ap.parse_args()
+    if a.fixed == "rc":
+        import defects
+        a.fixed = ",".join(defects.RC_FIXED)
+    if a.tree:
+        tree = os.path.abspath(a.tree)
+        exp = a.cfg if a.cfg != "baseline,essential,enhanced" else "enhanced"
+        a.root, a.cfg = os.path.dirname(tree), "%s:%s" % (os.path.basename(tree), exp)
     import corpus
     os.makedirs(a.out, exist_ok=True)
     flt = [f for f in a.filter.split(",") if f]
@@ -121,10 +131,14 @@ def main():
             print("... %d/%d (%.0fs)" % (done, total, time.time() - t0), flush=True)
     for p in procs:
         p.join()
+    bad = 0
     for cfg in cfgs:
-        print(cfg, json.dumps(counts.get(cfg.partition(":")[0], {}), sort_keys=True))
+        c = counts.get(cfg.partition(":")[0], {})
+        bad += sum(c.get(s, 0) for s in ("FAIL", "XPASS", "BLOCKED"))
+        print(cfg, json.dumps(c, sort_keys=True))
     print("total %.0fs" % (time.time() - t0))
+    return 1 if bad or done < total else 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

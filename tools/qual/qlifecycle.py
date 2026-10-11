@@ -3,6 +3,7 @@
 Unlike qrun/qprobe, the machine is NOT restored between the steps of one scenario.
 
   python3 tools/qual/qlifecycle.py <cfg> [--port N] [--root DIR] [--verbose]
+  python3 tools/qual/qlifecycle.py --tree .            (the build of a source tree)
 
 Each scenario: a stored program, then steps. A step is (action, expected):
   action  "RUN"            V2_RUN_STORED (the RUN command)
@@ -90,12 +91,14 @@ def check(r, exp):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("cfg")
+    ap.add_argument("cfg", nargs="?", default=None)
+    ap.add_argument("--tree", default=None, help="the build in this source tree (e.g. .)")
     ap.add_argument("--port", type=int, default=10495)
     ap.add_argument("--root", default=os.path.expanduser("~/2068-Leap-study/qual-builds"))
     ap.add_argument("--verbose", action="store_true")
     a = ap.parse_args()
-    m = Machine(os.path.join(a.root, a.cfg), a.port, label=a.cfg).start()
+    cfgdir = os.path.abspath(a.tree) if a.tree else os.path.join(a.root, a.cfg)
+    m = Machine(cfgdir, a.port, label=os.path.basename(cfgdir)).start()
     npass = nfail = 0
     try:
         for title, prog, steps in SCENARIOS:

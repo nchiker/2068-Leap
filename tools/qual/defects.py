@@ -119,3 +119,12 @@ D = {
 
 SEVERITY = {k: v[0] for k, v in D.items()}
 FIX = {k: v[4] for k, v in D.items()}
+
+# RC (integration/v2-final-rom): the defect markers the release candidate has fixed or decided, so a run
+# with `--fixed rc` drops them (a marked case must then PASS; one that still fails is a FAIL, one that
+# passes while marked would be an XPASS). Still open: Q-24, Q-26 (LOW, deferred -- docs/v2/
+# V2_DEFECT_REGISTER.md). L-INSTR and L-ELIF are decisions, not fixes: their corpus cases now expect
+# the V2 behaviour (a compile error) directly. DD-1 was the manual's error (corrected).
+RC_FIXED = ("Q-01 Q-02 Q-03 Q-04 Q-05 Q-06 Q-07 Q-08 Q-09 Q-10 Q-11 Q-12 Q-13 Q-14 Q-15 Q-16 Q-17 Q-18 Q-19 Q-20 "
+            "Q-21 Q-22 Q-23 Q-25 Q-27 Q-28 Q-29 Q-30 Q-31 Q-32 Q-33 D10 D11-EXT D11-DISP L-STR L-SC L-A L3 L-NEXT "
+            "N-4 DEC-PLOT DD-1").split()
