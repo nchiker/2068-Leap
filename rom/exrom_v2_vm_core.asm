@@ -5000,40 +5000,64 @@ BUILTIN_FN_INKEY:
 ; Reuses the real SQR_ARG_N sysvar (include/sysvars.inc) V1's own
 ; BASIC_SQR_FLOAT already owns for the identical purpose -- real,
 ; permanent RAM already budgeted, not a second scratch cell.
+; QUAL (Q-10, Q-22): SQR of any non-negative number (was: the argument truncated to an integer
+; first; a negative argument returned 0). Newton x' = (x + n/x)/2 from a guess within a factor of
+; sqrt(2): isqrt(n) for the small-integer form, else 2^(e/2) built from n's exponent byte -- 5 steps
+; give full calculator precision for every magnitude. A negative argument is error 15.
+SQR_ARG_FP:     equ SIN_X_RAD     ; 5 bytes (SIN's scratch; never live together)
 BUILTIN_FN_SQR:
-        rst $18                  ; HL = n (FLOAT truncated)
-        ld (SQR_ARG_N),hl
-        call MATH_SQRT16           ; HL = floor(sqrt(n)), 0 for n<=0
-        ld a,h
-        or l
-        jr z,.sqr_zero
+        rst $10
+        call VM_FLOAT_PUSH_FIRST     ; [n]
+        call VM_CALC_CLASSIFY        ; A = sign of n
+        or a
+        jp z,VM_FLOAT_STORE_RESULT   ; SQR(0) = 0
+        jp m,BUILTIN_FN_CHR.chr_range_err
+        ld hl,CALC_STACK
+        ld de,SQR_ARG_FP
+        ld bc,5
+        ldir                         ; SQR_ARG_FP = n
+        ld hl,CALC_STACK
+        ld a,(hl)
+        or a
+        jr nz,.sqr_exp_guess
+        inc hl
+        inc hl
+        ld a,(hl)
+        inc hl
+        ld h,(hl)
+        ld l,a                       ; HL = n (small-integer form: 1..65535)
+        call MATH_SQRT16             ; HL = isqrt(n) >= 1
         xor a
         ld (CALC_SP),a
-        call CALC_INT_TO_FP         ; push initial guess x_0
-        ld b,4                       ; 4 Newton iterations
+        call CALC_INT_TO_FP          ; [x0]
+        jr .sqr_iter
+.sqr_exp_guess:                      ; x0 = 2^floor((e+2)/2), e = exponent byte - 128
+        sub 126
+        sra a
+        add a,128
+        ld (hl),a
+        inc hl
+        ld b,4
+.sqr_g:
+        ld (hl),0                    ; mantissa 0.5 (implicit bit), positive
+        inc hl
+        djnz .sqr_g
+.sqr_iter:
+        ld b,5
 .sqr_loop:
         push bc
         rst $28
-        db $31,$38                    ; duplicate: [x_k, x_k]
-        ld hl,(SQR_ARG_N)
-        call CALC_INT_TO_FP            ; push n: [x_k, x_k, n]
+        db $31,$38                   ; [x,x]
+        ld hl,SQR_ARG_FP
+        call CALC_PUSH_FP_RAW        ; [x,x,n]
         rst $28
-        db $01,$05,$38                  ; exchange, divide -> n/x_k;
-                                           ; stack: [x_k, n/x_k]
-        rst $28
-        db $0F,$38                        ; add; stack: [sum]
+        db $01,$05,$0F,$38           ; exchange, divide, add: [x + n/x]
         ld hl,2
-        call CALC_INT_TO_FP                ; push 2: [sum, 2]
+        call CALC_INT_TO_FP
         rst $28
-        db $05,$38                           ; divide -> new x_k
+        db $05,$38                   ; [(x + n/x) / 2]
         pop bc
         djnz .sqr_loop
-        jp VM_FLOAT_STORE_RESULT
-.sqr_zero:
-        xor a
-        ld (CALC_SP),a
-        ld hl,0
-        call CALC_INT_TO_FP
         jp VM_FLOAT_STORE_RESULT
 
 ; PI() -- the constant pi, via the real calculator's own already-wired
@@ -5116,26 +5140,46 @@ SIN_PEEK_POP:
 ; improvement over V1, not scope creep (it costs a few extra bytes at
 ; the very end, not a new architecture), and required for this
 ; milestone's own SIN(-x)~=-SIN(x) symmetry test to pass at all.
+; QUAL (Q-10): SIN/COS/TAN of a FLOAT number of degrees. The integer part k = trunc(x) is reduced
+; exactly as before (16-bit, mod 360, folded to [0,90]); the fraction f = x - k (SIN_POWER, a 5-byte
+; value; 0 for an INT argument) follows the same folds -- negated whenever the fold negates the
+; angle (SIN_FRAC_NEG) -- and is added back before the series: angle = reference +/- f.
+SIN_FRAC_NEG:   equ BFN_ABS_IDX_TMP   ; 1 byte (ABS's scratch; never live together)
 BUILTIN_FN_SIN:
         rst $10                      ; HL = value, A = tag
-        ; SIN's own argument grammar is a plain COMPILE_EXPR (like SQR/
-        ; RAD/DEG), which V2's unified int/float expression type allows
-        ; to evaluate to EITHER tag at runtime -- unlike those three
-        ; (which stay int-only, matching V1's own real contract exactly,
-        ; already committed/validated), SIN truncates a FLOAT argument
-        ; to its own integer degree count here instead of silently
-        ; misreading its FLOATTAB index as a raw degree value. Real
-        ; fix, not a special-case architecture: one tag check plus the
-        ; SAME VM_FLOAT_PUSH_OPERAND/CALC_FP_TO_INT primitives already
-        ; used throughout this file.
         cp TAG_FLOAT
-        jr nz,.sin_have_int
-        ld (VM_FLOAT_OPERAND_TAG),a
-        ld (VM_FLOAT_OPERAND_VAL),hl
+        jr nz,.sin_int_arg
+        call VM_FLOAT_PUSH_FIRST     ; [x]
+.sin_calc_arg:                       ; CALC_STACK[0] = x (CALC_SP = 1)
+        ld hl,CALC_STACK
+        ld de,SIN_POWER
+        ld bc,5
+        ldir                         ; SIN_POWER = x
+        ld hl,CALC_STACK
+        call FP_TRUNC                ; [k]
+        ld b,0
+        rst $28
+        db $31,$38                   ; [k,k]
+        call CALC_FP_TO_INT          ; HL = k, [k]
+        jp c,BUILTIN_FN_CHR.chr_range_err   ; |x| >= 32768 degrees: error 15
+        push hl
+        ld hl,SIN_POWER
+        call CALC_PUSH_FP_RAW        ; [k,x]
+        ld b,0
+        rst $28
+        db $01,$03,$38               ; exchange, subtract: [x - k] = [f]
+        ld de,SIN_POWER
+        call SIN_PEEK_POP            ; SIN_POWER = f
+        pop hl
+        jr .sin_frac_set
+.sin_int_arg:
+        push hl
+        ld hl,SIN_POWER
+        call FP_TRUNC.zero           ; f = 0
+        pop hl
+.sin_frac_set:
         xor a
-        ld (CALC_SP),a
-        call VM_FLOAT_PUSH_OPERAND
-        call CALC_FP_TO_INT             ; HL = truncated int
+        ld (SIN_FRAC_NEG),a
 .sin_have_int:
         ; ---- reduce to a reference angle in [0,90], track sign ----
         ld de,360
@@ -5148,6 +5192,7 @@ BUILTIN_FN_SIN:
         jp p,.sin_nonneg
         ld a,1
         ld (FUNC_RESULT_FLOAT_NEGATIVE),a
+        ld (SIN_FRAC_NEG),a          ; QUAL (Q-10): the fraction is negated with the angle
         ld a,h
         cpl
         ld h,a
@@ -5182,6 +5227,9 @@ BUILTIN_FN_SIN:
         or a
         sbc hl,de                       ; HL = 180-x (operands swapped
                                             ; by the ex above)
+        ld a,(SIN_FRAC_NEG)
+        xor 1
+        ld (SIN_FRAC_NEG),a             ; QUAL (Q-10): 180 - (k + f) = (180 - k) - f
 .sin_ref_done:
         ; a reference angle of exactly 0 has no sign either way (both
         ; 0 and 180 fold to a 0 reference) -- force the flag off so a
@@ -5189,13 +5237,25 @@ BUILTIN_FN_SIN:
         ld a,h
         or l
         jr nz,.sin_ref_nonzero
-        xor a
+        ld a,(SIN_POWER)
+        or a
+        jr nz,.sin_ref_nonzero        ; QUAL (Q-10): a nonzero fraction keeps its sign
         ld (FUNC_RESULT_FLOAT_NEGATIVE),a
 .sin_ref_nonzero:
         ; ---- degrees -> radians: x_rad = degrees * pi / 180 ----
         xor a
         ld (CALC_SP),a
         call CALC_INT_TO_FP           ; push degrees: [d]
+        ld hl,SIN_POWER
+        call CALC_PUSH_FP_RAW         ; [d,f]
+        ld a,(SIN_FRAC_NEG)
+        or a
+        jr nz,.sin_fsub
+        call VM_CALC_ADD_STUB         ; [d + f]
+        jr .sin_fdone
+.sin_fsub:
+        call VM_CALC_SUB_STUB         ; [d - f]
+.sin_fdone:
         call CALC_PUSH_PI               ; push pi: [d,pi]
         call VM_CALC_MUL_STUB             ; [d*pi]
         ld hl,180
@@ -5298,16 +5358,15 @@ BUILTIN_FN_COS:
         rst $10                      ; HL = value, A = tag
         cp TAG_FLOAT
         jr nz,.cos_int
-        ld (VM_FLOAT_OPERAND_TAG),a
-        ld (VM_FLOAT_OPERAND_VAL),hl
-        xor a
-        ld (CALC_SP),a
-        call VM_FLOAT_PUSH_OPERAND
-        call CALC_FP_TO_INT           ; HL = truncated int
+        call VM_FLOAT_PUSH_FIRST     ; QUAL (Q-10): COS(x) = SIN(x + 90) in FLOAT
+        ld hl,90
+        call CALC_INT_TO_FP
+        call VM_CALC_ADD_STUB
+        jp BUILTIN_FN_SIN.sin_calc_arg
 .cos_int:
         ld de,90
         add hl,de
-        jp BUILTIN_FN_SIN.sin_have_int
+        jp BUILTIN_FN_SIN.sin_int_arg
 
 ; TAN(x) -- R10.7, R10.25 class C. TAN(x) = SIN(x)/COS(x) via the
 ; existing calculator division primitive, with a divide-by-zero guard
@@ -5315,51 +5374,38 @@ BUILTIN_FN_COS:
 ; overflow on divide-by-zero (VM_CALC_DIV_STUB's own callers elsewhere
 ; in this file rely on the same behavior), so no new error path is
 ; invented here.
+; QUAL (Q-10): TAN(x) = SIN(x)/COS(x). x is first copied into a fresh FLOAT temp T that stays
+; referenced at the bottom of the operand stack while COS and SIN run, so neither result can be
+; stored into its slot (the old version re-pushed the caller's slot after SIN had freed it, and COS
+; then read SIN's result: TAN(45.5) gave 0.7133).
 BUILTIN_FN_TAN:
-        rst $10                      ; HL = value, A = tag -- held on the
-                                        ; Z80 stack across both SIN/COS
-                                        ; calls below (each of which pops
-                                        ; its OWN copy from the VM
-                                        ; operand stack, so the same
-                                        ; degrees value must be pushed
-                                        ; back twice)
+        rst $10
+        call VM_FLOAT_PUSH_FIRST
+        call VM_FLOAT_STORE_RESULT   ; [T]
+        rst $10                      ; A/HL = T
         push af
         push hl
-        call VM_PUSH                  ; push a copy for SIN
-        call BUILTIN_FN_SIN           ; -> SIN(x), FLOAT-tagged, VM-pushed
+        call VM_PUSH
         pop hl
         pop af
-        push hl                        ; keep the ORIGINAL degrees value
-        push af                         ; a second time, for COS below
-        call VM_PUSH
-        call BUILTIN_FN_COS            ; -> COS(x), FLOAT-tagged, VM-pushed
+        push af
+        push hl
+        call VM_PUSH                 ; [T, T]
+        call BUILTIN_FN_COS          ; [T, c]
+        pop hl
         pop af
-        pop hl                          ; balances the two pushes above;
-                                          ; both values are unused now
-        ; VM operand stack now holds [..., SIN(x), COS(x)] (SIN pushed
-        ; first, COS on top) -- VM_PREPARE_BINARY_OPERANDS pops COS into
-        ; the B slot, SIN into the A slot, exactly TAN = A/B = SIN/COS.
-        ; Both are always FLOAT-tagged (SIN/COS never return INT), so
-        ; the int-fast-path Z flag this shares with OP_ADD/SUB/MUL/DIV
-        ; is always NZ here; falls straight through to the float divide.
-        call VM_PREPARE_BINARY_OPERANDS
-        ld a,(VM_FLOAT_B_TAG)
-        ld hl,(VM_FLOAT_B_VAL)
-        call VM_FLOAT_TEST_ZERO        ; COS(x)=0 at x=90+180n
-        jr z,VM_ERR_DIVIDE_BY_ZERO
-        xor a
-        ld (CALC_SP),a
+        call VM_PUSH                 ; [T, c, T]
+        call BUILTIN_FN_SIN          ; [T, c, s]
+        call VM_PREPARE_BINARY_OPERANDS   ; A = c, B = s; [T]
+        rst $10                      ; drop T
         ld a,(VM_FLOAT_A_TAG)
-        ld (VM_FLOAT_OPERAND_TAG),a
         ld hl,(VM_FLOAT_A_VAL)
-        ld (VM_FLOAT_OPERAND_VAL),hl
-        call VM_FLOAT_PUSH_OPERAND
-        ld a,(VM_FLOAT_B_TAG)
-        ld (VM_FLOAT_OPERAND_TAG),a
-        ld hl,(VM_FLOAT_B_VAL)
-        ld (VM_FLOAT_OPERAND_VAL),hl
-        call VM_FLOAT_PUSH_OPERAND
-        call VM_CALC_DIV_STUB
+        call VM_FLOAT_TEST_ZERO      ; COS(x) = 0 at x = 90 + 180n
+        jp z,VM_ERR_DIVIDE_BY_ZERO
+        call VM_CALC_PUSH_AB         ; [c, s]
+        ld b,0
+        rst $28
+        db $01,$05,$38               ; exchange, divide: [s / c]
         jp VM_FLOAT_STORE_RESULT
 
 ; FREE() -- 0 args, always a real int. R10.25 class B item: a thin
