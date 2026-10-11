@@ -929,6 +929,10 @@ DECOMP_SKIP_OPERAND:
         jp z,.w0
         cp 36                     ; PRINT_STR (R8.5)
         jp z,.w0
+        cp 68                     ; STUDY: OP_NL
+        jp z,.w0
+        cp 69                     ; STUDY: OP_PRINT_COMMA
+        jp z,.w0
         cp 40                     ; CMP_LE (R8.5 Group 3)
         jp z,.w0
         cp 41                     ; CMP_GT
@@ -949,8 +953,8 @@ DECOMP_SKIP_OPERAND:
         jr z,.w1
         cp 4                      ; STORE_VAR
         jr z,.w1
-        cp 13                     ; FOR_INIT
-        jr z,.w1
+        cp 13                     ; FOR_INIT (QUAL: var + 2-byte skip target)
+        jr z,.w3
         cp 18                     ; STORE_STR_VAR (R5)
         jr z,.w1
         cp 39                     ; CALL_FN (R8.5 Group 1)
@@ -1753,6 +1757,10 @@ DECOMPILE_PROGRAM:
         jp z,.op_print_num
         cp 36
         jp z,.op_print_str
+        cp 68                     ; STUDY: OP_NL / OP_PRINT_COMMA carry no source text
+        jp z,DECOMPILE_PROGRAM.loop
+        cp 69
+        jp z,DECOMPILE_PROGRAM.loop
         cp 39
         jp z,.op_call_fn
         cp 40
@@ -2275,6 +2283,8 @@ DECOMPILE_PROGRAM:
 .op_for_init:
         ld hl,(DECOMP_IP)
         ld a,(hl)
+        inc hl
+        inc hl                     ; QUAL: skip the skip-the-body target (no source text)
         inc hl
         ld (DECOMP_IP),hl
         ld (DECOMP_ARR_INDEX_TMP),a   ; symtab index -- NOT DECOMP_TMP_LEN:
@@ -3759,6 +3769,10 @@ STR_COS_FN:    db "COS"
 STR_COS_FN_LEN: equ $-STR_COS_FN
 STR_TAN_FN:    db "TAN"
 STR_TAN_FN_LEN: equ $-STR_TAN_FN
+STR_IN_FN:     db "IN"
+STR_IN_FN_LEN: equ $-STR_IN_FN
+STR_STICK_FN:  db "STICK"
+STR_STICK_FN_LEN: equ $-STR_STICK_FN
 STR_MID_FN:    db "MID$"
 STR_MID_FN_LEN: equ $-STR_MID_FN
 
@@ -3840,6 +3854,10 @@ DECOMP_BUILTIN_FN_TABLE:
         db STR_MID_FN_LEN, 3, 1
         dw STR_FREE_FN              ; 29 FREE(n)
         db STR_FREE_FN_LEN, 1, 0
+        dw STR_IN_FN                ; 30 IN(port)  (STUDY)
+        db STR_IN_FN_LEN, 1, 0
+        dw STR_STICK_FN             ; 31 STICK(n)  (STUDY)
+        db STR_STICK_FN_LEN, 1, 0
 
 STR_GOTO:      db "GOTO "
 STR_GOTO_LEN:  equ $-STR_GOTO

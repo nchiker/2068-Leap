@@ -20,6 +20,12 @@
 ; MEM_FILL_ZERO -- R10.7 P3: VM_INIT now zeroes the carved run-time tables in every
 ; build (it used to do so only in production), so every test image needs the
 ; kernel routine (copied narrowly where kernel/memory is not linked).
+; TEST_V2_WITH_KERNEL_MEMORY (qualification study): a test that needs the REAL line store
+; (MEM_LINE_FIRST/MEM_LINE_NEXT -- the stored-program RUN path, CHUNK_APPEND_ONE_RECORD's
+; KERNEL_MEMORY_PRESENT branch) links kernel/memory/memory.asm itself instead of this copy.
+    IFDEF TEST_V2_WITH_KERNEL_MEMORY
+    INCLUDE "kernel/memory/memory.asm"
+    ELSE
 MEM_FILL_ZERO:
     xor  a
     ld   (hl), a
@@ -32,6 +38,7 @@ MEM_FILL_ZERO:
     ret  z
     ldir
     ret
+    ENDIF
     INCLUDE "kernel/bank/bank.asm"
     INCLUDE "kernel/math/math.asm"
     INCLUDE "rom/exrom_v2_vm_core.asm"

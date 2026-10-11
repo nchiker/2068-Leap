@@ -44,7 +44,7 @@ migrated_names=(
 # paired with a separate shared EXROM build below instead of the plain
 # TEST_V2_NEEDS_DECOMPILE-only one every other migrated test uses.
 calc_migrated_names=(
-    r10_numeric run_tables
+    r10_numeric run_tables chunk_refill_boundary
 )
 
 # ---------------------------------------------------------------------------
@@ -61,7 +61,7 @@ calc_migrated_names=(
 # ---------------------------------------------------------------------------
 legacy_names=(
     deffn vm_milestone01
-    chunk_refill_boundary chunk_boundary_values for_first_token chunk_array_reads
+    chunk_boundary_values for_first_token chunk_array_reads
 )
 
 out_dir=build/smoke/v2-standalone
@@ -70,11 +70,15 @@ mkdir -p "$out_dir"
 # One shared EXROM build for every plain migrated test (needs only
 # TEST_V2_NEEDS_DECOMPILE -- see header above), plus a second shared EXROM
 # build for the calc_migrated_names subset (needs TEST_V2_NEEDS_CALC too).
-sjasmplus -DTEST_V2_NEEDS_DECOMPILE rom/test_v2_harness_exrom.asm >/dev/null
+tools/sjasmplus_strict.sh -DTEST_V2_NEEDS_DECOMPILE rom/test_v2_harness_exrom.asm >/dev/null   # QUAL: strict -- an 8K overflow must fail
 mv test_v2_harness_exrom.bin "$out_dir/test_v2_harness_exrom.bin"
 
-sjasmplus -DTEST_V2_NEEDS_DECOMPILE -DTEST_V2_NEEDS_CALC \
-    rom/test_v2_harness_exrom.asm >/dev/null
+# QUAL: the CALC variant no longer links the decompiler. With it, the image was 1653 B (Phase 2D)
+# / 1670 B (Essential) over 8K, plain sjasmplus only warned, and the tail of the decompiler past
+# $E000 was silently cut off. Neither CALC test (r10_numeric, run_tables, chunk_refill_boundary)
+# calls DECOMPILE_PROGRAM (r10_numeric defines TEST_V2_NEEDS_DECOMPILE only for the HOME-side
+# DECOMP_END_ADDR EQU). Strict build: any overflow now fails the run.
+tools/sjasmplus_strict.sh -DTEST_V2_NEEDS_CALC rom/test_v2_harness_exrom.asm >/dev/null
 mv test_v2_harness_exrom.bin "$out_dir/test_v2_harness_exrom_calc.bin"
 
 for name in "${migrated_names[@]}"; do

@@ -53,6 +53,8 @@
 RST_00:
     di
     jp   COLD_START
+    DEFINE V2_RST_VM_ONLY             ; no compiler in this image
+    INCLUDE "rom/v2_rst_vectors.inc"   ; QUAL shrink: RST call vectors
     DS   $0100 - $, $FF
 
 COLD_START:
@@ -277,6 +279,7 @@ TEST5_OFFSET:       equ 96
     db 1, 5             ; PUSH_I8 5              (limit)
     db 1, 1             ; PUSH_I8 1              (step)
     db 13, 3            ; FOR_INIT 3             (I = 1, remember limit 5)
+    db low(TEST5_EXIT), high(TEST5_EXIT)    ; QUAL: FOR_INIT's skip-the-body target (the loop exit)
     db 2, 0, 0          ; PUSH_I16 0
     db 4, 4             ; STORE_VAR 4            (SUM = 0)
 TEST5_LOOP_TOP:      equ $ - BYTECODE_IMAGE
@@ -285,6 +288,8 @@ TEST5_LOOP_TOP:      equ $ - BYTECODE_IMAGE
     db 5                ; ADD
     db 4, 4             ; STORE_VAR 4            (SUM = SUM + I)
     db 14, 3, low(TEST5_LOOP_TOP), high(TEST5_LOOP_TOP)   ; FOR_NEXT 3, loop-top
+TEST5_EXIT:          equ $ - BYTECODE_IMAGE
+    db 55               ; QUAL: FOR_POP (the compiler always emits it after FOR_NEXT)
     db 0                ; HALT
     DS TEST6_OFFSET - ($ - BYTECODE_IMAGE), 0
 

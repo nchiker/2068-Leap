@@ -73,7 +73,7 @@ EXPECTED_TEXT:
     db "V2 = RAD(90)", 13
     db "V3 = DEG(1)", 13
     db "V4 = SIN(30)", 13
-    db "V5 = SIN((0-30))", 13
+    db "V5 = SIN(-30)", 13      ; QUAL: -30 is folded at compile time (Q-05)
     db "V6 = SIN((20+10))", 13
 EXPECTED_TEXT_LEN: equ $-EXPECTED_TEXT
 

@@ -75,19 +75,8 @@ V2_ARRAY_IS_STR   EQU $BEBF
 ; pre-R10.9 pool-path V2_LOAD_ARRAY and its 8-character name fold; free again in Phase 2C.)
 
 V2_COMMAND_LOOP:
-    xor a
-    ld (CURRENT_INK),a
-    ld (CURRENT_BRIGHT),a
-    ld (CURRENT_FLASH),a
-    ld (CURRENT_INVERSE),a
-    ld (CURRENT_OVER),a
-    ld a,7
-    ld (CURRENT_PAPER),a
     call KTAB_GFX_CLS
-    ld a,7
-    call KTAB_GFX_SET_BORDER
-    xor a
-    call KTAB_GFX_SET_MODE
+    call V2_RESET_DISPLAY        ; STUDY (U6): the same reset now also runs on every return to the editor
     call V2_RESET_EDIT
     call STARTUP_CHIME          ; R10.7: one-time boot chime -- this is
                                   ; V2_COMMAND_LOOP's own one-time head,
@@ -106,15 +95,16 @@ V2_COMMAND_LOOP:
     call V2_LOAD
     ENDIF
 .loop:
+    call V2_RESET_DISPLAY        ; STUDY (U6): video mode 0, white border, default colour state
     call EDITOR_INIT
     ld hl,V2_REDRAW
     ld (EDITOR_REDRAW_HOOK),hl
     ld hl,V2_NAV
     ld (EDITOR_NAV_HOOK),hl
     call V2_LOAD_EDIT
-    ld hl,(CUR_EDIT_POS)
-    ld a,h
-    cp $FF
+.reenter:                       ; STUDY (D9b): PROGRAM FULL comes back here, not to .loop,
+                                ; so the typed line (EDIT_LINE_BUF, hooks) survives
+    call V2_POS_IS_APPEND
     jr nz,.edit_existing
     ld hl,(PROG_END)
 .edit_existing:
@@ -122,35 +112,14 @@ V2_COMMAND_LOOP:
     ld a,(EDIT_LINE_BUF)
     or a
     jr z,.loop
-    ld hl,(CUR_EDIT_POS)
-    ld a,h
-    cp $FF
+    call V2_POS_IS_APPEND
     jr nz,.store
     call V2_DISPATCH
     jr nc,.loop
 .store:
-    call V2_CLEAR_ARRAYS         ; a previous RUN lowered VARS_START (its run-time
-                                   ; tables); restore the ceiling before the fit check
-    call V2_TOKENIZE
-    ld hl,(CUR_EDIT_POS)
-    ld a,h
-    cp $FF
-    jr nz,.have_pos
-    ld hl,(PROG_END)
-.have_pos:
-    ld de,TOKEN_BUF
-    call KTAB_MEM_LINE_STORE
-    call V2_CLEAR_ARRAYS         ; R10.7 P0: the line store grows at PROG_END,
-                                   ; exactly where DIM'd arrays live. Discard
-                                   ; them AFTER the store (so ARRAYS_END ==
-                                   ; the new PROG_END); V2_CLEAR_ARRAYS keeps
-                                   ; the carry from the store intact
-                                   ; (docs/v2/R10_7_WORKSPACE_MANAGER_
-                                   ; FEASIBILITY.md s8)
+    call V2_STORE_EDIT           ; STUDY: the store sequence is now shared with V2_NAV_COMMIT
     jr c,.no_space
-    ld hl,(CUR_EDIT_POS)
-    ld a,h
-    cp $FF
+    call V2_POS_IS_APPEND
     jr nz,.advance
     call V2_COUNT_LINES
     ld (CUR_EDIT_INDEX),de
@@ -164,7 +133,35 @@ V2_COMMAND_LOOP:
 .no_space:
     ld hl,V2_MSG_FULL
     call V2_SHOW_MESSAGE
-    jr .loop
+    jr .reenter                  ; STUDY (D9b): keep the typed line (was `jr .loop`)
+
+; STUDY (D9): store EDIT_LINE_BUF at CUR_EDIT_POS (replace) or at PROG_END (append).
+; Out: carry set = PROGRAM FULL.  The V2_CLEAR_ARRAYS pair is unchanged from the command loop.
+V2_STORE_EDIT:
+    call V2_CLEAR_ARRAYS         ; a previous RUN lowered VARS_START (its run-time
+                                   ; tables); restore the ceiling before the fit check
+    call V2_TOKENIZE
+    call V2_POS_IS_APPEND
+    jr nz,.have_pos
+    ld hl,(PROG_END)
+.have_pos:
+    ld de,TOKEN_BUF
+    call KTAB_MEM_LINE_STORE
+    jp V2_CLEAR_ARRAYS           ; R10.7 P0: discard DIM'd arrays AFTER the store; keeps carry
+
+; STUDY (U6): the editor's display state: attribute state variables, border, video mode 0.
+V2_RESET_DISPLAY:
+    xor a
+    ld (CURRENT_INK),a
+    ld (CURRENT_BRIGHT),a
+    ld (CURRENT_FLASH),a
+    ld (CURRENT_INVERSE),a
+    ld (CURRENT_OVER),a
+    ld a,7
+    ld (CURRENT_PAPER),a
+    call KTAB_GFX_SET_BORDER
+    xor a
+    jp KTAB_GFX_SET_MODE
 
 ; Convert EDIT_LINE_BUF into the generic record format. This is the same
 ; verbatim copy V1 called tokenization, with no V1 language processing.
@@ -297,6 +294,13 @@ CHIME_DELAY:
     jr   c, .wait                   ; current < target -- keep waiting
     ret
 
+; STUDY (shrink): Z = the cursor is on the append line (CUR_EDIT_POS = $FFxx); HL = CUR_EDIT_POS
+V2_POS_IS_APPEND:
+    ld hl,(CUR_EDIT_POS)
+    ld a,h
+    cp $FF
+    ret
+
 V2_RESET_EDIT:
     ld hl,$FFFF
     ld (CUR_EDIT_POS),hl
@@ -387,9 +391,7 @@ V2_SET_EDIT_FROM_INDEX:
     jr V2_LOAD_EDIT
 
 V2_LOAD_EDIT:
-    ld hl,(CUR_EDIT_POS)
-    ld a,h
-    cp $FF
+    call V2_POS_IS_APPEND
     jr nz,.existing
     xor a
     ld (EDIT_LINE_BUF),a
@@ -420,7 +422,7 @@ V2_NAV:
     cp EDIR_DELETE_LINE
     jr z,.delete
     cp EDIR_INSERT_LINE
-    jr z,.insert
+    jp z,.insert
     cp EDIR_UP
     jr z,.wrap_up
     cp EDIR_DOWN
@@ -458,6 +460,8 @@ V2_NAV:
     or a
     sbc hl,de
     ret nc
+    call V2_NAV_COMMIT           ; STUDY (D9a): keep an uncommitted edit
+    ret c
     ld hl,(CUR_EDIT_INDEX)
     inc hl
     ld (CUR_EDIT_INDEX),hl
@@ -467,13 +471,14 @@ V2_NAV:
     ld a,h
     or l
     ret z
+    call V2_NAV_COMMIT
+    ret c
+    ld hl,(CUR_EDIT_INDEX)
     dec hl
     ld (CUR_EDIT_INDEX),hl
     jp V2_SET_EDIT_FROM_INDEX
 .delete:
-    ld hl,(CUR_EDIT_POS)
-    ld a,h
-    cp $FF
+    call V2_POS_IS_APPEND
     ret z
     ld d,h
     ld e,l
@@ -487,15 +492,62 @@ V2_NAV:
 .delete_load:
     jp V2_SET_EDIT_FROM_INDEX
 .insert:
-    ld hl,(CUR_EDIT_POS)
-    ld a,h
-    cp $FF
+    call V2_POS_IS_APPEND
     ret z
+    call V2_NAV_COMMIT
+    ret c
+    ld hl,(CUR_EDIT_POS)
     ld de,V2_BLANK_RECORD
     call KTAB_MEM_LINE_INSERT
     ret c
     jp V2_LOAD_EDIT
 V2_BLANK_RECORD: DB 1,0,$0D
+
+; STUDY (D9a): leaving a line with UP/DOWN/insert must not discard what was typed.  If the buffer is
+; non-empty and differs from the stored record (or there is no record: the append line), store it first
+; -- exactly what ENTER would store, minus command dispatch.  Out: carry set = PROGRAM FULL (message
+; shown; the caller must not move, so the buffer and the cursor are kept).  After an append the index is
+; that of the new append line, so UP then lands on the line just stored.
+V2_NAV_COMMIT:
+    ld a,(EDIT_LINE_BUF)
+    or a
+    ret z                        ; empty: ENTER ignores it too (carry clear)
+    call V2_POS_IS_APPEND
+    jr z,.differs                ; append line with text
+    inc hl
+    inc hl
+    ld de,EDIT_LINE_BUF
+.cmp:
+    ld a,(de)
+    or a
+    jr z,.end
+    cp (hl)
+    jr nz,.differs
+    inc hl
+    inc de
+    jr .cmp
+.end:
+    ld a,(hl)
+    cp $0D
+    ret z                        ; identical to the record (carry clear)
+.differs:
+    call V2_STORE_EDIT
+    jr c,.full
+    xor a
+    ld (V2_REDRAW_SCOPE),a       ; STUDY: the store may have added a line (status count) -> full redraw next
+    ld hl,(CUR_EDIT_POS)
+    ld a,h
+    inc a                        ; Z = append line (carry stays clear)
+    ret nz
+    call V2_COUNT_LINES
+    ld (CUR_EDIT_INDEX),de
+    or a
+    ret
+.full:
+    ld hl,V2_MSG_FULL
+    call V2_SHOW_MESSAGE
+    scf
+    ret
 
 ; R10.7 source-staging-architecture change (docs/v2/R10_7_SOURCE_STAGING_
 ; ARCHITECTURE_AUDIT.md): V2_BUILD_SOURCE no longer flattens the whole
@@ -607,6 +659,9 @@ V2_RUNTIME_MSG:
     ret z
     ld hl,V2_MSG_ARRAY_SHAPE
     cp 65
+    ret z
+    ld hl,V2_MSG_BREAK           ; STUDY (D5): 66 = BREAK key
+    cp 66
     ret z
     ld hl,V2_MSG_RUNTIME
     ret
@@ -1214,6 +1269,8 @@ V2_LIST:
     cp 23
     jr c,.next
     call KTAB_IO_READ_KEY
+    cp KEY_BREAK                 ; STUDY (ED5): BREAK ends the listing at a page end
+    ret z
     call KTAB_GFX_CLS
     xor a
     ld (V2_DRAW_ROW),a
@@ -1542,6 +1599,21 @@ V2_KW_OFFSET_BOLD:
 
 ; The editor hook redraws the authoritative source view.
 V2_REDRAW:
+    ld a,(V2_REDRAW_SCOPE)       ; STUDY (flicker): typing/backspace only changed the active line
+    or a
+    jr z,.full
+    ld b,a
+    xor a
+    ld (V2_REDRAW_SCOPE),a
+    dec b
+    jr nz,.nav
+    call V2_REDRAW_ACTIVE
+    ret nc                       ; done, carry clear
+    jr .full
+.nav:
+    call V2_REDRAW_NAV
+    ret nc
+.full:
     call KTAB_GFX_CLS
     ld a,22
     ld (V2_ACTIVE_ROW),a
@@ -1606,9 +1678,7 @@ V2_REDRAW:
     jr c,.record
     jr .cursor
 .sentinel:
-    ld hl,(CUR_EDIT_POS)
-    ld a,h
-    cp $FF
+    call V2_POS_IS_APPEND
     jr nz,.cursor
     ld a,(V2_DRAW_ROW)
     ld (V2_ACTIVE_ROW),a
@@ -1625,6 +1695,10 @@ V2_REDRAW:
                                ; this block takes
     ld hl,EDIT_LINE_BUF
     call EDITOR_WRAP_CALC
+    ld a,(EDIT_WRAP_COUNT)       ; STUDY: remembered for the selective paths' geometry checks
+    ld (V2_RD_WRAPS),a
+    ld hl,(CUR_EDIT_INDEX)
+    ld (V2_RD_INDEX),hl
     call EDITOR_WRAP_OFFSET_TO_ROWCOL
     ld a,(V2_ACTIVE_ROW)
     add a,b
@@ -1632,6 +1706,191 @@ V2_REDRAW:
     ret nc
     ld b,a
     jp KTAB_GFX_INVERT_ATTR
+
+; ---- STUDY (flicker, audit I1/I2): selective redraw -------------------------------------------------
+; Cache kept by every redraw: V2_ACTIVE_ROW (first row of the active line), V2_RD_WRAPS (its row count),
+; V2_RD_INDEX (its index).  The editor sets V2_REDRAW_SCOPE: 1 = text of the active line changed (typing,
+; backspace); 2 = UP/DOWN.  Each selective routine checks the geometry itself and returns carry SET when it
+; cannot prove that nothing else on the screen moves -> V2_REDRAW then does the full redraw.
+
+; In: A = first row, C = number of rows.  Clears each row < 23 (bitmap) and restores the text attribute
+; $38 (this also removes the inverted cursor cell).  Destroys AF BC DE HL.
+V2_RD_CLEAR_ROWS:
+.row:
+    cp 23
+    ret nc
+    push af
+    push bc
+    ld b,a
+    call KTAB_GFX_CLEAR_ROW_TEXT
+    pop bc
+    pop af
+    push af
+    push bc
+    ld l,a
+    ld h,0
+    add hl,hl
+    add hl,hl
+    add hl,hl
+    add hl,hl
+    add hl,hl                    ; row * 32
+    ld de,ATTR_ADDR
+    add hl,de
+    ld d,h
+    ld e,l
+    inc de
+    ld (hl),%00111000
+    ld bc,31
+    ldir
+    pop bc
+    pop af
+    inc a
+    dec c
+    jr nz,.row
+    ret
+
+; Draw EDIT_LINE_BUF plain at V2_ACTIVE_ROW and put the cursor on it.  Out: carry clear.
+V2_RD_DRAW_ACTIVE:
+    xor a
+    ld (V2_DRAW_BOLD_ENABLE),a   ; the active row is always drawn plain
+    ld hl,EDIT_LINE_BUF
+    ld a,(V2_ACTIVE_ROW)
+    ld b,a
+    call V2_DRAW_TEXT
+    ld hl,(CUR_EDIT_INDEX)
+    ld (V2_RD_INDEX),hl
+    call V2_RD_CURSOR
+    or a
+    ret
+
+; Cursor cell of the active line (inverted attribute), if it is on screen.
+V2_RD_CURSOR:
+    ld hl,EDIT_LINE_BUF
+    call EDITOR_WRAP_CALC
+    call EDITOR_WRAP_OFFSET_TO_ROWCOL
+    ld a,(V2_ACTIVE_ROW)
+    add a,b
+    cp 23
+    ret nc
+    ld b,a
+    jp KTAB_GFX_INVERT_ATTR
+
+; Typing / backspace: same record, same view, same row count -> redo only the active line's rows.
+V2_REDRAW_ACTIVE:
+    ld hl,EDIT_LINE_BUF
+    call EDITOR_WRAP_CALC
+    ld a,(EDIT_WRAP_COUNT)
+    ld hl,V2_RD_WRAPS
+    cp (hl)
+    scf
+    ret nz                       ; the rows below would move
+.redo_active:
+    ld c,a
+    ld a,(V2_ACTIVE_ROW)
+    call V2_RD_CLEAR_ROWS
+    jr V2_RD_DRAW_ACTIVE
+
+; UP/DOWN.  (a) same record (cursor moved between wrapped rows): the cursor only.  (b) the neighbouring
+; record while both indices are <= 20 (the view top stays 0) and neither line changes height: redraw the
+; old line as a settled (keyword-bold) line, the new one as the active line, the status, the cursor.
+V2_REDRAW_NAV:
+    ld hl,(CUR_EDIT_INDEX)
+    ld de,(V2_RD_INDEX)
+    or a
+    sbc hl,de                    ; HL = new - old
+    jr nz,.moved
+    ld a,(V2_RD_WRAPS)           ; (a): the cursor only
+    jr V2_REDRAW_ACTIVE.redo_active   ; (rows are redone too: text unchanged, so the identical picture)
+.moved:
+    ld b,0                       ; B = 0 for DOWN, 1 for UP
+    dec hl
+    ld a,h
+    or l
+    jr z,.dir
+    inc hl
+    inc hl                       ; HL = new - old + 1
+    ld a,h
+    or l
+    jp nz,.full
+    inc b
+.dir:
+    ld hl,(CUR_EDIT_INDEX)
+    ld de,21
+    or a
+    sbc hl,de
+    jp nc,.full                  ; new index > 20: the view may scroll
+    ld hl,(V2_RD_INDEX)
+    ld de,21
+    or a
+    sbc hl,de
+    jp nc,.full
+    push bc                      ; B = direction
+    ld de,(V2_RD_INDEX)
+    call V2_FIND_INDEX           ; HL = the OLD record, or $FFFF = it was the append line
+    ld (V2_CMD_PTR),hl
+    ld a,h
+    and l
+    inc a
+    jr z,.old_blank
+    call V2_COPY_RECORD          ; DETOK_BUF = its text
+    ld hl,DETOK_BUF
+    call EDITOR_WRAP_CALC
+    ld a,(EDIT_WRAP_COUNT)
+    ld hl,V2_RD_WRAPS
+    cp (hl)
+    jp nz,.full_pop              ; the old line is not drawn the way the record would be
+.old_blank:
+    ld hl,EDIT_LINE_BUF
+    call EDITOR_WRAP_CALC        ; the NEW line's height
+    ld a,(EDIT_WRAP_COUNT)
+    ld (V2_RD_NEWH),a
+    pop bc
+    ld a,(V2_ACTIVE_ROW)
+    dec b
+    jr z,.up
+    ld hl,V2_RD_WRAPS            ; DOWN: new row = old row + old height
+    add a,(hl)
+    cp 23
+    jp nc,.full
+    jr .rows
+.up:
+    ld hl,V2_RD_NEWH             ; UP: new row = old row - new height
+    sub (hl)
+    jp c,.full
+.rows:
+    ld (V2_RD_NEWROW),a
+    ld a,(V2_ACTIVE_ROW)         ; the old line: clear its rows, redraw it settled
+    ld hl,V2_RD_WRAPS
+    ld c,(hl)
+    call V2_RD_CLEAR_ROWS
+    ld hl,(V2_CMD_PTR)
+    ld a,h
+    and l
+    inc a
+    jr z,.new                    ; the old line was the empty append line: nothing to draw
+    ld hl,DETOK_BUF              ; (a record: DETOK_BUF still holds its text)
+    call V2_KW_DETECT_SPANS
+    ld a,1
+    ld (V2_DRAW_BOLD_ENABLE),a
+    ld hl,DETOK_BUF
+    ld a,(V2_ACTIVE_ROW)
+    ld b,a
+    call V2_DRAW_TEXT
+.new:
+    ld a,(V2_RD_NEWROW)
+    ld (V2_ACTIVE_ROW),a
+    ld a,(V2_RD_NEWH)
+    ld (V2_RD_WRAPS),a
+    ld c,a
+    ld a,(V2_ACTIVE_ROW)
+    call V2_RD_CLEAR_ROWS
+    call V2_DRAW_STATUS          ; "LINE n/m": n changed (m cannot: UP/DOWN do not add or remove lines)
+    jp V2_RD_DRAW_ACTIVE
+.full_pop:
+    pop bc
+.full:
+    scf
+    ret
 
 ; V2_DRAW_STATUS -- R10 addition. Composes "LINE n/m" (n = 1-based
 ; cursor line position, m = total line count) into V2_STATUS_BUF and
@@ -1769,6 +2028,8 @@ V2_STATUS_SET_BAR_ATTR:
 ; above uses, since V2_REDRAW's next call naturally redraws the status
 ; line back over a dismissed message; no separate arbitration needed.
 V2_SHOW_MESSAGE:
+    xor a
+    ld (V2_REDRAW_SCOPE),a       ; STUDY: row 23 is about to be overwritten -> the next redraw must be a full one
     push hl
     ld b,23
     call KTAB_GFX_CLEAR_ROW_TEXT    ; R10.7: bitmap-only, same reasoning
@@ -1795,6 +2056,7 @@ V2_KW_EXT: DB "EXT",0
 V2_KW_ARRAY: DB "ARRAY",0
 V2_MSG_SYNTAX: DB "SYNTAX ERROR",0
 V2_MSG_RUNTIME: DB "RUNTIME ERROR",0
+V2_MSG_BREAK: DB "BREAK",0
 V2_MSG_FULL: DB "PROGRAM FULL",0
 V2_MSG_NOMEM: DB "OUT OF MEMORY",0
 V2_MSG_STACK: DB "STACK OVERFLOW",0

@@ -12,9 +12,9 @@
     ORG $0000
     di
     jp V2_COLD_START
-    DS $0028 - $, $FF
+    INCLUDE "rom/v2_rst_vectors.inc"
     jp V2_CALC_ENTRY
-    DS $0038 - $, $FF
+    INCLUDE "rom/v2_rst30.inc"
 V2_RST_38:
     call KBD_ISR_TICK
     ei

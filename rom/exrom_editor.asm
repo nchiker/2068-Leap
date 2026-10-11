@@ -130,12 +130,18 @@ EDITOR_LOOP:
     jp   z, .next_error
     cp   KEY_PREV_ERROR
     jp   z, .prev_error
-    or   a
-    jp   z, EDITOR_LOOP            ; A=0: IO_READ_KEY saw a key it
+    cp   $20
+    jp   c, EDITOR_LOOP            ; STUDY (D5b): was `or a / jp z` (A=0 only); every
+                                   ; code < $20 that has no handler above (BREAK $10 ...)
+                                   ; is ignored. A=0: IO_READ_KEY saw a key it
                                    ; doesn't have a mapping for yet
                                    ; (e.g. SYMBOL SHIFT alone) — ignore
                                    ; it rather than insert a NUL
     call EDITOR_INSERT_CHAR
+    IFDEF V2_FAST_REDRAW
+    ld   a, 1
+    ld   (V2_REDRAW_SCOPE), a      ; STUDY: only the active line changed
+    ENDIF
     call EDITOR_REDRAW_SCREEN
     jr   EDITOR_LOOP
 
@@ -207,6 +213,11 @@ EDITOR_LOOP:
 .move_down:
     ld   a, EDIR_DOWN
 .do_nav:
+    IFDEF V2_FAST_REDRAW
+    ld   b, 2
+    ld   hl, V2_REDRAW_SCOPE
+    ld   (hl), b                   ; STUDY: UP/DOWN -> the redraw hook may take the cursor-only /
+    ENDIF                          ; two-line path (it verifies the geometry itself)
     push af                       ; save direction across the hook check
     ld   hl, (EDITOR_NAV_HOOK)
     ld   a, h
@@ -251,6 +262,10 @@ EDITOR_LOOP:
 
 .do_backspace:
     call EDITOR_BACKSPACE
+    IFDEF V2_FAST_REDRAW
+    ld   a, 1
+    ld   (V2_REDRAW_SCOPE), a
+    ENDIF
     call EDITOR_REDRAW_SCREEN
     jp   EDITOR_LOOP
 

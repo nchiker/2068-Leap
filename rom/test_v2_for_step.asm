@@ -131,16 +131,16 @@ EXPECTED_TEXT:
     db "V0 = (V0+V1)", 13
     db "NEXT V1", 13
     db "V2 = 0", 13
-    db "FOR V3 = 10 TO 1 STEP (0-3)", 13
+    db "FOR V3 = 10 TO 1 STEP -3", 13      ; QUAL: -3 is folded at compile time (Q-05)
     db "V2 = (V2+V3)", 13
     db "NEXT V3", 13
     db "V4 = 0", 13
     db "FOR V5 = 1 TO 100 STEP 1", 13
-    db "IF (V5>3) THEN GOTO L82", 13
-    db "L74:", 13
+    db "IF (V5>3) THEN GOTO L86", 13       ; QUAL: FOR_INIT has a 2-byte skip operand (+4 B before here)
+    db "L78:", 13
     db "V4 = V5", 13
     db "NEXT V5", 13
-    db "L82:", 13
+    db "L86:", 13
     db "PRINT V0", 13
     db "PRINT V2", 13
     db "PRINT V4", 13

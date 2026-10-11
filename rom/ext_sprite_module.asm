@@ -423,6 +423,8 @@ SPR_MOVE_EXEC:
         ld a,(hl)
         ld (SPR_H),a
         call SPR_COMPUTE_ADDRS
+        ld d,0                      ; QUAL (Q-29): SPR_COMPUTE_ADDRS leaves D = HIGH(SPRITE_SLOT_BG_BUF);
+                                    ; the old-position reads below index with DE (the other call sites reload D)
         ld a,(SPR_SLOT)             ; step 1: restore at the OLD position
         ld hl,SPRITE_SLOT_ROW
         ld e,a

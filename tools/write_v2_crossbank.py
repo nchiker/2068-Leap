@@ -70,6 +70,7 @@ NAMES = (
     "VM_RUN_LOOP",
     "SYM_FIND",
     "VM_ERR_COMMON",
+    "VM_ERR_ARRAY_SPACE",       # QUAL (Q-04): ARR_DIM size cap
 )
 
 

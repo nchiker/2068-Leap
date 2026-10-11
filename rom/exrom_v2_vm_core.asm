@@ -326,6 +326,7 @@ VM_PARAM_BIND_INDEX_TMP: equ VM_PARAM_FLOAT_ADDR_TMP+2 ; (1 byte): the
 
 TAG_INT:            equ 0
 TAG_FLOAT:          equ 1
+TAG_STR:            equ 2   ; QUAL (Q-02): a string TEMP index on the operand stack (variable refs stay 0)
 
 ; --- R5 addition: string table (separate from the numeric SYMTAB above —
 ; a 31-byte-cap string cannot fit in a 2-byte operand-stack slot, so string
@@ -399,7 +400,7 @@ VM_STRARR_VALUE_IDX_TMP: equ $B4E8 ; OP_STRARR_STORE only: the popped
                                    ; array index) that follows it (1 byte)
 
 STR_REC_LEN:        equ 32
-STRTAB_TEMP_COUNT:  equ 2       ; concatenation-result temp slots (indices
+STRTAB_TEMP_COUNT:  equ 4       ; concatenation-result temp slots (indices
                                  ; 8-9 now, were 4-5), round-robin — no
                                  ; allocator, matching this
                                  ; project's own "avoid inventing a general
@@ -462,7 +463,7 @@ BFN_STR_TMP:        equ $B6AE   ; R8.5 Group 6 (string-result functions)
 ; own native format (opaque to the VM — copied to/from CALC_STACK
 ; verbatim, never decoded here). ---
 FLOAT_REC_LEN:      equ 5
-FLOATTAB_TEMP_COUNT: equ 2      ; arithmetic-result temp slots, indices
+FLOATTAB_TEMP_COUNT: equ 4      ; arithmetic-result temp slots, indices
                                   ; FLOATTAB_MAX_VARS.. — round-robin, same
                                   ; "no allocator needed" reasoning as
                                   ; STRTAB's own temps: a temp is only
@@ -655,7 +656,10 @@ BFN_ABS_IDX_TMP:      equ $B6CE    ; (2 bytes): R8.5 Group 1 -- BUILTIN_
 ; ---------------------------------------------------------------------------
 ; VM_INIT — call once before VM_RUN. Resets both stacks, error/halt flags.
 ; ---------------------------------------------------------------------------
+VM_RUN_SP:          equ $BED0   ; QUAL (Q-03/Q-18): SP of the VM's caller, restored by VM_ERR_COMMON
 VM_INIT:
+        ld (VM_RUN_SP),sp       ; QUAL: errors raised while carving the tables / binding the store
+                                ; (same call level in V2_COMPILE_RUN) unwind to the shell
         ld hl,(SYM_END_V)          ; R10.7 -- reset the array arena so a
         inc hl                      ; second RUN of the same program
         ld (ARRAYS_END),hl           ; doesn't allocate on top of the
@@ -672,8 +676,6 @@ VM_INIT:
         ld (VM_ERROR_CODE),a
         ld (VM_HALTED),a
         ld (VM_TOS_TAG),a
-        ld (VM_STR_TEMP_NEXT),a
-        ld (VM_FLOAT_TEMP_NEXT),a
         ld (VM_OUTPUT_ROW),a    ; R8.5 -- PRINT/LPRINT's own output cursor;
         ld (VM_OUTPUT_COL),a
         ld (ARR2_SWAPPED),a      ; R10.7 P5.4: segment 2 starts empty
@@ -793,6 +795,7 @@ VM_CARVE_DESC:
 ; when VM_HALTED becomes nonzero (normal HALT or any error-halt).
 ; ---------------------------------------------------------------------------
 VM_RUN:
+        ld (VM_RUN_SP),sp       ; QUAL: any VM error returns straight to VM_RUN's caller
 .loop:
         ld a,(VM_HALTED)
         or a
@@ -801,7 +804,8 @@ VM_RUN:
         ld a,(hl)               ; fetch opcode
         inc hl
         ld (VM_IP),hl
-        cp 67                   ; 67 opcodes defined (0-66, R8.5 adds
+        cp 70                   ; STUDY: 70 opcodes (OUT = 67, NL = 68, PRINT_COMMA = 69)
+                                 ; (was: 67 opcodes defined (0-66, R8.5 adds
                                  ; 35-38: PRINT_NUM/STR, LPRINT_NUM/STR;
                                  ; 39: CALL_FN (Group 1); 40-43: CMP_LE/
                                  ; GT/GE/NE; 44-46: AND/OR/NOT; 47:
@@ -935,6 +939,9 @@ VM_OP_TABLE:
         dw V2_EXROM_ARR_DIM_STR_ADDR                        ; 64 (R10.9: EXROM-owned DIM$
         dw OP_STRARR_LOAD                                   ; 65  Phase 2 --
         dw OP_STRARR_STORE                                  ; 66  string arrays)
+        dw OP_OUT                                           ; 67  STUDY
+        dw OP_NL                                            ; 68  STUDY
+        dw OP_PRINT_COMMA                                   ; 69  STUDY
 
 ; ---------------------------------------------------------------------------
 ; String-table access: index (A) -> HL = record address. Same shape as
@@ -990,7 +997,7 @@ VM_PUSH_STR_RESULT:
         pop af
         ld l,a
         ld h,0
-        xor a
+        ld a,TAG_STR             ; QUAL (Q-02) -- was xor a
         jr VM_PUSH
 
 ; ---------------------------------------------------------------------------
@@ -1030,8 +1037,12 @@ VM_PUSH:                       ; input: HL = value, A = tag
 ; PUSH_INT_CONTINUE` with no change to the hardware stack at the jump.
 ; In: HL = the plain integer result to push. Destroys: AF (and whatever
 ; VM_RUN.loop's own dispatch destroys next).
+PUSH_STR_CONTINUE:
+        ld a,TAG_STR            ; QUAL (Q-02): string temp results carry their own tag
+        jr PUSH_INT_CONTINUE.push
 PUSH_INT_CONTINUE:
         xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
+.push:
         call VM_PUSH
         jp VM_RUN.loop
 
@@ -1060,7 +1071,7 @@ VM_POP:                        ; output: HL = value, A = tag
 ; Out: HL = value, A = TAG_INT (on success); jumps to VM_ERR_ARRAY_TYPE
 ; directly otherwise, same as the inlined version did. Destroys: AF.
 VM_POP_CHECK_INT:
-        call VM_POP
+        rst $10
         cp TAG_INT
         jp nz,VM_ERR_ARRAY_TYPE
         ret
@@ -1074,7 +1085,7 @@ VM_POP_CHECK_INT:
 ; DOWN from VARS_START (the carved-table block's bottom) toward ARRAYS_END,
 ; replaces the fixed 12-deep call, 12-deep param-save and 15-deep FOR stacks.
 ; Frames (tag first, lowest address = top):
-;   T_FOR   [1][enclosing limit:2][enclosing step:2]            5 B
+;   T_FOR   [1][var][limit:5][step:5]  (QUAL: calculator form)  12 B
 ;   T_CALL  [2][return address:2]                               3 B
 ;   T_PARAM [3][SYMTAB record:3][FLOATTAB record:5]             9 B
 ; RET / PARAM_UNBIND skip FOR frames above their owner (a GOTO out of a loop
@@ -1122,7 +1133,7 @@ VM_CS_UNWIND:
         ld a,(hl)
         cp T_FOR
         ret nz                  ; carry clear
-        ld de,5
+        ld de,VM_FOR_FRAME_LEN  ; QUAL: FOR frames are [T_FOR][var][limit:2][step:2]
         add hl,de
         jr .next
 .empty:
@@ -1267,7 +1278,9 @@ OP_STORE_VAR:
         ld a,(hl)               ; symbol index operand
         inc hl
         ld (VM_IP),hl
-        jr VM_STORE_VAR_BY_INDEX
+VM_STORE_VAR_LOOP:              ; QUAL (float FOR): the store is a subroutine now; FOR_INIT/NEXT reuse it
+        call VM_STORE_VAR_BY_INDEX
+        jp VM_RUN.loop
 
 ; VM_STORE_VAR_BY_INDEX -- input: A = symbol index. Pops one operand-
 ; stack value and stores it into that symbol, tag-aware (float values
@@ -1279,7 +1292,7 @@ OP_STORE_VAR:
 ; Falls through to VM_RUN.loop exactly like the original inline body did.
 VM_STORE_VAR_BY_INDEX:
         ld c,a                  ; save index
-        call VM_POP             ; HL = value, A = tag
+        rst $10                 ; HL = value, A = tag
         ld (VM_FLOAT_A_TAG),a
         ld (VM_FLOAT_A_VAL),hl
         cp TAG_FLOAT
@@ -1294,7 +1307,7 @@ VM_STORE_VAR_BY_INDEX:
         ld (hl),e
         inc hl
         ld (hl),d
-        jp VM_RUN.loop
+        ret
 .float_store:
         ; BUG FOUND (real hardware, R6): the first version of this branch
         ; held the source address in DE across a SECOND call to
@@ -1335,7 +1348,7 @@ VM_STORE_VAR_BY_INDEX:
                                    ; borrowed temp reference
         inc hl
         ld (hl),0
-        jp VM_RUN.loop
+        ret
 
 ; ---------------------------------------------------------------------------
 ; OP_PARAM_BIND / OP_PARAM_UNBIND (opcodes 56/57) -- post-R9 PROC/DEF-FN
@@ -1367,7 +1380,7 @@ OP_PARAM_BIND:
         ld hl,(VM_PARAM_SYM_ADDR_TMP)   ; HL = sym addr
         call VM_PARAM_SAVE_PUSH
         ld a,(VM_PARAM_BIND_INDEX_TMP)
-        jr VM_STORE_VAR_BY_INDEX        ; pops the argument, stores it,
+        jr VM_STORE_VAR_LOOP            ; pops the argument, stores it,
                                           ; falls through to VM_RUN.loop
 
 ; OP_PARAM_UNBIND -- restores the parameter symbol's OLD value (both
@@ -1670,7 +1683,7 @@ OP_STRARR_LOAD:
                                   ; budget shrink pass).
         ld l,a
         ld h,0
-        jp PUSH_INT_CONTINUE
+        jp PUSH_STR_CONTINUE   ; QUAL (Q-02)
 
 OP_STRARR_STORE:
         ld hl,(VM_IP)
@@ -1683,7 +1696,7 @@ OP_STRARR_STORE:
         ld (VM_STRARR_COUNT_TMP),de
         inc hl
         ld (VM_IP),hl
-        call VM_POP_CHECK_INT
+        rst $10                 ; QUAL (Q-02): the value is a string index (TAG_STR for a temp)
         ld a,l
         ld (VM_STRARR_VALUE_IDX_TMP),a  ; STRTAB indices are always small
         call VM_POP_CHECK_INT
@@ -1760,7 +1773,8 @@ ARENA_ALLOC_STRING:
         ld h,0
         ld l,a                        ; HL = width
         ld de,(VM_STRARR_COUNT_TMP)
-        call MATH_MULTIPLY16            ; HL = count*width
+        call VM_MUL_CHECKED            ; QUAL (Q-04): count*width overflow -> OUT OF MEMORY
+        jp c,VM_ERR_ARRAY_SPACE         ; (MATH_MULTIPLY16 truncated: a small block for a big array)            ; HL = count*width
         ld (VM_STRARR_ADDR_TMP),hl
         ld de,STRARR_DESC_DATA_OFF
         add hl,de                       ; + header -- HL = needed byte total
@@ -1807,13 +1821,18 @@ VM_ARENA_FIT:
         push hl
         ld de,(ARRAYS_END)
         add hl,de
+        ccf                     ; QUAL (Q-04): a 16-bit overflow means "does not fit"
+        jr nc,.main_done        ; (it used to wrap and look like room)
         ld de,(VM_CSP)
         or a
         sbc hl,de
+.main_done:
         pop hl
         ret c
         ld de,(ARR2_END)
         add hl,de
+        ccf                     ; QUAL (Q-04): segment 2 sits at $E000, so any request over
+        ret nc                  ; ~8 KB wrapped past $FFFF and was zero-filled over the stack
         ld de,ARR2_LIMIT
         or a
         sbc hl,de               ; (end of segment is exclusive: equal is full)
@@ -2048,10 +2067,10 @@ OP_INPUT_STR:
 ; existing VM_CALL_USR_TRAMPOLINE `jp (hl)` idiom. Behavior unchanged
 ; (same flags/ops/order); see docs/v2/R10_5_SHRINK.md.
 VM_PREPARE_BINARY_OPERANDS:
-        call VM_POP             ; HL = b, A = tag_b
+        rst $10                 ; HL = b, A = tag_b
         ld (VM_FLOAT_B_TAG),a
         ld (VM_FLOAT_B_VAL),hl
-        call VM_POP             ; HL = a, A = tag_a
+        rst $10                 ; HL = a, A = tag_a
         ld (VM_FLOAT_A_TAG),a
         ld (VM_FLOAT_A_VAL),hl
         ld c,a
@@ -2087,7 +2106,10 @@ OP_ADD:
         jr nz,.float_path        ; either operand is FLOAT (R6)
         ld hl,(VM_FLOAT_A_VAL)
         ld de,(VM_FLOAT_B_VAL)
-        add hl,de               ; HL = a+b — native 16-bit Z80 add, the
+        or a
+        adc hl,de               ; STUDY (D11): ADC sets P/V = signed overflow
+        jp pe,.float_path       ; promote: the operands are still in VM_FLOAT_A/B_VAL
+        ;                         HL = a+b — native 16-bit Z80 add, the
                                  ; integer fast path this whole architecture
                                  ; exists to preserve. Untouched by R6:
                                  ; reached only when BOTH operands are INT.
@@ -2115,6 +2137,7 @@ OP_SUB:
         ld de,(VM_FLOAT_B_VAL)
         or a
         sbc hl,de               ; HL = a - b
+        jp pe,.float_path       ; STUDY (D11): promote on signed overflow
         jp PUSH_INT_CONTINUE
 .float_path:
         ld hl,VM_CALC_SUB_STUB
@@ -2125,7 +2148,10 @@ OP_MUL:
         jr nz,.float_path
         ld hl,(VM_FLOAT_A_VAL)
         ld de,(VM_FLOAT_B_VAL)
-        call MATH_MULTIPLY16    ; existing, already-verified platform
+        call VM_MUL_CHECKED     ; STUDY (D11): MATH_MULTIPLY16 with overflow detection
+        jp c,.float_path        ; promote
+        jp PUSH_INT_CONTINUE
+        ; (old text) existing, already-verified platform
                                  ; primitive (kernel/math/math.asm) — reused,
                                  ; not reimplemented. Overflow silently
                                  ; truncates here, same as the primitive's
@@ -2253,10 +2279,10 @@ OP_CMP_NE:
         jp PUSH_INT_CONTINUE
 
 OP_AND:
-        call VM_POP             ; HL = b, A = tag_b
+        rst $10                 ; HL = b, A = tag_b
         ld c,a
         push hl
-        call VM_POP              ; HL = a, A = tag_a
+        rst $10                  ; HL = a, A = tag_a
         or c
         jp nz,VM_ERR_FLOAT_NOT_IMPLEMENTED
         pop de                   ; DE = b
@@ -2274,10 +2300,10 @@ OP_AND:
         jp PUSH_INT_CONTINUE
 
 OP_OR:
-        call VM_POP
+        rst $10
         ld c,a
         push hl
-        call VM_POP
+        rst $10
         or c
         jp nz,VM_ERR_FLOAT_NOT_IMPLEMENTED
         pop de
@@ -2295,7 +2321,7 @@ OP_OR:
         jp PUSH_INT_CONTINUE
 
 OP_NOT:
-        call VM_POP              ; HL = value, A = tag
+        rst $10                  ; HL = value, A = tag
         cp TAG_FLOAT
         jp z,VM_ERR_FLOAT_NOT_IMPLEMENTED
         ld a,h
@@ -2309,12 +2335,11 @@ OP_NOT:
         jp PUSH_INT_CONTINUE
 
 OP_JMPZ:
-        call VM_POP             ; HL = condition value, A = tag (not
+        rst $10                 ; HL = condition value, A = tag (not
                                  ; re-checked here; a boolean from CMP_*
                                  ; or any int value is a legal condition,
                                  ; same "any nonzero is true" rule V1 uses)
-        ld a,h
-        or l
+        call VM_FLOAT_TEST_ZERO ; QUAL (Q-06): a FLOAT condition is tested by value (was: its slot index)
         jr nz,.no_branch
         ld hl,(VM_IP)
         ld e,(hl)
@@ -2331,54 +2356,84 @@ OP_JMPZ:
         ld (VM_IP),hl
         jp VM_RUN.loop
 
+; QUAL (Q-07/Q-19/Q-20; owner decision 1: floating-point FOR): a FOR frame holds the loop's OWN
+; state, [T_FOR][var][limit:5][step:5]. The limit and the step are kept in the calculator's 5-byte
+; form -- an INT in its small-integer form [0][sign][lo][hi][0] -- so a FLOAT bound needs no second
+; frame type and every frame walker keeps one length. NEXT v finds its own frame (dropping loops
+; abandoned by GOTO above it); FOR v replaces a stale frame of the same variable; FOR skips the body
+; when the start is already past the limit (the 2-byte operand is linked into the loop's EXIT chain
+; by the compiler, so it lands on the loop's FOR_POP).
+; Semantics (the VM's own rules, nothing FOR-specific): FOR stores the start like an assignment;
+; NEXT computes v = v + step like ADD (INT + INT stays INT and promotes to FLOAT on overflow; any
+; FLOAT operand gives FLOAT) and compares v with the limit like the relational operators. The loop
+; is over when v is past the limit in the direction of the step's sign; a zero step counts as
+; ascending (the documented endless loop while v <= limit; BREAK stops it). A float loop variable
+; accumulates the step by repeated addition, as in Sinclair BASIC.
+VM_FOR_FRAME_LEN:   equ 12
+VM_FOR_FRM:         equ VM_FOR_LIMIT        ; scratch: the current loop's frame (2 B)
+VM_FOR_DST:         equ VM_FOR_STEP         ; scratch: VM_FOR_POP5_AT's destination (2 B)
+
+; VM_FIND_FOR -- C = loop variable. Walks the run of FOR frames on top of the control stack.
+; Out: Z and HL = that loop's frame; NZ = not found (another kind of frame, or the bottom).
+; Destroys AF, DE, HL.
+VM_FIND_FOR:
+        ld hl,(VM_CSP)
+.l:
+        ld de,(VARS_START)
+        or a
+        sbc hl,de
+        jr z,.none
+        add hl,de
+        ld a,(hl)
+        cp T_FOR
+        ret nz
+        inc hl
+        ld a,(hl)
+        dec hl
+        cp c
+        ret z
+        ld de,VM_FOR_FRAME_LEN
+        add hl,de
+        jr .l
+.none:
+        or $FF                  ; NZ
+        ret
+
 OP_FOR_INIT:
         ld hl,(VM_IP)
-        ld a,(hl)               ; loop variable symbol index
+        ld c,(hl)               ; C = loop variable
         inc hl
-        ld (VM_IP),hl
-        ld c,a
-        call VM_POP             ; HL = step (R8.5 Group 5 -- pushed last
-                                  ; by COMPILE_FOR, so popped first; a
-                                  ; STEP-less FOR's own literal PUSH_I8 1
-                                  ; lands here exactly the same way)
-        push hl                  ; park the new step across the frame push
-        ld a,5
-        call VM_CS_ALLOC         ; HL = new FOR frame (C survives)
-        jr nc,.frame
-        pop hl                   ; balance the hardware stack, then fail
-        jp VM_ERR_CALL_STACK_OVERFLOW
-.frame:
+        ld (VM_IP),hl           ; VM_IP -> the 2-byte skip operand
+        call VM_FIND_FOR
+        jr nz,.fresh
+        ld de,VM_FOR_FRAME_LEN  ; re-entered: drop the old frame of this variable and
+        add hl,de               ; any loop abandoned above it
+        ld (VM_CSP),hl
+.fresh:
+        ld a,VM_FOR_FRAME_LEN
+        call VM_CS_ALLOC        ; HL = new frame (C survives)
+        jp c,VM_ERR_CALL_STACK_OVERFLOW
+        ld (VM_FOR_FRM),hl
         ld (hl),T_FOR
         inc hl
-        ld de,(VM_FOR_LIMIT)
-        ld (hl),e
+        ld (hl),c
+        ld de,6
+        add hl,de               ; -> frame+7
+        call VM_FOR_POP5_AT     ; step
+        ld hl,(VM_FOR_FRM)
         inc hl
-        ld (hl),d                ; enclosing loop's limit
-        inc hl
-        ld de,(VM_FOR_STEP)
-        ld (hl),e
-        inc hl
-        ld (hl),d                ; enclosing loop's step
-        pop hl                   ; HL = step (restored)
-        ld (VM_FOR_STEP),hl
-        call VM_POP             ; HL = limit
-        ld (VM_FOR_LIMIT),hl
-        call VM_POP             ; HL = initial value
-        push hl
-        ld a,c
-        call VM_SYM_ADDR
-        pop de
-        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
-        ld (hl),a
-        inc hl
-        ld (hl),e
-        inc hl
-        ld (hl),d
-        jp VM_RUN.loop
+        inc hl                  ; -> frame+2
+        call VM_FOR_POP5_AT     ; limit
+        call VM_FOR_VAR
+        call VM_STORE_VAR_BY_INDEX   ; v = start (INT or FLOAT, as an assignment)
+        call VM_FOR_PAST
+        dec a
+        jp z,OP_JMP             ; already past the limit: skip the body (to FOR_POP)
+        jp OP_JMPZ.no_branch    ; run the body: step over the operand
 
 OP_FOR_NEXT:
         ld hl,(VM_IP)
-        ld a,(hl)               ; loop variable symbol index
+        ld c,(hl)               ; loop variable symbol index
         inc hl
         ld e,(hl)               ; branch target low
         inc hl
@@ -2386,43 +2441,162 @@ OP_FOR_NEXT:
         inc hl
         ld (VM_IP),hl
         ld (VM_FOR_NEXT_BRANCH),de
-        call VM_SYM_ADDR        ; HL -> record (A = symbol index, consumed)
-        inc hl                  ; -> value_lo (record+1)
+        call VM_FIND_FOR        ; QUAL: this loop's own frame
+        jp nz,VM_ERR_CALL_STACK_UNDERFLOW  ; NEXT without its FOR (GOTO into a body, a FOR skipped by IF)
+        ld (VM_CSP),hl          ; drop loops abandoned above it by GOTO
+        ld (VM_FOR_FRM),hl
+        ld a,c
+        call VM_FOR_LOAD_VA     ; A = v's tag, DE = its value, HL -> value+1
+        dec hl
         ld (VM_FOR_NEXT_VALADDR),hl
-        ld e,(hl)
+        ld hl,(VM_FOR_FRM)
+        ld bc,7
+        add hl,bc               ; -> step
+        or (hl)                 ; zero iff v is INT and the step a 16-bit integer
+        jr nz,.calc_add
         inc hl
-        ld d,(hl)               ; DE = current value
-        ld hl,(VM_FOR_STEP)
-        add hl,de                ; HL = new current value (R8.5 Group 5 --
-                                   ; was a fixed `inc de`/STEP=1 before)
-        ld (VM_FOR_NEXT_NEWVAL),hl
-        ld de,(VM_FOR_LIMIT)
-        call MATH_COMPARE16     ; A = 0 if equal, 1 if HL(new)>DE(limit),
-                                 ; $FF if HL(new)<DE(limit); destroys HL
+        inc hl
+        ld a,(hl)
+        inc hl
+        ld h,(hl)
+        ld l,a                  ; HL = step
+        ld b,h                  ; B = the step's high byte (its sign, kept for the compare)
+        or a
+        adc hl,de               ; HL = v + step
+        jp pe,.calc_add         ; signed overflow: the FLOAT sum (D11 promotion)
+        ex de,hl                ; DE = v + step
         ld hl,(VM_FOR_NEXT_VALADDR)
-        ld de,(VM_FOR_NEXT_NEWVAL)
         ld (hl),e
         inc hl
-        ld (hl),d               ; write the incremented value back
-        ld hl,(VM_FOR_STEP)
-        bit 7,h
-        jr nz,.negative_step
-        cp 1
-        jp z,.past_limit         ; positive/zero step: loop ends once
-                                   ; the new value exceeds the limit
-        jr .continue
-.negative_step:
-        cp $FF
-        jp z,.past_limit         ; negative step: loop ends once the new
-                                   ; value drops below the limit
-.continue:
+        ld (hl),d               ; v = v + step, still INT
+        ld hl,(VM_FOR_FRM)
+        inc hl
+        inc hl                  ; -> limit
+        ld a,(hl)
+        or a
+        jr nz,.test             ; a FLOAT limit: the general compare
+        inc hl
+        inc hl
+        ld a,(hl)
+        inc hl
+        ld h,(hl)
+        ld l,a                  ; HL = limit
+        ex de,hl                ; HL = v, DE = limit
+        call MATH_COMPARE16     ; the all-INT fast path: a 16-bit compare (B survives)
+        bit 7,b
+        jr z,.decide
+        neg                     ; counting down: "past" means v < limit
+        jr .decide
+.calc_add:
+        xor a
+        ld (CALC_SP),a
+        call VM_FLOAT_PUSH_OPERAND   ; v (VM_FOR_LOAD_V left it in VM_FLOAT_OPERAND_*)
+        ld hl,(VM_FOR_FRM)
+        ld de,7
+        add hl,de
+        call VM_FLOAT_PUSH_RAW       ; step
+        call VM_CALC_ADD_STUB
+        call VM_FLOAT_STORE_RESULT   ; the sum, as a FLOAT temp on the operand stack
+        call VM_FOR_VAR
+        call VM_STORE_VAR_BY_INDEX   ; v = the sum
+.test:
+        call VM_FOR_PAST
+.decide:
+        dec a
+        jp z,VM_RUN.loop        ; past the limit: fall through to FOR_POP
         ld de,(VM_FOR_NEXT_BRANCH)
         ld hl,VM_CODE_BASE
         add hl,de
         ld (VM_IP),hl
         jp VM_RUN.loop
-.past_limit:
-        jp VM_RUN.loop
+
+; VM_FOR_VAR -- A = the current loop's variable (from VM_FOR_FRM). Destroys HL.
+VM_FOR_VAR:
+        ld hl,(VM_FOR_FRM)
+        inc hl
+        ld a,(hl)
+        ret
+
+; VM_FOR_LOAD_V -- the loop variable's tag and value into VM_FLOAT_OPERAND_TAG/VAL.
+; Out: A = tag, DE = value, HL -> the record's value high byte. Destroys AF, DE, HL.
+VM_FOR_LOAD_V:
+        call VM_FOR_VAR
+VM_FOR_LOAD_VA:                 ; entry with A = the variable
+        call VM_SYM_ADDR
+        ld a,(hl)
+        ld (VM_FLOAT_OPERAND_TAG),a
+        inc hl
+        ld e,(hl)
+        inc hl
+        ld d,(hl)
+        ld (VM_FLOAT_OPERAND_VAL),de
+        ret
+
+; VM_FOR_PAST -- is the loop variable past the limit, in the direction of the step's sign?
+; Out: A = 1 past, else 0 or $FF. Destroys AF, BC, DE, HL.
+VM_FOR_PAST:
+        call VM_FOR_LOAD_V
+        ld hl,(VM_FOR_FRM)
+        inc hl
+        inc hl                  ; -> limit
+        or (hl)                 ; zero iff v is INT and the limit a 16-bit integer
+        jr nz,.calc
+        inc hl
+        inc hl
+        ld a,(hl)
+        inc hl
+        ld h,(hl)
+        ld l,a                  ; HL = limit
+        ex de,hl                ; HL = v, DE = limit
+        call MATH_COMPARE16     ; A = $FF v<limit, 0 equal, 1 v>limit
+        jr .dir
+.calc:
+        push hl
+        xor a
+        ld (CALC_SP),a
+        call VM_FLOAT_PUSH_OPERAND   ; v
+        pop hl
+        call VM_FLOAT_PUSH_RAW       ; limit
+        call VM_CALC_SUB_STUB        ; v - limit
+        call VM_CALC_CLASSIFY
+.dir:
+        ld hl,(VM_FOR_FRM)
+        ld de,8
+        add hl,de               ; -> step byte 1: bit 7 is the sign in both forms
+        bit 7,(hl)
+        ret z
+        neg                     ; counting down: "past" means v < limit
+        ret
+
+; VM_FOR_POP5_AT -- pops a numeric operand and writes it at HL in the calculator's 5-byte form.
+; Destroys AF, BC, DE, HL.
+VM_FOR_POP5_AT:
+        ld (VM_FOR_DST),hl
+        rst $10                 ; HL = value, A = tag
+        cp TAG_FLOAT
+        jr z,.float
+        ex de,hl                ; DE = INT value
+        ld hl,(VM_FOR_DST)
+        ld (hl),0               ; small-integer form [0][sign][lo][hi][0]
+        inc hl
+        ld a,d
+        rla
+        sbc a,a
+        ld (hl),a
+        inc hl
+        ld (hl),e
+        inc hl
+        ld (hl),d
+        inc hl
+        ld (hl),0
+        ret
+.float:
+        ld a,l
+        call VM_FLOAT_ADDR      ; HL -> its 5 bytes
+        ld de,(VM_FOR_DST)
+        ld bc,FLOAT_REC_LEN
+        ldir
+        ret
 
 ; OP_FOR_POP (opcode 55) -- post-R9 nested FOR/NEXT correction. Pops this
 ; loop's own VM_FOR_STACK frame, restoring the enclosing loop's VM_FOR_
@@ -2438,17 +2612,8 @@ OP_FOR_POP:
         ld a,(hl)
         cp T_FOR
         jp nz,VM_ERR_CALL_STACK_UNDERFLOW
-        inc hl
-        ld e,(hl)
-        inc hl
-        ld d,(hl)
-        ld (VM_FOR_LIMIT),de
-        inc hl
-        ld e,(hl)
-        inc hl
-        ld d,(hl)
-        ld (VM_FOR_STEP),de
-        inc hl
+        ld de,VM_FOR_FRAME_LEN  ; QUAL: no enclosing state to restore any more
+        add hl,de
         ld (VM_CSP),hl
         jp VM_RUN.loop
 
@@ -2510,11 +2675,8 @@ OP_PUSH_STR_LIT:
         inc hl
         ld (VM_IP),hl           ; VM_IP -> content start (for now)
         ld (VM_STR_LIT_LEN_TMP),a
-        ld a,(VM_STR_TEMP_NEXT)
+        call VM_STR_ALLOC_TEMP  ; QUAL (Q-02): HL -> a temp no stacked value uses, A = its index
         ld (VM_STR_LIT_TEMPIDX_TMP),a
-        ld hl,RT_STR_COUNT       ; temp slots follow the program's own string
-        add a,(hl)               ; variables (R10.7 P3: count is per program)
-        call VM_STR_ADDR        ; HL -> dest record
         ld a,(VM_STR_LIT_LEN_TMP)
         ld (hl),a               ; write length byte
         inc hl                  ; HL -> dest content
@@ -2530,8 +2692,12 @@ OP_PUSH_STR_LIT:
         inc de
         djnz .copy_loop
 .no_copy:
-        xor a
-        ld (hl),a               ; null-terminate the content -- HL is
+                                ; QUAL (Q-28): no NUL any more. A 31-character literal filled the
+                                ; 32-byte record and the NUL landed on the NEXT record's length byte
+                                ; -- after the last temp slot that is ARR_PTR_TABLE[0]'s low byte
+                                ; (array 0 then read/wrote the wrong memory). OP_PRINT_STR now
+                                ; prints by the length byte (Q-27).
+                                ; (was: xor a / ld (hl),a -- null-terminate the content; HL is
                                   ; still the destination record's write
                                   ; cursor here (real bug found via a real
                                   ; ZEsarUX run: this terminator was never
@@ -2548,18 +2714,9 @@ OP_PUSH_STR_LIT:
         add hl,de               ; VM_IP advances past the content bytes
         ld (VM_IP),hl
         ld a,(VM_STR_LIT_TEMPIDX_TMP)
-        inc a
-        cp STRTAB_TEMP_COUNT
-        jr c,.no_wrap
-        xor a
-.no_wrap:
-        ld (VM_STR_TEMP_NEXT),a
-        ld a,(VM_STR_LIT_TEMPIDX_TMP)
-        ld hl,RT_STR_COUNT       ; temp slots follow the program's own string
-        add a,(hl)               ; variables (R10.7 P3: count is per program)
         ld l,a
         ld h,0
-        jp PUSH_INT_CONTINUE
+        jp PUSH_STR_CONTINUE
 
 OP_STORE_STR_VAR:
         ld hl,(VM_IP)
@@ -2567,7 +2724,7 @@ OP_STORE_STR_VAR:
         inc hl
         ld (VM_IP),hl
         ld (VM_STR_TARGET_TMP),a
-        call VM_POP             ; HL = source index, A = tag (ignored --
+        rst $10                 ; HL = source index, A = tag (ignored --
                                  ; this opcode set is string-only end to
                                  ; end for R5's scope)
         ld a,l
@@ -2581,19 +2738,16 @@ OP_STORE_STR_VAR:
         jp VM_RUN.loop
 
 OP_STR_CONCAT:
-        call VM_POP             ; HL = b's index
+        call VM_STR_ALLOC_TEMP  ; QUAL (Q-02): destination picked while both operands are still on
+        ld (VM_STR_DST_ADDR_TMP),hl ; the stack, so it is neither of them (b must survive the copy of a)
+        ld (VM_STR_LIT_TEMPIDX_TMP),a
+        rst $10                 ; HL = b's index
         ld a,l
         ld (VM_STR_CONCAT_B_TMP),a
-        call VM_POP             ; HL = a's index
+        rst $10                 ; HL = a's index
         ld a,l
         call VM_STR_ADDR        ; HL -> a's record
         ld (VM_STR_SRC_ADDR_TMP),hl
-        ld a,(VM_STR_TEMP_NEXT)
-        ld (VM_STR_LIT_TEMPIDX_TMP),a
-        ld hl,RT_STR_COUNT       ; temp slots follow the program's own string
-        add a,(hl)               ; variables (R10.7 P3: count is per program)
-        call VM_STR_ADDR        ; HL -> dest record
-        ld (VM_STR_DST_ADDR_TMP),hl
         ld hl,(VM_STR_SRC_ADDR_TMP)
         ld a,(hl)               ; a's length
         ld c,a                  ; C = running combined length so far
@@ -2634,29 +2788,20 @@ OP_STR_CONCAT:
         inc c
         djnz .b_copy_loop
 .b_copy_done:
-        xor a
-        ld (de),a               ; null-terminate the combined content --
+                                ; QUAL (Q-28): no NUL (a 31-character result put it past the record)
+                                ; (was: xor a / ld (de),a -- null-terminate the combined content --
                                   ; same real bug class as OP_PUSH_STR_LIT's
                                   ; own fix: DE is still the write cursor
                                   ; right after the last copied byte here
         ld hl,(VM_STR_DST_ADDR_TMP)
         ld (hl),c               ; write the final combined length byte
         ld a,(VM_STR_LIT_TEMPIDX_TMP)
-        inc a
-        cp STRTAB_TEMP_COUNT
-        jr c,.no_wrap
-        xor a
-.no_wrap:
-        ld (VM_STR_TEMP_NEXT),a
-        ld a,(VM_STR_LIT_TEMPIDX_TMP)
-        ld hl,RT_STR_COUNT       ; temp slots follow the program's own string
-        add a,(hl)               ; variables (R10.7 P3: count is per program)
         ld l,a
         ld h,0
-        jp PUSH_INT_CONTINUE
+        jp PUSH_STR_CONTINUE
 
 OP_STR_CMP_LT:
-        call VM_POP             ; HL = b's index
+        rst $10                 ; HL = b's index
         ld a,l
         call VM_STR_ADDR        ; HL -> b's record
         ld (VM_STR_RUNNING_DST_TMP),hl  ; NOT "ex de,hl" then rely on DE
@@ -2666,7 +2811,7 @@ OP_STR_CMP_LT:
                                            ; different call site; see
                                            ; OP_STR_CONCAT's own fix and this
                                            ; cell's equ comment)
-        call VM_POP             ; HL = a's index
+        rst $10                 ; HL = a's index
         ld a,l
         call VM_STR_ADDR        ; HL -> a's record
         ld de,(VM_STR_RUNNING_DST_TMP)   ; DE = b's record address (restored)
@@ -2679,11 +2824,11 @@ OP_STR_CMP_LT:
         jp PUSH_INT_CONTINUE
 
 OP_STR_CMP_EQ:
-        call VM_POP             ; HL = b's index
+        rst $10                 ; HL = b's index
         ld a,l
         call VM_STR_ADDR        ; HL -> b's record
         ld (VM_STR_RUNNING_DST_TMP),hl  ; see OP_STR_CMP_LT's own comment
-        call VM_POP             ; HL = a's index
+        rst $10                 ; HL = a's index
         ld a,l
         call VM_STR_ADDR        ; HL -> a's record
         ld de,(VM_STR_RUNNING_DST_TMP)   ; DE = b's record address (restored)
@@ -2703,11 +2848,10 @@ OP_STR_CMP_EQ:
 VM_STR_COMPARE:
         ld a,(hl)
         ld (VM_STRCMP_LENA_TMP),a
-        push hl
-        ex de,hl
-        ld a,(hl)
-        ld (VM_STRCMP_LENB_TMP),a
-        pop hl
+        ex de,hl                ; QUAL (Q-01): was push hl / ex de,hl / ... / pop hl, which left
+        ld a,(hl)               ; DE = HL = A, so the content loop compared A with itself and
+        ld (VM_STRCMP_LENB_TMP),a ; only the length tiebreak decided ("abc" = "xyz").
+        ex de,hl                ; HL = A, DE = B again (same size: ex/ex instead of push/pop)
         ld a,(VM_STRCMP_LENA_TMP)
         ld b,a
         ld a,(VM_STRCMP_LENB_TMP)
@@ -2817,6 +2961,7 @@ VM_FLOAT_PUSH_OPERAND:
         ; VM_FLOAT_ADDR's own callee touches.
         ld a,(VM_FLOAT_OPERAND_VAL)   ; low byte only — indices are small
         call VM_FLOAT_ADDR             ; HL -> source float record
+VM_FLOAT_PUSH_RAW:                      ; QUAL (float FOR): entry with HL -> any 5-byte value
         ld (VM_FLOAT_SRC_ADDR_TMP),hl   ; park it in this routine's OWN
                                           ; dedicated scratch (see that
                                           ; cell's own header for why not
@@ -2836,25 +2981,17 @@ VM_FLOAT_PUSH_OPERAND:
 ; temp slot, then pushes that slot's index onto the VM's own operand
 ; stack, TAG_FLOAT.
 VM_FLOAT_STORE_RESULT:
-        ld a,(VM_FLOAT_TEMP_NEXT)
+        ld a,(RT_NUM_COUNT)
+        ld b,FLOATTAB_TEMP_COUNT
+        ld e,TAG_FLOAT
+        call VM_TEMP_PICK        ; QUAL (Q-02): a float temp no stacked value refers to
         ld (VM_FLOAT_TEMPIDX_TMP),a
-        ld hl,RT_NUM_COUNT       ; float temps follow the program's own numeric
-        add a,(hl)               ; variables
         call VM_FLOAT_ADDR       ; HL -> dest temp slot
         ex de,hl                  ; DE = dest
         ld hl,CALC_STACK
         ld bc,FLOAT_REC_LEN
         ldir
         ld a,(VM_FLOAT_TEMPIDX_TMP)
-        inc a
-        cp FLOATTAB_TEMP_COUNT
-        jr c,.no_wrap
-        xor a
-.no_wrap:
-        ld (VM_FLOAT_TEMP_NEXT),a
-        ld a,(VM_FLOAT_TEMPIDX_TMP)
-        ld hl,RT_NUM_COUNT       ; float temps follow the program's own numeric
-        add a,(hl)               ; variables
         ld l,a
         ld h,0
         ld a,TAG_FLOAT
@@ -2957,10 +3094,10 @@ VM_FLOAT_TEST_ZERO:
 ; contract, so every caller's existing post-compare branch (cp $FF /
 ; cp 1 / or a) needs no change. Destroys: AF, BC, DE, HL.
 VM_CMP_DISPATCH:
-        call VM_POP              ; HL = b, A = tag_b
+        rst $10                  ; HL = b, A = tag_b
         ld (VM_FLOAT_B_TAG),a
         ld (VM_FLOAT_B_VAL),hl
-        call VM_POP              ; HL = a, A = tag_a
+        rst $10                  ; HL = a, A = tag_a
         ld (VM_FLOAT_A_TAG),a
         ld (VM_FLOAT_A_VAL),hl
         ld c,a
@@ -2984,6 +3121,7 @@ VM_CMP_DISPATCH:
         ld (VM_FLOAT_OPERAND_VAL),hl
         call VM_FLOAT_PUSH_OPERAND
         call VM_CALC_SUB_STUB     ; CALC_STACK[0] = a-b
+VM_CALC_CLASSIFY:                 ; QUAL (float FOR): A = $FF / 0 / 1 for CALC_STACK[0] <0 / =0 / >0
         ld hl,CALC_STACK
         ld a,(hl)
         or a
@@ -3032,15 +3170,51 @@ VM_CMP_DISPATCH:
 ; already park it on the hardware stack, matching every other call in
 ; this file.
 VM_POP_COERCE_INT:
-        call VM_POP             ; HL = value, A = tag
+        rst $10                 ; HL = value, A = tag
         cp TAG_FLOAT
         ret nz
+VM_COERCE_POPPED:               ; QUAL (Q-32): entry with A = TAG_FLOAT, HL = the popped FLOAT
         ld (VM_FLOAT_OPERAND_TAG),a
         ld (VM_FLOAT_OPERAND_VAL),hl
         xor a
         ld (CALC_SP),a
         call VM_FLOAT_PUSH_OPERAND
         jp CALC_FP_TO_INT        ; HL = truncated int
+
+; QUAL (Q-32; owner decision 3): VM_POP_ADDR -- an address or a port (POKE, PEEK, USR, IN, OUT).
+; An INT is its 16-bit pattern, as before. A FLOAT is truncated and accepted from -32768 to 65535
+; (a negative value gives its two's-complement pattern, like an INT); anything else is error 15.
+; VM_POP_COERCE_INT saturated every FLOAT above 32767 to 32767, so once D11 promotion made
+; `a + 3370` a FLOAT, `POKE a + 3370, v` wrote to address 32767.
+; Out: HL = the address. Destroys AF, BC, DE.
+VM_POP_ADDR:
+        rst $10                 ; HL = value, A = tag
+        cp TAG_FLOAT
+        ret nz
+        push hl
+        ld a,l
+        call VM_FLOAT_ADDR      ; HL -> its 5 bytes
+        ld a,(hl)               ; exponent byte (0 = the small-integer form)
+        sub $90
+        jr c,.signed            ; |x| < 32768, or the small form: the ordinary conversion
+        jr nz,.range            ; |x| >= 65536 (the error unwinds SP, Q-03 fix)
+        inc hl
+        bit 7,(hl)
+        jr nz,.signed           ; -65535..-32768: CALC_FP_TO_INT keeps -32768 and rejects the rest
+        pop de
+        ld a,(hl)
+        or $80                  ; restore the mantissa's implicit top bit
+        inc hl
+        ld l,(hl)
+        ld h,a                  ; HL = 32768..65535, fraction dropped
+        ret
+.signed:
+        pop hl
+        ld a,TAG_FLOAT
+        call VM_COERCE_POPPED
+        ret nc
+.range:
+        jp BUILTIN_FN_CHR.chr_range_err
 
 ; OP_PUSH_FLOAT_LIT — operand: 2-byte int value (the literal's digits,
 ; decimal point removed) + 2-byte divisor (10^number-of-fractional-
@@ -3059,8 +3233,33 @@ OP_PUSH_FLOAT_LIT:
         ld d,(hl)               ; DE = divisor
         inc hl
         ld (VM_IP),hl
+        ld a,d
+        or e
+        jr z,.u16                ; QUAL (L-C): divisor 0 = an unsigned literal 32768..65535
         ld (VM_FLOAT_B_VAL),de
         jp VM_DIV_VIA_FLOAT
+.u16:
+        ld hl,(VM_FLOAT_A_VAL)
+        call VM_PUSH_U16
+        jp VM_RUN.loop
+
+; QUAL (L-C): VM_PUSH_U16 -- HL = 32768..65535, pushed as that FLOAT. Its calculator form is
+; exactly [$90][H AND $7F][L][0][0] (exponent 16, the mantissa's top bit is the sign).
+VM_PUSH_U16:
+        ex de,hl
+        ld hl,CALC_STACK
+        ld (hl),$90
+        inc hl
+        ld a,d
+        and $7F
+        ld (hl),a
+        inc hl
+        ld (hl),e
+        inc hl
+        ld (hl),0
+        inc hl
+        ld (hl),0
+        jp VM_FLOAT_STORE_RESULT
 
 ; ===========================================================================
 ; PLATFORM INTEGRATION (R7 addition) — native-call opcodes reaching real,
@@ -3138,10 +3337,12 @@ OP_CLS:
                                       ; no intervening call, so no memory
                                       ; scratch needed for it here
         call GFX_PAINT_ATTR
+        ld hl,0                  ; QUAL (Q-14): CLS homes the PRINT position (it kept the old row/column)
+        ld (VM_OUTPUT_ROW),hl    ; (VM_OUTPUT_ROW, VM_OUTPUT_COL are adjacent)
         jp VM_RUN.loop
 
 OP_BORDER:
-        call VM_POP             ; HL = value, A = tag (any numeric value
+        rst $18                 ; HL = value (QUAL Q-30) (any numeric value
                                   ; is accepted, same as V1's BORDER)
         ld a,l
         call GFX_SET_BORDER      ; masks to the low 3 bits itself
@@ -3156,14 +3357,14 @@ OP_BORDER:
 ; renumbering of anything else was needed).
 
 OP_INK:
-        call VM_POP_COERCE_INT
+        rst $18
         ld a,l
         and $07
         ld (CURRENT_INK),a
         jp VM_RUN.loop
 
 OP_PAPER:
-        call VM_POP_COERCE_INT
+        rst $18
         ld a,l
         and $07
         ld (CURRENT_PAPER),a
@@ -3175,28 +3376,28 @@ OP_PAPER:
 ; means on" convention, basic/basic.asm's own BASIC_STMT_FLASH/BRIGHT/
 ; INVERSE/OVER — AND $01, not $07).
 OP_FLASH:
-        call VM_POP_COERCE_INT
+        rst $18
         ld a,l
         and $01
         ld (CURRENT_FLASH),a
         jp VM_RUN.loop
 
 OP_BRIGHT:
-        call VM_POP_COERCE_INT
+        rst $18
         ld a,l
         and $01
         ld (CURRENT_BRIGHT),a
         jp VM_RUN.loop
 
 OP_OVER:
-        call VM_POP_COERCE_INT
+        rst $18
         ld a,l
         and $01
         ld (CURRENT_OVER),a
         jp VM_RUN.loop
 
 OP_INVERSE:
-        call VM_POP_COERCE_INT
+        rst $18
         ld a,l
         and $01
         ld (CURRENT_INVERSE),a
@@ -3211,11 +3412,11 @@ OP_INVERSE:
 ; remains out of reach (needs item-list grammar) -- this is the
 ; standalone-statement form only, matching R10.25's own B-class scope.
 OP_AT:
-        call VM_POP_COERCE_INT   ; HL = col
+        rst $18                  ; HL = col
         ld a,l
         and $1F
         ld (VM_OUTPUT_COL),a
-        call VM_POP_COERCE_INT   ; HL = row
+        rst $18                  ; HL = row
         ld a,l
         cp 24
         jr c,.row_ok
@@ -3228,7 +3429,7 @@ OP_AT:
 ; VM_OUTPUT_COL only, row untouched -- same masked-1-arg shape as
 ; OP_BORDER/OP_INK/OP_PAPER.
 OP_TAB:
-        call VM_POP_COERCE_INT
+        rst $18
         ld a,l
         and $1F
         ld (VM_OUTPUT_COL),a
@@ -3251,11 +3452,11 @@ OP_CLEAR:
 ; convention (see this file's header) is never to trust a register
 ; across one.
 OP_PLOT:
-        call VM_POP_COERCE_INT   ; HL = y (FLOAT truncated)
+        rst $18                  ; HL = y (FLOAT truncated)
         ld a,l
         call VM_CLAMP_Y191       ; A = clamped y
         ld (VM_PLOT_Y_TMP),a
-        call VM_POP_COERCE_INT   ; HL = x (FLOAT truncated)
+        rst $18                  ; HL = x (FLOAT truncated)
         ld a,l
         ld (VM_PLOT_X_TMP),a
         call VM_COMPUTE_PRINT_ATTR
@@ -3295,18 +3496,18 @@ OP_PLOT:
 ; immediately, before the NEXT VM_POP/call, so nothing is ever held in a
 ; register across a call here.
 OP_LINE:
-        call VM_POP_COERCE_INT  ; HL = y1 (FLOAT truncated)
+        rst $18                 ; HL = y1 (FLOAT truncated)
         ld a,l
         call VM_CLAMP_Y191
         ld (GFX_LINE_Y1),a
-        call VM_POP_COERCE_INT  ; HL = x1
+        rst $18                 ; HL = x1
         ld a,l
         ld (GFX_LINE_X1),a
-        call VM_POP_COERCE_INT  ; HL = y0
+        rst $18                 ; HL = y0
         ld a,l
         call VM_CLAMP_Y191
         ld (GFX_LINE_Y0),a
-        call VM_POP_COERCE_INT  ; HL = x0
+        rst $18                 ; HL = x0
         ld a,l
         ld (GFX_LINE_X0),a
         ld a,(CURRENT_OVER)
@@ -3322,9 +3523,9 @@ OP_LINE:
 ; the same safe, already-established technique OP_FOR_INIT's own `push
 ; hl / call ... / pop de` uses, not a bare register held across a call.
 OP_BEEP:
-        call VM_POP_COERCE_INT  ; HL = pitch (FLOAT truncated)
+        rst $18                 ; HL = pitch (FLOAT truncated)
         push hl
-        call VM_POP_COERCE_INT  ; HL = duration
+        rst $18                 ; HL = duration
         pop bc                   ; BC = pitch (SOUND_BEEP's own register)
         ex de,hl                  ; DE = duration (SOUND_BEEP's own
                                     ; register); HL now holds whatever
@@ -3342,9 +3543,9 @@ OP_BEEP:
 ; directly. An out-of-range register (SOUND_EXROM's own real 1-16 check)
 ; is a real, caught VM error, not silently ignored.
 OP_SOUND:
-        call VM_POP_COERCE_INT  ; HL = data (FLOAT truncated)
+        rst $18                 ; HL = data (FLOAT truncated)
         push hl
-        call VM_POP_COERCE_INT  ; HL = register
+        rst $18                 ; HL = register
         ld a,l
         ld b,a                    ; B = register
         pop hl                    ; HL = data (restored)
@@ -3357,9 +3558,9 @@ OP_SOUND:
 ; OP_POKE — pops value then address (compiler pushes address,value,
 ; matching "POKE address,value"'s real V1 argument order).
 OP_POKE:
-        call VM_POP_COERCE_INT  ; HL = value (FLOAT truncated)
+        rst $18                 ; HL = value (FLOAT truncated)
         push hl
-        call VM_POP_COERCE_INT  ; HL = address
+        call VM_POP_ADDR        ; HL = address (QUAL Q-32)
         pop de                    ; DE = value (restored)
         ld a,e                    ; low byte of value — matches V1's own
                                     ; BASIC_STMT_POKE (`ld a,e / ld (hl),a`)
@@ -3375,7 +3576,7 @@ OP_POKE:
 ; documents "Destroys: HL" only, so DE (the target) safely survives
 ; across the repeated call in .wait_loop without any extra scratch cell.
 OP_PAUSE:
-        call VM_POP             ; HL = n
+        rst $18                 ; HL = n (QUAL Q-30: a FLOAT was its slot index)
         ld a,h
         or l
         jr z,.wait_key
@@ -3385,6 +3586,9 @@ OP_PAUSE:
         add hl,de                 ; HL = target = current + n
         ex de,hl                  ; DE = target
 .wait_loop:
+        ld a,(VM_HALTED)          ; STUDY (D5): BREAK (set by the ISR) ends a long PAUSE
+        or a
+        jp nz,VM_RUN.loop
         call INT_GET_FRAMES       ; HL = current (DE survives, per
                                     ; INT_GET_FRAMES's own "Destroys: HL"
                                     ; only contract)
@@ -3400,7 +3604,7 @@ OP_PAUSE:
 ; MATH_RND_SEED (kernel/math). No register survives past this one call
 ; (HL is MATH_RND_SEED's own input register, consumed immediately).
 OP_RANDOMISE:
-        call VM_POP_COERCE_INT  ; HL = n (FLOAT truncated)
+        rst $18                 ; HL = n (FLOAT truncated)
         call MATH_RND_SEED
         jp VM_RUN.loop
 
@@ -3455,7 +3659,8 @@ OP_CALL_EXT:
         ld (VM_EXT_REMAINING),a   ; A = the arg index this value fills
                                     ; (argcount-1 on the first iteration,
                                     ; counting down to 0)
-        call VM_POP                ; HL = value, A = tag (ignored)
+        call VM_POP_ADDR           ; QUAL (Q-33): HL = the value as a 16-bit int (a FLOAT is
+                                     ; truncated; it used to arrive as its slot index)
         ld (VM_EXT_POPVAL),hl
         ld a,(VM_EXT_REMAINING)
         cp 4                        ; the 5th slot (index 4, GRAB's own
@@ -3625,7 +3830,7 @@ VM_NUM_TO_TEXT:
         ret                                   ; pointer for exactly this
 
 OP_PRINT_NUM:
-        call VM_POP                 ; HL = value, A = tag
+        rst $10                     ; HL = value, A = tag
         call VM_NUM_TO_TEXT          ; VM_NUM_TO_TEXT's own entry now
                                        ; parks HL into VM_PRINT_TEXT_TMP
                                        ; itself (its float path's real
@@ -3634,19 +3839,22 @@ OP_PRINT_NUM:
         jr VM_PRINT_COMMON
 
 OP_PRINT_STR:
-        call VM_POP                 ; HL = STRTAB index, A = tag
-                                       ; (ignored -- string-only opcode)
+        rst $10                     ; HL = STRTAB index, A = tag
         ld a,l
         call VM_STR_ADDR             ; HL -> record
-        inc hl                        ; -> content (skip length byte;
-                                        ; GFX_PRINT_STRING_ATTR wants
-                                        ; null-terminated text, and
-                                        ; VM_STR_COPY/OP_PUSH_STR_LIT's
-                                        ; own convention already null-
-                                        ; terminates every record's
-                                        ; content past its real length
-                                        ; -- see STRTAB's own record
-                                        ; layout comment)
+        ld c,(hl)                    ; QUAL (Q-27/Q-28): print exactly `length` characters.
+        ld b,0                       ; LEFT$/RIGHT$/MID$/CHR$/STR$/string-array reads never wrote a
+        inc hl                       ; NUL, so PRINT showed the stale tail of an earlier string in the
+        ld de,PRINT_BUF              ; temp slot (a$="abcdefgh": PRINT LEFT$("q",1) -> "qbcdefgh");
+        push de                      ; the writers that did write one could put it past the record.
+        ld a,c
+        or a
+        jr z,.empty                  ; (LDIR with BC = 0 would copy 64K)
+        ldir
+.empty:
+        xor a
+        ld (de),a                    ; PRINT_BUF is 64 B; a string is at most 31
+        pop hl
         jr VM_PRINT_COMMON
 
 ; VM_PRINT_COMMON — input: HL = null-terminated text to print. Shared
@@ -3669,10 +3877,27 @@ VM_PRINT_COMMON:
                                         ; scrolled for a long string)
         ld a,b
         ld (VM_OUTPUT_ROW),a
-        call VM_ADVANCE_OUTPUT_ROW     ; the implicit newline every real
-                                         ; V1 PRINT/LPRINT statement ends
-                                         ; with -- no ";"-suppressed form
-                                         ; exists in this dialect
+        ld a,c                         ; STUDY: the column survives -- OP_NL ends the line,
+        ld (VM_OUTPUT_COL),a           ; a trailing ';' leaves the cursor here
+        jp VM_RUN.loop
+
+; STUDY: end of a PRINT line (the implicit newline every PRINT statement ends with, unless it
+; ended in ';' or ',').
+OP_NL:
+        call VM_ADVANCE_OUTPUT_ROW
+        jp VM_RUN.loop
+
+; STUDY: ',' in a PRINT list -- the next 16-column zone; from the right-hand zone, the next line.
+OP_PRINT_COMMA:
+        ld a,(VM_OUTPUT_COL)
+        or 15
+        inc a
+        cp 32
+        jr nc,.next_line
+        ld (VM_OUTPUT_COL),a
+        jp VM_RUN.loop
+.next_line:
+        call VM_ADVANCE_OUTPUT_ROW
         jp VM_RUN.loop
 
 ; VM_ADVANCE_OUTPUT_ROW — a small, self-contained VM-owned equivalent of
@@ -3764,6 +3989,8 @@ BUILTIN_FN_JUMP_TABLE:
         dw BUILTIN_FN_TAN       ; fn_index 27
         dw BUILTIN_FN_MID       ; fn_index 28
         dw BUILTIN_FN_FREE_N    ; fn_index 29
+        dw BUILTIN_FN_IN        ; fn_index 30 (STUDY)
+        dw BUILTIN_FN_STICK     ; fn_index 31 (STUDY)
 
 ; BUILTIN_FN_ABS — ABS(x). Pops one value (either tag), pushes its
 ; magnitude. Int path: plain two's-complement negate (always safe, the
@@ -3776,7 +4003,7 @@ BUILTIN_FN_JUMP_TABLE:
 ; variable's own FLOATTAB slot if OP_LOAD_VAR ever pushes a variable's
 ; real index rather than a copy.
 BUILTIN_FN_ABS:
-        call VM_POP             ; HL = value, A = tag
+        rst $10                 ; HL = value, A = tag
         cp TAG_FLOAT
         jr z,.float
         bit 7,h
@@ -3837,7 +4064,7 @@ BUILTIN_FN_ABS:
 
 ; SGN(x) -- pops one int, pushes -1/0/1. MATH_SGN16: HL in, HL out.
 BUILTIN_FN_SGN:
-        call VM_POP_COERCE_INT  ; HL = value (FLOAT truncated)
+        rst $18                 ; HL = value (FLOAT truncated)
         call MATH_SGN16
         xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
         jp VM_PUSH
@@ -3846,34 +4073,34 @@ BUILTIN_FN_SGN:
 ; operand stack has divisor on top (pushed last, popped first).
 ; MATH_MOD16: HL=dividend, DE=divisor -> HL=remainder.
 BUILTIN_FN_MOD:
-        call VM_POP_COERCE_INT  ; HL = divisor (FLOAT truncated). Hardware
-                                 ; stack parks it across the second call,
-                                 ; same fix pattern this session has
-                                 ; repeatedly needed (VM_POP/VM_POP_COERCE_
-                                 ; INT's own body uses DE internally).
-        push hl
-        call VM_POP_COERCE_INT  ; HL = dividend
-        pop de                  ; DE = divisor
+        call BFN_POP_DIVISION   ; HL = dividend, DE = divisor (never 0)
         call MATH_MOD16
-        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
+        jr BFN_PUSH_INT_RESULT
+
+BUILTIN_FN_DIV:
+        call BFN_POP_DIVISION
+        call MATH_DIVIDE16
+BFN_PUSH_INT_RESULT:
+        xor a                    ; TAG_INT
         jp VM_PUSH
 
-; DIV(dividend,divisor) -- same argument order as MOD above.
-; MATH_DIVIDE16: HL=dividend, DE=divisor -> HL=quotient.
-BUILTIN_FN_DIV:
-        call VM_POP_COERCE_INT  ; HL = divisor (FLOAT truncated)
-        push hl                 ; same VM_POP-destroys-DE fix as
-                                 ; BUILTIN_FN_MOD above
-        call VM_POP_COERCE_INT  ; HL = dividend
-        pop de                  ; DE = divisor
-        call MATH_DIVIDE16
-        xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
-        jp VM_PUSH
+; QUAL (Q-13): MOD(x,0) / DIV(x,0) returned 0 silently (MATH_UDIV16's zero guard); the manual
+; documents DIVISION BY ZERO for /, MOD and DIV. Shared operand pop + zero check (the error
+; unwinds through VM_RUN_SP, so the nested call is safe).
+BFN_POP_DIVISION:
+        rst $18                 ; divisor (FLOAT truncated)
+        push hl
+        rst $18                 ; dividend
+        pop de
+        ld a,d
+        or e
+        ret nz
+        jp VM_ERR_DIVIDE_BY_ZERO
 
 ; RND(x) -- pops one int (the upper bound), pushes a random value.
 ; MATH_RND16: HL in, HL out.
 BUILTIN_FN_RND:
-        call VM_POP_COERCE_INT  ; HL = value (FLOAT truncated)
+        rst $18                 ; HL = value (FLOAT truncated)
         call MATH_RND16
         xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
         jp VM_PUSH
@@ -3885,9 +4112,9 @@ BUILTIN_FN_RND:
 ; power of 2), same as V1's own real behavior; X's full 0-255 range is
 ; already the whole valid screen width, no clamp needed.
 BUILTIN_FN_POINT:
-        call VM_POP_COERCE_INT  ; HL = y (FLOAT truncated)
+        rst $18                 ; HL = y (FLOAT truncated)
         push hl                 ; same fix as BUILTIN_FN_MOD/DIV above
-        call VM_POP_COERCE_INT  ; HL = x
+        rst $18                 ; HL = x
         pop de                  ; DE = y
         ld b,l                  ; B = x (low byte)
         ld a,e
@@ -3909,9 +4136,9 @@ BUILTIN_FN_POINT:
 ; matching POINT's deliberately forgiving screen-query behavior --
 ; not an error condition.
 BUILTIN_FN_ATTR:
-        call VM_POP_COERCE_INT  ; HL = col (FLOAT truncated)
+        rst $18                 ; HL = col (FLOAT truncated)
         push hl
-        call VM_POP_COERCE_INT  ; HL = row
+        rst $18                 ; HL = row
         pop de                  ; DE = col
         ld a,h
         or d
@@ -3938,7 +4165,7 @@ BUILTIN_FN_ATTR:
 ; INT tag -- closing the "INT(3.7) still yields 3.7" bug (docs/v2/
 ; V2_SEMANTIC_CAPABILITY_AUDIT.md S4).
 BUILTIN_FN_INT:
-        call VM_POP_COERCE_INT  ; HL = value (FLOAT truncated toward zero)
+        rst $18                 ; HL = value (FLOAT truncated toward zero)
         xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
         jp VM_PUSH
 
@@ -3953,7 +4180,7 @@ BUILTIN_FN_INT:
 ; here: V2 compiles ahead of time and never evaluates an expression
 ; during compilation, so no equivalent guard is needed.
 BUILTIN_FN_PEEK:
-        call VM_POP_COERCE_INT  ; HL = address (FLOAT truncated)
+        call VM_POP_ADDR        ; HL = address (QUAL Q-32)
         ld a,(hl)
         ld l,a
         ld h,0
@@ -3970,10 +4197,61 @@ BUILTIN_FN_PEEK:
 ; otherwise jump to this ROM's own RST_00 reset vector). That hazard
 ; does not exist here for the same reason PEEK's header above gives.
 BUILTIN_FN_USR:
-        call VM_POP_COERCE_INT  ; HL = address (FLOAT truncated)
+        call VM_POP_ADDR        ; HL = address (QUAL Q-32)
         call VM_CALL_USR_TRAMPOLINE
+        bit 7,h
+        jp nz,VM_PUSH_U16        ; QUAL (L-C): BC is unsigned, 0..65535
         xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
         jp VM_PUSH
+
+; STUDY: IN(port) -- the FULL 16-bit port address goes to BC (`in a,(c)` drives A15-A8 from B), so
+; IN(65278) reads keyboard half-row 0 ($FEFE) and IN(63486) half-row 1 ($F7FE), unlike a low-byte-only IN.
+BUILTIN_FN_IN:
+        call VM_POP_ADDR        ; HL = port (QUAL Q-32)
+        ld b,h
+        ld c,l
+        in a,(c)
+        ld l,a
+        ld h,0
+        xor a                    ; TAG_INT
+        jp VM_PUSH
+
+; STUDY: STICK(n) -- Timex joystick through AY register 14 (I/O port A), the removed V1 STICK_READ
+; algorithm: stick 1 = low nibble (direction bits, active high), stick 2 = one bit (hardware asymmetry).
+BUILTIN_FN_STICK:
+        rst $18                 ; HL = 1 or 2
+        ld a,$0E
+        out (PORT_AY_REG),a      ; select AY register 14
+        ld c,PORT_AY_DATA
+        in a,(c)
+        cpl                      ; active low -> active high
+        dec l
+        jr nz,.stick2
+        and $0F
+        cp $0F
+        jr c,.done
+        xor a                    ; all four set: no real input
+        jr .done
+.stick2:
+        rlca
+        and $01
+.done:
+        ld l,a
+        ld h,0
+        xor a                    ; TAG_INT
+        jp VM_PUSH
+
+; STUDY: OUT port,value -- pops value then port (compiler pushed port,value, like POKE).
+OP_OUT:
+        rst $18                 ; HL = value
+        push hl
+        call VM_POP_ADDR        ; HL = port (QUAL Q-32)
+        ld b,h
+        ld c,l
+        pop hl
+        ld a,l
+        out (c),a
+        jp VM_RUN.loop
 
 VM_CALL_USR_TRAMPOLINE:
         jp (hl)
@@ -3989,7 +4267,7 @@ VM_CALL_USR_TRAMPOLINE:
 
 ; LEN(a$) -- the record's own length byte, directly.
 BUILTIN_FN_LEN:
-        call VM_POP             ; HL = string index (L; H=0 always --
+        rst $10                 ; HL = string index (L; H=0 always --
                                  ; STRSYM_FIND_OR_CREATE's own indices
                                  ; are always small)
         ld a,l
@@ -4003,7 +4281,7 @@ BUILTIN_FN_LEN:
 ; CODE(a$) -- the ASCII code of the first character, or 0 for an empty
 ; string (V1's own real .str_arg_code behavior, matched exactly).
 BUILTIN_FN_CODE:
-        call VM_POP
+        rst $10
         ld a,l
         call VM_STR_ADDR        ; HL = record address
         ld a,(hl)               ; length byte
@@ -4046,7 +4324,7 @@ BUILTIN_FN_CODE:
 VM_VAL_SEEN_DOT:   equ VM_INPUT_TARGET_TMP
 VM_VAL_FRAC_COUNT: equ VM_INPUT_CHARBUF
 BUILTIN_FN_VAL:
-        call VM_POP
+        rst $10
         ld a,l
         call VM_STR_ADDR        ; HL = record address
         ld a,(hl)               ; length byte
@@ -4068,7 +4346,7 @@ BUILTIN_FN_VAL:
         jr nz,.val_check_dot
         ld a,(VM_INPUT_COUNT)
         or a
-        jr nz,.val_loop          ; '-' only accepted as the very first char
+        jr nz,.val_done          ; QUAL (Q-17): '-' after a digit ends the number (manual: VAL stops at the first non-digit)
         ld a,1
         ld (VM_INPUT_NEG_TMP),a
         jr .val_loop
@@ -4083,9 +4361,9 @@ BUILTIN_FN_VAL:
         jr .val_loop
 .val_check_digit:
         cp '0'
-        jr c,.val_loop
+        jr c,.val_done           ; QUAL (Q-17): stop at the first other character
         cp '9'+1
-        jr nc,.val_loop
+        jr nc,.val_done          ; (VAL("12abc34") was 1234)
         sub '0'
         ld b,a                   ; B = digit value 0-9, parked across
                                  ; the writes below -- no call happens
@@ -4178,23 +4456,52 @@ BUILTIN_FN_VAL:
 ; ready to push once the caller has written the record's content).
 ; Destroys: AF, DE, HL (HL is an OUTPUT, not preserved as an input).
 VM_STR_ALLOC_TEMP:
-        ld a,(VM_STR_TEMP_NEXT)
-        ld (VM_STR_LIT_TEMPIDX_TMP),a
-        ld hl,RT_STR_COUNT       ; temp slots follow the program's own string
-        add a,(hl)               ; variables (R10.7 P3: count is per program)
-        call VM_STR_ADDR          ; HL -> dest record
-        push hl
-        ld a,(VM_STR_LIT_TEMPIDX_TMP)
+        ld a,(RT_STR_COUNT)
+        ld b,STRTAB_TEMP_COUNT
+        ld e,TAG_STR
+        call VM_TEMP_PICK        ; QUAL (Q-02): A = a string temp no stacked value refers to
+        push af
+        call VM_STR_ADDR          ; HL -> its record
+        pop af
+        ret
+
+; QUAL (Q-02): temp-slot allocator. Two round-robin slots per kind used to be reused while
+; still referenced from the operand stack (1.5+2.5*3.5 = 12.25, UPPER$("a")+LOWER$("B") = "bb").
+; In: A = first temp index, B = slot count, E = tag (TAG_FLOAT / TAG_STR).
+; Out: A = an index in [A, A+B) that no operand-stack entry (index, tag E) refers to.
+; Every slot live -> STACK OVERFLOW (error 2), never a silent reuse. Destroys BC, D, HL, F.
+VM_TEMP_PICK:
+.try:
+        ld d,a                   ; D = candidate
+        ld hl,(VM_SP)
+.scan:
+        ld a,l
+        cp LOW VM_STACK_TOP      ; the operand stack lies in one page ($B604-$B680)
+        jr nc,.free
+        ld a,(hl)                ; value low
+        inc hl
+        cp d
+        jr nz,.skip2
+        ld a,(hl)                ; value high (temp indices are < 256)
+        or a
+        jr nz,.skip2
+        inc hl
+        ld a,(hl)                ; tag
+        cp e
+        jr z,.used
+        jr .next
+.skip2:
+        inc hl
+.next:
+        inc hl
+        jr .scan
+.used:
+        ld a,d
         inc a
-        cp STRTAB_TEMP_COUNT
-        jr c,.no_wrap
-        xor a
-.no_wrap:
-        ld (VM_STR_TEMP_NEXT),a
-        ld a,(VM_STR_LIT_TEMPIDX_TMP)
-        ld hl,RT_STR_COUNT       ; temp slots follow the program's own string
-        add a,(hl)               ; variables (R10.7 P3: count is per program)
-        pop hl
+        djnz .try
+        jp VM_ERR_STACK_OVERFLOW
+.free:
+        ld a,d
         ret
 
 ; CHR$(n) -- the 1-character string with ASCII code n. Int-only
@@ -4202,7 +4509,7 @@ VM_STR_ALLOC_TEMP:
 ; behavior and the SGN/MOD/DIV/RND family's already-established "this
 ; is a pure-integer BASIC" precedent for this class of function.
 BUILTIN_FN_CHR:
-        call VM_POP               ; HL = value, A = tag (ignored)
+        rst $18                   ; HL = value (QUAL Q-30: a FLOAT was its slot index)
         ld a,h
         or a
         jr nz,.chr_range_err      ; h<>0 -- outside 0-255 in either
@@ -4226,7 +4533,7 @@ BUILTIN_FN_CHR:
 ; STR$(n) -- n formatted as a decimal string, reusing the real VM_NUM_
 ; TO_TEXT conversion PRINT/LPRINT already use (see its own header).
 BUILTIN_FN_STR:
-        call VM_POP                ; HL = value, A = tag
+        rst $10                    ; HL = value, A = tag
         call VM_NUM_TO_TEXT         ; HL = null-terminated decimal text
                                        ; (PRINT_BUF)
         ld (VM_STR_SRC_ADDR_TMP),hl
@@ -4263,7 +4570,7 @@ BUILTIN_FN_STR:
 ; UPPER$(s) -- case-convert, byte for byte. Result length always equals
 ; the source length.
 BUILTIN_FN_UPPER:
-        call VM_POP                 ; HL = string index
+        rst $10                     ; HL = string index
         ld a,l
         call VM_STR_ADDR            ; HL -> src record
         ld (VM_STR_SRC_ADDR_TMP),hl
@@ -4297,7 +4604,7 @@ BUILTIN_FN_UPPER:
 ; LOWER$(s) -- case-convert, byte for byte. Mirrors UPPER$ exactly with
 ; the fold direction reversed.
 BUILTIN_FN_LOWER:
-        call VM_POP
+        rst $10
         ld a,l
         call VM_STR_ADDR
         ld (VM_STR_SRC_ADDR_TMP),hl
@@ -4332,7 +4639,7 @@ BUILTIN_FN_LOWER:
 ; length; n<0 -> 0 characters). Compiled left-to-right (s then n), so
 ; the operand stack has n on top (popped first).
 BUILTIN_FN_LEFT:
-        call VM_POP                 ; HL = n
+        rst $18                     ; HL = n (QUAL Q-30)
         ld a,h
         bit 7,a
         jr nz,.left_n_neg
@@ -4352,7 +4659,7 @@ BUILTIN_FN_LEFT:
                                         ; way
 .left_have_n:
         ld (BFN_STR_TMP),a
-        call VM_POP                  ; HL = string index (s)
+        rst $10                      ; HL = string index (s)
         ld a,l
         call VM_STR_ADDR             ; HL -> src record
         ld (VM_STR_SRC_ADDR_TMP),hl
@@ -4389,7 +4696,7 @@ BUILTIN_FN_LEFT:
 ; RIGHT$(s,n) -- the last n characters of s. Same n-resolution as
 ; LEFT$'s own; differs only in the source content's own start offset.
 BUILTIN_FN_RIGHT:
-        call VM_POP                  ; HL = n
+        rst $18                      ; HL = n (QUAL Q-30)
         ld a,h
         bit 7,a
         jr nz,.right_n_neg
@@ -4404,7 +4711,7 @@ BUILTIN_FN_RIGHT:
         ld a,255
 .right_have_n:
         ld (BFN_STR_TMP),a
-        call VM_POP                   ; HL = string index (s)
+        rst $10                       ; HL = string index (s)
         ld a,l
         call VM_STR_ADDR              ; HL -> src record
         ld (VM_STR_SRC_ADDR_TMP),hl
@@ -4457,7 +4764,7 @@ BUILTIN_FN_RIGHT:
 ; remains -- no error raised for any of these, matching LEFT$/RIGHT$'s
 ; own precedent of forgiving-clamp over hard error).
 BUILTIN_FN_MID:
-        call VM_POP                 ; HL = len
+        rst $18                     ; HL = len (QUAL Q-30)
         ld a,h
         bit 7,a
         jr nz,.mid_len_neg
@@ -4474,7 +4781,16 @@ BUILTIN_FN_MID:
                                         ; remainder" -- clamped below
 .mid_have_len:
         ld (BFN_STR_TMP),a           ; requested len (pre-clamp)
-        call VM_POP                  ; HL = start (1-based)
+        rst $18                      ; HL = start (1-based) (QUAL Q-30)
+        ld a,h                       ; QUAL Q-31: the whole 16-bit start, not
+        or a                         ; its low byte (257 meant 1, -256 meant 1)
+        jr z,.mid_start_lo
+        rla                          ; C = sign
+        ld a,1                       ; negative -> 1 (as start<=0 below)
+        jr c,.mid_start_ok
+        xor a                        ; >=256 -> offset 255: past any end
+        jr .mid_start_ok
+.mid_start_lo:
         ld a,l
         or a
         jr nz,.mid_start_ok
@@ -4482,7 +4798,7 @@ BUILTIN_FN_MID:
 .mid_start_ok:
         dec a                        ; convert to a 0-based offset
         ld (BFN_MID_START_TMP),a
-        call VM_POP                  ; HL = string index (s)
+        rst $10                      ; HL = string index (s)
         ld a,l
         call VM_STR_ADDR             ; HL -> src record
         ld (VM_STR_SRC_ADDR_TMP),hl
@@ -4556,7 +4872,7 @@ BUILTIN_FN_INKEY:
         ld (hl),0
         ld l,a
         ld h,0
-        xor a
+        ld a,TAG_STR             ; QUAL (Q-02) -- was xor a
         jp VM_PUSH
 
 ; SQR(n) -- int-only argument (VM_POP's own tag is ignored), matching
@@ -4575,7 +4891,7 @@ BUILTIN_FN_INKEY:
 ; BASIC_SQR_FLOAT already owns for the identical purpose -- real,
 ; permanent RAM already budgeted, not a second scratch cell.
 BUILTIN_FN_SQR:
-        call VM_POP_COERCE_INT   ; HL = n (FLOAT truncated)
+        rst $18                  ; HL = n (FLOAT truncated)
         ld (SQR_ARG_N),hl
         call MATH_SQRT16           ; HL = floor(sqrt(n)), 0 for n<=0
         ld a,h
@@ -4631,7 +4947,7 @@ BUILTIN_FN_PI:
 ; AND more correct than replicating V1's own sign-stripping, not a
 ; scope increase.
 BUILTIN_FN_RAD:
-        call VM_POP_COERCE_INT   ; HL = x (FLOAT truncated)
+        rst $18                  ; HL = x (FLOAT truncated)
         xor a
         ld (CALC_SP),a
         call CALC_INT_TO_FP      ; push x
@@ -4693,7 +5009,7 @@ SIN_PEEK_POP:
 ; the very end, not a new architecture), and required for this
 ; milestone's own SIN(-x)~=-SIN(x) symmetry test to pass at all.
 BUILTIN_FN_SIN:
-        call VM_POP                  ; HL = value, A = tag
+        rst $10                      ; HL = value, A = tag
         ; SIN's own argument grammar is a plain COMPILE_EXPR (like SQR/
         ; RAD/DEG), which V2's unified int/float expression type allows
         ; to evaluate to EITHER tag at runtime -- unlike those three
@@ -4871,7 +5187,7 @@ SIN_DIVISOR_TABLE: dw 6, 20, 42, 72
 ; (same tolerance SIN itself already extends), matching R10.25's own
 ; audit note.
 BUILTIN_FN_COS:
-        call VM_POP                  ; HL = value, A = tag
+        rst $10                      ; HL = value, A = tag
         cp TAG_FLOAT
         jr nz,.cos_int
         ld (VM_FLOAT_OPERAND_TAG),a
@@ -4892,7 +5208,7 @@ BUILTIN_FN_COS:
 ; in this file rely on the same behavior), so no new error path is
 ; invented here.
 BUILTIN_FN_TAN:
-        call VM_POP                  ; HL = value, A = tag -- held on the
+        rst $10                      ; HL = value, A = tag -- held on the
                                         ; Z80 stack across both SIN/COS
                                         ; calls below (each of which pops
                                         ; its OWN copy from the VM
@@ -4952,7 +5268,7 @@ BUILTIN_FN_FREE:
 ; FREE(n) -- R10.7 P5.5. FREE(1) = bytes free in array segment 2 ($E000-$E7FF);
 ; any other argument behaves as FREE() (the main pool, up to the control stack).
 BUILTIN_FN_FREE_N:
-        call VM_POP_COERCE_INT   ; HL = n
+        rst $18                  ; HL = n
         dec hl
         ld a,h
         or l
@@ -4965,7 +5281,7 @@ BUILTIN_FN_FREE_N:
         jp VM_PUSH
 
 BUILTIN_FN_DEG:
-        call VM_POP_COERCE_INT   ; HL = x (FLOAT truncated)
+        rst $18                  ; HL = x (FLOAT truncated)
         xor a
         ld (CALC_SP),a
         call CALC_INT_TO_FP      ; push x
@@ -5043,11 +5359,57 @@ VM_ERR_ARRAY_SPACE:
 ; The loadable ext_mode_module.asm owns its own error codes/reporting,
 ; same as ext_sprite_module.asm already does.
 
+; STUDY (D11): signed 16x16 multiply with overflow detection, built on MATH_SIGN_PREP / MATH_APPLY_SIGN.
+; In: HL = a, DE = b.  Out: HL = product, carry clear; carry SET = |a*b| does not fit INT16.
+VM_MUL_CHECKED:
+        call MATH_SIGN_PREP     ; HL = |a|, DE = |b|, (MATH_SIGN) = $80 when the result is negative
+        ld b,d
+        ld c,e                  ; BC = |b| (multiplier)
+        ex de,hl                ; DE = |a| (multiplicand)
+        ld hl,0
+.loop:
+        ld a,b
+        or c
+        jr z,.done              ; multiplier exhausted
+        srl b
+        rr c
+        jr nc,.shift
+        add hl,de
+        jr c,.ovf               ; partial sum >= 65536
+.shift:
+        sla e
+        rl d
+        jr nc,.loop
+        ld a,b
+        or c
+        jr z,.loop              ; the lost bit would only be multiplied by 0
+        jr .ovf                 ; a set multiplier bit remains: product >= 65536
+.done:
+        bit 7,h
+        jr z,.fits              ; 0..32767
+        ld a,(MATH_SIGN)
+        or a
+        jr z,.ovf               ; positive result >= 32768
+        ld a,h
+        xor $80
+        or l
+        jr nz,.ovf              ; negative result: only exactly -32768 fits
+.fits:
+        call MATH_APPLY_SIGN    ; (the negate path leaves carry set)
+        or a
+        ret
+.ovf:
+        scf
+        ret
+
 VM_ERR_COMMON:
         ld (VM_ERROR_CODE),a
         ld a,1
         ld (VM_HALTED),a
-        ret
+        ld sp,(VM_RUN_SP)       ; QUAL (Q-03/Q-18): unwind. An error used to return into whatever
+        ret                     ; called the raising routine, which then carried on (array stores wrote
+                                ; out of bounds after VM_ARR_VALIDATE_INDEX failed; OP_AND/OP_OR
+                                ; returned through a pushed operand -> jp $0001 = cold start)
 
 ; VM_TEST_ARGTYPE_BIT -- bounded ROM consolidation pass: rom/exrom_v2_
 ; compiler.asm's own COMPILE_TEST_ARGTYPE_BIT and rom/exrom_v2_

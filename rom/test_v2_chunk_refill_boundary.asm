@@ -50,26 +50,30 @@
 ; authoritative source.
 ; ============================================================================
 
-    INCLUDE "include/hardware.inc"
-    DEFINE V2_COMPACT_SYSVARS   ; R10.7 P5: drop V1-only sysvars (see include/sysvars.inc)
-    INCLUDE "include/sysvars.inc"
+; ---------------------------------------------------------------------------
+; QUALIFICATION STUDY (study/qualification-b): migrated from the legacy flat-16K image to
+; the shared two-bank harness (rom/test_v2_harness_home_head.inc/_tail.inc + the CALC
+; variant of rom/test_v2_harness_exrom.asm), exactly as 33 other component tests already
+; were.  In V2 Enhanced the flat image (vm_core + compiler + calc + memory + stubs) was 41 B
+; over 16K.  Programs, steps and assertions are unchanged; only the image shape moved:
+;   * the calculator lives in the harness EXROM (TEST_V2_NEEDS_CALC variant, as the
+;     calc_migrated tests), instead of being linked into the flat image;
+;   * the real kernel/memory/memory.asm is linked through TEST_V2_WITH_KERNEL_MEMORY (the
+;     stored-program path needs MEM_LINE_FIRST/MEM_LINE_NEXT and KERNEL_MEMORY_PRESENT);
+;   * PASS/FAIL are the harness's TEST_PASS/TEST_FAIL (same border colours, 4/2).
+; ---------------------------------------------------------------------------
+    DEFINE TEST_V2_CUSTOM_CHECKS
+    DEFINE TEST_V2_WITH_KERNEL_MEMORY
+    INCLUDE "rom/test_v2_harness_home_head.inc"
     INCLUDE "rom/test_v2_symmacros.inc"
+DECOMP_END_ADDR: equ $9B08      ; COMPILE_PROGRAM's end-of-bytecode store (was a ROM `DW 0`); clear of
+                                ; SNAPSHOT_BEFORE ($9800-$9AEB) and the SEARCH_* cells ($9B00-$9B05)
 
-    DEVICE NOSLOT64K
-
-    ORG $0000
-RST_00:
-    di
-    jp   COLD_START
-    DS   $0038 - $, $FF
-RST_38:
-    ei
-    reti
-    DS   $0100 - $, $FF
-
-COLD_START:
-    ld   sp, $FF00
-    call MEM_COLD_INIT
+TEST_CUSTOM_MAIN:
+    call MEM_COLD_INIT          ; as before: cold RAM image ($8000-$BFFF zeroed) ...
+    xor  a                      ; ... which also clears BANK_EXROM_DEPTH, so re-establish the
+    ld   (BANK_EXROM_DEPTH), a  ; harness's single unbalanced EXROM page-in (TEST_COLD_START)
+    call BANK_PAGE_EXROM_IN
 
     ; --- TEST1: build the authoritative program in the line store ---
     ld   hl, TEST1_PROGRAM
@@ -91,7 +95,7 @@ COLD_START:
     call COMPILE_STORED
     ld   a, (COMPILE_ERROR_CODE)
     or   a
-    jp   nz, FAIL
+    jp   nz, TEST_FAIL
 
     ld   hl, (EMIT_PTR)
     ld   (DECOMP_END_ADDR), hl
@@ -101,45 +105,45 @@ COLD_START:
     call VM_RUN
     ld   a, (VM_ERROR_CODE)
     or   a
-    jp   nz, FAIL
+    jp   nz, TEST_FAIL
 
     ; source preservation (TEST5): authoritative bytes must be unchanged
     ld   hl, PROG_AREA_START
     ld   de, SNAPSHOT_BEFORE
     ld   bc, TEST1_PROGRAM_END - TEST1_PROGRAM
     call MEMCMP
-    jp   nz, FAIL
+    jp   nz, TEST_FAIL
 
     ; per-variable checks, by name
     ld   hl, NAME_P
     ld   de, 3
     call CHECK_INT_VAR
-    jp   c, FAIL
+    jp   c, TEST_FAIL
 
     ld   hl, NAME_F
     ld   de, 15
     call CHECK_INT_VAR
-    jp   c, FAIL
+    jp   c, TEST_FAIL
 
     ld   hl, NAME_G
     ld   de, 42
     call CHECK_INT_VAR
-    jp   c, FAIL
+    jp   c, TEST_FAIL
 
     ld   hl, NAME_R
     ld   de, 6
     call CHECK_INT_VAR
-    jp   c, FAIL
+    jp   c, TEST_FAIL
 
     ld   hl, NAME_SQ16
     ld   de, 16
     call CHECK_INT_VAR
-    jp   c, FAIL
+    jp   c, TEST_FAIL
 
     ld   hl, NAME_Q
     ld   de, 3
     call CHECK_INT_VAR
-    jp   c, FAIL
+    jp   c, TEST_FAIL
 
     ; ---- TEST2: true EOF / empty program ----
     ld   hl, PROG_AREA_START
@@ -148,7 +152,7 @@ COLD_START:
     call COMPILE_STORED
     ld   a, (COMPILE_ERROR_CODE)
     or   a
-    jp   nz, FAIL
+    jp   nz, TEST_FAIL
     ld   hl, (EMIT_PTR)
     ld   (DECOMP_END_ADDR), hl
     call VM_INIT
@@ -157,7 +161,7 @@ COLD_START:
     call VM_RUN
     ld   a, (VM_ERROR_CODE)
     or   a
-    jp   nz, FAIL
+    jp   nz, TEST_FAIL
 
     ; ---- TEST3: unterminated string spanning three records ----
     ld   hl, TEST3_PROGRAM
@@ -172,12 +176,12 @@ COLD_START:
     call COMPILE_STORED         ; must return (not hang)
     ld   a, (COMPILE_ERROR_CODE)
     or   a
-    jp   z, FAIL                 ; unterminated string: must be an error
+    jp   z, TEST_FAIL                 ; unterminated string: must be an error
     ld   hl, (LEX_LINE)
     res  7, h                    ; bit 15 = "CR not counted yet" (V2_JUMP_TO_ERROR_LINE masks it too)
     ld   a, h
     or   l
-    jp   nz, FAIL                ; ... on line 0
+    jp   nz, TEST_FAIL                ; ... on line 0
 
     ; ---- TEST4: deliberate compile error + LEX_LINE check ----
     ld   hl, TEST4_PROGRAM
@@ -192,7 +196,7 @@ COLD_START:
     call COMPILE_STORED
     ld   a, (COMPILE_ERROR_CODE)
     or   a
-    jp   z, FAIL                 ; this program MUST fail to compile
+    jp   z, TEST_FAIL                 ; this program MUST fail to compile
 
     ; the bad token is on TEST4's second record (index 1)
     ld   hl, (LEX_LINE)
@@ -200,29 +204,10 @@ COLD_START:
     dec  hl
     ld   a, h
     or   l
-    jp   nz, FAIL
+    jp   nz, TEST_FAIL
 
-PASS:
-    ld   a, 4                ; green
-    out  (PORT_ULA), a
-    jr   $
+    jp   TEST_PASS
 
-FAIL:
-    ld   a, 2                ; red
-    out  (PORT_ULA), a
-    jr   $
-
-; ============================================================================
-; SET_ARENA_VARS -- exactly what production's own MEM_INIT_V2 (rom/
-; exrom_v2_shell.asm) does for ARRAYS_END/VARS_START, inlined here since
-; that file is EXROM-resident shell code this flat test doesn't link.
-; Without this, VARS_START stays 0 (MEM_COLD_INIT just zeroes RAM), and
-; OP_DIM's arena-exhaustion check ($ARRAYS_END+needed >= VARS_START)
-; fails immediately for every array -- found live (VM_ERROR_CODE=16,
-; VM_ERR_ARRAY_SPACE) via ts2068-debug, not an actual arena-exhaustion
-; bug in the array code itself.
-; In: HL = the just-set PROG_END value. Destroys: HL.
-; ============================================================================
 SET_ARENA_VARS:
     ld   (ARRAYS_END), hl
     ld   hl, V2_SOURCE_END
@@ -476,17 +461,7 @@ TEST4_PROGRAM_END:
 ; single-bank test doesn't link (same stubbing discipline rom/test_v2_
 ; vm_milestone01.asm's own header already established for these exact
 ; symbols -- none of them are reachable from this test's own program).
-DECOMP_END_ADDR: DW 0
-MEM_CLEAR_V2:
-    ret
-KTAB_CALC_EXIT_TRAMPOLINE:
-    ret
-; None of the stubs below are reachable from this test's own program
-; (no INKEY$/PRINT/SOUND/FRAMES/EXT2 package use) -- same stubbing
-; discipline as MEM_CLEAR_V2 above, used only to satisfy the linker
-; since kernel/io, kernel/sound, kernel/interrupt, kernel/extensions,
-; and rom/exrom_format aren't included here (keeping this flat image
-; under its 16K cap).
+; Test-only stubs (unchanged from the flat version, minus the ones the harness provides).
 IO_READ_KEY:
 SOUND_BEEP:
 SOUND_EXROM:
@@ -506,13 +481,6 @@ GFX_SCROLL_OUTPUT_UP:
 GFX_READ_PIXEL:
 GFX_CELL_ATTR_ADDR:
     ret
-; These two have a carry-flag contract their real callers actually test
-; (EXT2_LOOKUP: carry set = no match, checked by COMPILE_STATEMENT_LIST's
-; own extension-keyword lookahead before every single identifier
-; statement; IO_READ_KEY_NONBLOCK: carry clear = a key is latched) -- a
-; bare `ret` leaves carry at whatever it happened to be from the caller's
-; own prior instruction, which silently misrouted "P" into COMPILE_EXT_
-; CALL instead of a plain assignment the first time this test ran.
 EXT2_LOOKUP:
     scf
     ret
@@ -520,13 +488,4 @@ IO_READ_KEY_NONBLOCK:
     xor  a
     ret
 
-    INCLUDE "kernel/memory/memory.asm"
-    INCLUDE "kernel/bank/bank.asm"
-    INCLUDE "kernel/math/math.asm"
-    INCLUDE "rom/exrom_calc.asm"
-    INCLUDE "rom/exrom_v2_vm_core.asm"
-    INCLUDE "rom/test_v2_local_dim.inc"   ; R10.9 2C: test-only DIM handlers
-    INCLUDE "rom/exrom_v2_compiler.asm"
-
-    DS   $4000 - $, $FF
-    SAVEBIN "test_v2_chunk_refill_boundary.bin", $0000, $4000
+    INCLUDE "rom/test_v2_harness_home_tail.inc"
