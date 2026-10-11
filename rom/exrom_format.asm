@@ -66,13 +66,11 @@ BASIC_NUM_TO_STRING_EXROM:
     ex   de, hl
     ret
 
+    IFDEF EDITOR_TEST_EXROM          ; the legacy EXROM fixture built by `make check` has no room: old small path
 BASIC_FLOAT_TO_STRING_EXROM:
     rst  $28
     DB   $31, $38
     call CALC_FP_TO_INT
-    IFNDEF EDITOR_TEST_EXROM        ; (the legacy EXROM fixture built by `make check` has only 96 B of room below $DFC0)
-    jr   c, FLOAT_BIG_TO_STRING     ; STUDY (D11): CALC_FP_TO_INT sets carry when the integer part does not fit INT16
-    ENDIF
     ld   (FLOAT_PRINT_INTPART), hl
     ex   de, hl
     call BASIC_NUM_TO_STRING_EXROM
@@ -115,84 +113,189 @@ BASIC_FLOAT_TO_STRING_EXROM:
     pop  hl
     ret
 
-    IFNDEF EDITOR_TEST_EXROM
-; STUDY (D11): |x| >= 32768 (x >= 0 here; VM_NUM_TO_TEXT strips the sign) is on top of the calculator
-; stack.  Integer part = the 32-bit mantissa >> (160 - exponent byte), printed in decimal as "<digits>.0000"
-; (the fraction of a float this large is not shown).  Exponent byte > 160 (>= 2^32) saturates the shift
-; at 0.  Digits are written right to left ending at PRINT_BUF+11; the string is returned in HL.
-FLOAT_BIG_TO_STRING:
+    ELSE
+; RC (D10, D11-DISP): x >= 0 on top of the calculator stack (popped) -> HL = its text in PRINT_BUF:
+; every integer digit, '.', four decimals rounded half-up, NUL; the byte before HL is free for '-'.
+; Exact for every magnitude (it printed |x| < 32768 with truncated decimals, dropped the fraction of
+; larger values and saturated at 2^32): the value is unpacked into a 20-byte fixed-point number
+; (FMT_BUF: 4 fraction bytes, 16 integer bytes, little-endian) and converted with integer
+; arithmetic only. FMT_BUF is CALC_STACK+20..+39 (the calculator stack holds only x, in slots 0-3).
+; Destroys AF, BC, DE, HL; IX and IY are preserved.
+FMT_BUF EQU CALC_STACK + 20
+BASIC_FLOAT_TO_STRING_EXROM:
     ld   a, (CALC_SP)
     dec  a
-    ld   (CALC_SP), a           ; pop the value (its bytes stay where they are)
-    ld   c, a
-    ld   b, 0
-    ld   h, b
-    ld   l, c
+    ld   (CALC_SP), a            ; pop x (its bytes stay)
+    ld   l, a
+    ld   h, 0
+    ld   d, h
+    ld   e, l
     add  hl, hl
     add  hl, hl
-    add  hl, bc                 ; HL = index * 5
+    add  hl, de
     ld   de, CALC_STACK
-    add  hl, de                 ; HL -> the 5-byte record
-    ld   c, (hl)                ; C = exponent byte
+    add  hl, de                  ; HL -> x
+    push hl
+    ld   hl, FMT_BUF
+    ld   b, 20
+.clr:
+    ld   (hl), 0
+    inc  hl
+    djnz .clr
+    pop  hl
+    ld   a, (hl)                 ; exponent byte
+    inc  hl
+    or   a
+    jr   nz, .general
+    inc  hl                      ; the small-integer form: bytes 2-3 are the value
+    ld   a, (hl)
+    ld   (FMT_BUF+4), a
     inc  hl
     ld   a, (hl)
-    or   $80
-    ld   d, a
-    inc  hl
-    ld   e, (hl)
+    ld   (FMT_BUF+5), a
+    jr   .round
+.general:
+    ld   c, a                    ; C = exponent byte
+    ld   de, FMT_BUF+3
+    ld   a, (hl)
+    or   $80                     ; the implicit top bit (x >= 0)
+    ld   (de), a
+    ld   b, 3
+.m:
+    dec  de
     inc  hl
     ld   a, (hl)
+    ld   (de), a
+    djnz .m                      ; FMT_BUF[0..3] = the mantissa: the value 0.m
+    ld   a, c
+    sub  128                     ; e (value = 0.m * 2^e)
+    jr   z, .round
+    jr   c, .right
+    ld   b, a                    ; shift left e bits (1..127)
+.sl:
+    ld   hl, FMT_BUF
+    ld   c, 20
+    or   a
+.sl1:
+    rl   (hl)
     inc  hl
-    ld   l, (hl)
-    ld   h, a                   ; DE:HL = mantissa with the implied 1 restored
-    ld   a, 160
-    sub  c
-    jr   nc, .shift
-    xor  a
-.shift:
+    dec  c
+    jr   nz, .sl1
+    djnz .sl
+    jr   .round
+.right:
+    neg                          ; -e
+    cp   33
+    jr   nc, .round              ; below 2^-32: nothing left in the fraction
     ld   b, a
-    inc  b
-    jr   .shift_test
-.shift_loop:
-    srl  d
-    rr   e
-    rr   h
-    rr   l
-.shift_test:
-    djnz .shift_loop
-    ld   ix, PRINT_BUF + 11
-.digit:
-    ld   b, 32                  ; DE:HL = DE:HL / 10, remainder in A
-    xor  a
-.bit:
+.sr:
+    ld   hl, FMT_BUF+3
+    ld   c, 4
+    or   a
+.sr1:
+    rr   (hl)
+    dec  hl
+    dec  c
+    jr   nz, .sr1
+    djnz .sr
+.round:                          ; + 0.00005 * 2^32 = $000346DC, carried through all 20 bytes
+    ld   hl, FMT_BUF
+    ld   a, (hl)
+    add  a, $DC
+    ld   (hl), a
+    inc  hl
+    ld   a, (hl)
+    adc  a, $46
+    ld   (hl), a
+    inc  hl
+    ld   a, (hl)
+    adc  a, $03
+    ld   (hl), a
+    ld   b, 17
+.rc:
+    inc  hl
+    ld   a, (hl)
+    adc  a, 0
+    ld   (hl), a
+    djnz .rc
+    ld   de, PRINT_BUF+40
+    ld   a, "."
+    ld   (de), a
+    ld   a, 4                    ; four decimals: fraction * 10, the carry out is the digit
+.fd:
+    push af
+    inc  de
+    push de
+    ld   hl, FMT_BUF
+    ld   bc, $0400               ; B = 4 bytes, C = carry
+.fm:
+    ld   a, (hl)
+    push hl
+    ld   l, a
+    ld   h, 0
+    ld   d, h
+    ld   e, l
     add  hl, hl
-    rl   e
-    rl   d
+    add  hl, hl
+    add  hl, de
+    add  hl, hl                  ; byte * 10
+    ld   e, c
+    add  hl, de                  ; + carry
+    ld   c, h
+    ld   a, l
+    pop  hl
+    ld   (hl), a
+    inc  hl
+    djnz .fm
+    pop  de
+    ld   a, c
+    add  a, "0"
+    ld   (de), a
+    pop  af
+    dec  a
+    jr   nz, .fd
+    inc  de
+    xor  a
+    ld   (de), a                 ; NUL
+    ld   de, PRINT_BUF+39        ; integer digits, right to left
+.id:
+    push de
+    ld   hl, FMT_BUF+19
+    ld   b, 16
+    xor  a                       ; remainder
+.ib:
+    ld   c, (hl)
+    push bc
+    ld   b, 8
+.ibit:
+    sla  c
     rla
     cp   10
-    jr   c, .no_sub
+    jr   c, .ins
     sub  10
-    inc  l
-.no_sub:
-    djnz .bit
+    inc  c
+.ins:
+    djnz .ibit
+    ld   (hl), c
+    pop  bc
+    dec  hl
+    djnz .ib
+    pop  de
     add  a, "0"
-    ld   (ix+0), a
-    dec  ix
-    ld   a, d
-    or   e
-    or   h
-    or   l
-    jr   nz, .digit
-    ld   hl, .suffix
-    ld   de, PRINT_BUF + 12
-    ld   bc, 6
-    ldir
-    push ix
-    pop  hl
+    ld   (de), a
+    ld   hl, FMT_BUF+4
+    ld   b, 16
+    xor  a
+.iz:
+    or   (hl)
     inc  hl
+    djnz .iz
+    jr   z, .idone
+    dec  de
+    jr   .id
+.idone:
+    ex   de, hl                  ; HL -> the first digit
     ret
-.suffix:
-    DB   ".0000", 0
     ENDIF
 
 BASIC_APPEND_STR_EXROM:
