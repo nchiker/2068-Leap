@@ -326,6 +326,7 @@ VM_PARAM_BIND_INDEX_TMP: equ VM_PARAM_FLOAT_ADDR_TMP+2 ; (1 byte): the
 
 TAG_INT:            equ 0
 TAG_FLOAT:          equ 1
+TAG_STR:            equ 2   ; QUAL (Q-02): a string TEMP index on the operand stack (variable refs stay 0)
 
 ; --- R5 addition: string table (separate from the numeric SYMTAB above —
 ; a 31-byte-cap string cannot fit in a 2-byte operand-stack slot, so string
@@ -399,7 +400,7 @@ VM_STRARR_VALUE_IDX_TMP: equ $B4E8 ; OP_STRARR_STORE only: the popped
                                    ; array index) that follows it (1 byte)
 
 STR_REC_LEN:        equ 32
-STRTAB_TEMP_COUNT:  equ 2       ; concatenation-result temp slots (indices
+STRTAB_TEMP_COUNT:  equ 4       ; concatenation-result temp slots (indices
                                  ; 8-9 now, were 4-5), round-robin — no
                                  ; allocator, matching this
                                  ; project's own "avoid inventing a general
@@ -462,7 +463,7 @@ BFN_STR_TMP:        equ $B6AE   ; R8.5 Group 6 (string-result functions)
 ; own native format (opaque to the VM — copied to/from CALC_STACK
 ; verbatim, never decoded here). ---
 FLOAT_REC_LEN:      equ 5
-FLOATTAB_TEMP_COUNT: equ 2      ; arithmetic-result temp slots, indices
+FLOATTAB_TEMP_COUNT: equ 4      ; arithmetic-result temp slots, indices
                                   ; FLOATTAB_MAX_VARS.. — round-robin, same
                                   ; "no allocator needed" reasoning as
                                   ; STRTAB's own temps: a temp is only
@@ -675,8 +676,6 @@ VM_INIT:
         ld (VM_ERROR_CODE),a
         ld (VM_HALTED),a
         ld (VM_TOS_TAG),a
-        ld (VM_STR_TEMP_NEXT),a
-        ld (VM_FLOAT_TEMP_NEXT),a
         ld (VM_OUTPUT_ROW),a    ; R8.5 -- PRINT/LPRINT's own output cursor;
         ld (VM_OUTPUT_COL),a
         ld (ARR2_SWAPPED),a      ; R10.7 P5.4: segment 2 starts empty
@@ -998,7 +997,7 @@ VM_PUSH_STR_RESULT:
         pop af
         ld l,a
         ld h,0
-        xor a
+        ld a,TAG_STR             ; QUAL (Q-02) -- was xor a
         jr VM_PUSH
 
 ; ---------------------------------------------------------------------------
@@ -1038,8 +1037,12 @@ VM_PUSH:                       ; input: HL = value, A = tag
 ; PUSH_INT_CONTINUE` with no change to the hardware stack at the jump.
 ; In: HL = the plain integer result to push. Destroys: AF (and whatever
 ; VM_RUN.loop's own dispatch destroys next).
+PUSH_STR_CONTINUE:
+        ld a,TAG_STR            ; QUAL (Q-02): string temp results carry their own tag
+        jr PUSH_INT_CONTINUE.push
 PUSH_INT_CONTINUE:
         xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
+.push:
         call VM_PUSH
         jp VM_RUN.loop
 
@@ -1678,7 +1681,7 @@ OP_STRARR_LOAD:
                                   ; budget shrink pass).
         ld l,a
         ld h,0
-        jp PUSH_INT_CONTINUE
+        jp PUSH_STR_CONTINUE   ; QUAL (Q-02)
 
 OP_STRARR_STORE:
         ld hl,(VM_IP)
@@ -1691,7 +1694,7 @@ OP_STRARR_STORE:
         ld (VM_STRARR_COUNT_TMP),de
         inc hl
         ld (VM_IP),hl
-        call VM_POP_CHECK_INT
+        call VM_POP             ; QUAL (Q-02): the value is a string index (TAG_STR for a temp)
         ld a,l
         ld (VM_STRARR_VALUE_IDX_TMP),a  ; STRTAB indices are always small
         call VM_POP_CHECK_INT
@@ -2532,11 +2535,8 @@ OP_PUSH_STR_LIT:
         inc hl
         ld (VM_IP),hl           ; VM_IP -> content start (for now)
         ld (VM_STR_LIT_LEN_TMP),a
-        ld a,(VM_STR_TEMP_NEXT)
+        call VM_STR_ALLOC_TEMP  ; QUAL (Q-02): HL -> a temp no stacked value uses, A = its index
         ld (VM_STR_LIT_TEMPIDX_TMP),a
-        ld hl,RT_STR_COUNT       ; temp slots follow the program's own string
-        add a,(hl)               ; variables (R10.7 P3: count is per program)
-        call VM_STR_ADDR        ; HL -> dest record
         ld a,(VM_STR_LIT_LEN_TMP)
         ld (hl),a               ; write length byte
         inc hl                  ; HL -> dest content
@@ -2570,18 +2570,9 @@ OP_PUSH_STR_LIT:
         add hl,de               ; VM_IP advances past the content bytes
         ld (VM_IP),hl
         ld a,(VM_STR_LIT_TEMPIDX_TMP)
-        inc a
-        cp STRTAB_TEMP_COUNT
-        jr c,.no_wrap
-        xor a
-.no_wrap:
-        ld (VM_STR_TEMP_NEXT),a
-        ld a,(VM_STR_LIT_TEMPIDX_TMP)
-        ld hl,RT_STR_COUNT       ; temp slots follow the program's own string
-        add a,(hl)               ; variables (R10.7 P3: count is per program)
         ld l,a
         ld h,0
-        jp PUSH_INT_CONTINUE
+        jp PUSH_STR_CONTINUE
 
 OP_STORE_STR_VAR:
         ld hl,(VM_IP)
@@ -2603,6 +2594,9 @@ OP_STORE_STR_VAR:
         jp VM_RUN.loop
 
 OP_STR_CONCAT:
+        call VM_STR_ALLOC_TEMP  ; QUAL (Q-02): destination picked while both operands are still on
+        ld (VM_STR_DST_ADDR_TMP),hl ; the stack, so it is neither of them (b must survive the copy of a)
+        ld (VM_STR_LIT_TEMPIDX_TMP),a
         call VM_POP             ; HL = b's index
         ld a,l
         ld (VM_STR_CONCAT_B_TMP),a
@@ -2610,12 +2604,6 @@ OP_STR_CONCAT:
         ld a,l
         call VM_STR_ADDR        ; HL -> a's record
         ld (VM_STR_SRC_ADDR_TMP),hl
-        ld a,(VM_STR_TEMP_NEXT)
-        ld (VM_STR_LIT_TEMPIDX_TMP),a
-        ld hl,RT_STR_COUNT       ; temp slots follow the program's own string
-        add a,(hl)               ; variables (R10.7 P3: count is per program)
-        call VM_STR_ADDR        ; HL -> dest record
-        ld (VM_STR_DST_ADDR_TMP),hl
         ld hl,(VM_STR_SRC_ADDR_TMP)
         ld a,(hl)               ; a's length
         ld c,a                  ; C = running combined length so far
@@ -2664,18 +2652,9 @@ OP_STR_CONCAT:
         ld hl,(VM_STR_DST_ADDR_TMP)
         ld (hl),c               ; write the final combined length byte
         ld a,(VM_STR_LIT_TEMPIDX_TMP)
-        inc a
-        cp STRTAB_TEMP_COUNT
-        jr c,.no_wrap
-        xor a
-.no_wrap:
-        ld (VM_STR_TEMP_NEXT),a
-        ld a,(VM_STR_LIT_TEMPIDX_TMP)
-        ld hl,RT_STR_COUNT       ; temp slots follow the program's own string
-        add a,(hl)               ; variables (R10.7 P3: count is per program)
         ld l,a
         ld h,0
-        jp PUSH_INT_CONTINUE
+        jp PUSH_STR_CONTINUE
 
 OP_STR_CMP_LT:
         call VM_POP             ; HL = b's index
@@ -2857,25 +2836,17 @@ VM_FLOAT_PUSH_OPERAND:
 ; temp slot, then pushes that slot's index onto the VM's own operand
 ; stack, TAG_FLOAT.
 VM_FLOAT_STORE_RESULT:
-        ld a,(VM_FLOAT_TEMP_NEXT)
+        ld a,(RT_NUM_COUNT)
+        ld b,FLOATTAB_TEMP_COUNT
+        ld e,TAG_FLOAT
+        call VM_TEMP_PICK        ; QUAL (Q-02): a float temp no stacked value refers to
         ld (VM_FLOAT_TEMPIDX_TMP),a
-        ld hl,RT_NUM_COUNT       ; float temps follow the program's own numeric
-        add a,(hl)               ; variables
         call VM_FLOAT_ADDR       ; HL -> dest temp slot
         ex de,hl                  ; DE = dest
         ld hl,CALC_STACK
         ld bc,FLOAT_REC_LEN
         ldir
         ld a,(VM_FLOAT_TEMPIDX_TMP)
-        inc a
-        cp FLOATTAB_TEMP_COUNT
-        jr c,.no_wrap
-        xor a
-.no_wrap:
-        ld (VM_FLOAT_TEMP_NEXT),a
-        ld a,(VM_FLOAT_TEMPIDX_TMP)
-        ld hl,RT_NUM_COUNT       ; float temps follow the program's own numeric
-        add a,(hl)               ; variables
         ld l,a
         ld h,0
         ld a,TAG_FLOAT
@@ -4272,23 +4243,52 @@ BUILTIN_FN_VAL:
 ; ready to push once the caller has written the record's content).
 ; Destroys: AF, DE, HL (HL is an OUTPUT, not preserved as an input).
 VM_STR_ALLOC_TEMP:
-        ld a,(VM_STR_TEMP_NEXT)
-        ld (VM_STR_LIT_TEMPIDX_TMP),a
-        ld hl,RT_STR_COUNT       ; temp slots follow the program's own string
-        add a,(hl)               ; variables (R10.7 P3: count is per program)
-        call VM_STR_ADDR          ; HL -> dest record
-        push hl
-        ld a,(VM_STR_LIT_TEMPIDX_TMP)
+        ld a,(RT_STR_COUNT)
+        ld b,STRTAB_TEMP_COUNT
+        ld e,TAG_STR
+        call VM_TEMP_PICK        ; QUAL (Q-02): A = a string temp no stacked value refers to
+        push af
+        call VM_STR_ADDR          ; HL -> its record
+        pop af
+        ret
+
+; QUAL (Q-02): temp-slot allocator. Two round-robin slots per kind used to be reused while
+; still referenced from the operand stack (1.5+2.5*3.5 = 12.25, UPPER$("a")+LOWER$("B") = "bb").
+; In: A = first temp index, B = slot count, E = tag (TAG_FLOAT / TAG_STR).
+; Out: A = an index in [A, A+B) that no operand-stack entry (index, tag E) refers to.
+; Every slot live -> STACK OVERFLOW (error 2), never a silent reuse. Destroys BC, D, HL, F.
+VM_TEMP_PICK:
+.try:
+        ld d,a                   ; D = candidate
+        ld hl,(VM_SP)
+.scan:
+        ld a,l
+        cp LOW VM_STACK_TOP      ; the operand stack lies in one page ($B604-$B680)
+        jr nc,.free
+        ld a,(hl)                ; value low
+        inc hl
+        cp d
+        jr nz,.skip2
+        ld a,(hl)                ; value high (temp indices are < 256)
+        or a
+        jr nz,.skip2
+        inc hl
+        ld a,(hl)                ; tag
+        cp e
+        jr z,.used
+        jr .next
+.skip2:
+        inc hl
+.next:
+        inc hl
+        jr .scan
+.used:
+        ld a,d
         inc a
-        cp STRTAB_TEMP_COUNT
-        jr c,.no_wrap
-        xor a
-.no_wrap:
-        ld (VM_STR_TEMP_NEXT),a
-        ld a,(VM_STR_LIT_TEMPIDX_TMP)
-        ld hl,RT_STR_COUNT       ; temp slots follow the program's own string
-        add a,(hl)               ; variables (R10.7 P3: count is per program)
-        pop hl
+        djnz .try
+        jp VM_ERR_STACK_OVERFLOW
+.free:
+        ld a,d
         ret
 
 ; CHR$(n) -- the 1-character string with ASCII code n. Int-only
@@ -4650,7 +4650,7 @@ BUILTIN_FN_INKEY:
         ld (hl),0
         ld l,a
         ld h,0
-        xor a
+        ld a,TAG_STR             ; QUAL (Q-02) -- was xor a
         jp VM_PUSH
 
 ; SQR(n) -- int-only argument (VM_POP's own tag is ignored), matching
