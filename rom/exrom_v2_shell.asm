@@ -542,6 +542,8 @@ V2_NAV_COMMIT:
 .differs:
     call V2_STORE_EDIT
     jr c,.full
+    xor a
+    ld (V2_REDRAW_SCOPE),a       ; STUDY: the store may have added a line (status count) -> full redraw next
     ld hl,(CUR_EDIT_POS)
     ld a,h
     inc a                        ; Z = append line (carry stays clear)
@@ -2035,6 +2037,8 @@ V2_STATUS_SET_BAR_ATTR:
 ; above uses, since V2_REDRAW's next call naturally redraws the status
 ; line back over a dismissed message; no separate arbitration needed.
 V2_SHOW_MESSAGE:
+    xor a
+    ld (V2_REDRAW_SCOPE),a       ; STUDY: row 23 is about to be overwritten -> the next redraw must be a full one
     push hl
     ld b,23
     call KTAB_GFX_CLEAR_ROW_TEXT    ; R10.7: bitmap-only, same reasoning
