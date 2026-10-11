@@ -801,7 +801,8 @@ VM_RUN:
         ld a,(hl)               ; fetch opcode
         inc hl
         ld (VM_IP),hl
-        cp 67                   ; 67 opcodes defined (0-66, R8.5 adds
+        cp 68                   ; STUDY: 68 opcodes defined (OUT = 67)
+                                 ; (was: 67 opcodes defined (0-66, R8.5 adds
                                  ; 35-38: PRINT_NUM/STR, LPRINT_NUM/STR;
                                  ; 39: CALL_FN (Group 1); 40-43: CMP_LE/
                                  ; GT/GE/NE; 44-46: AND/OR/NOT; 47:
@@ -935,6 +936,7 @@ VM_OP_TABLE:
         dw V2_EXROM_ARR_DIM_STR_ADDR                        ; 64 (R10.9: EXROM-owned DIM$
         dw OP_STRARR_LOAD                                   ; 65  Phase 2 --
         dw OP_STRARR_STORE                                  ; 66  string arrays)
+        dw OP_OUT                                           ; 67  STUDY
 
 ; ---------------------------------------------------------------------------
 ; String-table access: index (A) -> HL = record address. Same shape as
@@ -3776,6 +3778,8 @@ BUILTIN_FN_JUMP_TABLE:
         dw BUILTIN_FN_TAN       ; fn_index 27
         dw BUILTIN_FN_MID       ; fn_index 28
         dw BUILTIN_FN_FREE_N    ; fn_index 29
+        dw BUILTIN_FN_IN        ; fn_index 30 (STUDY)
+        dw BUILTIN_FN_STICK     ; fn_index 31 (STUDY)
 
 ; BUILTIN_FN_ABS — ABS(x). Pops one value (either tag), pushes its
 ; magnitude. Int path: plain two's-complement negate (always safe, the
@@ -3986,6 +3990,55 @@ BUILTIN_FN_USR:
         call VM_CALL_USR_TRAMPOLINE
         xor a                    ; TAG_INT=0 (xor a, 1 byte, not ld a,TAG_INT's 2)
         jp VM_PUSH
+
+; STUDY: IN(port) -- the FULL 16-bit port address goes to BC (`in a,(c)` drives A15-A8 from B), so
+; IN(65278) reads keyboard half-row 0 ($FEFE) and IN(63486) half-row 1 ($F7FE), unlike a low-byte-only IN.
+BUILTIN_FN_IN:
+        call VM_POP_COERCE_INT  ; HL = port
+        ld b,h
+        ld c,l
+        in a,(c)
+        ld l,a
+        ld h,0
+        xor a                    ; TAG_INT
+        jp VM_PUSH
+
+; STUDY: STICK(n) -- Timex joystick through AY register 14 (I/O port A), the removed V1 STICK_READ
+; algorithm: stick 1 = low nibble (direction bits, active high), stick 2 = one bit (hardware asymmetry).
+BUILTIN_FN_STICK:
+        call VM_POP_COERCE_INT  ; HL = 1 or 2
+        ld a,$0E
+        out (PORT_AY_REG),a      ; select AY register 14
+        ld c,PORT_AY_DATA
+        in a,(c)
+        cpl                      ; active low -> active high
+        dec l
+        jr nz,.stick2
+        and $0F
+        cp $0F
+        jr c,.done
+        xor a                    ; all four set: no real input
+        jr .done
+.stick2:
+        rlca
+        and $01
+.done:
+        ld l,a
+        ld h,0
+        xor a                    ; TAG_INT
+        jp VM_PUSH
+
+; STUDY: OUT port,value -- pops value then port (compiler pushed port,value, like POKE).
+OP_OUT:
+        call VM_POP_COERCE_INT  ; HL = value
+        push hl
+        call VM_POP_COERCE_INT  ; HL = port
+        ld b,h
+        ld c,l
+        pop hl
+        ld a,l
+        out (c),a
+        jp VM_RUN.loop
 
 VM_CALL_USR_TRAMPOLINE:
         jp (hl)

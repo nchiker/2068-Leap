@@ -3759,6 +3759,10 @@ STR_COS_FN:    db "COS"
 STR_COS_FN_LEN: equ $-STR_COS_FN
 STR_TAN_FN:    db "TAN"
 STR_TAN_FN_LEN: equ $-STR_TAN_FN
+STR_IN_FN:     db "IN"
+STR_IN_FN_LEN: equ $-STR_IN_FN
+STR_STICK_FN:  db "STICK"
+STR_STICK_FN_LEN: equ $-STR_STICK_FN
 STR_MID_FN:    db "MID$"
 STR_MID_FN_LEN: equ $-STR_MID_FN
 
@@ -3840,6 +3844,10 @@ DECOMP_BUILTIN_FN_TABLE:
         db STR_MID_FN_LEN, 3, 1
         dw STR_FREE_FN              ; 29 FREE(n)
         db STR_FREE_FN_LEN, 1, 0
+        dw STR_IN_FN                ; 30 IN(port)  (STUDY)
+        db STR_IN_FN_LEN, 1, 0
+        dw STR_STICK_FN             ; 31 STICK(n)  (STUDY)
+        db STR_STICK_FN_LEN, 1, 0
 
 STR_GOTO:      db "GOTO "
 STR_GOTO_LEN:  equ $-STR_GOTO
