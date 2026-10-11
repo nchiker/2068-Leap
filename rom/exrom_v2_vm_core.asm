@@ -655,7 +655,10 @@ BFN_ABS_IDX_TMP:      equ $B6CE    ; (2 bytes): R8.5 Group 1 -- BUILTIN_
 ; ---------------------------------------------------------------------------
 ; VM_INIT — call once before VM_RUN. Resets both stacks, error/halt flags.
 ; ---------------------------------------------------------------------------
+VM_RUN_SP:          equ $BED0   ; QUAL (Q-03/Q-18): SP of the VM's caller, restored by VM_ERR_COMMON
 VM_INIT:
+        ld (VM_RUN_SP),sp       ; QUAL: errors raised while carving the tables / binding the store
+                                ; (same call level in V2_COMPILE_RUN) unwind to the shell
         ld hl,(SYM_END_V)          ; R10.7 -- reset the array arena so a
         inc hl                      ; second RUN of the same program
         ld (ARRAYS_END),hl           ; doesn't allocate on top of the
@@ -793,6 +796,7 @@ VM_CARVE_DESC:
 ; when VM_HALTED becomes nonzero (normal HALT or any error-halt).
 ; ---------------------------------------------------------------------------
 VM_RUN:
+        ld (VM_RUN_SP),sp       ; QUAL: any VM error returns straight to VM_RUN's caller
 .loop:
         ld a,(VM_HALTED)
         or a
@@ -2716,11 +2720,10 @@ OP_STR_CMP_EQ:
 VM_STR_COMPARE:
         ld a,(hl)
         ld (VM_STRCMP_LENA_TMP),a
-        push hl
-        ex de,hl
-        ld a,(hl)
-        ld (VM_STRCMP_LENB_TMP),a
-        pop hl
+        ex de,hl                ; QUAL (Q-01): was push hl / ex de,hl / ... / pop hl, which left
+        ld a,(hl)               ; DE = HL = A, so the content loop compared A with itself and
+        ld (VM_STRCMP_LENB_TMP),a ; only the length tiebreak decided ("abc" = "xyz").
+        ex de,hl                ; HL = A, DE = B again (same size: ex/ex instead of push/pop)
         ld a,(VM_STRCMP_LENA_TMP)
         ld b,a
         ld a,(VM_STRCMP_LENB_TMP)
@@ -5174,7 +5177,10 @@ VM_ERR_COMMON:
         ld (VM_ERROR_CODE),a
         ld a,1
         ld (VM_HALTED),a
-        ret
+        ld sp,(VM_RUN_SP)       ; QUAL (Q-03/Q-18): unwind. An error used to return into whatever
+        ret                     ; called the raising routine, which then carried on (array stores wrote
+                                ; out of bounds after VM_ARR_VALIDATE_INDEX failed; OP_AND/OP_OR
+                                ; returned through a pushed operand -> jp $0001 = cold start)
 
 ; VM_TEST_ARGTYPE_BIT -- bounded ROM consolidation pass: rom/exrom_v2_
 ; compiler.asm's own COMPILE_TEST_ARGTYPE_BIT and rom/exrom_v2_
