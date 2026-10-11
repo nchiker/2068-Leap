@@ -87,7 +87,11 @@ practice and apply to the Pascal, Forth V2 and C implementations as well.
 4. **One harness**: `tools/qual/qharness.py` and `ts2068-debug` should share symbol loading and the
    message map -- 2068-Leap project work.
 5. Pushing `~/z80-skills`: its remote is the upstream project; contributing upstream is the
-   owner's decision.
+   owner's decision. State at the closeout: `main` clean at `54bc4f2`, 2 commits ahead of
+   `origin/main` (`54bc4f2` and the earlier local `ea73e2e`, which imported `ts2068-debug`).
+6. **`ts2068-debug stop`** loads the session's symbols file by the relative path stored at start,
+   so it fails from another directory (`FileNotFoundError: build/exrom.sym`); found while stopping
+   the orphaned emulators. A fix belongs in `~/ts2068-debug` (stop should not need symbols).
 
 Retained in the 2068-Leap repository (project-specific): `tools/qual/` (corpus, expectations,
 lifecycle, bytecode identity, benchmark, oracles, exports), the production gates and their

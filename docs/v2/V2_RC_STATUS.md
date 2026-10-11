@@ -8,7 +8,7 @@ is, how it was qualified, and what is still open.
 | Designation | **2068-Leap V2 Enhanced — Emulator-Qualified Release** |
 | Meaning | the production ROMs passed the documented emulator qualification; the release is reproducible; the accepted limitations are documented; **physical TS2068 compatibility has not been verified** |
 | Accepted | by the owner, 2026-10-11 |
-| Release source | branch `integration/v2-final-rom`; ROM-producing commit `ef81f49` (every later commit is tests or documents) |
+| Release source | tag **`v2.0.0-emu.1`** = commit `f4cabad` (branch `integration/v2-final-rom`); ROM-producing commit `ef81f49` (every later commit is tests or documents) |
 | Authoritative branch | `v2-development` in `~/2068-Leap`, merged and pushed (section 12) |
 | Hardware | **NOT TESTED — PHYSICAL HARDWARE UNAVAILABLE** (`V2_HARDWARE_CHECKLIST.md`): deferred, not a release blocker |
 
@@ -185,8 +185,10 @@ section below.
 | verification after the merge | fresh clone of `v2-development`: identical images and `SHA256SUMS`, `make check`, `make rc-assets`, `make qual` 663 PASS / 2 XFAIL / 2 N/A / 0 FAIL, lifecycle 23/23 |
 | push | `origin` (`github.com/nchiker/2068-Leap`): `v2-development` `6789f36..f4cabad` (fast-forward), `integration/v2-final-rom` new at `f4cabad`; later closeout commits pushed on `v2-development` |
 | after the release commit, on `v2-development` | `2c79b44` qualification tools default to an in-repository export root, `build_configs.sh` fixed for the main checkout; then the closeout documents (this section, handoff, inventory, skills review, authoritative source, README release note, RC-O7) |
-| release tag | **not created**: the existing tags (`v0.1.0-preview.1`, `v1.0.0-beta.1`, the checkpoint `v2-r10.9-pre-array-store`) do not determine a name for an emulator-qualified release. Recommended: an annotated `v2.0.0-emu.1` on the release source `f4cabad` (semver pre-release, like `v1.0.0-beta.1`; `v2.0.0` kept for a hardware-qualified release): `git tag -a v2.0.0-emu.1 f4cabad -m "2068-Leap V2 Enhanced — Emulator-Qualified Release"` then `git push origin v2.0.0-emu.1` |
+| release tag | **`v2.0.0-emu.1`**, annotated ("2068-Leap V2 Enhanced — Emulator-Qualified Release"), on the release source `f4cabad`, pushed to `origin`; a clean export of `f4cabad` was rebuilt first and produces the accepted HOME and EXROM hashes |
 | skills | `~/z80-skills` `54bc4f2` (section 9) |
+| evidence archive | `~/2068-Leap-backups/v2.0.0-emu.1-qualification-evidence/` (verified; `MANIFEST.md`) |
+| orphaned emulators | the three left by the completed cost-study job stopped through their own sessions |
 | workspace | section 10 |
 | documentation | `V2_DOCUMENTATION_HANDOFF.md`: the manual is authoritative but thin; 13 verified gaps (README examples with line numbers, `LPRINT` is a package statement, packages undocumented, `INPUT` prompts, five missing messages, ...) and a plan for a QL-User-Guide-style manual |
 

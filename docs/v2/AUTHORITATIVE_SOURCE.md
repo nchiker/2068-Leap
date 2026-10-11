@@ -12,7 +12,7 @@ that repository; nothing outside it is required or authoritative.
 | Authoritative branch | **`v2-development`** (checked out in `~/2068-Leap`; pushed). It contains the release by fast-forward to `f4cabad` and the closeout commits after it |
 | Release source | branch `integration/v2-final-rom` at `f4cabad` (pushed; kept as the record of the release source; worktree `~/2068-Leap-v2-final-rom`) |
 | ROM-producing commit | `ef81f49` -- no production source changed after it (`V2_REGRESSION_REPORT.md` s9) |
-| Release tag | none created (the existing tags do not determine a name; recommendation in `V2_RC_STATUS.md` s12) |
+| Release tag | **`v2.0.0-emu.1`** (annotated, pushed) -> `f4cabad`; a clean export of it builds the accepted hashes |
 
 `integration/v2-final-rom` contains, by merge, the qualification and owner-decision study work it
 was built on (`study/proto-enh-shrink2`, `study/decisions-review` and what they contain).
@@ -50,7 +50,7 @@ needed only by `make test-legacy` (V1 tests under X11).
 
 ```
 git clone https://github.com/nchiker/2068-Leap.git leap && cd leap   # or: git clone ~/2068-Leap leap
-git checkout v2-development
+git checkout v2-development        # or the release itself: git checkout v2.0.0-emu.1
 make build v2-packages        # build/test_basic.bin (HOME), build/exrom.bin, the five packages
 make check                    # assemble/lint/ABI/doc checks, no emulator
 make budget                   # HOME 54 / EXROM 25 bytes free
@@ -80,7 +80,8 @@ Makefile target, script default or test reads anything under `~/2068-Leap-study`
 |---|---|---|
 | `study/*` branches (local, in `~/2068-Leap`) | every qualification, cost-study and prototype branch | kept (historical record) |
 | `docs/v2/` study reports | the qualification, cost and owner-decision reports | kept in the repository |
-| `~/2068-Leap-study/qual-runs/` (85 MB) | logs and JSONL of every corpus, gate, battery, benchmark and fresh-clone run, incl. the export budget logs (`qual-builds-logs/`) | kept outside the repository (evidence; not needed to build or test) |
+| `~/2068-Leap-backups/v2.0.0-emu.1-qualification-evidence/` | the verified archive of the qualification evidence (run logs, study notes and tools, the release artifact set) with `MANIFEST.md` and its SHA-256 | kept outside the repository |
+| `~/2068-Leap-study/qual-runs/` (85 MB) | the original run logs (archived above) | kept; deletable now that the archive is verified |
 | `~/2068-Leap-study/NOTES.md`, `tools/` | the study's running notes and one-off scripts | kept (not in any repository) |
 | `~/2068-Leap-study/<16 worktrees>` | worktrees of study branches whose commits are **not** in `v2-development` | kept; removable after owner approval (the branches keep the commits) |
 | `~/2068-Leap-v2-final-rom` | worktree of the release-source branch | kept until the handoff is accepted |

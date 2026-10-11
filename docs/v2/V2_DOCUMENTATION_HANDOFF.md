@@ -88,16 +88,23 @@ semantics, the tape commands including `SAVE ... ALL`, and the intentional V1/Si
 
 ## 4. Examples that need emulator verification
 
-Every example in the new manual should run on the release image before it is printed. The
-practical way is to make the manual executable:
+Every example in the new manual must run on the accepted release image (tag `v2.0.0-emu.1`; HOME
+`dddd4cbb…e40dca`, EXROM `c1804641…291b527` -- check the hashes of the build you test against).
+Make the manual executable, **separately from the release qualification baseline**:
 
-* add each example as a corpus case (`tools/qual/corpus.py`, ids `manual.<section>.<n>`, expected
-  output exact), run `make qual`, and keep them in the corpus so later ROM changes re-check the
-  manual;
-* interactive examples (editor keys, BREAK, `INPUT`, tapes) use the existing harnesses:
-  `tools/v2_prod_regress.py` (editor keys, tape receiver), `tools/v2_saveall_checks.py` (tapes),
-  `tools/qual/qlifecycle.py` (sessions), `ts2068-debug` for screenshots (`.bmp`);
-* the package chapters need `packages=(...)` corpus cases (see `pkg.*`).
+* the release baseline stays as it is: `tools/qual/corpus.py` (667 cases), `make test` (1010
+  cases) and `make qual` are the historical record of the emulator-qualified release and are not
+  edited by documentation work;
+* put the documentation examples in their own suite, e.g. `tools/qual/manual_examples.py` (same
+  case format as `corpus.py`: `T(id, feature, lines, expectation, packages=...)`, ids
+  `manual.<section>.<n>`, exact expected output), with its own runner entry and make target
+  (e.g. `make doc-examples`) and its own results file; report its totals separately from the
+  1010-case baseline;
+* interactive examples (editor keys, BREAK, `INPUT`, tapes) use the existing harnesses as
+  libraries -- `tools/v2_prod.py` (editor keys, tape receiver), `tools/v2_saveall_checks.py`
+  (tapes), `tools/qual/qlifecycle.py` (sessions), `ts2068-debug` for screenshots (`.bmp`) -- from
+  new documentation test files, not by adding cases to the release suites;
+* the package chapters need cases with `packages=(...)` (see the `pkg.*` cases for the pattern).
 
 Items 7, 10 and 12 of section 2 in particular must be measured, not copied from V1 documents.
 
@@ -112,7 +119,7 @@ the messages and tables in appendices. For V2:
    and strings, decisions and loops, procedures, arrays, the screen, sound, tapes, stopping and
    continuing (sessions).
 3. **Keywords** (alphabetical): every statement, function and command -- core and per package --
-   in one format: syntax, description, examples (corpus-checked), errors, see also.
+   in one format: syntax, description, examples (checked by the documentation suite), errors, see also.
 4. **Concepts** (alphabetical): arithmetic and promotion, arrays and the Array Store, BREAK,
    errors, memory, packages, sessions, strings, tapes and `SAVE ALL`, V1/Sinclair differences.
 5. **Appendices**: messages and error codes, character set (incl. the nine blank glyphs), limits,
@@ -130,10 +137,29 @@ the compact precise reference (or folded into Keywords + Concepts, then removed 
 2. Build the keyword inventory from the ROM, not from documents: the compiler's keyword table, the
    built-in function table, the five packages' keyword tables (`rom/ext_*_module.asm`), the
    message table (strings in the images); diff it against the reference.
-3. Fix items 1-6 of section 2 first (they are wrong or missing facts), with corpus cases.
-4. Write the Keywords part entry by entry; add each example to the corpus; run `make qual`.
+3. Fix items 1-6 of section 2 first (they are wrong or missing facts), each with a documentation
+   example case.
+4. Write the Keywords part entry by entry; add each example to the documentation suite; run it.
 5. Write the Beginner's guide and Concepts parts from the existing manual; verify the interactive
    examples with the harnesses.
-6. Appendices; README; DOCX build; `make check` (`tools/check_docs.py`) and `make qual` green.
+6. Appendices; README; DOCX build; `make check` (`tools/check_docs.py`), the documentation suite
+   and the unchanged `make qual` green.
 7. Keep the ROM unchanged: a documentation session that finds a ROM defect records it in
    `V2_DEFECT_REGISTER.md` instead of fixing it.
+
+## 7. Next session (instruction)
+
+Work on a dedicated documentation branch based on `v2-development`, for example
+`git switch -c docs/v2-user-manual v2-development`; merge it into `v2-development` when the owner
+accepts the documentation. In that session:
+
+* complete the V2 user manual in the style of the Sinclair QL User Guide (section 5);
+* correct the V2 language reference (section 2, items 2-6);
+* update `README.md` so it no longer presents V1 as the current system (item 1: the "Try it"
+  examples, the manual links, the package count, the status paragraph);
+* document all five packages -- mode, sprite, printer, shapes, graphics -- statement by statement;
+* verify every example against the accepted emulator-qualified ROM (`v2.0.0-emu.1`);
+* keep the new documentation-example tests separate from the historical 1010-case release
+  qualification baseline (section 4);
+* change no ROM code: record any ROM defect found in `V2_DEFECT_REGISTER.md`.
+
