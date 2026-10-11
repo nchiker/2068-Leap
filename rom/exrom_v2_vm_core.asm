@@ -3405,10 +3405,25 @@ VM_COMPUTE_PRINT_ATTR:
 ; VM_CLAMP_Y191 — real BASIC_CLAMP_Y191 algorithm (basic.asm),
 ; transcribed for the same reason as VM_COMPUTE_PRINT_ATTR above.
 ; In: A = candidate y. Out: A clamped to 0-191. Destroys: AF only.
+; RC (DEC-PLOT): out-of-range coordinates clamp to the screen edge (y > 191 already did; x and any
+; value above 255 or below 0 wrapped modulo 256 to a wrong position).
+VM_CLAMP_YCOORD:                ; HL -> A = 0..191
+        call VM_CLAMP_COORD
 VM_CLAMP_Y191:
         cp 192
         ret c
         ld a,191
+        ret
+VM_CLAMP_COORD:                 ; HL -> A = 0..255 (negative -> 0)
+        ld a,h
+        or a
+        ld a,l
+        ret z
+        ld a,h
+        rla
+        ld a,0
+        ret c
+        dec a
         ret
 
 OP_CLS:
@@ -3522,6 +3537,11 @@ OP_TAB:
 ; EXROM_OUT/IN needed, unlike OP_CALL_EXT's package-window case).
 OP_CLEAR:
         call MEM_CLEAR_V2
+        call VM_CS_UNWIND        ; RC (Q-21): drop the FOR frames above the innermost CALL/PARAM frame
+        jr nc,.keep              ; (a FOR loop around CLEAR then ends at its NEXT: error 7, as a
+        ld hl,(VARS_START)       ; cleared loop variable does on the Spectrum; it looped forever)
+.keep:
+        ld (VM_CSP),hl
         jp VM_RUN.loop
 
 ; OP_PLOT — pops y then x (compiler pushes x, then y, matching "PLOT
@@ -3533,11 +3553,10 @@ OP_CLEAR:
 ; across one.
 OP_PLOT:
         rst $18                  ; HL = y (FLOAT truncated)
-        ld a,l
-        call VM_CLAMP_Y191       ; A = clamped y
+        call VM_CLAMP_YCOORD     ; RC (DEC-PLOT): A = y clamped to 0..191
         ld (VM_PLOT_Y_TMP),a
         rst $18                  ; HL = x (FLOAT truncated)
-        ld a,l
+        call VM_CLAMP_COORD      ; RC (DEC-PLOT): x clamped to 0..255 (was taken mod 256)
         ld (VM_PLOT_X_TMP),a
         call VM_COMPUTE_PRINT_ATTR
         ld (VM_PLOT_ATTR_TMP),a
@@ -4314,13 +4333,10 @@ BUILTIN_FN_POINT:
         rst $18                 ; HL = y (FLOAT truncated)
         push hl                 ; same fix as BUILTIN_FN_MOD/DIV above
         rst $18                 ; HL = x
-        pop de                  ; DE = y
-        ld b,l                  ; B = x (low byte)
-        ld a,e
-        cp 192
-        jr c,.point_y_ok
-        ld a,191
-.point_y_ok:
+        call VM_CLAMP_COORD     ; RC (DEC-PLOT): x clamped like PLOT's
+        ld b,a                  ; B = x
+        pop hl                  ; HL = y
+        call VM_CLAMP_YCOORD
         ld c,a                  ; C = y (clamped)
         call GFX_READ_PIXEL     ; A = 0 or 1
         ld l,a
@@ -4415,6 +4431,14 @@ BUILTIN_FN_IN:
 ; algorithm: stick 1 = low nibble (direction bits, active high), stick 2 = one bit (hardware asymmetry).
 BUILTIN_FN_STICK:
         rst $18                 ; HL = 1 or 2
+        ld a,h
+        or a
+        jr nz,.bad
+        ld a,l
+        dec a
+        cp 2
+.bad:
+        jp nc,BUILTIN_FN_CHR.chr_range_err   ; RC (Q-23): STICK(n), n other than 1/2: error 15
         ld a,$0E
         out (PORT_AY_REG),a      ; select AY register 14
         ld c,PORT_AY_DATA

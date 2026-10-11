@@ -1936,18 +1936,20 @@ COMPILE_FACTOR:
         pop af
         jr .fn_call
 .not_builtin_fn:
-        ; R8.5 Group 4 -- an identifier that names a DIM'd array, used as
-        ; a VALUE, is an array read: "IDENT(expr)". Checked after builtin
-        ; functions (a distinct, reserved namespace) but before the
-        ; ordinary scalar-load path -- an array name is never also a
-        ; valid scalar name (ARRSYM/CSYM are separate tables, but this
-        ; grammar-level check is what actually keeps them from being
-        ; used interchangeably).
+        ld hl,(SRC_PTR)          ; RC (N-4): an array name is read as the array only when '(' follows;
+.peek:                           ; otherwise it is the scalar of the same name (separate namespaces)
+        ld a,(hl)
+        inc hl
+        cp ' '
+        jr z,.peek
+        cp '('
+        jr nz,.scalar
         ld hl,(TOK_NAME)
         ld a,(TOK_LEN)
         ld b,a
         call ARRSYM_LOOKUP
         jr nc,.arr_read
+.scalar:
         call COMPILE_IDENT_LOAD
         jp LEX_NEXT_TOKEN
 .arr_read:
@@ -3150,7 +3152,9 @@ COMPILE_STR_FACTOR:
         ld a,(TOK_LEN)
         cp 32
         jr c,.lit_len_ok
-        ld a,31                  ; clamp to the runtime record's real cap —
+        ld a,70                  ; RC (L3): longer than 31 characters: a compile error (was cut silently)
+        rst $30
+                                   ; (old: clamp to the runtime record's real cap —
                                    ; the VM's own OP_PUSH_STR_LIT assumes
                                    ; this invariant already holds, per its
                                    ; own header note
@@ -4050,8 +4054,11 @@ COMPILE_NEXT:
         ld a,(TOK_TYPE)
         cp TOK_IDENT
         jr z,.have_var
-        ld a,10
-        rst $30
+        call CSTK_TOP            ; RC (L-NEXT): a bare NEXT closes the innermost open FOR
+        jr z,.mismatch
+        ld a,(hl)
+        ld (NEXT_VAR_INDEX_TMP),a
+        jr .bare
 .have_var:
         ld hl,(TOK_NAME)
         ld a,(TOK_LEN)
@@ -4075,9 +4082,10 @@ COMPILE_NEXT:
                                       ; innermost open FOR
         rst $30
 .verified:
+        rst $08                 ; consume the identifier
+.bare:
         ld a,(NEXT_VAR_INDEX_TMP)
         ld (FOR_LOOP_VAR_INDEX),a
-        rst $08                 ; consume the identifier
         ld a,14        ; QUAL shrink: inlined EMIT_OP_FOR_NEXT
         rst $20
         ld a,(FOR_LOOP_VAR_INDEX)
