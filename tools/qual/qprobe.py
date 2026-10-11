@@ -8,7 +8,7 @@ from qharness import Machine
 ap = argparse.ArgumentParser()
 ap.add_argument("cfg"); ap.add_argument("--port", type=int, default=10470)
 ap.add_argument("--keys", default=None); ap.add_argument("--maxi", type=int, default=20_000_000)
-ap.add_argument("--root", default=os.path.expanduser("~/2068-Leap-study/qual-builds"))
+ap.add_argument("--root", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "build", "qual-builds"))
 ap.add_argument("lines", nargs="*")
 a, extra = ap.parse_known_args()
 a.lines = a.lines + [x for x in extra if x != "--"]

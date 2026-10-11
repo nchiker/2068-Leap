@@ -41,7 +41,7 @@ def main():
     ap.add_argument("b")
     ap.add_argument("--port", type=int, default=10520)
     ap.add_argument("--filter", default="")
-    ap.add_argument("--root", default=os.path.expanduser("~/2068-Leap-study/qual-builds"))
+    ap.add_argument("--root", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "build", "qual-builds"))
     a = ap.parse_args()
     cases = [c for c in corpus.CASES if not a.filter or any(f in c.cid for f in a.filter.split(","))]
     res = {}

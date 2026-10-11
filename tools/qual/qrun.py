@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Run the conformance corpus against one or more configurations, in parallel (one emulator each).
 
-  python3 tools/qual/qrun.py --root ~/2068-Leap-study/qual-builds --out <dir> [--cfg baseline,essential,enhanced]
+  python3 tools/qual/qrun.py [--root build/qual-builds] --out <dir> [--cfg baseline,essential,enhanced]
                             [--filter substr] [--port 10440] [--workers-per-cfg 1]
 Writes <out>/<cfg>.jsonl (one record per case) and prints a per-config summary.
 Status per case: PASS, FAIL, XFAIL (documented defect reproduced), XPASS (marked defect now correct),
@@ -75,7 +75,7 @@ def worker(cfgname, cfgdir, port, case_ids, outpath, q, fixed=()):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--root", default=os.path.expanduser("~/2068-Leap-study/qual-builds"))
+    ap.add_argument("--root", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "build", "qual-builds"))
     ap.add_argument("--out", required=True)
     ap.add_argument("--cfg", default="baseline,essential,enhanced")
     ap.add_argument("--filter", default="")

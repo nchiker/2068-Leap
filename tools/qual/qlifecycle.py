@@ -94,7 +94,7 @@ def main():
     ap.add_argument("cfg", nargs="?", default=None)
     ap.add_argument("--tree", default=None, help="the build in this source tree (e.g. .)")
     ap.add_argument("--port", type=int, default=10495)
-    ap.add_argument("--root", default=os.path.expanduser("~/2068-Leap-study/qual-builds"))
+    ap.add_argument("--root", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "build", "qual-builds"))
     ap.add_argument("--verbose", action="store_true")
     a = ap.parse_args()
     cfgdir = os.path.abspath(a.tree) if a.tree else os.path.join(a.root, a.cfg)

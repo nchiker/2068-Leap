@@ -2,7 +2,7 @@
 # run_study_battery.sh <build-export> <base-port> <outdir> -- re-run the cost study's own prototype
 # tools (tools/study_*.py present in that export) on a FROZEN copy of the export, one emulator per
 # tool (ports base..base+N), logs in <outdir>/<tool>.log, rc per tool in <outdir>/summary.txt.
-# Example: tools/qual/run_study_battery.sh ~/2068-Leap-study/qual-builds/enhanced 10800 ~/2068-Leap-study/qual-runs/a3-enhanced
+# Example: tools/qual/run_study_battery.sh build/qual-builds/rc 10800 build/qual-runs/battery-rc
 set -u
 b="$1"; port="$2"; out="$3"; mkdir -p "$out"
 rm -rf "$out/tree"; cp -a "$b" "$out/tree"; cat "$out/tree/QUAL_COMMIT" 2>/dev/null > "$out/commit.txt"

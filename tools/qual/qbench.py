@@ -17,7 +17,7 @@ PROGS = {
     "compile_only": ["x%d = %d + %d * (%d - 1)" % (k, k, k, k) for k in range(60)],
 }
 ap = argparse.ArgumentParser(); ap.add_argument("cfgs", nargs="+"); ap.add_argument("--port", type=int, default=10580)
-ap.add_argument("--root", default=os.path.expanduser("~/2068-Leap-study/qual-builds"))
+ap.add_argument("--root", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "build", "qual-builds"))
 a = ap.parse_args()
 res = {}
 for i, cfg in enumerate(a.cfgs):

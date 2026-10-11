@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # build_configs.sh [outroot] -- export each qualification configuration from its git commit
 # (git archive: no worktree is touched) and build the production image + packages + budget.
-# Usage: tools/qual/build_configs.sh ~/2068-Leap-study/qual-builds
+# Usage: tools/qual/build_configs.sh [outroot]   (default build/qual-builds in this repository)
 set -euo pipefail
-root="${1:-$HOME/2068-Leap-study/qual-builds}"
-repo="$(git -C "$(dirname "$0")" rev-parse --git-common-dir)/.."
+root="${1:-$(cd "$(dirname "$0")/../.." && pwd)/build/qual-builds}"
+repo="$(cd "$(dirname "$0")" && cd "$(git rev-parse --git-common-dir)/.." && pwd)"   # absolute, from a worktree or the main checkout
 declare -A CFG=( [baseline]=7ae0599 [essential]=study/combined-essential [enhanced]=study/combined-enhanced )
 # extra configurations: name=ref arguments after the root (e.g. costs-ess=study/qualification-costs)
 shift || true
