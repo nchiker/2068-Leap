@@ -3326,17 +3326,24 @@ COMPILE_EXPECT_COMMA_EXPR:
         call LEX_NEXT_TOKEN
         jp COMPILE_EXPR
 
+; STUDY (shrink): <KEYWORD> <expr>,<expr>.  HL = the emit routine for the opcode (as COMPILE_1ARG_STMT).
+COMPILE_2ARG_STMT:
+        push hl
+        call LEX_NEXT_TOKEN     ; consume the keyword
+        call COMPILE_EXPR       ; first argument
+        call COMPILE_EXPECT_COMMA_EXPR  ; second argument
+        pop hl
+        ld a,(COMPILE_ERROR_CODE)
+        or a
+        ret nz
+        jp (hl)
+
 ; COMPILE_PLOT — PLOT <expr>,<expr>  (x, then y — matches V1's own
 ; BASIC_STMT_PLOT reading order; OP_PLOT's own header note explains why
 ; it pops y before x)
 COMPILE_PLOT:
-        call LEX_NEXT_TOKEN     ; consume PLOT
-        call COMPILE_EXPR       ; x -> VM operand stack
-        call COMPILE_EXPECT_COMMA_EXPR  ; y -> VM operand stack
-        ld a,(COMPILE_ERROR_CODE)
-        or a
-        ret nz
-        jp EMIT_OP_PLOT
+        ld hl,EMIT_OP_PLOT
+        jr COMPILE_2ARG_STMT
 
 ; R8.5 Group 5's own resident MODE/ULAPLUS/PALETTE removed (product
 ; decision, following the same principle that moved SPRITE off resident
@@ -3390,13 +3397,8 @@ COMPILE_LINE:
 
 ; STUDY: OUT <port>,<value>.  The port is the FULL 16-bit address (BC), not just the low byte.
 COMPILE_OUT:
-        call LEX_NEXT_TOKEN     ; consume OUT
-        call COMPILE_EXPR       ; port
-        call COMPILE_EXPECT_COMMA_EXPR  ; value
-        ld a,(COMPILE_ERROR_CODE)
-        or a
-        ret nz
-        jp EMIT_OP_OUT
+        ld hl,EMIT_OP_OUT
+        jr COMPILE_2ARG_STMT
 
 ; COMPILE_BEEP — BEEP <duration>,<pitch>  (matches V1's own
 ; BASIC_STMT_BEEP argument order). "Expected comma" now reports code
@@ -3405,35 +3407,20 @@ COMPILE_OUT:
 ; args", the same real condition either way; unifying it is what lets
 ; this reuse the shared helper.
 COMPILE_BEEP:
-        call LEX_NEXT_TOKEN     ; consume BEEP
-        call COMPILE_EXPR       ; duration
-        call COMPILE_EXPECT_COMMA_EXPR  ; pitch
-        ld a,(COMPILE_ERROR_CODE)
-        or a
-        ret nz
-        jp EMIT_OP_BEEP
+        ld hl,EMIT_OP_BEEP
+        jr COMPILE_2ARG_STMT
 
 ; COMPILE_SOUND — SOUND <register>,<data>  (matches V1's own
 ; BASIC_STMT_SOUND argument order)
 COMPILE_SOUND:
-        call LEX_NEXT_TOKEN     ; consume SOUND
-        call COMPILE_EXPR       ; register
-        call COMPILE_EXPECT_COMMA_EXPR  ; data
-        ld a,(COMPILE_ERROR_CODE)
-        or a
-        ret nz
-        jp EMIT_OP_SOUND
+        ld hl,EMIT_OP_SOUND
+        jr COMPILE_2ARG_STMT
 
 ; COMPILE_POKE — POKE <address>,<value>  (matches V1's own
 ; BASIC_STMT_POKE argument order)
 COMPILE_POKE:
-        call LEX_NEXT_TOKEN     ; consume POKE
-        call COMPILE_EXPR       ; address
-        call COMPILE_EXPECT_COMMA_EXPR  ; value
-        ld a,(COMPILE_ERROR_CODE)
-        or a
-        ret nz
-        jp EMIT_OP_POKE
+        ld hl,EMIT_OP_POKE
+        jr COMPILE_2ARG_STMT
 
 ; COMPILE_PAUSE — PAUSE <n>  (one argument, same shape as BORDER/INK/
 ; PAPER above)
