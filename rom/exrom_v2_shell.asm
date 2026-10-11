@@ -567,24 +567,58 @@ V2_BUILD_SOURCE:
     jp KTAB_CHUNK_REFILL
 
 V2_RUN_STORED:
-    call V2_BUILD_SOURCE
-    ld hl,V2_SOURCE_STAGE
     ld a,1
     ld (V2_RUN_IS_STORED),a
-    jr V2_COMPILE_RUN
+    call V2_COMPILE_STORED     ; RC: compiled at VM_CODE_BASE; Z = no error
+    jr V2_COMPILE_RUN.result
+; RC (session variables): an immediate statement runs in the session of the last RUN -- or of the
+; program compiled now, when there is none (no RUN since the last edit). If the program does not
+; compile, the statement runs alone, as before.
 V2_RUN_IMMEDIATE:
     xor a
     ld (V2_RUN_IS_STORED),a   ; an immediate colon-statement has no
                                 ; separate stored line to jump to
+    ld a,(SESS_VALID)
+    or a
+    jr nz,.session
+    call V2_COMPILE_STORED
+    jr nz,.alone
+    call V2_SESSION_START
+.session:
+    ld hl,SYM_COUNTS
+    ld de,SESS_SAVE
+    ld bc,23
+    ldir                         ; the counts and table bases before this statement
     ld hl,EDIT_LINE_BUF+1
-V2_COMPILE_RUN:
     ld (SRC_PTR),hl
-    call KTAB_COMPILER_INIT
-    ld hl,VM_CODE_BASE
+    call COMPILER_INIT_SESSION
+    ld hl,(SESS_CODE_END)
     ld (EMIT_PTR),hl
     call KTAB_COMPILE_PROGRAM
     ld a,(COMPILE_ERROR_CODE)
     or a
+    jr nz,.undo
+    ld a,(SYM_COUNTS+SYM_K_LAB)  ; a label, PROC or DEF FN defined here would point into code
+    ld hl,SESS_SAVE+SYM_K_LAB    ; that the next statement overwrites: compile error 71
+    cp (hl)
+    ld a,71
+    jr nz,.undo
+    call VM_INIT_SESSION
+    ld a,(VM_HALTED)
+    or a                         ; no room to carve the new variables' slots (error 64):
+    call nz,V2_SESSION_UNDO      ; the session keeps its old tables, VM_RUN stops at once
+    call z,ARR_RUN_BIND          ; stored arrays for any new array names (segment 2 kept)
+    ld hl,(SESS_CODE_END)
+    jr V2_COMPILE_RUN.go
+.undo:
+    ld (COMPILE_ERROR_CODE),a
+    call V2_SESSION_UNDO
+    jr V2_COMPILE_RUN.error
+.alone:
+    ld hl,EDIT_LINE_BUF+1
+V2_COMPILE_RUN:
+    call V2_COMPILE_AT_BASE
+.result:
     jr z,.compiled
     ; R10 correction: return the cursor to the (approximate) failing
     ; source line before showing the message, so dismissing SYNTAX
@@ -596,16 +630,24 @@ V2_COMPILE_RUN:
     ; editor-audit findings).
     ld a,(V2_RUN_IS_STORED)
     or a
-    jr z,.no_jump
+    jr z,.error
     call V2_JUMP_TO_ERROR_LINE
-.no_jump:
+.error:
     ld a,(COMPILE_ERROR_CODE)
     call V2_COMPILE_MSG
     jp V2_SHOW_MESSAGE
 .compiled:
+    ld a,(V2_RUN_IS_STORED)
+    or a
+    jr z,.alone_init
+    call V2_SESSION_START        ; RC: a RUN starts a new session
+    jr .base
+.alone_init:
     call KTAB_VM_INIT
     call ARR_RUN_INIT            ; R10.9 2B: Array Store bind (EXROM)
+.base:
     ld hl,VM_CODE_BASE
+.go:
     ld (VM_IP),hl
     call KTAB_GFX_CLS
     call KTAB_VM_RUN
@@ -622,6 +664,31 @@ V2_COMPILE_RUN:
 ; V2_COMPILE_MSG: A = COMPILE_ERROR_CODE -> HL = message.
 ; Compile codes: 60 nesting too deep, 61 identifier too long, 64 unexpected token, 1/39 more than 255
 ; symbols of a kind, and the capacity class {5,6,45,55,62} = out of memory.
+; RC (session variables): V2_COMPILE_STORED -- the stored program compiled at VM_CODE_BASE (Z = no error).
+V2_COMPILE_STORED:
+    xor a
+    ld (SESS_VALID),a            ; the old session's code and tables are about to be replaced
+    call V2_BUILD_SOURCE
+    ld hl,V2_SOURCE_STAGE
+V2_COMPILE_AT_BASE:
+    ld (SRC_PTR),hl
+    call KTAB_COMPILER_INIT
+    ld hl,VM_CODE_BASE
+    ld (EMIT_PTR),hl
+    call KTAB_COMPILE_PROGRAM
+    ld a,(COMPILE_ERROR_CODE)
+    or a
+    ret
+; V2_SESSION_START -- the program just compiled becomes the session: fresh variables (VM_INIT, the Array
+; Store bound), its code ends at SESS_CODE_END (immediate statements are compiled after it).
+V2_SESSION_START:
+    ld hl,(EMIT_PTR)
+    ld (SESS_CODE_END),hl
+    ld a,1
+    ld (SESS_VALID),a
+    call KTAB_VM_INIT
+    jp ARR_RUN_INIT
+
 V2_COMPILE_MSG:
     ld hl,V2_MSG_NAMELEN
     cp 61
@@ -761,6 +828,8 @@ V2_DISPATCH:
 ; SAVE/LOAD ... ARRAY can never read stale ones. The two tables are
 ; contiguous (ASSERTed).
 V2_CLEAR_ARRAYS:
+    xor a
+    ld (SESS_VALID),a            ; RC: any edit, LOAD or NEW ends the variable session
     call SYM_RESET               ; the compile symbol table lives at PROG_END and
                                    ; is invalidated by the same events
     ld hl,(SYM_END_V)
@@ -792,9 +861,8 @@ MEM_INIT_V2:
 ; compile symbol table or VARS_START (the tables stay valid), the control stack,
 ; the program, or loaded packages.
 MEM_CLEAR_V2:
-    ld hl,(SYM_END_V)
-    inc hl
-    ld (ARRAYS_END),hl           ; as VM_INIT: the arena starts past the symbol table
+    ld hl,(SESS_ARENA_BASE)
+    ld (ARRAYS_END),hl           ; as VM_INIT: the arena starts SESS_GAP past the symbol table
     ld hl,V2_SOURCE_END
     ld de,(VARS_START)
     or a
@@ -1131,6 +1199,8 @@ V2_LOAD:
     ld a,(V2_REQUEST_TYPE)
     or a
     jr z,.program_receive
+    xor a
+    ld (SESS_VALID),a            ; RC: the session's code may call the package being replaced
     call KTAB_EXT2_CLEAR_ALL
     ld hl,STORAGE_LOAD_NAME_BUF
     ld b,10

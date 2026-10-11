@@ -71,6 +71,9 @@ NAMES = (
     "SYM_FIND",
     "VM_ERR_COMMON",
     "VM_ERR_ARRAY_SPACE",       # QUAL (Q-04): ARR_DIM size cap
+    "COMPILER_INIT_SESSION",    # RC: session variables
+    "VM_INIT_SESSION",
+    "V2_SESSION_UNDO",
 )
 
 

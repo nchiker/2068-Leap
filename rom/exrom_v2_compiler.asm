@@ -602,12 +602,23 @@ TOK_SEMI:           equ 66   ; STUDY: ';' (PRINT/INPUT separator)
 ; COMPILER_INIT — call once before COMPILE_PROGRAM.
 ; ---------------------------------------------------------------------------
 COMPILER_INIT:
+        call SYM_RESET           ; R10.7 P2: empty tagged symbol table at PROG_END
+        ld hl,V2_SOURCE_END
+        jr COMPILER_INIT_BASE
+; RC (session variables): an immediate statement in a session keeps the symbol table (so it sees the
+; program's variables, labels, procedures and functions); its new symbols and its compile stack share
+; the SESS_GAP bytes below the arena (the limit check reports a full gap as a compile error).
+COMPILER_INIT_SESSION:
+        ld hl,(SESS_ARENA_BASE)
+COMPILER_INIT_BASE:
+        ld (SYM_LIMIT_V),hl
+        ld (CSTK_BASE),hl
+COMPILER_INIT_COMMON:
         xor a
         ld (COMPILE_ERROR_CODE),a
         ld h,a                   ; R10.9 2D: restart the source-line counter
         ld l,a
         ld (LEX_LINE),hl
-        call SYM_RESET           ; R10.7 P2: empty tagged symbol table at PROG_END
         ret
 
 ; ===========================================================================
@@ -4152,7 +4163,7 @@ COMPILE_NEXT:
         ld de,CSTK_FRAME_LEN
         add hl,de
         ld (SYM_LIMIT_V),hl       ; pop it
-        ld de,V2_SOURCE_END
+        ld de,(CSTK_BASE)         ; RC (session)
         or a
         sbc hl,de
         ret z                     ; no enclosing loop left

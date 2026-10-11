@@ -69,6 +69,8 @@ ARR_RUN_INIT:
     ret nz                      ; VM_INIT refused the run
     ld hl,(PAS_END)
     ld (ARR2_END),hl
+ARR_RUN_BIND:                   ; RC (session): bind the store without resetting segment 2
+    ld hl,(PAS_END)
     ld a,h
     sub ARR2_BASE >> 8
     or l

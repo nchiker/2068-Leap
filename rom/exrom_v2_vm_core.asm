@@ -660,17 +660,16 @@ BFN_ABS_IDX_TMP:      equ $B6CE    ; (2 bytes): R8.5 Group 1 -- BUILTIN_
 VM_RUN_SP:          equ $BED0   ; QUAL (Q-03/Q-18): SP of the VM's caller, restored by VM_ERR_COMMON
 VM_INIT:
         ld (VM_RUN_SP),sp       ; QUAL: errors raised while carving the tables / binding the store
-                                ; (same call level in V2_COMPILE_RUN) unwind to the shell
-        ld hl,(SYM_END_V)          ; R10.7 -- reset the array arena so a
-        inc hl                      ; second RUN of the same program
-        ld (ARRAYS_END),hl           ; doesn't allocate on top of the
-                                      ; first run's still-stale arena (NEW/
-                                      ; CLEAR do the same reset). P2: the arena
-                                      ; starts just past the compile symbol
-                                      ; table (which lives at PROG_END and
-                                      ; must survive the run for SAVE/LOAD ...
-                                      ; ARRAY); unconditional so the standalone
-                                      ; test builds get the same layout
+        ld hl,(SYM_END_V)          ; R10.7 -- reset the array arena so a second RUN of the same
+        ld de,SESS_GAP+1           ; program doesn't allocate on top of the old arrays. RC (session):
+        add hl,de                  ; the arena starts SESS_GAP above the symbol table
+        ld (ARRAYS_END),hl
+        ld (SESS_ARENA_BASE),hl
+        ld hl,ARR2_BASE          ; R10.7 P5.4: segment 2 starts empty
+        ld (ARR2_END),hl
+        call VM_INIT_REGS
+        jp VM_CARVE_TABLES       ; R10.7 P3: size the run-time tables
+VM_INIT_REGS:
         ld hl,VM_STACK_TOP
         ld (VM_SP),hl
         xor a
@@ -678,10 +677,109 @@ VM_INIT:
         ld (VM_HALTED),a
         ld (VM_OUTPUT_ROW),a    ; R8.5 -- PRINT/LPRINT's own output cursor;
         ld (VM_OUTPUT_COL),a
-        ld (ARR2_SWAPPED),a      ; R10.7 P5.4: segment 2 starts empty
-        ld hl,ARR2_BASE
-        ld (ARR2_END),hl
-        jp VM_CARVE_TABLES       ; R10.7 P3: size the run-time tables
+        ld (ARR2_SWAPPED),a
+        ret
+
+; RC (session variables): VM_INIT_SESSION -- an immediate statement in a session. The arena, segment 2
+; and the values stay; the run-time tables are re-carved for the symbol counts the statement may have
+; grown, each table's existing slots moved to its new base (lowest table first: every base only moves
+; down, so each move is an ascending LDIR onto free or already-moved space) and only the new slots and
+; the temporaries zeroed. Old counts and bases come from SESS_SAVE (taken before the compile).
+VM_INIT_SESSION:
+        ld (VM_RUN_SP),sp
+        call VM_INIT_REGS
+        call VM_CARVE_PTRS              ; the new bases
+        ld hl,VM_CARVE_DESC+24          ; the SYMTAB descriptor (the lowest table) first
+        ld b,5
+.move:
+        push bc
+        push hl
+        ld a,(hl)                       ; the count cell's low byte (SYM_COUNTS + kind)
+        add a,SESS_SAVE_OFS
+        ld e,a
+        ld d,SESS_SAVE >> 8
+        ld a,(de)                       ; A = the old count
+        inc hl
+        inc hl
+        inc hl
+        ld c,(hl)                       ; C = bytes per slot
+        inc hl
+        ld e,(hl)
+        inc hl
+        ld d,(hl)                       ; DE = this table's pointer cell
+        ld b,a
+        ld hl,0
+        or a
+        jr z,.k0
+        push de
+        ld e,c
+        ld d,h
+.mul:
+        add hl,de
+        djnz .mul                       ; HL = the bytes to keep
+        pop de
+.k0:
+        push hl                         ; keep
+        ex de,hl                        ; HL = pointer cell
+        ld e,(hl)
+        inc hl
+        ld d,(hl)                       ; DE = new base
+        ld a,l
+        add a,SESS_SAVE_OFS-1
+        ld l,a
+        ld a,(hl)
+        inc hl
+        ld h,(hl)
+        ld l,a                          ; HL = old base
+        pop bc                          ; BC = keep
+        ld a,b
+        or c
+        jr z,.k1
+        ldir                            ; DE -> the first slot to zero
+.k1:
+        pop hl                          ; this descriptor
+        push hl
+        push de                         ; the first byte to zero
+        ld a,l
+        cp VM_CARVE_DESC & $FF
+        ld de,V2_SOURCE_END             ; the highest table ends at the pool top
+        jr z,.top
+        dec hl
+        ld d,(hl)
+        dec hl
+        ld e,(hl)                       ; DE = the pointer cell of the table above (descriptor 6 lower)
+        ex de,hl
+        ld e,(hl)
+        inc hl
+        ld d,(hl)                       ; DE = its new base
+.top:
+        ex de,hl
+        pop de
+        or a
+        sbc hl,de                       ; HL = the bytes to zero (0 when the table did not grow)
+        ld b,h
+        ld c,l
+        ex de,hl
+        call nz,MEM_FILL_ZERO           ; the new slots and the temporaries
+        pop hl
+        ld de,-6
+        add hl,de                       ; the next table up
+        pop bc
+        djnz .move
+        ret
+
+; V2_SESSION_UNDO -- RC: back to the symbol table and run-time tables saved in SESS_SAVE (an immediate
+; statement that failed to compile, or whose new slots did not fit). Flags are preserved.
+V2_SESSION_UNDO:
+        ld hl,SESS_SAVE
+        ld de,SYM_COUNTS
+        ld bc,23
+        ldir
+        ld hl,(SYM_END_V)
+        ld (hl),b                       ; the table's terminator
+        ld hl,(RT_SYMTAB_PTR)
+        ld (VARS_START),hl              ; the lowest table's base
+        ret
 
 ; ---------------------------------------------------------------------------
 ; VM_CARVE_TABLES -- R10.7 P3. The run-time tables are no longer fixed
@@ -707,6 +805,18 @@ VM_INIT:
 ; The whole block is zeroed.
 ; ---------------------------------------------------------------------------
 VM_CARVE_TABLES:
+        call VM_CARVE_PTRS
+        ld hl,V2_SOURCE_END
+        ld de,(VARS_START)
+        or a
+        sbc hl,de               ; HL = block length (never 0: the temp slots)
+        ld b,h
+        ld c,l
+        ex de,hl                ; HL = block start
+        jp MEM_FILL_ZERO
+; VM_CARVE_PTRS -- size and place the run-time tables for the current symbol counts (bases, VARS_START,
+; VM_CSP); the contents are not touched.
+VM_CARVE_PTRS:
         ld a,(CSYM_COUNT)
         ld (RT_NUM_COUNT),a
         ld a,(STRSYM_COUNT)
@@ -762,16 +872,7 @@ VM_CARVE_TABLES:
         jp c,VM_ERR_ARRAY_SPACE ; the block does not fit
         ld hl,(VARS_START)
         ld (VM_CSP),hl          ; R10.7 P4: control stack starts empty at the
-                                ; carved block's bottom, grows down toward
-                                ; ARRAYS_END (arrays grow up toward VM_CSP)
-        ld hl,V2_SOURCE_END
-        ld de,(VARS_START)
-        or a
-        sbc hl,de               ; HL = block length (never 0: the temp slots)
-        ld b,h
-        ld c,l
-        ex de,hl                ; HL = block start
-        jp MEM_FILL_ZERO
+        ret
 VM_CARVE_DESC:
         dw STRARRSYM_COUNT
         db 0, 2

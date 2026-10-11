@@ -114,6 +114,20 @@ ASV_ENT:          equ $B822   ; 2: store entry being built
 ASV_DESC:         equ $B824   ; 2: its descriptor
 ASV_NL:           equ $B826   ; 2: its total length
 ASV_EL:           equ $B828   ; 2: length of the entry being replaced
+; RC -- session variables (owner decision 2026-10-11). The variables of the last RUN stay valid after the
+; program stops; immediate ':' statements compile after the program's code against its symbol table.
+; Any edit, LOAD or NEW (V2_CLEAR_ARRAYS) ends the session.
+SESS_VALID:       equ $B82A   ; 1: nonzero while a session exists
+SESS_CODE_END:    equ $B82B   ; 2: first byte after the session program's bytecode
+SESS_ARENA_BASE:  equ $B82D   ; 2: first byte of the array arena (SESS_GAP above the symbol table)
+SESS_SAVE:        equ $B830   ; 23: copy of SYM_COUNTS..RT_STRARRPTR_PTR ($B800..$B816) taken before an
+                              ; immediate statement is compiled (old counts at +kind, old bases at +$0D..)
+SESS_SAVE_OFS     equ SESS_SAVE - SYM_COUNTS
+SESS_GAP          equ 80      ; bytes kept free after the symbol table for symbols that immediate
+                              ; statements add, and for their compile stack
+CSTK_BASE:        equ SESS_SAVE + 23   ; 2: where the compile stack starts (empty position):
+                                       ; V2_SOURCE_END, or SESS_ARENA_BASE in a session compile
+    ASSERT CSTK_BASE + 2 <= $B900
     ASSERT GFX_FILL_STACK_END <= ARR2_BASE
     ASSERT ARR2_LIMIT <= SPRITE_SLOT_IMG_BUF
 CSYM_COUNT:     equ SYM_COUNTS + SYM_K_NUM

@@ -106,5 +106,18 @@ def rerun():
     return ve == 0 and P.variables(1)[0][1] == 7, "vm_error=%d a=%d" % (ve, P.variables(1)[0][1])
 
 
+@case("brk-session-vars", "after a BREAK an immediate statement sees the program's variables (session, owner decision 2)")
+def session_vars():
+    run, back, code, _ = free_run_and_break(["x = 7", "top:", "GOTO top"])
+    if not (run and back and code == 66):
+        return False, "the run did not break (running=%s back=%s code=%d)" % (run, back, code)
+    P.key(KEY_ENTER)                        # dismiss the BREAK message
+    P.type_text(":y = x * 2")
+    ve = read(P.sym("VM_ERROR_CODE"), 1)[0]
+    ce = read(P.sym("COMPILE_ERROR_CODE"), 1)[0]
+    (_, x), (_, y) = P.variables(2)
+    return ce == 0 and ve == 0 and x == 7 and y == 14, "ce=%d ve=%d x=%d y=%d" % (ce, ve, x, y)
+
+
 if __name__ == "__main__":
     sys.exit(run_cases(sys.argv[1:] or None, "study-break"))

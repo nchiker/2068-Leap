@@ -509,7 +509,7 @@ CSTK_PUSH:
 ; CSTK_TOP -- Out: Z set if no frame is open, else NZ and HL = innermost frame.
 CSTK_TOP:
         ld hl,(SYM_LIMIT_V)
-        ld de,V2_SOURCE_END
+        ld de,(CSTK_BASE)       ; RC (session): not always V2_SOURCE_END
         or a
         sbc hl,de
         ret z
