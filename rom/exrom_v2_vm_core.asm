@@ -1768,7 +1768,8 @@ ARENA_ALLOC_STRING:
         ld h,0
         ld l,a                        ; HL = width
         ld de,(VM_STRARR_COUNT_TMP)
-        call MATH_MULTIPLY16            ; HL = count*width
+        call VM_MUL_CHECKED            ; QUAL (Q-04): count*width overflow -> OUT OF MEMORY
+        jp c,VM_ERR_ARRAY_SPACE         ; (MATH_MULTIPLY16 truncated: a small block for a big array)            ; HL = count*width
         ld (VM_STRARR_ADDR_TMP),hl
         ld de,STRARR_DESC_DATA_OFF
         add hl,de                       ; + header -- HL = needed byte total
@@ -1815,13 +1816,18 @@ VM_ARENA_FIT:
         push hl
         ld de,(ARRAYS_END)
         add hl,de
+        ccf                     ; QUAL (Q-04): a 16-bit overflow means "does not fit"
+        jr nc,.main_done        ; (it used to wrap and look like room)
         ld de,(VM_CSP)
         or a
         sbc hl,de
+.main_done:
         pop hl
         ret c
         ld de,(ARR2_END)
         add hl,de
+        ccf                     ; QUAL (Q-04): segment 2 sits at $E000, so any request over
+        ret nc                  ; ~8 KB wrapped past $FFFF and was zero-filled over the stack
         ld de,ARR2_LIMIT
         or a
         sbc hl,de               ; (end of segment is exclusive: equal is full)

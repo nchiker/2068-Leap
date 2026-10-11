@@ -173,6 +173,9 @@ ARR_DIM:                        ; C = kind
 .alloc:
     pop de
     pop bc
+    ld a,d                      ; QUAL (Q-04): more than 16383 elements can never fit (and would
+    cp $40                      ; overflow count*2 / count*width): OUT OF MEMORY, nothing allocated
+    jp nc,VM_ERR_ARRAY_SPACE
     ld a,c
     ld (ASV_KIND),a
     ld a,(ASV_IDX)
