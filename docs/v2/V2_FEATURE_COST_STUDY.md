@@ -414,7 +414,7 @@ All branches are local (`git branch --list 'study/*'`), each with a worktree at 
 | `study/flicker-i2` | `cdff627` | I2 UP/DOWN redraw (on I1) | `make build` | `python3 tools/study_flicker.py --diff` | EXROM −361 (I1+I2); 583 k → 167 k T/key; 0 mismatches (12 scenarios) | D9 interaction fixed only in the combined branch |
 | `study/combined-essential` | `0dedab3` | V2 Essential (merge) | `make build v2-packages` | `make check`; `make test`; `tools/study/study_run_all.sh <worktree> <port> <out>` | HOME 353 / EXROM 488 free | see §E.3 |
 | `study/combined-enhanced` | `8379ab5` | V2 Enhanced (merge) | `make build v2-packages` | `make check`; `make test`; `study_run_all.sh … enhanced` | HOME 180 / EXROM 239 free | see §E.3 |
-| `study/report` | `601f9cc` | this report + study notes + helper scripts | – | `python3 tools/check_docs.py` | – | – |
+| `study/report` | (tip of the branch) | this report + study notes + helper scripts | – | `python3 tools/check_docs.py` | – | – |
 
 Notes: `study/baseline` carries one extra commit that only adds copies of the study tools to `tools/` (no ROM source differs from `7ae0599`). `study/report` is based on it. The `combined-*` branches contain merge commits of the isolated branches plus the integration edits listed in §E.4.
 
