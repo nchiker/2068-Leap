@@ -18,10 +18,15 @@ import traceback
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 
-def worker(cfg, cfgdir, port, case_ids, outpath, q):
+def worker(cfgname, cfgdir, port, case_ids, outpath, q, fixed=()):
+    """cfgname = build directory name; 'name:base' runs build `name` with the expectations of `base`."""
+    label, _, cfg = cfgname.partition(":")
+    cfg = cfg or label
     import corpus
     from qharness import Machine
     cases = {c.cid: c for c in corpus.CASES}
+    for c in cases.values():
+        c.known = {k: v for k, v in c.known.items() if v not in fixed}
     m = None
     with open(outpath, "a") as fo:
         def boot():
@@ -31,12 +36,12 @@ def worker(cfg, cfgdir, port, case_ids, outpath, q):
                     m.stop()
                 except Exception:
                     pass
-            m = Machine(cfgdir, port, label=cfg).start()
+            m = Machine(cfgdir, port, label=label).start()
         boot()
         for cid in case_ids:
             c = cases[cid]
-            rec = {"cid": cid, "cfg": cfg, "feature": c.feature, "lines": c.lines, "note": c.note,
-                   "decision": c.decision, "known": c.known.get(cfg)}
+            rec = {"cid": cid, "cfg": label, "expect_cfg": cfg, "feature": c.feature, "lines": c.lines, "note": c.note,
+                   "decision": c.decision, "known": c.known.get(cfg), "fixed": list(fixed)}
             t0 = time.time()
             if cfg not in c.only:
                 rec.update(status="N/A", detail="not applicable to %s" % cfg)
@@ -64,7 +69,7 @@ def worker(cfg, cfgdir, port, case_ids, outpath, q):
             rec["t"] = round(time.time() - t0, 2)
             fo.write(json.dumps(rec) + "\n")
             fo.flush()
-            q.put((cfg, cid, rec["status"]))
+            q.put((label, cid, rec["status"]))
     m.stop()
 
 
@@ -76,6 +81,7 @@ def main():
     ap.add_argument("--filter", default="")
     ap.add_argument("--port", type=int, default=10440)
     ap.add_argument("--workers-per-cfg", type=int, default=1)
+    ap.add_argument("--fixed", default="", help="comma list of defect ids fixed in this build (markers dropped)")
     a = ap.parse_args()
     import corpus
     os.makedirs(a.out, exist_ok=True)
@@ -86,13 +92,14 @@ def main():
     procs = []
     port = a.port
     for cfg in cfgs:
-        outp = os.path.join(a.out, "%s.jsonl" % cfg)
+        outp = os.path.join(a.out, "%s.jsonl" % cfg.partition(":")[0])
         if os.path.exists(outp):
             os.remove(outp)
         n = a.workers_per_cfg
         for w in range(n):
             part = ids[w::n]
-            p = mp.Process(target=worker, args=(cfg, os.path.join(a.root, cfg), port, part, outp, q))
+            p = mp.Process(target=worker, args=(cfg, os.path.join(a.root, cfg.partition(":")[0]), port, part, outp, q,
+                                                 tuple(x for x in a.fixed.split(",") if x)))
             port += 1
             p.start()
             procs.append(p)
@@ -115,7 +122,7 @@ def main():
     for p in procs:
         p.join()
     for cfg in cfgs:
-        print(cfg, json.dumps(counts.get(cfg, {}), sort_keys=True))
+        print(cfg, json.dumps(counts.get(cfg.partition(":")[0], {}), sort_keys=True))
     print("total %.0fs" % (time.time() - t0))
 
 

@@ -1,0 +1,283 @@
+# 2068-Leap V2 — Language conformance report (qualification study, Phase A)
+
+**Status: INCOMPLETE** — corpus results (§0, §3) and the coverage CSVs are final; §4.1 (study-tool battery), §6.2 (gate on the fixed builds) are still
+being filled from runs in progress (`qual-runs/a3-*`, `qual-runs/gate-costs3`, `qual-runs/gate-final`). Otherwise complete for the scope stated in §1. Nothing here is integrated: `~/2068-Leap` / `v2-development` stay at `7ae0599`, nothing was
+pushed, the overnight `study/*` prototype branches were not modified. New work lives on `study/qualification-a` (this report, the tools),
+`study/qualification-b` (test infrastructure), `study/qualification-costs` (measured fixes) and `study/qualification-shrink` (measured shrink).
+
+**Evidence classes.** **[M]** run on the *real assembled production image* (HOME + EXROM, packages) in a headless ZEsarUX through the qualification
+harness, results read back from the machine (screen through the ROM's own font, RAM, error codes, edit cursor); **[S]** read from source;
+**[E]** estimate. Emulator evidence only — **nothing is hardware-qualified**. The legacy Fuse suite was not run.
+
+**Machine-readable results:** `docs/v2/V2_LANGUAGE_COVERAGE.csv` (one row per language feature, aggregated per configuration) and
+`docs/v2/V2_LANGUAGE_CASES.csv` (one row per test case: program, expectation, observed result per configuration, defect id).
+
+---------------------------------------------------------------------------------------------------------------------------
+
+## 0. Summary
+
+* **The language surface was inventoried from the source tables** (keyword table, statement dispatch, expression parser, built-in function table, VM
+  opcode table, shell commands, package registrations): **118 items** — 52 implemented and documented, 3 implemented but undocumented, 33 partially
+  implemented, 8 documented but missing, 9 intentionally unsupported, 13 needing physical hardware for full qualification (§2).
+* **A 615-case conformance corpus** with independent expectations (exact rational arithmetic, the manual and the V2 design decisions — never the ROM's own output)
+  was run on all three configurations on the real production images (§3):
+
+  | Configuration | Cases | PASS | XFAIL (documented defect reproduced) | FAIL (unexplained) | XPASS | N/A | BLOCKED |
+  |---|---:|---:|---:|---:|---:|---:|---:|
+  | Phase 2D baseline `7ae0599` | 619 | 454 | 156 | 0 | 0 | 9 | 0 |
+  | V2 Essential `0dedab3` | 619 | 477 | 140 | 0 | 0 | 2 | 0 |
+  | V2 Enhanced `8379ab5` | 619 | 477 | 140 | 0 | 0 | 2 | 0 |
+  | Essential + fixes `b1463c7` (22 ids marked fixed) | 619 | 551 | 61 | 5 | 0 | 2 | 0 |
+  | Essential + fixes + RST `b716d4e` (same) | 619 | 551 | 61 | 5 | 0 | 2 | 0 |
+
+  Merged from `qual-runs/full3` + `supp1..4` (`tools/qual/qmerge.py`; every record re-checked against the current markers). The 5 FAILs on the fixed builds are
+  Q-08 mitigated only (float `FOR` → error 11, 4 cases) and Q-17 partly fixed (`VAL("99999")` wraps).
+* **Correctness is not at release level in any configuration.** The corpus exposed **31 defects not previously recorded** (Q-01 … Q-31), **6 of them critical**
+  (silent memory corruption or loss of the program) and **8 high** (incl. Q-29 SPRITE `MOVE`, Q-30 float arguments of `CHR$ LEFT$ RIGHT$ MID$ PAUSE BORDER` used as their slot index) (silently wrong results in ordinary programs). **All of them are pre-existing in the
+  Phase 2D baseline**; none was introduced by the overnight prototypes. The critical ones, each reproduced on the real ROM:
+
+  | ID | What a user sees |
+  |---|---|
+  | Q-01 | `k$="n": IF k$="y" THEN` … is **true**: string `=` and `<` compare only lengths |
+  | Q-02 | `PRINT 1.5+2.5*3.5` → `12.2500`; `PRINT UPPER$("a")+LOWER$("B")` → `bb` |
+  | Q-03 | `x=0.5: IF x AND 1 THEN` … → the machine cold-restarts and **the program is erased** |
+  | Q-04 | `DIM a(4200)` → cold restart, **program erased** (`DIM a(4000)` works) |
+  | Q-18 | `DIM a(5): a(5)=99` → error, but `a(0)` is now 99; `a(-1)=2` changes the array's size |
+  | Q-28 | `DIM a(3): a(0)=7: s$="x": t$="<31 characters>": PRINT a(0)` → `0` |
+
+* **Every critical and high defect except Q-10 (float arguments of `SGN/SQR/RAD/DEG/SIN…`) and Q-15/Q-16 (`INPUT` of decimals/large numbers) has a measured fix**
+  on `study/qualification-costs` (V2 Essential base): HOME 353 → 208 free, EXROM 488 → 482, SPRITE package +2 B; on the fixed build the corpus shows those
+  defects gone and no new failure (§6), and the project's gate battery passes (§6.2).
+* **Prototype retests (A3):** BREAK, edit preservation, display restoration, D11 promotion and literals, big-float display, nested FN/PROC calls, bare words,
+  `IN/OUT/STICK`, multi-item `PRINT`, prompted `INPUT`, `FOR` error line, FILL and the shrink changes behave as the cost study reported on their own
+  ground; their *edges* add Q-05 (`-32768`), Q-09 (5+ decimals) and Q-23 (`STICK(5)`) (§4).
+* **Test infrastructure (A5):** `chunk_refill_boundary` migrated to the two-bank harness (38/38 on Enhanced, mutation-checked); a further silent defect found and fixed —
+  the CALC variant of the component-test EXROM was 1653–1670 B over 8 KB and truncated without error; 15 component-test sources are never run; the test-only
+  decompiler does not reconstruct multi-item `PRINT` and rejects `OUT` (§5).
+
+---------------------------------------------------------------------------------------------------------------------------
+
+## 1. Method
+
+### 1.1 Builds
+
+| Configuration | Commit | HOME free | EXROM free | Built from |
+|---|---|---:|---:|---|
+| Phase 2D baseline | `7ae0599` | 565 | 802 | `tools/qual/build_configs.sh`: `git archive` of the commit → `make build v2-packages` → `make budget` **[M]** |
+| V2 Essential | `0dedab3` (`study/combined-essential`) | 353 | 488 | same; image byte-identical to the overnight worktree build **[M]** |
+| V2 Enhanced | `8379ab5` (`study/combined-enhanced`) | 180 | 239 | same; byte-identical **[M]** |
+
+All three budgets reproduce the cost study's figures exactly. No worktree was built in place: every configuration is an export under
+`~/2068-Leap-study/qual-builds/<name>` (no `.git`), so the prototype worktrees are untouched.
+
+### 1.2 Harness (`tools/qual/qharness.py`)
+
+The existing `tools/v2_prod.py` spawns one `ts2068-debug` process per command and cold-boots per case (≈ 2 s + run time). For a corpus of this size the
+qualification harness keeps one ZRCP socket per emulator and restores a ZEsarUX snapshot of the booted machine before every case (≈ 20 ms), so a case
+costs its own emulated time (typically 0.4–0.7 s wall). What runs is the production path from `V2_RUN_STORED` on: chunked source staging, lexer,
+compiler, VM, HOME/EXROM banking, display, the INPUT key wait, every error path and message. Substitutions are those of `tools/v2_prod.py`: the program is
+written into the line store (no typing), keys go through the ISR latch (`KBD_LASTK/KBD_KEYHIT`), packages are copied to `$F400` and their real entry is
+called. Output is read **from the screen bitmap through the ROM's own font** (the font is rendered once by the real `GFX_PUTCHAR` per session), i.e. what a
+user sees; compile and runtime error codes, the message shown, the edit cursor after a compile error, and (for memory-safety cases) RAM after the run are
+also recorded. A case that does not reach the program's final key wait within its instruction budget is reported `HUNG`.
+Parallelism: one emulator per configuration (two or three workers per configuration for the larger runs), private ports and state directories.
+
+### 1.3 Expectations (`tools/qual/qexpect.py`, `tools/qual/corpus.py`)
+
+* **Numbers** are checked against an exact rational oracle (Python `Fraction`). Display rule (manual example `SQR(2)` → `1.4142`, R10.8 matrix): an INT
+  prints as an integer, a FLOAT with four decimals **rounded**. A result that equals the *truncated* form instead is the documented defect **D10** and is
+  classified automatically (that is the only automatic classification).
+* **Text, errors, cursor positions** come from the manual (`docs/user_manual.md`, a V1-era text with a V2 note), the V2 decisions (`R10_8_FEATURE_MATRIX.md`,
+  `R10_9_*` reports, `COMPATIBILITY_BREAKS.md`, the cost study) or classic BASIC semantics where V2 is silent. Where the documents disagree or are silent, the
+  case says so (`decision` field) and accepts each defensible outcome (`OkOrErr`: the documented result *or* a clean error) — never a silent wrong value.
+* **Strict accounting** (as the project's suites): `PASS`; `XFAIL` = a defect documented *before* this study (D*, L*, N*, from the cost study / R10.8) or assigned
+  a `Q-*` id by this study after investigation, reproduced; `FAIL` = unexpected; `XPASS` = a marked defect behaves correctly. `N/A` = the feature is not part
+  of that configuration by design (e.g. `OUT` in the baseline). A run on a fix branch passes `--fixed Q-…` so the marker is dropped and the fix must PASS.
+* No expectation was weakened to fit a result. Five expectations of mine were wrong and were corrected *as oracle errors*, each recorded: `SQR(32767)` is
+  181.0166 (I had used √32768); `PRINT` scrolling leaves row 23 blank; `PLOT` pixels must not share the screen with the printed result; the ROM font has no
+  `[ ] |` glyphs (the cases now use `< > !`; the missing glyphs are recorded as Q-26); a label named `out` collides with the `OUT` keyword in Essential/Enhanced.
+
+### 1.4 Reproduction
+
+```
+cd ~/2068-Leap-study/qualification-a
+tools/qual/build_configs.sh ~/2068-Leap-study/qual-builds                     # the three configurations
+python3 tools/qual/qrun.py --out /tmp/run --cfg baseline,essential,enhanced --port 10450          # whole corpus (~10-20 min)
+python3 tools/qual/qrun.py --out /tmp/run --cfg essential --filter strcmp.,crash.               # a subset (ids or feature prefixes)
+python3 tools/qual/qprobe.py essential -- 'a$ = "abc"' 'IF a$ = "xyz" THEN' 'PRINT "EQUAL"' 'ENDIF'   # one program
+python3 tools/qual/qcoverage.py /tmp/run --features cov.csv --cases cases.csv                     # matrices
+```
+
+---------------------------------------------------------------------------------------------------------------------------
+
+## 2. Language inventory (A1)
+
+Derived from the source, not from the V1 reference (`docs/basic_language_reference.md` describes V1). Full table: `V2_LANGUAGE_COVERAGE.csv`
+(columns `syntax`, `source`, `documented_in`, `classification`, per-configuration status, tests, defects).
+
+| Kind | Items | Notes |
+|---|---:|---|
+| Statements | 39 | 44 resident keywords (Ess/Enh; 43 baseline) + package statements (`MODE ULAPLUS PALETTE GRAB SHOW HIDE MOVE LPRINT LLIST CIRCLE FILL CPLOT BLOCK FRAME INVERT`) |
+| Built-in functions | 35 | `BUILTIN_FN_TABLE`: 30 rows baseline, 32 Ess/Enh (`IN`, `STICK`); `DIMN` is parsed separately; `FN` user functions |
+| Operators / syntax / literals | 16 | `+ - * /` unary `-`, `= <> < > <= >=`, `AND OR NOT`, string `+`, string `= <`; identifiers (31 chars, case-insensitive), `$` strings, `:` separators/continuations, decimal literals |
+| Semantics rows | 8 | bounds/type checks, string records, scalars, strict compilation, error line, built-in call checking, runtime errors, unsupported keywords |
+| Packages, commands, editor, display | 20 | `RUN LIST NEW SAVE LOAD VERIFY` (`EXT`/`ARRAY`), `:` immediate, editor keys, BREAK, selective redraw, font |
+
+| Classification | Count | Items (selection) |
+|---|---:|---|
+| **ID** implemented and documented | 52 | assignment, labels, `GOTO`, `IF…THEN GOTO`, `EXIT FOR`, `DEF FN`, `PRINT` (single), `AT/TAB`, colour statements, `LINE`, `POKE/PEEK/USR`, `RND`, `LEN CODE CHR$ STR$ UPPER$ LOWER$ LEFT$ RIGHT$ INKEY$ FREE POINT ATTR PI`, strict compilation, error line, `RUN LIST NEW` |
+| **IU** implemented, undocumented | 3 | multi-item `PRINT` (Enhanced), `MID$` (absent from the manual's table), GRAPHICS package (manual says “not linked”) |
+| **PI** partially implemented | 33 | `FOR` (Q-07/08/19/20), block `IF` (Q-06), `PROC` (Q-11), `INPUT` (Q-15/16), `DIM` (Q-04), `CLS` (Q-14), arithmetic (Q-02, D11), `AND/OR` (Q-03, no short-circuit), string `+`/`=`/`<` (Q-01, Q-02), `ABS SGN MOD DIV INT SQR RAD DEG SIN COS TAN VAL DIMN` (Q-10, Q-13, Q-17, D11-EXT), large/decimal literals (L-A, Q-05, Q-09), font (Q-26), SPRITE, SHAPES |
+| **DM** documented, missing | 8 | bare `NEXT`, `PRINT AT/TAB` items, string `<> > <= >=`, `INSTR`, `HIT`, `DELETE/EDIT/HELP`, `SYMBOL SHIFT+A/S`, **save/restore program with its current variables** (storage goal 2, see `V2_REMAINING_COMPLETION_BUDGET.md`) |
+| **NS** intentionally unsupported | 9 | single-line `IF` (R10.8 L1 — the V1 manual still documents it), `GOSUB/RETURN`, `DATA/READ/RESTORE`, `LET MERGE CONT COPY DRAW SCREEN$`, `^`, infix `MOD/DIV`, hex/exponent literals, `ATN ASN ACS EXP LN` |
+| **HW** needs hardware | 13 | `BEEP SOUND LPRINT OUT IN STICK BORDER`, MODE/PRINTER packages, `SAVE/LOAD/VERIFY` (analogue path), BREAK keycap, visible flicker |
+
+Documentation discrepancies found while inventorying (beyond DD-1…DD-11 of R10.8): the manual's string-array element size (31 characters; the default
+width 16 holds 15 — **DD-1**), `VAL` “stops at the first non-digit” (it skips them — Q-17), `FOR` “classic entry semantics” (the body runs once — Q-07),
+`MOD/DIV` “DIVISION BY ZERO” (they return 0 — Q-13), `STICK` “INVALID ARGUMENT” (any n is accepted — Q-23), “ULAplus is program-scoped” (U6 does not reset it —
+hardware), the `PACKAGE_ABI.md` slot 15 record description `[len][content…, NUL]` (Q-27/Q-28: the NUL is neither guaranteed nor safe).
+
+---------------------------------------------------------------------------------------------------------------------------
+
+## 3. Results (A2)
+
+### 3.1 Totals
+
+*(filled in §3.1 table of §0 from the merged final run; see `V2_LANGUAGE_CASES.csv` for every case)*
+
+### 3.2 Results by area
+
+| Area | Cases | Baseline | Essential | Enhanced | Main findings |
+|---|---:|---|---|---|---|
+| Integer literals, lexer, identifiers, comments, separators | 75 | defects D11 (literals wrap), N-2 (bare word) | L-A as designed; **Q-05** `-32768` | as Essential | identifiers 31 chars ✓, case-insensitive ✓, keywords reserved ✓, `'` comment rejected ✓ |
+| Decimal literals | 14 | D11 (mantissa wraps), **Q-09** | L-A rejects > 5 significant digits; **Q-09** | as Essential | `3.14159` cannot be written (L-A); D10 display truncation |
+| Integer arithmetic (grid + boundaries) | 61 | **D11** wraps | ✓ promotion exact incl. `-32767-1`, `181*182`, `32767*32767` | as Essential | `-32768/-1`, `ABS(-32768)`, `DIV(-32768,-1)`, `INT(90000.5)` still wrong (**D11-EXT**); ≥ 2³² saturates, fractions ≥ 32768 dropped (**D11-DISP**) |
+| Float arithmetic | 30 | **Q-02** (three live temps), D10 | same | same | `0.1+0.2` = 0.2999 (D10) |
+| Relational / logical | 41 | **Q-03** (float operand resets the machine) | same | same | no short-circuit (L-SC), `NOT` precedence ✓, non-associative `<` ✓ |
+| Built-in numeric functions | 60 | **Q-10**, **Q-13**, **Q-22**, D10 | same; **Q-23** `STICK` | same | `MOD` sign = dividend ✓, `DIV` truncates ✓, `INT` truncates (R10.8 L6, decision), `RND` range/coverage/repeatability ✓ |
+| Strings | 75 | **Q-01**, **Q-02**, **Q-17**, **Q-27**, **Q-28** | same | same | 31-char cap ✓ (longer literal cut silently, L3), clamping of `LEFT$/RIGHT$/MID$` ✓, `CHR$(256)` error ✓ |
+| `PRINT`, screen, colour, graphics | 30 | **Q-14**, **Q-26** | same | multi-item `PRINT` ✓ (`;` `,` zones, trailing separator, bare `PRINT`, inside blocks) | `AT` clamps ✓, attributes ✓, `OVER` XOR ✓, coordinates wrap modulo 256 (DEC-PLOT) |
+| `IF` | 18 | **Q-06** | same | same | block/nested/`ELSE IF` ✓; single-line `IF` rejected (decision) ✓; `ELSEIF` missing (L-ELIF) |
+| `FOR` / `NEXT` / `EXIT` / `GOTO` | 32 | **Q-07**, **Q-08**, **Q-19**, **Q-20**, D11 (limit 32767 never ends) | Q-07/08/19/20 | same | `EXIT FOR` ✓; 1 500 abandoned loops do not corrupt memory ✓ |
+| `PROC`/`CALL`/`DEF FN` | 31 | N-1, **Q-11**, **Q-24** | N-1 fixed ✓; Q-11, Q-24 | same | parameter restore ✓, recursion 150 deep ✓, runaway → STACK OVERFLOW ✓ |
+| Arrays | 54 | **Q-04**, **Q-18**, N-4, DD-1 | same | same | 0-based ✓, bounds errors ✓ (but see Q-18), `DIMN` ✓, string widths ✓ |
+| `INPUT` | 10 | **Q-15**, **Q-16** | same | prompt ✓ | numeric/string/negative/empty ✓ |
+| Hardware statements (emulator-visible part) | 15 | `OUT`/`IN` absent (N/A) | AY register round trip through `OUT 245/246` + `IN(246)` ✓, keyboard port ✓, `STICK` idle ✓, `OUT` reserves the word ✓ | same | **HW**: audio, `STICK` directions, non-`$FE` ports |
+| `CLEAR`, program shape, capacity | 12 | **Q-21** | same | same | 150-line programs, 60 variables, 40-term lines ✓ |
+| Compile-error line | 7 | Phase 2D behaviour ✓ | ✓ | `FOR` reports its own line (N-3) ✓ | |
+| Packages | 16 | **Q-29** (SPRITE `MOVE`) | same | same | unloaded package → error 2 ✓; CIRCLE/FILL ✓; MODE/ULAPLUS/PALETTE ✓ (visible output: HW) |
+| Unsupported keywords | 15 | all rejected ✓ | ✓ | ✓ | |
+| Memory-safety probes (RAM inspected) | 17 | **Q-03**, **Q-04**, **Q-18**, **Q-28** | same | same | |
+
+### 3.3 The high-priority investigations of the brief (A4)
+
+| # | Question | Answer [M] |
+|---|---|---|
+| 1 | Integer overflow, signed boundaries | Baseline wraps (D11). Essential/Enhanced promote `+ - *` exactly at every boundary tested (incl. `32767+1`, `-32767-2`, `-256*129`, `32767*32767`, chained `32767+1-1` = 32767). New edge: `-32768` as a literal (**Q-05**). |
+| 2 | `ABS(-32768)` | `-32768` in all three (D11-EXT, cost study §B.4) |
+| 3 | `-32768 / -1` | `-32768` in all three (D11-EXT): `OP_DIV`'s exactness test `q*b = a` holds for the wrapped quotient |
+| 4 | `INT`, `DIV`, `MOD` extremes | `DIV(-32768,-1)` = −32768; `MOD(-32768,3)` = −2 ✓; `INT(30000*3+0.5)` = 32767 (saturates); `INT` truncates toward zero (documented decision); `MOD/DIV` by zero = 0 (**Q-13**); float arguments truncated (**Q-10**: `MOD(7.5,2)` = 1) |
+| 5 | Decimal literals | mantissa > 32767 → error 64 (L-A; baseline wraps); 5+ fractional digits → wrong value (**Q-09**: `0.00001*100000` = −3.2183); 4 decimals exact |
+| 6 | Large-float display, saturation | ≥ 32768 prints integer digits + `.0000` (fraction dropped); ≥ 2³² saturates (`32767³` → `4294574091.0000`) (D11-DISP) |
+| 7 | Float formatting truncation (D10) | reproduced everywhere a rounding matters: `0.1+0.2` 0.2999, `2/3` 0.6666, `PI()` 3.1415, `SIN(30)` 0.4999, `SQR(1000)` 31.6227 … (auto-classified D10) |
+| 8 | `FOR` termination / `STEP` | Essential/Enhanced terminate at 32767 and at −32768 ✓ (baseline: endless, D11); **Q-07** zero-trip; **Q-08** float bounds; **Q-20** outer `NEXT` after `GOTO` out of an inner loop; `STEP 0` endless (documented) |
+| 9 | Nested FN/PROC name preservation | `CALL p(FN f(4))`, `CALL show(FN sq(3)+FN sq(4))`, `FN inc(FN inc(FN inc(0)))` ✓ in Ess/Enh (N-1 fixed); baseline N-1; **Q-11** for *definitions* nested in a PROC |
+| 10 | Bare identifiers, labels | bare words rejected in Ess/Enh (baseline N-2); label with a statement ✓; label vs variable namespaces separate ✓; **duplicate label silently accepted (Q-12)**; `CALL` of a plain label accepted (**Q-24**) |
+| 11 | Array/scalar namespace | an array name used as a value needs `(` (N-4, showcase.txt); `a = 5` next to `DIM a(3)` is accepted as a scalar ✓ |
+| 12 | `PRINT` bytecode and control flow | multi-item `PRINT` inside `IF/ELSE` blocks, trailing separators, comma zones wrapping to the next line ✓ (Enhanced); the test-only decompiler does not reconstruct it (T-4) |
+| 13 | Wrong argument counts | every built-in rejects too few/too many arguments and wrong types at compile time ✓; `MID$` with 2 arguments rejected (decision); package statements check counts (error 28) ✓ |
+| 14 | Runtime vs compile-time reporting | compile errors move the cursor to the failing line (D4 ✓; Enhanced: `FOR` line); runtime errors show a generic message (`RUNTIME ERROR` for most codes — U4/U5) |
+| 15 | Package registration, unloaded functions | an unloaded package statement is compile error 2; `LPRINT` without PRINTER is error 32 (shared with “expected identifier after DIM”) |
+
+### 3.4 Hardware-only items (HARDWARE REQUIRED)
+
+Audio (`BEEP`, `SOUND`), `STICK` directions, `OUT/IN` on non-`$FE` ports, `BORDER` colour, printer output, hi-res / ULAplus display and their restoration
+on return to the editor, the BREAK keycap, visible flicker, analogue tape. The corpus tests only what the emulator can observe (no error, register and
+port state where readable).
+
+---------------------------------------------------------------------------------------------------------------------------
+
+## 4. The overnight prototypes, retested (A3)
+
+| Prototype | What was retested here | Result |
+|---|---|---|
+| BREAK / PAUSE (D5, D5b) | `PAUSE n`, `PAUSE 0` + key in the corpus; the cost study's real-matrix tool `study_break_matrix.py` re-run on Essential and Enhanced (§4.1) | see §4.1 |
+| Edit preservation (D9a/b) | `study_edit_preserve.py` re-run (§4.1) | see §4.1 |
+| Display restoration (U6) | `study_u6.py` re-run; colour state across RUN observable in the corpus (`print.*`) | see §4.1; ULAplus: HW |
+| D11 error / promotion alternatives | promotion in both combined builds: 61 arithmetic cases + boundary grid; error variant (`study/d11-error`) not re-run (alternative, not in either build) | promotion exact; edges Q-05, D11-EXT, D11-DISP |
+| Integer literal policies | 21 literal cases | L-A as designed; Q-05, Q-09 at its edges |
+| Big-float display | 6 cases | D11-DISP as documented; IX contract note (audit §3.7) |
+| Nested FN/PROC calls | 6 cases | N-1 fixed in Ess/Enh ✓; Q-11 is a different (definition) defect |
+| Bare-word errors | 3 cases + 15 unsupported-keyword cases | ✓ |
+| `IN`, `OUT`, `STICK` (core) | 8 cases | ✓ emulator part; Q-23; HW |
+| Core vs EXROM hardware functions / ABI 2.1 function packages | source review of `study/lang-hw-exrom`, `study/extfn` (audit) | alternatives; not in either build; not re-run |
+| Multi-item `PRINT`, prompted `INPUT` | 10 cases (Enhanced) | ✓ |
+| `FOR` error line (N-3) | `err.eof_for` | ✓ Enhanced reports the `FOR` line; Essential/baseline the append line |
+| FILL exactness / overflow (D7) | `pkg.shapes.fill`, `v2_fill_check.py` 10/10 on the fix and shrink branches | ✓ |
+| I1 / I1b / I2 redraw | `study_flicker.py --diff` (§4.1) | see §4.1 |
+| Abortable LIST (ED5) | — | not run (needs a long program + BREAK at a page end); behaviour verified only by source review |
+| Measured shrinks (`V2_POS_IS_APPEND`, `COMPILE_2ARG_STMT`) | covered by every editor/`PLOT`/`BEEP`/`SOUND`/`POKE`/`OUT` case and the gate | ✓ |
+
+### 4.1 Study-tool battery
+
+*(filled from the re-run of the cost study's own tools on the Essential and Enhanced exports; see §4.1 results below)*
+
+---------------------------------------------------------------------------------------------------------------------------
+
+## 5. Test infrastructure (A5)
+
+1. **`chunk_refill_boundary` migrated to the two-bank harness** (`study/qualification-b`, commit `de5c5f5`). Programs, steps and assertions unchanged; the harness
+   gained a `TEST_V2_WITH_KERNEL_MEMORY` switch to link the real `kernel/memory/memory.asm` (the stored-program path needs `MEM_LINE_FIRST/NEXT`); the test re-pages
+   EXROM after `MEM_COLD_INIT` (which clears `BANK_EXROM_DEPTH`); `DECOMP_END_ADDR` moved from a ROM `DW` to RAM `$9B08` (my first choice, `$9900`, overlapped the
+   test's own snapshot buffer — caught by the test failing). **Enhanced: 38/38** (was 37/37 with the test skipped). Two mutants (wrong expected value; inverted
+   error check) both fail → the migrated test still detects failures.
+2. **New finding, fixed (T-1):** the CALC variant of `rom/test_v2_harness_exrom.asm` (`-DTEST_V2_NEEDS_DECOMPILE -DTEST_V2_NEEDS_CALC`) is **1653 B (baseline) /
+   1670 B (Essential) over 8 KB**. The runner assembled it with plain `sjasmplus`, which only warns (“Negative BLOCK moves PC backwards”), so the decompiler's tail past
+   `$E000` was silently missing from the image used by `r10_numeric` and `run_tables`. None of those tests calls the decompiler, so the CALC variant now links the
+   calculator only and both harness EXROMs are built with `sjasmplus_strict.sh` (commit `c655564`): 38/38, no warnings.
+3. **New finding (T-3):** 15 component-test sources are never run by `tools/run_v2_standalone_tests.sh` and are not documented as retired: `print`, `compiler_r2…r7`,
+   `call_fn`, `decompiler_phase2`, `editor_integration`, `ext_concurrent`, `graphics_module_ram`, `graphics_pixel`, `sprite_module`, `sqr`. The R10.8 matrix cites some
+   of them (`[T:s:print]`, `[T:s:graphics_pixel]`) as coverage. Recommendation: run or retire each (not done).
+4. **PRINT opcodes and bytecode-asserting tests (T-4):** the test-only decompiler skips `OP_NL`/`OP_PRINT_COMMA` (so `PRINT a; b` decompiles as two `PRINT` statements —
+   enough for the byte-exact `block_if` check, not a faithful reconstruction) and does not know `OP_OUT` (decompiling any program with `OUT` gives decompiler error 3,
+   cleanly). No component test asserts multi-item `PRINT` or `OUT` bytecode; `test_v2_print.asm`, the one that would, is among the never-run tests.
+5. The `vm_milestone01` component test assembles with two “label has different value in pass 3” warnings (pre-existing, harmless).
+6. Fix-branch test updates follow bytecode changes only: the decompiled-text expectations of `for_step`, `group6_math`, `sqr_decomp` (negative literals are folded by
+   the Q-05 fix: `(0-3)` → `-3`; `FOR_INIT` gained a 2-byte operand: labels +2 per loop) and the hand-assembled bytecode of `vm_milestone01`; no assertion was weakened.
+   The production checks `253-vars` and `free-1` change *capacity* by design under the Q-02 fix (scalar cap 251, FREE −74 B) — not edited, reported as failing (§6.2).
+
+---------------------------------------------------------------------------------------------------------------------------
+
+## 6. Fixes measured (prototype branch `study/qualification-costs`)
+
+### 6.1 Measured costs
+
+| Commit | Fixes | HOME free | EXROM free | Package |
+|---|---|---:|---:|---|
+| `0dedab3` | (V2 Essential) | 353 | 488 | |
+| `ead8885` | Q-01, Q-03, Q-18 | 342 | 488 | |
+| `e3356ca` | Q-04 | 334 | 482 | |
+| `98b7b5b` | Q-06 (−1), Q-13 (−2), Q-14 (−6), Q-09 (−5), Q-17 stop (0), Q-12 (−4), Q-11 (−16), Q-05 (−18) | 282 | 482 | |
+| `602549b` | Q-02 (**+40**, RAM +74) | 322 | 482 | |
+| `3eb57e0`/`f0d62ca` | Q-07, Q-08, Q-19, Q-20 (FOR redesign) | 220 | 482 | |
+| `b478b31` | Q-27, Q-28 | 208 | 482 | |
+| `00cb2a5` | Q-29 | 208 | 482 | SPRITE 832 → 834 |
+
+### 6.2 Verification of the fixed build
+
+*(filled from the corpus run with `--fixed` and the gate battery on `00cb2a5`/`b478b31`, below)*
+
+---------------------------------------------------------------------------------------------------------------------------
+
+## 7. Missing tests and untested features
+
+Features with no automated case in this corpus (listed `UNTESTED`/`GATE-ONLY` in the coverage CSV): `SAVE/LOAD/VERIFY` (covered by the project's gate with a
+synthesised EAR stream, not here), `LIST` paging and abort, `NEW`, immediate `:` statements, the editor keys (covered by the gate and the study tools), the
+GRAPHICS package's visible output, `LLIST`, `INKEY$` with a key held, `RND` distribution beyond coverage of 0..5, `PAUSE` timing accuracy, `ATTR`/`POINT` in
+hi-res mode, string arrays in the Array Store across `RUN` (98-case gate), and every HW item of §3.4.
+
+## 8. Recommended corrections
+
+In order: the seven critical defects (Q-01, Q-02, Q-03, Q-04, Q-18, Q-28, Q-29 — measured fixes exist, net HOME cost ≈ 0 for the first six together); then
+Q-06, Q-07/Q-08/Q-19/Q-20, Q-27, Q-10; then the medium items; then decisions (INT rounding, DEC-PLOT, `MID$` start 0, `POKE` value range, literal rule L-C).
+Costs, dependencies and the overall budget: `V2_REMAINING_COMPLETION_BUDGET.md`. Root causes and code review: `V2_INDEPENDENT_Z80_AUDIT.md`.

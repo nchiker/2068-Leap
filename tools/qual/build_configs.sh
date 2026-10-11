@@ -6,6 +6,9 @@ set -euo pipefail
 root="${1:-$HOME/2068-Leap-study/qual-builds}"
 repo="$(git -C "$(dirname "$0")" rev-parse --git-common-dir)/.."
 declare -A CFG=( [baseline]=7ae0599 [essential]=study/combined-essential [enhanced]=study/combined-enhanced )
+# extra configurations: name=ref arguments after the root (e.g. costs-ess=study/qualification-costs)
+shift || true
+if [ $# -gt 0 ]; then unset CFG; declare -A CFG; for kv in "$@"; do CFG[${kv%%=*}]=${kv#*=}; done; fi
 for name in "${!CFG[@]}"; do
   [ -n "${ONLY:-}" ] && [ "$ONLY" != "$name" ] && continue
   ref="${CFG[$name]}"

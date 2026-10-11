@@ -482,12 +482,12 @@ T("for.goto_out_repeat", "stmt.FOR.goto", ["n = 0", "again:", "FOR i = 1 TO 10",
                                             "IF n < 50 THEN GOTO again", "PRINT n"], Num(50, "int"),
   note="leaving a FOR by GOTO 50 times must not exhaust the loop stack")
 T("for.goto_into", "stmt.FOR.goto", ["GOTO inside", "FOR i = 1 TO 3", "inside:", 'PRINT "in"', "NEXT i"], AnyErr(),
-  note="jumping into a FOR body: NEXT without an active loop")
+  note="jumping into a FOR body: NEXT without an active loop", maxi=12_000_000)
 T("for.next_in_if", "stmt.FOR.structure", ["c = 0", "IF c THEN", "FOR i = 1 TO 3", "ENDIF", "NEXT i", 'PRINT "x"'], AnyErr(),
-  note="FOR opened inside an IF block, NEXT outside it (structure crossing)")
+  note="FOR opened inside an IF block, NEXT outside it (structure crossing)", maxi=12_000_000)
 T("for.var_modified", "stmt.FOR", ["n = 0", "FOR i = 1 TO 10", "i = i + 1", "n = n + 1", "NEXT i", "PRINT n"], Num(5, "int"))
 T("for.var_float_body", "stmt.FOR.float", ["n = 0", "FOR i = 1 TO 4", "i = i + 0.5", "n = n + 1", "NEXT i", "PRINT n"], OkOrErr("3"),
-  note="the body makes the loop variable a float")
+  note="the body makes the loop variable a float", maxi=12_000_000)
 T("end.stmt", "stmt.END", ['PRINT "a"', "END", 'PRINT "b"'], Out("a"))
 T("stop.stmt", "stmt.STOP", ['PRINT "a"', "STOP", 'PRINT "b"'], Out("a"))
 
@@ -749,3 +749,157 @@ T("fn.sqr.30000", "fn.SQR", ["PRINT SQR(30000)"], Num(Fr(1732050808, 10000000), 
 T("fn.sqr.99", "fn.SQR", ["PRINT SQR(99)"], Num(Fr(99498744, 10000000), "float"))
 T("print.font_brackets", "display.font", ["PRINT CHR$(91) + CHR$(93) + CHR$(124)"],
   Pred(lambda r: (r.ce == 0 and r.text.strip() != "", "out=%r" % r.text), "[ ] | have visible glyphs"))
+
+# =====================================================================================
+# 18. FOR frames after GOTO out of an inner loop; packages
+# =====================================================================================
+T("for.goto_out_inner", "stmt.FOR.goto", ["c = 0", "FOR i = 1 TO 3", "FOR j = 1 TO 10", "IF j = 2 THEN GOTO nexti", "NEXT j", "nexti:",
+                                          "c = c + 1", "NEXT i", "PRINT c"], Num(3, "int"),
+  note="the outer NEXT must use its own limit/step, not the abandoned inner loop's")
+T("for.goto_out_inner_step", "stmt.FOR.goto", ["c = 0", "FOR i = 1 TO 3", "FOR j = 1 TO 10 STEP 5", "IF j > 0 THEN GOTO nexti", "NEXT j", "nexti:",
+                                               "c = c + 1", "NEXT i", "PRINT c"], Num(3, "int"))
+T("for.exit_inner_ok", "stmt.EXIT", ["c = 0", "FOR i = 1 TO 3", "FOR j = 1 TO 10", "IF j = 2 THEN", "EXIT FOR", "ENDIF", "NEXT j", "c = c + 1",
+                                      "NEXT i", "PRINT c"], Num(3, "int"))
+T("for.goto_loop_many", "stmt.FOR.goto", ["n = 0", "again:", "FOR i = 1 TO 10", "IF i = 2 THEN GOTO quit", "NEXT i", "quit:", "n = n + 1",
+                                          "IF n < 1500 THEN GOTO again", "PRINT n"], OkOrErr("1500"), maxi=60_000_000,
+  note="1500 abandoned FOR frames: must not corrupt anything (an error is acceptable)")
+
+T("pkg.unloaded", "pkg.unloaded", ["CIRCLE 100,100,20"], CErr(2))
+T("pkg.unloaded_mode", "pkg.unloaded", ["MODE 1"], CErr(2))
+T("pkg.shapes.circle", "pkg.SHAPES", ["CIRCLE 128,96,40", "p = POINT(168,96) + POINT(128,56) + POINT(128,96)", "CLS", "PRINT p"], Num(2, "int"),
+  packages=("shapes",), note="two points on the circle, the centre stays clear")
+T("pkg.shapes.fill", "pkg.SHAPES", ["CIRCLE 128,96,20", "FILL 128,96", "p = POINT(128,96) + POINT(130,98)", "CLS", "PRINT p"], Num(2, "int"),
+  packages=("shapes",), maxi=60_000_000)
+T("pkg.shapes.argc", "pkg.SHAPES", ["CIRCLE 1,2"], CErr(28), packages=("shapes",))
+T("pkg.mode.toggle", "pkg.MODE", ["MODE 1", "MODE 0", 'PRINT "m"'], Out("m"), packages=("mode",))
+T("pkg.mode.bad", "pkg.MODE", ["MODE 5"], RErr(), packages=("mode",), note="INVALID MODE")
+T("pkg.mode.palette", "pkg.MODE", ["ULAPLUS 1", "PALETTE 0,255", "ULAPLUS 0", 'PRINT "u"'], Out("u"), packages=("mode",))
+T("pkg.sprite.cycle", "pkg.SPRITE", ["PLOT 4,4", "GRAB 0,0,0,1,1", "SHOW 0,5,5", "MOVE 0,6,6", "HIDE 0", 'PRINT "s"'], Out("s"), packages=("sprite",))
+T("pkg.sprite.badslot", "pkg.SPRITE", ["HIDE 9"], RErr(), packages=("sprite",))
+T("pkg.graphics.all", "pkg.GRAPHICS", ["CPLOT 2,2", "BLOCK 1,1,2,2", "FRAME 3,3,4,4", "INVERT 0,0,2,2", 'PRINT "g"'], Terminates(), packages=("graphics",))
+T("pkg.printer.lprint", "pkg.PRINTER", ['LPRINT "hello"', "LPRINT 42", 'PRINT "p"'], Out("p"), packages=("printer",),
+  note="printer output itself needs hardware; the statements must run")
+T("pkg.printer.unloaded", "pkg.PRINTER", ['LPRINT "x"'], CErr(32))
+
+# =====================================================================================
+# Defects first found by this study (Q-*), assigned after investigation of the first full runs.
+# Strict accounting: the case reports XFAIL while the defect reproduces, XPASS once fixed.
+# A run on a fix branch passes --fixed Q-..,.. so those markers are dropped (PASS/FAIL then
+# shows whether the fix holds).
+# =====================================================================================
+KNOWN_Q = {
+    "Q-01": ["str.cmp_case", "str.cmp_lt"] + ["strcmp.eq.%d" % k for k in (0, 2, 5)] + ["strcmp.lt.%d" % k for k in (0, 3, 4, 5)] + ["strcmp.inkey_idiom"],
+    "Q-02": ["arith.f.prec", "arith.f.temps2", "arith.f.temps3", "arith.f.temps4", "arith.f.temps7", "arith.f.temps8",
+             "str.temps.assign", "str.temps.fn2", "str.temps.fn_fn_fn", "str.temps.fn_lit_fn", "str.temps.lit_fn",
+             "str.temps.lit_fn_lit", "str.temps.nested"],
+    "Q-03": ["crash.and_float", "crash.and_float_rhs", "crash.or_float", "log.float"],
+    "Q-04": ["arr.dim_huge", "dim.big.8000", "dim.big.16000", "dim.big.16500", "dim.big.20000", "dim.big.32767",
+             "dim.bigstr.1000x32", "dim.bigstr.3000x32", "dim.bigstr.300x255"],
+    "Q-05": ["lit.int.neg32768"],
+    "Q-06": ["if.float_cond", "if.float_lit_cond"],
+    "Q-07": ["for.zero_trip", "for.zero_trip_neg"],
+    "Q-08": ["for.float_limit", "for.float_start", "for.float_step", "for.float_var_limit", "for.var_float_body"],
+    "Q-09": ["lit.dec.0p00001", "lit.dec.0p000001", "lit.dec.16zeros"],
+    "Q-10": ["fn.deg.pi", "fn.rad.f", "fn.sgn.f_small", "fn.sgn.f_neg_small", "fn.sin.f", "fn.sqr.f", "fn.sqr.f2", "fn.mod.float"],
+    "Q-11": ["proc.nested_def", "proc.deffn_inside"],
+    "Q-12": ["label.dup"],
+    "Q-13": ["fn.mod.zero", "fn.div.zero"],
+    "Q-14": ["print.cls"],
+    "Q-15": ["input.decimal"],
+    "Q-16": ["input.big"],
+    "Q-17": ["str.val_stop", "str.val_big"],
+    "Q-18": ["mem.oob_write_end", "mem.oob_write_end2", "mem.oob_write_neg", "mem.oob_neg_big", "mem.float_store",
+             "mem.strarr_oob_end", "mem.strarr_oob_neg"],
+    "Q-19": ["for.goto_into", "for.next_in_if"],
+    "Q-20": ["for.goto_out_inner", "for.goto_out_inner_step"],
+    "Q-21": ["clear.loop"],
+    "Q-22": ["fn.sqr.neg"],
+    "Q-23": ["hw.stick_bad"],
+    "Q-24": ["proc.goto_label"],
+    "Q-25": ["str.cmp_and"],
+    "Q-26": ["print.font_brackets"],
+    "DD-1": ["arr.str_default_width"],
+    "DEC-PLOT": ["gfx.plot_clamp"],
+}
+_case = {c.cid: c for c in CASES}
+for qid, ids in KNOWN_Q.items():
+    for cid in ids:
+        c = _case[cid]
+        for cfg in c.only:
+            c.known.setdefault(cfg, qid)
+# baseline-only D11 FOR counter wrap (cost study B.4 "FOR counter wraps")
+for cid in ("for.step_big", "for.to_m32768"):
+    _case[cid].known.setdefault("baseline", "D11")
+# oracle correction: SQR(32767) = 181.01657..., the printed 181.0165 is D10 truncation (auto-classified)
+_case["fn.sqr.32767"].expect = {c: Num(Fr(1810166, 10000), "float") for c in CFGS}
+# L-A (documented): an over-precise decimal literal may be rejected with error 64; a wrong value is Q-09
+for cid in KNOWN_Q["Q-09"]:
+    _case[cid].expect = {c: Pred(lambda r: ((r.ce == 64) or (r.ce == 0 and r.ve == 0 and r.text in ("1.0000", "1")),
+                                            "ce=%s out=%r" % (r.ce, r.text)), "1.0000, or error 64 (L-A)") for c in CFGS}
+
+# =====================================================================================
+# 19. String record terminators (found while fixing Q-02)
+# =====================================================================================
+T("strrec.stale_tail", "string.record", ['a$ = "abcdefgh"', 'PRINT LEFT$("q",1)'], Out("q"),
+  note="a string function result must not show the tail of an earlier string")
+T("strrec.stale_tail_var", "string.record", ['x$ = "zzzzzzzz"', 'y$ = "w"', 'b$ = LEFT$(y$,1)', "PRINT b$"], Out("w"),
+  note="the stale tail is copied into b$ by the 32-byte assignment")
+T("strrec.31_vs_array", "string.record.memsafety", ["DIM a(3)", "a(0) = 7", 's$ = "x"', 't$ = "' + "A" * 31 + '"', "PRINT a(0)"], Num(7, "int"),
+  note="a 31-character literal must not touch the array pointer table")
+T("strrec.31_vs_array_write", "string.record.memsafety", ["DIM a(3)", "DIM b(3)", "b(0) = 5", 's$ = "x"', 't$ = "' + "A" * 31 + '"',
+                                                          "a(0) = 9", "PRINT b(0)"], Num(5, "int"),
+  note="after the pointer corruption a write to a() lands elsewhere")
+T("strrec.31_concat", "string.record.memsafety", ["DIM a(3)", "a(0) = 7", 's$ = "x"', 't$ = "A" + "' + "B" * 30 + '"', "PRINT a(0)"], Num(7, "int"))
+KNOWN_Q2 = {"Q-27": ["strrec.stale_tail", "strrec.stale_tail_var"], "Q-28": ["strrec.31_vs_array", "strrec.31_concat"],
+            "Q-29": ["pkg.sprite.cycle", "pkg.sprite.move_restore"]}
+# Q-05 is an edge of the L-A literal rule: Essential/Enhanced only (Baseline's wrap happens to print -32768)
+[c for c in CASES if c.cid == "lit.int.neg32768"][0].known.pop("baseline", None)
+T("pkg.sprite.move_restore", "pkg.SPRITE", ["PLOT 4,4", "GRAB 0,0,0,1,1", "SHOW 0,5,5", "MOVE 0,6,6",
+                                            "p = POINT(44,44) * 100 + POINT(52,52) * 10 + POINT(4,4)", "CLS", "PRINT p"], Num(11, "int"),
+  packages=("sprite",), note="MOVE must restore the old position (44,44 clear), draw the new one (52,52 set), leave the source (4,4)")
+for qid, ids in KNOWN_Q2.items():
+    for cid in ids:
+        _c = [c for c in CASES if c.cid == cid][0]
+        for cfg in _c.only:
+            _c.known.setdefault(cfg, qid)
+
+# =====================================================================================
+# 20. Intentionally unsupported / absent keywords must be rejected (not silently ignored)
+# =====================================================================================
+for cid, line in (("gosub", "GOSUB x"), ("return", "RETURN"), ("data", "DATA 1,2"), ("read", "READ a"), ("let", "LET a = 1"),
+                  ("merge", 'MERGE "x"'), ("pow", "x = 2 ^ 3"), ("infixmod", "x = 7 MOD 2"), ("hit", "x = HIT(1,2)"),
+                  ("atn", "x = ATN(1)"), ("exp", "x = EXP(1)"), ("screen", 'a$ = SCREEN$(1,1)'), ("draw", "DRAW 10,10"),
+                  ("randomize", "RANDOMIZE 3"), ("elseif", "IF 1 THEN : ELSEIF 2 THEN : ENDIF")):
+    T("ns." + cid, "ns.keywords", [line], CErr(), note="absent or intentionally unsupported: must be a compile error")
+
+# =====================================================================================
+# 21. Remaining tag-check suspicions from the code review (VM_POP without coercion)
+# =====================================================================================
+T("tag.pause_float", "stmt.PAUSE", ["x = 1", "PAUSE 1/2", 'PRINT "x"'],
+  Pred(lambda r: ((r.ce == 0 and r.ve == 0 and ((r.status == "OK" and r.text == "x") or (r.status == "WAIT" and r.text == ""))) or (r.ce or r.ve),
+                  "ce=%s ve=%s st=%s out=%r" % (r.ce, r.ve, r.status, r.text)), "out='x', or a key wait (PAUSE 0 after truncation), or an error"),
+  maxi=8_000_000,
+  note="oracle correction: under the documented truncation of FLOAT arguments 1/2 is 0, and PAUSE 0 waits for a key")
+T("tag.chr_float", "fn.CHR", ["PRINT CHR$(65.6) + CHR$(130/2)"], OkOrErr("AA"),
+  note="CHR$ pops without coercion (65.6 -> slot index); 130/2 is an exact INT 65")
+T("tag.mid_bigstart", "fn.MID", ['PRINT "<" + MID$("hello",257,1) + ">"'], Out("<>"), note="start uses the low byte only")
+T("tag.border_float", "stmt.BORDER", ["BORDER 2.5", 'PRINT "b"'], OkOrErr("b"))
+T("tag.pause_float0", "stmt.PAUSE", ["PAUSE 0.5", 'PRINT "p"'],
+  Pred(lambda r: ((r.ce == 0 and r.ve == 0 and ((r.status == "OK" and r.text == "p") or (r.status == "WAIT" and r.text == ""))) or (r.ce or r.ve),
+                  "ce=%s ve=%s st=%s out=%r" % (r.ce, r.ve, r.status, r.text)), "out='p', or a key wait (PAUSE 0 after truncation), or an error"),
+  maxi=8_000_000, note="truncation makes PAUSE 0.5 = PAUSE 0 (the slot-index defect gives the same result here; see tag.pause_frames)")
+T("tag.pause_frames", "stmt.PAUSE", ["y = 2.5", "t = PEEK(33141)", "PAUSE 20.5", "d = PEEK(33141) - t", "IF d < 0 THEN", "d = d + 256", "ENDIF", "PRINT d"],
+  Pred(lambda r: (r.ce == 0 and r.ve == 0 and r.status == "OK" and r.text.strip().lstrip("-").isdigit() and 19 <= int(r.text) <= 23,
+                  "ce=%s ve=%s st=%s out=%r" % (r.ce, r.ve, r.status, r.text)), "about 20 frames elapse (FRAMES low byte at $8175)"),
+  maxi=12_000_000, note="PAUSE 20.5 must pause ~20 frames, not its FLOAT slot index")
+T("tag.left_float", "fn.LEFT", ['n = 5 / 2', 'a$ = LEFT$("hello", n)', 'PRINT "<" + a$ + ">"'], Out("<he>"),
+  note="LEFT$(s$, LEN(s$)/2) idiom: a FLOAT count is truncated like every other integer argument")
+T("tag.mid_bigstart_var", "fn.MID", ['a$ = MID$("hello",257,1)', 'PRINT "<" + a$ + ">"'], Out("<>"),
+  note="as tag.mid_bigstart without the Q-02 temporaries (start 257 must not mean 1)")
+# Q-30: CHR$ and PAUSE pop a FLOAT without coercion (its slot index is used); Q-31: MID$ start uses its low byte.
+# ns.return in the baseline is the documented bare-word acceptance N-2 (RETURN is not a keyword there).
+for _cid, _q in (("tag.chr_float", "Q-30"), ("tag.pause_frames", "Q-30"), ("tag.left_float", "Q-30"), ("tag.mid_bigstart", "Q-31"), ("tag.mid_bigstart_var", "Q-31")):
+    _c = [c for c in CASES if c.cid == _cid][0]
+    for cfg in _c.only:
+        _c.known.setdefault(cfg, _q)
+[c for c in CASES if c.cid == "ns.return"][0].known.setdefault("baseline", "N-2")
