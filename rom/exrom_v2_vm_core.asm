@@ -3198,7 +3198,7 @@ OP_CLS:
         jp VM_RUN.loop
 
 OP_BORDER:
-        call VM_POP             ; HL = value, A = tag (any numeric value
+        call VM_POP_COERCE_INT  ; HL = value (QUAL Q-30) (any numeric value
                                   ; is accepted, same as V1's BORDER)
         ld a,l
         call GFX_SET_BORDER      ; masks to the low 3 bits itself
@@ -3432,7 +3432,7 @@ OP_POKE:
 ; documents "Destroys: HL" only, so DE (the target) safely survives
 ; across the repeated call in .wait_loop without any extra scratch cell.
 OP_PAUSE:
-        call VM_POP             ; HL = n
+        call VM_POP_COERCE_INT  ; HL = n (QUAL Q-30: a FLOAT was its slot index)
         ld a,h
         or l
         jr z,.wait_key
@@ -4362,7 +4362,7 @@ VM_TEMP_PICK:
 ; behavior and the SGN/MOD/DIV/RND family's already-established "this
 ; is a pure-integer BASIC" precedent for this class of function.
 BUILTIN_FN_CHR:
-        call VM_POP               ; HL = value, A = tag (ignored)
+        call VM_POP_COERCE_INT    ; HL = value (QUAL Q-30: a FLOAT was its slot index)
         ld a,h
         or a
         jr nz,.chr_range_err      ; h<>0 -- outside 0-255 in either
@@ -4492,7 +4492,7 @@ BUILTIN_FN_LOWER:
 ; length; n<0 -> 0 characters). Compiled left-to-right (s then n), so
 ; the operand stack has n on top (popped first).
 BUILTIN_FN_LEFT:
-        call VM_POP                 ; HL = n
+        call VM_POP_COERCE_INT      ; HL = n (QUAL Q-30)
         ld a,h
         bit 7,a
         jr nz,.left_n_neg
@@ -4549,7 +4549,7 @@ BUILTIN_FN_LEFT:
 ; RIGHT$(s,n) -- the last n characters of s. Same n-resolution as
 ; LEFT$'s own; differs only in the source content's own start offset.
 BUILTIN_FN_RIGHT:
-        call VM_POP                  ; HL = n
+        call VM_POP_COERCE_INT       ; HL = n (QUAL Q-30)
         ld a,h
         bit 7,a
         jr nz,.right_n_neg
@@ -4617,7 +4617,7 @@ BUILTIN_FN_RIGHT:
 ; remains -- no error raised for any of these, matching LEFT$/RIGHT$'s
 ; own precedent of forgiving-clamp over hard error).
 BUILTIN_FN_MID:
-        call VM_POP                 ; HL = len
+        call VM_POP_COERCE_INT      ; HL = len (QUAL Q-30)
         ld a,h
         bit 7,a
         jr nz,.mid_len_neg
@@ -4634,7 +4634,16 @@ BUILTIN_FN_MID:
                                         ; remainder" -- clamped below
 .mid_have_len:
         ld (BFN_STR_TMP),a           ; requested len (pre-clamp)
-        call VM_POP                  ; HL = start (1-based)
+        call VM_POP_COERCE_INT       ; HL = start (1-based) (QUAL Q-30)
+        ld a,h                       ; QUAL Q-31: the whole 16-bit start, not
+        or a                         ; its low byte (257 meant 1, -256 meant 1)
+        jr z,.mid_start_lo
+        rla                          ; C = sign
+        ld a,1                       ; negative -> 1 (as start<=0 below)
+        jr c,.mid_start_ok
+        xor a                        ; >=256 -> offset 255: past any end
+        jr .mid_start_ok
+.mid_start_lo:
         ld a,l
         or a
         jr nz,.mid_start_ok
