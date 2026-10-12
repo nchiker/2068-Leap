@@ -9,20 +9,26 @@ build/2068-Leap-V2-<version>.zip (everything under one top folder of that name) 
 The CI workflow publishes that archive for a release tag (.github/workflows/check.yml); it sets
 RELEASE_VERSION to the tag (or a dev string), which overrides VERSION below.
 
-RELEASE / VERSION name the release this tree builds. The original release, v2.0.0-emu.1, is the tag
-of that name (its own copy of this script labels it); this tree's default build is the sound
-maintenance release."""
+RELEASE / VERSION name what this tree builds. A numbered release is a v* tag (its own copy of this
+script labels it; v2.0.0-emu.1 and v2.0.1-emu.1 were built that way). Anything else -- the rolling
+"latest" build of v2-development, a workflow artifact, a local `make rc-assets` off a tag -- is an
+UNQUALIFIED DEVELOPMENT BUILD and is labelled so in its name, BUILD_INFO.txt and README.txt.
+
+The bundle also carries the Word 97 (.doc) edition of the manual when it is committed
+(docs/v2/2068_Leap_V2_Users_Manual.doc, `make manual-v2`), the emulator guide, the emulator patches
+and the EightyOne cartridge image (roms/leap_v2_exrom.dck)."""
 import hashlib
 import os
+import re
 import shutil
 import zipfile
 import subprocess
 import sys
 
 OUT = "build/release-v2-rc"
-VERSION = os.environ.get("RELEASE_VERSION") or "v2.0.1-emu.1"
-RELEASE = "2068-Leap V2 Enhanced %s — Sound Maintenance Release (emulator-qualified, not hardware-qualified)" % VERSION
 PACKAGES = ("mode", "sprite", "printer", "shapes", "graphics", "cbeep")
+LATEST_QUALIFIED = "v2.0.1-emu.1"
+RELEASE_TAG = re.compile(r"v\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?")   # what the CI publishes as a numbered release
 
 
 def crc16(data, c=0xFFFF):
@@ -37,16 +43,47 @@ def sh(*a):
     return subprocess.run(a, capture_output=True, text=True).stdout.strip()
 
 
+def version():
+    v = os.environ.get("RELEASE_VERSION")
+    if v:
+        return v
+    tag = sh("git", "describe", "--tags", "--exact-match", "--match", "v*", "HEAD")
+    if tag and RELEASE_TAG.fullmatch(tag) and not sh("git", "status", "--porcelain", "--untracked-files=no"):
+        return tag
+    return "dev-%s-%s" % (sh("git", "log", "-1", "--format=%cd", "--date=format:%Y%m%d"), sh("git", "rev-parse", "--short", "HEAD"))
+
+
+VERSION = None
+RELEASE = None
+STATUS = None
+
+
 def main():
+    global VERSION, RELEASE, STATUS
+    VERSION = version()
+    if RELEASE_TAG.fullmatch(VERSION):
+        if VERSION == "v2.0.1-emu.1":
+            RELEASE = "2068-Leap V2 Enhanced %s — Sound Maintenance Release (emulator-qualified, not hardware-qualified)" % VERSION
+        else:
+            RELEASE = "2068-Leap V2 Enhanced %s (numbered release; see its release record for the qualification status)" % VERSION
+        STATUS = "emulator-qualified, NOT hardware-qualified (docs/V2_MAINT_RELEASE_STATUS.md)"
+    else:
+        RELEASE = ("2068-Leap V2 development build %s — UNQUALIFIED (not a release; the latest qualified release is %s)"
+                   % (VERSION, LATEST_QUALIFIED))
+        STATUS = ("UNQUALIFIED DEVELOPMENT BUILD of %s -- not a release, not emulator- or hardware-qualified; "
+                  "for the qualified ROMs use release %s" % (sh("git", "rev-parse", "--abbrev-ref", "HEAD"), LATEST_QUALIFIED))
     if os.path.isdir(OUT):
         shutil.rmtree(OUT)
-    for d in ("roms", "packages", "docs", "docs/manual"):
+    for d in ("roms", "packages", "docs", "docs/manual", "patches"):
         os.makedirs(os.path.join(OUT, d))
     home, exrom = open("build/test_basic.bin", "rb").read(), open("build/exrom.bin", "rb").read()
     assert len(home) == 16384 and len(exrom) == 8192
     open(os.path.join(OUT, "roms/leap_v2_home.bin"), "wb").write(home)
     open(os.path.join(OUT, "roms/leap_v2_exrom.bin"), "wb").write(exrom)
     open(os.path.join(OUT, "roms/leap_v2_zesarux.bin"), "wb").write(home + exrom)
+    dck = open("build/exrom.dck", "rb").read()   # tools/make_eightyone_dck.sh, part of `make build`
+    assert len(dck) == 8201 and dck[9:] == exrom
+    open(os.path.join(OUT, "roms/leap_v2_exrom.dck"), "wb").write(dck)
     for n in PACKAGES:
         shutil.copy("build/v2_package_%s.bin" % n, os.path.join(OUT, "packages"))
         shutil.copy("build/extensions/v2_%s.tzx" % n, os.path.join(OUT, "packages"))
@@ -54,6 +91,13 @@ def main():
         if f.startswith("V2_") and f.endswith(".md") or f in ("PACKAGE_ABI.md", "AUTHORITATIVE_SOURCE.md"):
             shutil.copy(os.path.join("docs/v2", f), os.path.join(OUT, "docs"))
     shutil.copy("docs/v2/2068_Leap_V2_Users_Manual.docx", os.path.join(OUT, "docs"))
+    has_doc = os.path.isfile("docs/v2/2068_Leap_V2_Users_Manual.doc")
+    if has_doc:
+        shutil.copy("docs/v2/2068_Leap_V2_Users_Manual.doc", os.path.join(OUT, "docs"))
+    shutil.copy("docs/v2/EMULATOR_SETUP.md", os.path.join(OUT, "docs"))
+    for f in ("0001-zesarux-mirror-ts2068-exrom.patch", "0001-Add-ULAplus-support-for-Timex-machines.patch",
+              "COPYING", "README.md"):
+        shutil.copy(os.path.join("patches", f), os.path.join(OUT, "patches"))
     for f in sorted(os.listdir("docs/v2/manual")):
         src = os.path.join("docs/v2/manual", f)
         if os.path.isdir(src):
@@ -70,7 +114,7 @@ def main():
     info = [
         RELEASE,
         "version:     %s" % VERSION,
-        "status:      emulator-qualified, NOT hardware-qualified (docs/v2/V2_MAINT_RELEASE_STATUS.md)",
+        "status:      %s" % STATUS,
         "hardware:    NOT TESTED — PHYSICAL HARDWARE UNAVAILABLE (docs/v2/V2_HARDWARE_CHECKLIST.md)",
         "commit:      %s (%s)" % (sh("git", "rev-parse", "HEAD"), sh("git", "rev-parse", "--abbrev-ref", "HEAD")),
         "describe:    %s" % sh("git", "describe", "--always", "--dirty"),
@@ -84,16 +128,26 @@ def main():
     readme = [
         RELEASE,
         "",
+    ] + ([
         "Emulator-qualified (ZEsarUX), NOT hardware-qualified: nothing in this release has been tried on a",
         "physical Timex Sinclair 2068 (docs/V2_HARDWARE_CHECKLIST.md lists the tests still to run).",
+    ] if RELEASE_TAG.fullmatch(VERSION) else [
+        "UNQUALIFIED DEVELOPMENT BUILD: built automatically from the development branch; it has not been",
+        "through the release qualification. The recommended download is the latest numbered release,",
+        "%s: https://github.com/nchiker/2068-Leap/releases/tag/%s" % (LATEST_QUALIFIED, LATEST_QUALIFIED),
+    ]) + [
         "",
         "roms/leap_v2_home.bin      16 KB HOME ROM (the TS2068 system ROM socket)",
         "roms/leap_v2_exrom.bin      8 KB EXROM (the extension ROM, chunk 6)",
         "roms/leap_v2_zesarux.bin   HOME + EXROM in one file, for ZEsarUX --romfile only",
+        "roms/leap_v2_exrom.dck     the EXROM as a Timex ROM cartridge, for EightyOne 1.41",
         "packages/                  the loadable packages, binary and tape: %s" % ", ".join(PACKAGES),
         "                           (LOAD \"NAME\" EXT; one package at a time)",
         "docs/manual/               the V2 user manual (Markdown, with its pictures)",
         "docs/2068_Leap_V2_Users_Manual.docx   the same manual, Word edition",
+    ] + (["docs/2068_Leap_V2_Users_Manual.doc    the same manual, Word 97-2003 edition"] if has_doc else []) + [
+        "docs/EMULATOR_SETUP.md     ZEsarUX (qualified; needs patches/0001-zesarux-...), EightyOne, Fuse, TSRun",
+        "patches/                   the ZEsarUX EXROM-mirroring patch and the optional Fuse ULAplus patch (GPL)",
         "docs/V2_*.md ...           release record, language reference, defect register, package ABI, studies",
         "BUILD_INFO.txt             release, commit, build time, identity CRC, ROM budget",
         "SHA256SUMS                 checksums of the ROMs and packages: sha256sum -c SHA256SUMS",

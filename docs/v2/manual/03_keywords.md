@@ -1,6 +1,6 @@
 # Part 3 -- Keywords
 
-Every statement, function, operator and command of the 2068-Leap V2 language, in alphabetical order. Entries for the statements of the five loadable packages are included in their place and marked **[package: name]**; each of those works only after `LOAD "NAME" EXT` (see [Part 5](05_packages.md)).
+Every statement, function, operator and command of the 2068-Leap V2 language, in alphabetical order. Entries for the statements of the six loadable packages are included in their place and marked **[package: name]**; each of those works only after `LOAD "NAME" EXT` (see [Part 5](05_packages.md)).
 
 ## How to read an entry
 

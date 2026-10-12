@@ -5,12 +5,19 @@ are welcome.
 
 ## Before submitting a change
 
+Work on V2 happens on the `v2-development` branch (V1 on `main` is archived;
+see [`docs/V1_LEGACY.md`](docs/V1_LEGACY.md)).
+
 1. Build and run the static checks with `make check`.
 2. Confirm ROM capacity with `make budget`.
-3. When Fuse and an X11 display are available, run the full suite with
-   `make test`.
-4. Update the user and technical documentation when behavior changes.
-5. Add or update a fixture in `tests/` for BASIC-language changes.
+3. With the patched ZEsarUX and `ts2068-debug` installed (see
+   [`docs/v2/TESTING.md`](docs/v2/TESTING.md)), run the full headless
+   regression gate with `make test`, and `make doc-examples` when the manual
+   or the behaviour it documents changes.
+4. Update the user manual (`docs/v2/manual/`, then `make manual-v2` for the
+   Word editions) and the technical documentation when behaviour changes.
+5. Add or update a test case for language changes (the qualification corpus
+   in `tools/qual`, see `docs/v2/TESTING.md`).
 
 Home ROM and EXROM capacity are hard architectural limits. Please include the
 before/after output of `make budget` for changes that add ROM code.

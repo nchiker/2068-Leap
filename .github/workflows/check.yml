@@ -5,18 +5,26 @@
 #   1. Reuses the same pinned SjASMPlus build as `check` (cached across runs).
 #   2. `make rc-assets` (V2): assembles the production ROMs and the six V2
 #      packages (mode, sprite, printer, shapes, graphics, cbeep; binary and
-#      .tzx), collects the V2 user manual (Markdown + the committed Word
-#      edition) and the V2 release documents, and zips them into
+#      .tzx), the EightyOne cartridge, collects the V2 user manual (Markdown
+#      + the committed Word and Word 97 editions), the emulator guide and
+#      patches, and the V2 release documents, and zips them into
 #      build/2068-Leap-V2-<version>.zip with a .sha256 beside it
 #      (tools/make_rc_assets.py). The V1-era `make release-assets` bundle
 #      is no longer built here.
 #   3. Publishes it:
-#        - every run (push or PR):  as a workflow artifact (Actions tab).
-#        - every push to main:      as the rolling "latest" pre-release, so
-#                                    there's a permanent download link.
-#        - every tag vX.Y[.Z...]:   as a proper versioned release with
-#                                    auto-generated notes. To cut one:
-#                                      git tag v1.2.3 && git push origin v1.2.3
+#        - every run (push or PR):        as a workflow artifact (Actions tab).
+#        - every push to v2-development:  as the rolling "latest" pre-release,
+#                                          an UNQUALIFIED development build with
+#                                          a permanent download link. Nothing
+#                                          else (not main, the V1 branch) can
+#                                          update it.
+#        - a release tag vX.Y.Z[-suffix] (e.g. v2.0.1-emu.1): as a numbered
+#                                          release with auto-generated notes.
+#                                          Other tags publish nothing. Assets
+#                                          already on a numbered release are
+#                                          never replaced. To cut one, after
+#                                          qualification:
+#                                            git tag -a v2.0.2-emu.1 && git push origin v2.0.2-emu.1
 name: Source checks
 
 on:
@@ -93,9 +101,9 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      # ---- publish: rolling "latest" pre-release on every main push ----
+      # ---- publish: rolling "latest" pre-release on every v2-development push ----
       - name: Update the rolling "latest" pre-release
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/v2-development'
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.version }}
@@ -108,10 +116,11 @@ jobs:
           git tag -f latest
           git push -f origin latest
 
-          title="Latest build ($VERSION)"
-          notes=$(printf '%s\n\n%s' \
-            "Automatic build of \`main\` at ${GITHUB_SHA} — a moving target, rebuilt on every push." \
-            "Download **2068-Leap-latest.zip** below. For a fixed, numbered release see the [releases page](https://github.com/${GITHUB_REPOSITORY}/releases).")
+          title="V2 development build ($VERSION) — unqualified"
+          notes=$(printf '%s\n\n%s\n\n%s' \
+            "**Unqualified development build** of the 2068-Leap V2 development branch \`v2-development\` at ${GITHUB_SHA} — a moving target, rebuilt automatically on every push. It has **not** been through the release qualification and is not a release." \
+            "**For the qualified ROMs use the latest numbered release** (currently [v2.0.1-emu.1](https://github.com/${GITHUB_REPOSITORY}/releases/tag/v2.0.1-emu.1), emulator-qualified on ZEsarUX, not hardware-qualified). The [releases page](https://github.com/${GITHUB_REPOSITORY}/releases) lists them all." \
+            "Download **2068-Leap-latest.zip** below (the V2 ROMs, the six packages, the user manual and the documents of this commit; \`BUILD_INFO.txt\` inside names the commit).")
 
           if gh release view latest >/dev/null 2>&1; then
             # Replace the old assets rather than piling up one per push.
@@ -124,17 +133,29 @@ jobs:
           fi
           gh release upload latest build/2068-Leap-latest.zip build/2068-Leap-latest.zip.sha256
 
-      # ---- publish: numbered release on every v* tag ----
+      # ---- publish: numbered release on a release tag (vX.Y.Z[-suffix]) only ----
       - name: Publish the versioned release
-        if: github.ref_type == 'tag'
+        if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
-          notes="2068-Leap $VERSION — download **2068-Leap-V2-$VERSION.zip** below: the V2 ROMs, the six packages (with CBEEP), the V2 user manual (Markdown and Word) and the release documents."
+          if ! [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+            echo "Tag $VERSION is not a release tag (vX.Y.Z[-suffix]); nothing published."
+            exit 0
+          fi
+          notes="2068-Leap $VERSION — download **2068-Leap-V2-$VERSION.zip** below: the V2 ROMs (with the EightyOne cartridge), the six packages (with CBEEP), the V2 user manual (Markdown, Word and Word 97) with the emulator guide, and the release documents."
           if gh release view "$VERSION" >/dev/null 2>&1; then
-            gh release upload "$VERSION" "build/2068-Leap-V2-$VERSION.zip" "build/2068-Leap-V2-$VERSION.zip.sha256" --clobber
+            # A published release is never altered: only assets it does not have yet are added.
+            have=$(gh release view "$VERSION" --json assets --jq '.assets[].name')
+            for f in "build/2068-Leap-V2-$VERSION.zip" "build/2068-Leap-V2-$VERSION.zip.sha256"; do
+              if grep -qxF "$(basename "$f")" <<< "$have"; then
+                echo "$(basename "$f") is already on release $VERSION; left unchanged."
+              else
+                gh release upload "$VERSION" "$f"
+              fi
+            done
           else
             gh release create "$VERSION" --title "2068-Leap $VERSION" --notes "$notes" --generate-notes \
               "build/2068-Leap-V2-$VERSION.zip" "build/2068-Leap-V2-$VERSION.zip.sha256"

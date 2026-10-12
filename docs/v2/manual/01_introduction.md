@@ -1,6 +1,8 @@
 # 2068-Leap V2 -- User Manual and Language Reference
 
-**For the Timex Sinclair 2068 with the 2068-Leap V2 Enhanced ROMs** -- the *Emulator-Qualified Release* (tag `v2.0.0-emu.1`).
+**For the Timex Sinclair 2068 with the 2068-Leap V2 Enhanced ROMs.**
+
+*Development edition* (branch `v2-development`). It describes the current emulator-qualified release, **v2.0.1-emu.1**, together with the larger memory pool of the later development ROM: on the release ROM the pool is 8397 bytes and `FREE()` on an empty machine is 8153, where this edition gives the development figures of 9211 and 8967 (see the concept [Memory](04_concepts.md#memory)). Everything else applies to both. The manual exactly as published with the release is inside `2068-Leap-V2-v2.0.1-emu.1.zip` (`docs/manual/`).
 
 ---
 
@@ -12,7 +14,7 @@
 | [Part 2, Beginner's guide](02_beginners_guide.md) | a step-by-step course: the editor, your first program, numbers, words, decisions, loops, procedures, arrays, the screen, sound, tapes |
 | [Part 3, Keywords](03_keywords.md) | every statement, function, operator and command, A to Z, with examples |
 | [Part 4, Concepts](04_concepts.md) | the ideas behind the language, A to Z: numbers, strings, arrays, sessions, tapes, errors, memory ... |
-| [Part 5, Packages](05_packages.md) | the five loadable packages: mode, sprite, printer, shapes, graphics |
+| [Part 5, Packages](05_packages.md) | the six loadable packages: mode, sprite, printer, shapes, graphics, cbeep |
 | [Part 6, Practical examples](06_examples.md) | complete programs to type in and change |
 | [Appendices](07_appendices.md) | messages, error codes, character set, limits, memory map, package card, hardware notes, keyword index |
 
@@ -45,11 +47,11 @@ Every example in this manual has been run on the release, by an automated test, 
 
 ## Starting it
 
-**On an emulator.** Use the files of the release (`roms/leap_v2_home.bin` and `roms/leap_v2_exrom.bin`, or the combined `roms/leap_v2_zesarux.bin`) as the TS2068's ROM and EXROM. `docs/emulator_setup.md` describes Fuse and ZEsarUX. (A stock ZEsarUX 13.0 does not map the EXROM the way the real hardware does and shows a blank screen; use the patched one described there.) Switch on and the editor appears.
+**On an emulator.** Use the files of the release (`roms/leap_v2_home.bin` and `roms/leap_v2_exrom.bin`, or the combined `roms/leap_v2_zesarux.bin`) as the TS2068's ROM and EXROM. The [emulator setup guide](../EMULATOR_SETUP.md) describes ZEsarUX (the emulator the release is qualified on), EightyOne and Fuse. (A stock ZEsarUX 13.0 does not map the EXROM the way the real hardware does and shows a blank screen; use the patched one described there.) Switch on and the editor appears.
 
 **On a TS2068.** Fit the two ROM images in place of the ROM and the extension ROM. Nothing about real hardware has been tested.
 
-The package tapes are `.tzx` files for an emulator's tape interface: `v2_mode.tzx`, `v2_sprite.tzx`, `v2_printer.tzx`, `v2_shapes.tzx`, `v2_graphics.tzx`. A package is loaded by typing `LOAD "NAME" EXT` (for example `LOAD "SHAPES" EXT`) and starting the tape; Fuse does not start the tape automatically.
+The package tapes are `.tzx` files for an emulator's tape interface: `v2_mode.tzx`, `v2_sprite.tzx`, `v2_printer.tzx`, `v2_shapes.tzx`, `v2_graphics.tzx`, `v2_cbeep.tzx`. A package is loaded by typing `LOAD "NAME" EXT` (for example `LOAD "SHAPES" EXT`) and starting the tape; Fuse does not start the tape automatically.
 
 ## How to read this manual
 

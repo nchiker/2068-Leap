@@ -103,6 +103,7 @@ doc-examples: build v2-packages
 # The Word edition of the V2 manual (the V1 manual is `make manual`).
 manual-v2:
 	python3 tools/build_v2_manual_docx.py
+	python3 tools/build_v2_manual_doc.py
 
 # R10.9 Phase 1: only the production-ROM regression gate + the strict known-defect suite
 # (editor keys, real tape receiver fed an EAR stream, packages, package ABI). Headless.
