@@ -15,6 +15,8 @@ declare -A DEFS=(
 )
 DEFS[chimeC_L1_restore]="$B -DV2_MAINT_CHIME_C $L1 -DV2_MAINT_AYB_RESTORE"
 DEFS[chimeB_L3_restore]="$B -DV2_MAINT_CHIME_B $L3 -DV2_MAINT_AYB_RESTORE"
+DEFS[chimeC_L1_wait]="$B -DV2_MAINT_CHIME_C $L1 -DV2_MAINT_SHARED_WAIT"
+DEFS[chimeB_L3_wait]="$B -DV2_MAINT_CHIME_B $L3 -DV2_MAINT_SHARED_WAIT"
 for c in A0 A B C; do
   cd=""; [ $c != A0 ] && cd="-DV2_MAINT_CHIME_$c"
   for l in L1 L1W L3 L4W L5; do

@@ -35,6 +35,7 @@ PACKAGES = {
     "printer": "rom/v2_package_printer.asm",
     "shapes": "rom/v2_package_shapes.asm",
     "graphics": "rom/v2_package_graphics.asm",
+    "cbeep": "rom/v2_package_cbeep.asm",          # MAINT (ClassicBEEP study)
 }
 # The wrapper that legitimately reaches EXROM (it brackets the call with BANK_PAGE_EXROM_IN/OUT).
 WRAPPER = "PKG_NUM_TO_TEXT_SAFE"

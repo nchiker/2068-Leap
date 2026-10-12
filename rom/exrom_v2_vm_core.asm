@@ -3772,6 +3772,10 @@ OP_PAUSE:
         ld a,h
         or l
         jr z,.wait_key
+    IFDEF V2_MAINT_SHARED_WAIT
+        ex de,hl                ; MAINT (shared wait): n HALTs, BREAK ends it (rom/v2_ay_beep.asm)
+        call AY_WAIT_FRAMES
+    ELSE
         push hl                  ; save n across the next call
         call INT_GET_FRAMES       ; HL = current frame count
         pop de                    ; DE = n (restored)
@@ -3787,6 +3791,7 @@ OP_PAUSE:
         or a
         sbc hl,de                 ; carry set while current < target
         jr c,.wait_loop
+    ENDIF
         jp (iy)
 .wait_key:
         call IO_READ_KEY

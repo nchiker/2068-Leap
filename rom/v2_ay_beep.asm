@@ -14,6 +14,12 @@
 
 AY_BEEP_VOLUME EQU 15           ; channel A's fixed level while a BEEP sounds (no envelope)
 
+    IFDEF V2_MAINT_SHARED_WAIT      ; MAINT (shared wait): PAUSE, BEEP and the chime share one wait,
+    IFNDEF V2_MAINT_AYB_WAIT_HOME   ; which must then be in HOME (OP_PAUSE is HOME code)
+    DEFINE V2_MAINT_AYB_WAIT_HOME
+    ENDIF
+    ENDIF
+
 ; ----------------------------------------------------------------------------
 ; AY_BEEP_PERIOD -- HL = semitones above middle C (-60..69, else error 15) -> HL = the AY tone
 ; period 110250 / f, f = 261.63 * 2^(semitones/12), rounded (AY clock 1.764 MHz = the TS2068's
@@ -140,6 +146,9 @@ AY_BEEP_PLAY:
     in   a, (c)
     ret
     ELSE
+    IFDEF V2_MAINT_SHARED_WAIT
+    xor  a                            ; (the wait returns A <> 0 when BREAK ended it)
+    ENDIF
     out  (c), a                       ; R8 (still selected) = 0
     ret
     ENDIF
@@ -147,8 +156,15 @@ AY_BEEP_PLAY:
 
 ; AY_WAIT_FRAMES -- waits DE (1..65535) display interrupts. Out: A = 0, DE = 0. Needs interrupts
 ; enabled (as PAUSE and the editor do). Destroys AF, DE only.
+; MAINT (shared wait): also PAUSE n's wait; returns early, A <> 0, once BREAK has halted the
+; program (VM_HALTED, set by the ISR); the caller's `jp (iy)` then stops the VM.
     MACRO AY_WAIT_FRAMES_BODY
 AY_WAIT_FRAMES:
+    IFDEF V2_MAINT_SHARED_WAIT
+    ld   a, (VM_HALTED)
+    or   a
+    ret  nz                           ; BREAK
+    ENDIF
     halt
     dec  de
     ld   a, d

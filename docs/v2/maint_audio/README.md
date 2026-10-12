@@ -10,3 +10,5 @@ Captured from ZEsarUX 13.0's audio output (`tools/maint/ay_audio_tests.py`, 8-bi
 | `chime_chimeB_L3.wav` | option B: three-note arpeggio through BEEP's player |
 | `beep_scale.wav` | `BEEP 0.3,s` for s = -39, -24, -12, 0, 4, 7, 9, 12, 24, 36, 48, with `PAUSE 15` between; the first second is the end of the boot chime |
 | `*_audio.json` | the analysis: frequencies measured against the written periods, chime C4/E4/G4 energy per frame |
+| `cbeep_scale.wav` | ClassicBEEP study: the CBEEP package on the loudspeaker (port `$FE`), `CBEEP 300,s,7` for s = -24, -12, 0, 9, 12, 24 with `PAUSE 15` between (`tools/maint/cbeep_tests.py --audio`); 3.5 MHz emulator CPU, so 0.8 % flat of a real TS2068 |
+| `cbeep_audio.json` | its analysis: measured frequency against `3.5 MHz / (222 + 52 x pitch)` |

@@ -189,6 +189,40 @@ def main():
         m.finish()
         r = m.ay_regs()
         check("channel A in envelope mode before BEEP: fixed level 0 after (documented)", r[8] == 0, "R8=%d" % r[8])
+
+        # ---------------------------------------------------------------- BREAK, PAUSE (shared wait)
+        shared = "OP_PAUSE.wait_loop" not in m.S       # V2_MAINT_SHARED_WAIT: PAUSE uses BEEP's wait
+        for prog, what in ((["BEEP 5,0", 'PRINT "n"'], "BEEP 5,0"), (["PAUSE 300", 'PRINT "n"'], "PAUSE 300")):
+            m.start_program(prog)
+            m.run_until([W] if what.startswith("BEEP") else [], 3_000_000 if what.startswith("BEEP") else 200_000)
+            f0 = m.w16(m.sym("FRAMES"))
+            m.cmd("send-keys-event 135 1")              # CAPS SHIFT + SPACE in the emulated matrix
+            m.cmd("send-keys-event 128 1")
+            m.set_bps([])                               # (a breakpoint in the wait loop would stop
+            m.run(400_000)                              # every frame) some frames: debounce, the ISR
+            m.cmd("send-keys-event 128 0")
+            m.cmd("send-keys-event 135 0")
+            ve, ce, rows = m.finish(60_000_000)
+            df = (m.w16(m.sym("FRAMES")) - f0) & 0xFFFF
+            r = m.ay_regs()
+            brk = what.startswith("PAUSE") or shared
+            check("BREAK during %s %s" % (what, "stops it (error 66), channel A silent" if brk else
+                                          "(release behaviour: the note plays out, then BREAK)"),
+                  ve == 66 and r[8] == 0 and rows[0] != "n" and (df < 60 if brk else df >= 250),
+                  "ve=%d R8=%d frames=%d out=%r" % (ve, r[8], df, rows[0]))
+        for start in (65530, 1000):
+            m.start_program(["PAUSE 20", 'PRINT "p"'])
+            m.run_until([m.sym("OP_PAUSE")])
+            m.poke16(m.sym("FRAMES"), start)
+            f0 = start
+            ve, ce, rows = m.finish(60_000_000)
+            df = (m.w16(m.sym("FRAMES")) - f0) & 0xFFFF
+            ok = ve == 0 and rows[0] == "p" and 19 <= df <= 21
+            if not shared and start == 65530:           # the release's target compare: ends at once
+                check("PAUSE 20 across the FRAMES wrap (release: ends at once, defect)", df < 2, "frames=%d" % df)
+            else:
+                check("PAUSE 20 from FRAMES=%d waits 20 frames" % start, ok, "ve=%d frames=%d out=%r" %
+                      (ve, df, rows[0]))
     finally:
         m.stop()
     npass = sum(1 for x in results if x["pass"])
