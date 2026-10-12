@@ -3,8 +3,11 @@
 directory keeps its release-candidate name so existing references stay valid).
 
 ROM images, package binaries and tapes, the V2 documents and the user manual (Markdown and Word),
-SHA256SUMS and BUILD_INFO.txt (release name and version, commit, budget, and the CRC-16 of the
-HOME+EXROM pair that SAVE ... ALL stamps on its tapes).
+SHA256SUMS, BUILD_INFO.txt (release name and version, commit, budget, and the CRC-16 of the
+HOME+EXROM pair that SAVE ... ALL stamps on its tapes) and README.txt; then the distribution archive
+build/2068-Leap-V2-<version>.zip (everything under one top folder of that name) and its .sha256.
+The CI workflow publishes that archive for a release tag (.github/workflows/check.yml); it sets
+RELEASE_VERSION to the tag (or a dev string), which overrides VERSION below.
 
 RELEASE / VERSION name the release this tree builds. The original release, v2.0.0-emu.1, is the tag
 of that name (its own copy of this script labels it); this tree's default build is the sound
@@ -12,11 +15,12 @@ maintenance release."""
 import hashlib
 import os
 import shutil
+import zipfile
 import subprocess
 import sys
 
 OUT = "build/release-v2-rc"
-VERSION = "v2.0.1-emu.1"
+VERSION = os.environ.get("RELEASE_VERSION") or "v2.0.1-emu.1"
 RELEASE = "2068-Leap V2 Enhanced %s — Sound Maintenance Release (emulator-qualified, not hardware-qualified)" % VERSION
 PACKAGES = ("mode", "sprite", "printer", "shapes", "graphics", "cbeep")
 
@@ -77,8 +81,36 @@ def main():
         budget,
     ]
     open(os.path.join(OUT, "BUILD_INFO.txt"), "w", encoding="utf-8").write("\n".join(info) + "\n")
+    readme = [
+        RELEASE,
+        "",
+        "Emulator-qualified (ZEsarUX), NOT hardware-qualified: nothing in this release has been tried on a",
+        "physical Timex Sinclair 2068 (docs/V2_HARDWARE_CHECKLIST.md lists the tests still to run).",
+        "",
+        "roms/leap_v2_home.bin      16 KB HOME ROM (the TS2068 system ROM socket)",
+        "roms/leap_v2_exrom.bin      8 KB EXROM (the extension ROM, chunk 6)",
+        "roms/leap_v2_zesarux.bin   HOME + EXROM in one file, for ZEsarUX --romfile only",
+        "packages/                  the loadable packages, binary and tape: %s" % ", ".join(PACKAGES),
+        "                           (LOAD \"NAME\" EXT; one package at a time)",
+        "docs/manual/               the V2 user manual (Markdown, with its pictures)",
+        "docs/2068_Leap_V2_Users_Manual.docx   the same manual, Word edition",
+        "docs/V2_*.md ...           release record, language reference, defect register, package ABI, studies",
+        "BUILD_INFO.txt             release, commit, build time, identity CRC, ROM budget",
+        "SHA256SUMS                 checksums of the ROMs and packages: sha256sum -c SHA256SUMS",
+    ]
+    open(os.path.join(OUT, "README.txt"), "w", encoding="utf-8").write("\n".join(readme) + "\n")
+    top = "2068-Leap-V2-%s" % VERSION
+    archive = os.path.join("build", top + ".zip")
+    with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as z:
+        for root, _, files in sorted(os.walk(OUT)):
+            for f in sorted(files):
+                p = os.path.join(root, f)
+                z.write(p, os.path.join(top, os.path.relpath(p, OUT)))
+    digest = hashlib.sha256(open(archive, "rb").read()).hexdigest()
+    open(archive + ".sha256", "w").write("%s  %s\n" % (digest, os.path.basename(archive)))
     print("\n".join(info[:8]))
     print("%d files in %s" % (sum(len(fs) for _, _, fs in os.walk(OUT)), OUT))
+    print("%s  %s" % (digest, archive))
     return 0
 
 
