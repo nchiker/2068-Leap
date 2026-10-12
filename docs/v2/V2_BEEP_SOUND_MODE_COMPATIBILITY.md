@@ -2,6 +2,8 @@
 
 Written for the owner during the documentation work (branch `docs/v2-user-manual`). **The accepted release ROM was not changed.** The only code written is a throwaway prototype on the study branch `study/beep-compat` (worktree `~/2068-Leap-study/beep-compat`, commit `ccb78a4`, based on the tag `v2.0.0-emu.1`), built only with explicit `-DV2_STUDY_*` switches. Evidence: source code, the real TS2068 ROM running in ZEsarUX (`~/Applications/ZEsarUX-13.0/ts2068.rom`, identical in its 16 KB HOME part to Fuse's `tc2068-0.rom` and EightyOne's `ts2068.rom`), and the release image in the same emulator.
 
+**Owner's response (2026-10-11):** prototype accurate enough; prefers Sinclair-style BEEP **with a startup chime kept (possibly smaller)** in a future maintenance release -- about 17 bytes still to find; also wants `SOUND` register 0 and the `MODE` source terminology corrected there. Recorded in [`V2_MAINTENANCE_BACKLOG.md`](V2_MAINTENANCE_BACKLOG.md); no ROM work was done.
+
 ## Decisions needed from the owner
 
 1. **BEEP**: adopt the Sinclair-compatible `BEEP seconds,semitones`? Measured cost: HOME **+5 bytes** (54 -> 49 free) and EXROM **+154 bytes** (25 -> -129): it only fits if the **startup chime (135 bytes of EXROM) is removed** (EXROM then 9 bytes free), or replaced by something very small and 20 more bytes are found. Choose: (A) compat BEEP and no chime; (B) compat BEEP and a minimal chime plus about 20 bytes of other savings; (C) keep the raw BEEP and document the difference (done in the manual, with a BASIC procedure that gives Sinclair's `BEEP`).
