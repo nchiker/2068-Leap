@@ -83,6 +83,20 @@ AY_BEEP_PLAY:
     ; gap (a BEEP ends just after an interrupt), at the cost of an isolated note's first frame
     ; being partial (DE - 1 to DE frames).
     ld   c, PORT_AY_DATA
+    IFDEF V2_MAINT_AYB_RESTORE        ; (measured alternative: channel A given back afterwards)
+    xor  a
+    call .ay_read
+    push af                           ; R0
+    ld   a, 1
+    call .ay_read
+    push af                           ; R1
+    ld   a, 7
+    call .ay_read
+    push af                           ; R7
+    ld   a, 8
+    call .ay_read
+    push af                           ; R8
+    ENDIF
     xor  a
     out  (PORT_AY_REG), a
     out  (c), l                       ; R0 = period, fine
@@ -100,8 +114,35 @@ AY_BEEP_PLAY:
     ld   a, AY_BEEP_VOLUME
     out  (c), a                       ; R8 = fixed level
     call AY_WAIT_FRAMES
+    IFDEF V2_MAINT_AYB_RESTORE
+    pop  af
+    ld   b, 8
+    call .ay_write                    ; R8, R7, R1, R0 as they were
+    pop  af
+    dec  b
+    call .ay_write
+    pop  af
+    ld   b, 1
+    call .ay_write
+    pop  af
+    dec  b
+    call .ay_write
+    ret
+.ay_write:
+    push af
+    ld   a, b
+    out  (PORT_AY_REG), a
+    pop  af
+    out  (c), a
+    ret
+.ay_read:
+    out  (PORT_AY_REG), a
+    in   a, (c)
+    ret
+    ELSE
     out  (c), a                       ; R8 (still selected) = 0
     ret
+    ENDIF
     ENDM
 
 ; AY_WAIT_FRAMES -- waits DE (1..65535) display interrupts. Out: A = 0, DE = 0. Needs interrupts
