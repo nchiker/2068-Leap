@@ -13,7 +13,16 @@ set -euo pipefail
 
 LEAP_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 PREVIEW_DIR="${PREVIEW_DIR:-$HOME/2068-Leap-Preview}"
+PREVIEW_URL="${PREVIEW_URL:-https://github.com/nchiker/2068-Leap-Preview.git}"
 
+# The Preview clone is not a standing workspace directory: when PREVIEW_DIR is
+# absent it is re-created from GitHub (the remote holds all of Preview's
+# history) and may be deleted again after its push. An existing directory is
+# never cloned over.
+if [ ! -e "$PREVIEW_DIR" ]; then
+    echo "sync-to-preview: $PREVIEW_DIR does not exist; cloning $PREVIEW_URL"
+    git clone "$PREVIEW_URL" "$PREVIEW_DIR"
+fi
 if [ ! -d "$PREVIEW_DIR/.git" ]; then
     echo "sync-to-preview: $PREVIEW_DIR is not a git checkout; set PREVIEW_DIR" >&2
     exit 1

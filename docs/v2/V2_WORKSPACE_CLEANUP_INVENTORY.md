@@ -25,7 +25,7 @@ of this file was the proposal; this is the record.)
 | orphaned emulators | the three ZEsarUX processes on ports 10271, 10281, 10282 (started 2026-10-10, parent PID 1, no client connected) were ts2068-debug sessions of the completed cost-study job `1a79d5ac` (`state.json`: done, nothing in flight); stopped through their own sessions (`ts2068-debug stop`); no emulator is left running |
 | worktrees and branches | unchanged: 16 study worktrees with unique commits, the release worktree, all 42 branches |
 
-## Retained, and why
+## Retained, and why (as of 2026-10-11; superseded by the consolidation below)
 
 | What | Size | Why kept | Later (needs owner approval) |
 |---|---|---|---|
@@ -48,3 +48,51 @@ of this file was the proposal; this is the record.)
   regression report, defect register).
 * Run logs: the verified archive in `~/2068-Leap-backups/v2.0.0-emu.1-qualification-evidence/` (and the original `~/2068-Leap-study/qual-runs/`).
 * Release record: `docs/v2/V2_RC_STATUS.md`, `V2_REGRESSION_REPORT.md`, `AUTHORITATIVE_SOURCE.md`.
+
+## Workspace consolidation (2026-10-12)
+
+Owner-approved after the sound maintenance release (`v2.0.1-emu.1`). Result: **`~/2068-Leap` is the
+only active 2068-Leap working directory**, checked out on `v2-development` at `38339f0` (equal to
+`origin/v2-development`; tags `v2.0.0-emu.1` and `v2.0.1-emu.1`, the GitHub releases and their
+assets were not touched). Every worktree was verified clean immediately before removal and removed with
+`git worktree remove` (never `--force`). No branch, tag or commit was deleted or rewritten (59 refs
+before and after); nothing was pushed.
+
+### Preserved before anything was removed (`~/2068-Leap-backups/`, `MANIFEST-workspace-consolidation-20261012.md`)
+
+| File | SHA-256 |
+|---|---|
+| `2068-Leap-all-refs-20261012.bundle` (`git bundle --all`: 59 refs, incl. the 36 commits on no remote) | `009186153fb5ab7fa773fc1b23b6088da8b2d839d4107ae7310ab7d5e3e02650` |
+| `z80-skills-all-refs-20261012.bundle` (2 unpushed commits) | `9beccf7561887b1f1d130899d18e00fb39721b5191edcdc63e9ad0304460a945` |
+| `ts2068-debug-all-refs-20261012.bundle` (3 unpushed commits) | `87fb1e9312ff46f7bb2399d3fc5cf701edd977fa14541ca6c5f5217c9dfe16e8` |
+| `2068-Leap-Preview-all-refs-20261012.bundle` | `ec88f71141503291e06ddf837cbe796324e7581142f6d0c9f1cf3b95383abbbb` |
+| `2068-Leap-maintenance-evidence-20261012.tar.xz` (maintenance-release logs, `build/qual/*.jsonl`, the `release-v2-rc` asset set of `v2.0.0-emu.1`) | `cf8b65f7e29909d8074c45443a9ae89d7f5904d14ee0c6c0e91a50937c1522fd` |
+| `2068-Leap-study-leftovers-20261012.tar.xz` (`qual-runs/`, `NOTES.md`, `tools/`) | `6da2842dfbe313bbca695faa1ee27ed8e775cbb616da113c6b25c1abc72d22d9` |
+| `z80SimUpgrade-20261012.tar.xz` (the upgraded Z80 simulator and its tests) | `4cf8de1bf9f77d9808508fbcb605f74efe3792bba1148481f46f3981f29aeae6` |
+| `repo-local-configs-20261012.tar.xz` (`.git/config` of this repository and of the Preview clone) | `66df2a28fad31c221239d3f1c7fb8e5377c52ef325c106c1a604b491a105108d` |
+
+Verification: each bundle passes `git bundle verify`, mirror-clones, has every ref identical to its
+source and passes `git fsck`; every commit of this repository that is on no remote is in its bundle;
+each archive was extracted and compared with its source (identical).
+
+### Removed
+
+| What | Verification before removal |
+|---|---|
+| 19 study worktrees (`ay-beep`, `baseline`, `beep-compat`, `classicbeep`, `combined-essential`, `d11-error`, `extfn`, `flicker-i1`, `flicker-i1b`, `lang-hw-exrom`, `lang-print`, `proto-enh-decisions`, `proto-float-for`, `proto-lc`, `proto-shrink2`, `qualification-costs`, `qualification-final`, `qualification-shrink`, `shrink-pos`) | clean; ignored files were build outputs, `__pycache__` and `build/qual/*.jsonl` (archived); **all branches kept** (17 hold commits that are on no remote, now also in the bundle) |
+| `~/2068-Leap-v2-development` (worktree of `v2-development`) | clean; branch equals origin; its ignored `build/maint-qual/` and `build/qual/` archived |
+| `~/2068-Leap-v2-final-rom` (worktree of `integration/v2-final-rom`) | clean; branch pushed; its `build/release-v2-rc/` archived (same `SHA256SUMS` as the v2.0.0 evidence archive) |
+| `~/2068-Leap-study/qual-runs`, `NOTES.md`, `tools/` | archived and compared; `NOTES.md` equals `V2_FEATURE_COST_STUDY_NOTES.md`, `tools/` equals `tools/study/` |
+| `~/2068-Leap-Preview` (independent clone of `nchiker/2068-Leap-Preview`) | clean; local `main` = GitHub `main` (`04f0608`); all 92 commits found in a fresh mirror clone of GitHub; local config archived. `tools/sync_to_preview.sh` now clones it from GitHub when absent |
+
+### Deliberately left in place
+
+| What | Why |
+|---|---|
+| `~/z80-skills`, `~/ts2068-debug` | independent shared repositories (not vendored; unpushed commits bundled; no upstream push); `make test`/`make qual` use `ts2068-debug` |
+| `~/z80SimUpgrade` | the upgraded `z80sim`, not yet integrated (next development task); archived as above |
+| the 59 refs, including every `study/*`, `feature*-alone` and `worktree-agent-*` branch and the local tag `latest` (older than the remote `latest`) | branch/tag deletion not authorized; local-only commits live only here and in the bundle |
+| `~/2068-Leap-backups` | the offline archive, not a working directory |
+| `~/2068-Leap-study` (empty directory) | it was the working directory of the Claude session that performed the consolidation; remove it with `rmdir ~/2068-Leap-study` |
+| `~/2068-Leap-C`, `~/2068-Leap_Release_1_Beta_Announcement.docx` | not part of this workspace (unrelated investigation; V1 announcement) |
+

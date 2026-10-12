@@ -9,8 +9,8 @@ that repository; nothing outside it is required or authoritative.
 | What | Where |
 |---|---|
 | Accepted release | **2068-Leap V2 Enhanced — Emulator-Qualified Release** (owner acceptance 2026-10-11) |
-| Authoritative branch | **`v2-development`** (checked out in `~/2068-Leap`; pushed). It contains the release by fast-forward to `f4cabad` and the closeout commits after it |
-| Release source | branch `integration/v2-final-rom` at `f4cabad` (pushed; kept as the record of the release source; worktree `~/2068-Leap-v2-final-rom`) |
+| Authoritative branch | **`v2-development`** (checked out in `~/2068-Leap`, the only active working directory; pushed). It contains the release by fast-forward to `f4cabad` and the closeout commits after it |
+| Release source | branch `integration/v2-final-rom` at `f4cabad` (pushed; kept as the record of the release source; its worktree was retired 2026-10-12, the branch and `v2.0.0-emu.1` remain) |
 | ROM-producing commit | `ef81f49` -- no production source changed after it (`V2_REGRESSION_REPORT.md` s9) |
 | Release tag | **`v2.0.0-emu.1`** (annotated, pushed) -> `f4cabad`; a clean export of it builds the accepted hashes |
 | Maintenance release tag | **`v2.0.1-emu.1`** (annotated) on `v2-development`: the sound maintenance release, emulator-qualified, not hardware-qualified (`V2_MAINT_RELEASE_STATUS.md`); `make build EXTRA_DEFS=` on it still builds the `v2.0.0-emu.1` images |
@@ -35,8 +35,11 @@ Not current: `docs/user_manual.md`, `docs/basic_language_reference.md`, the `.do
 of `docs/*.md` describe the V1 "Release 1 Beta" ROM; `docs/v2/V2_LANGUAGE_SPEC.md` and the `R*`,
 `ARCHITECTURE_*`, study and audit documents in `docs/v2/` are historical design and qualification
 records (classified in `V2_DOCUMENTATION_HANDOFF.md`). `tools/study/` holds the study's tool copies
-as committed for reproducibility; its `*_ablate.py` scripts expect a worktree of their study branch
-(`git worktree add ~/2068-Leap-study/<name> study/<name>`).
+as committed for reproducibility; its `*_ablate.py` scripts expect a worktree of their study branch,
+which is no longer kept (recreate one with `git worktree add ~/2068-Leap-study/<name> study/<name>`;
+the 2026-10-12 consolidation retired `~/2068-Leap-study`). Paths such as `~/2068-Leap-study/...`,
+`~/2068-Leap-v2-development` in the historical study and audit reports describe where that work
+was done at the time; none is a current location.
 
 The `*.bin` files in the repository root are ignored scratch outputs of the assembler (some are
 stale); the release images are `build/test_basic.bin` (HOME), `build/exrom.bin` (EXROM),
@@ -75,16 +78,19 @@ Comparing builds (exports of commits into the ignored `build/qual-builds/`):
 0 FAIL; lifecycle 23/23); full `make test` from fresh clones: `V2_REGRESSION_REPORT.md` s2. No
 Makefile target, script default or test reads anything under `~/2068-Leap-study`.
 
-## Historical evidence and temporary workspaces
+## Historical evidence and retired workspaces
+
+`~/2068-Leap` is the only active 2068-Leap working directory (workspace consolidation,
+2026-10-12). Every other directory was retired after its unique contents were verified in an
+archive or in Git; all local branches and tags were kept.
 
 | Where | What | Status |
 |---|---|---|
-| `study/*` branches (local, in `~/2068-Leap`) | every qualification, cost-study and prototype branch | kept (historical record) |
+| `study/*` branches (local, in `~/2068-Leap`) | every qualification, cost-study and prototype branch; 17 of them hold commits that are on no remote and **must not be pruned** | kept (historical record); no worktrees; recreate one with `git worktree add <dir> study/<name>` |
 | `docs/v2/` study reports | the qualification, cost and owner-decision reports | kept in the repository |
-| `~/2068-Leap-backups/v2.0.0-emu.1-qualification-evidence/` | the verified archive of the qualification evidence (run logs, study notes and tools, the release artifact set) with `MANIFEST.md` and its SHA-256 | kept outside the repository |
-| `~/2068-Leap-study/qual-runs/` (85 MB) | the original run logs (archived above) | kept; deletable now that the archive is verified |
-| `~/2068-Leap-study/NOTES.md`, `tools/` | the study's running notes and one-off scripts | kept (not in any repository) |
-| `~/2068-Leap-study/<16 worktrees>` | worktrees of study branches whose commits are **not** in `v2-development` | kept; removable after owner approval (the branches keep the commits) |
-| `~/2068-Leap-v2-final-rom` | worktree of the release-source branch | kept until the handoff is accepted |
+| `~/2068-Leap-backups/v2.0.0-emu.1-qualification-evidence/` | the verified archive of the v2.0.0 qualification evidence (run logs, study notes and tools, the release artifact set) with `MANIFEST.md` and its SHA-256 | kept outside the repository |
+| `~/2068-Leap-backups/*-20261012.*`, `MANIFEST-workspace-consolidation-20261012.md`, `SHA256SUMS-20261012.txt` | the consolidation archives: a `git bundle --all` of this repository (all 59 refs, including the commits on no remote), bundles of `~/z80-skills`, `~/ts2068-debug` and the former Preview clone, the maintenance-release qualification logs, the study leftovers, the upgraded `z80sim` | kept outside the repository |
+| `~/z80-skills`, `~/ts2068-debug` | independent shared repositories (Z80 skills; the ZRCP debugger/test controller that `make test` and `make qual` use) with local commits that are not pushed upstream | kept in place, independent of this repository; bundled as above |
+| `~/2068-Leap-Preview` | the public download mirror `nchiker/2068-Leap-Preview` | local clone retired; `tools/sync_to_preview.sh` re-creates it from GitHub when needed |
 
 What was removed, and why the rest remains: `V2_WORKSPACE_CLEANUP_INVENTORY.md`.
