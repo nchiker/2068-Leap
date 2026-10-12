@@ -177,7 +177,7 @@ Not run: `make test-legacy` (V1 chain under Fuse; this change only removes a pro
 
 For the maintenance release: **the AY candidate plus the shared frame wait** (this branch's default). It is HOME 19 / EXROM 26 free, BREAK works in `BEEP`, and a `PAUSE` defect is fixed. Ship ClassicBEEP as an **optional package, design B**, outside the ROM.
 
-Decisions:
+Decisions (**taken by the owner on 2026-10-12: see section 10**):
 
 1. **ClassicBEEP's border:** keep ABI 2.0 and the third argument, `CBEEP ms,semitones,border` (as built), **or** pin `PORT_FE_SHADOW` as ABI 2.1 (0 ROM bytes, one minor bump, every package tape re-stamped `$8201` by `make v2-packages`) for `CBEEP ms,semitones`. The pin is the better user interface; it is the one ABI change in this study and was not made on the branch.
 2. **The name:** `CBEEP` (built), or another name of at most 8 characters. `CLASSICBEEP` itself would need the registry's name field widened (a HOME and ABI major change), which is not recommended.
@@ -185,3 +185,62 @@ Decisions:
 4. Carried over from the AY study: chime C or B, low notes A0 or error, `SOUND 256,x`.
 
 Before release: record the `PAUSE` wrap defect as fixed. Update the manual's `BEEP` (BREAK now ends a note), `PAUSE` and package chapters, plus a `CBEEP` section if it ships. Add `ay_beep_tests.py`, `cbeep_tests.py` and `cbeep_tape_test.py` to the maintenance qualification. Listen on hardware: the speaker through the TV, and its level next to the AY's.
+
+## 10. Owner decisions and pre-integration verification (2026-10-12)
+
+**Decisions (owner, 2026-10-12):** CBEEP keeps three arguments, `CBEEP milliseconds,semitones,border`; the name stays `CBEEP` (the 8-character package-name limit is not widened); the duration stays in milliseconds; startup chime option C; the shared frame wait and the `PAUSE` rollover fix stay; **no package ABI 2.1** (the pinned-border variant stays a measured alternative only); ClassicBEEP stays an optional RAM-loaded package and the one-package-at-a-time window is not redesigned. Nothing in the ROM changed after these decisions; the package source was split into `rom/ext_cbeep_module.asm` + `rom/v2_package_cbeep.asm` (the shipped packages' layout, which the manual checker reads) with byte-identical output.
+
+### 10.1 The HALT-based wait without the frame interrupt
+
+The wait counts frames with `HALT`, so it ends only on an interrupt. Two ways a program can take the interrupt away were tested on the candidate and on the release (`tools/maint/di_wait_tests.py`): a `USR` routine that ends `DI : RET` (the manual tells machine code to leave interrupts on), and `OUT 255,192` (port `$FF` bit 6 inhibits the frame interrupt at the SCLD; bit 7 keeps the EXROM selected -- `OUT 255,64` would also deselect the EXROM, which breaks the next EXROM call by itself).
+
+**A safe test is possible.** The harness runs the emulated CPU for a fixed instruction budget (ZRCP `run N`, here 40 million instructions, over 2 000 frames' worth) and then inspects it, so a statement that never ends is reported with its PC and the next case restarts from the booted snapshot. The emulator and the test runner never hang. After each hang the test also presses BREAK in the emulated keyboard matrix and runs on.
+
+| Statement | Interrupts left off by machine code (`USR` `DI`) | Frame interrupt inhibited (`OUT 255,192`) |
+|---|---|---|
+| `PAUSE 10` | never ends (`HALT` in `AY_WAIT_FRAMES`); **release: never ends either** (polling a `FRAMES` that does not move) | never ends; release: the same |
+| `PAUSE 0` | never ends (key wait); release: the same | never ends; release: the same |
+| `BEEP 0.1,0` (AY) | **completes**: `OP_BEEP` calls the calculator and its EXROM slot, and `BANK_PAGE_EXROM_IN/OUT` end with `EI` | **never ends**, stopped at the `HALT` in `AY_WAIT_FRAMES`; channel A keeps sounding until reset (from the code: `AY_BEEP_PLAY` sets R8 = 15 before the wait and 0 after it; the register probe cannot run on a halted CPU in ZEsarUX); the release's raw `BEEP` (a timed busy loop) completed |
+| `CBEEP 10,0,7` | completes (busy loop; ends with `EI`, so interrupts are on afterwards) | completes |
+| any hang, then BREAK | not seen: the keyboard is scanned by the frame interrupt | not seen |
+| control: `DI` then `EI` (`USR`), `PAUSE`, `BEEP` | complete | |
+
+So the shared wait changes nothing for `PAUSE` (both versions need the frame interrupt), and makes the AY `BEEP` hang where the release's busy-loop `BEEP` did not -- only when a program has inhibited the frame interrupt at port `$FF` itself, which the manual already warns against ("changing a port the system keeps a copy of ... can confuse the system"); on a TS2068 only the reset button recovers. A guard was not added: the inhibit bit cannot be seen in `PORT_FF_SHADOW` (an `OUT` does not update it), and a time-out would need a second clock. Documented in the manual (`BEEP`, `PAUSE`) and as M-3 in the defect register patch.
+
+### 10.2 `make test-legacy`
+
+Run (Fuse under X11, display `:1`): **8 of 13 cases pass** (`editor_auto` wrap and insert; `storage` named load, extension load, bad length, bad version, wildcard, save-missing). The other **5 cannot be built**: `extension_roundtrip` and the four `autorun_*` cases assemble the V1 test EXROM `rom/exrom_build.asm` with `STORAGE_TEST_FAKE_SEND`, which no longer fits (42 and 17 bytes over; `sjasmplus_strict.sh` refuses the truncated image), so `make` stops at the first. The **release tag fails identically** (same command in a copy of `v2.0.0-emu.1`: the same 42 / 17 bytes); the production images do not use this build, and this branch changes none of its sources (`exrom_build.asm`, `kernel/storage/`, `basic/` are untouched; `rom/exrom_sound.asm` only gained `IFDEF`ed lines). The release documents never ran `make test-legacy` (`R10_9_PHASE2C_REPORT.md`, `R10_7_LIMITS_REMOVAL_PROGRESS.md`). Recorded as test debt T-4; not fixed here.
+
+### 10.3 Documentation
+
+On this branch (files the documentation branch does not change): `PACKAGE_ABI.md` (CBEEP inventory, port `$FE`, the exact-length name rule), `V2_HARDWARE_CHECKLIST.md` (section 5, the hardware-only sound tests), this report, `maint_audio/README.md`.
+
+For the documentation branch (which this branch must not modify): **`docs/v2/maint/docs-v2-user-manual.patch`**, against `docs/v2-user-manual` (`6b1e593`), 11 files:
+
+* `manual/03_keywords.md`: `BEEP` rewritten (seconds/semitones on the AY, fractions, ranges, error 15, channel A policy, BREAK, the frame-interrupt caveat, accuracy, Sinclair comparison; the `sbeep` procedure removed); new entry **`CBEEP  [package: cbeep]`** (interrupts off while it sounds, BREAK not seen until the note ends, may change the border colour, replaces any loaded package, errors, accuracy); `PAUSE` (frame-interrupt requirement, the **rollover defect and its fix**, the measured 6 985 733 T-states for `PAUSE 100`); `SOUND` (registers 0 to 16, error 8, the low-8-bit rule for `SOUND 256`, channel A shared with `BEEP`, the release's register-0 restriction as history);
+* `manual/05_packages.md`: six packages; new section **The cbeep package** (the same four warnings); its error code;
+* `manual/01_introduction.md`, `02_beginners_guide.md` (chapter 13, the package table), `04_concepts.md` (BREAK, the Sinclair comparison table, *Sound*, *Speed*), `07_appendices.md` (run-time errors 8 and 15 with new tested lines, limits, package card, hardware notes, keyword index, how the manual was checked);
+* `V2_LANGUAGE_REFERENCE.md`, `V2_USER_MANUAL.md`, `V2_DEFECT_REGISTER.md` (a "Maintenance candidate" section: **M-PAUSE** the rollover defect, fixed; M-1, M-2; M-3 the frame-interrupt limit; T-4 the legacy build), `V2_BEEP_SOUND_MODE_COMPATIBILITY.md` and `V2_MAINTENANCE_BACKLOG.md` (status lines).
+
+**Verified as an integration trial**, without touching either branch: a detached worktree at `docs/v2-user-manual` (`6b1e593`), `git merge --no-commit study/classicbeep` -- **no conflicts** (only `Makefile` auto-merged) -- then the patch applied (`git apply --check` also passes on an untouched export of the documentation branch). In that merged tree: `tools/check_manual.py` passes (325 examples parsed, every keyword including `CBEEP` has an entry, links resolve) and **`make doc-examples`: 325 of 325 PASS** on the candidate ROM built there. That includes the rewritten `BEEP`, `SOUND`, `PAUSE` examples, `kw.cbeep.1` and `pkg.cbeep.1` (the cbeep package played into the real tape loader and `LOAD "CBEEP" EXT` typed before the program runs) and the new error lines `ve 15 | BEEP 1, 70`, `ve 15 | BEEP -1, 0`, `ve 8 | SOUND 17, 1`, `ve 15 pkg=cbeep | CBEEP 100, 70, 7`, `ve 15 pkg=cbeep | CBEEP 32767, 69, 7`. The trial worktree was removed afterwards; nothing was committed in it. Not regenerated: the Word edition (`make manual-v2`), which belongs to the documentation branch's own release step.
+
+### 10.4 Budget
+
+`make budget` on the default build: **HOME 19, EXROM 26 bytes free**. Checked independently on the images: `build/test_basic.bin` ends in exactly 19 `$FF` bytes after its last instruction (`ret` at `$3FEC`), `build/exrom.bin` in exactly 26 after its last message string (`$DFE5`). Not counted in those figures: the 5-byte low-ROM gap `$000B-$000F` that `INT_GET_FRAMES` occupied in the release is free again. Images: HOME `3f13ec2cc4ef02c1...`, EXROM `24b1ebb0b1377aad...` (unchanged since the shared wait was made the default).
+
+### 10.5 Regression after these changes
+
+On the committed tree (default build, images HOME `3f13ec2c...` / EXROM `24b1ebb0...`, unchanged since section 7):
+
+* `make check`: passes (includes `check_package_abi.py` with the split CBEEP package and `check_docs.py`).
+* `make test` (2026-10-12, second full run): smoke ROMs 9/9; V2 standalone 40/40; production checks and FILL check 0 failures; production gate **114 PASS**; Array Store gate **100 PASS**; known-defect suite **15 PASS**; SAVE ALL **13 PASS**; `make qual` corpus **663 PASS, 2 XFAIL, 2 N/A, 0 FAIL** (the release's tally, the historical baseline unchanged); session lifecycle **23/23**.
+* Focused: `cbeep_tests.py` 27/27 (all 130 semitones; audio recorded earlier, 28/28 with `--audio`); `cbeep_tape_test.py` 3/3 (real tape receiver); `di_wait_tests.py` 14/14 on the candidate and 11/11 on the release; `ay_beep_tests.py` 59/59 and the chime trace (section 7; ROM unchanged since).
+* `make doc-examples` 325/325 in the integration trial (section 10.3).
+* `make test-legacy`: 8 of 13; 5 cannot be built, identically on the release tag (section 10.2).
+
+### 10.6 Readiness
+
+**Ready for maintenance-release integration**, as far as emulator testing can establish it: the owner's decisions are in place, the ROM fits with HOME 19 / EXROM 26 bytes free, every suite that ran on the release passes with the same tallies, the branch merges into the documentation branch without conflicts and the documentation patch passes the manual's own example suite on the merged tree. Integration steps (owner's approval needed for each): merge `study/classicbeep` (it contains `study/ay-beep`) into the maintenance line; apply `docs/v2/maint/docs-v2-user-manual.patch` on the documentation side and regenerate the Word edition; turn the `V2_MAINT_*` switches into plain source once the build-variant tooling is no longer wanted (the release images stay reproducible with `EXTRA_DEFS=` until then); add `ay_beep_tests.py`, `cbeep_tests.py`, `cbeep_tape_test.py` and `di_wait_tests.py` to the maintenance qualification. Open, not blocking: T-4 (the legacy V1 storage fixture no longer builds; pre-existing).
+
+**Hardware-only tests** (cannot be done in the emulator; `V2_HARDWARE_CHECKLIST.md` section 5): the startup chime by ear (identical writes, never heard on a TS2068); `BEEP` pitch with a tuner and its length at the real 60 Hz frame rate (ZEsarUX runs 50 Hz and a 0.5 % fast AY clock); BREAK ending a long `BEEP` on a real keyboard; consecutive notes without clicks; `SOUND` register 0 and channel B surviving a `BEEP`; the cbeep package loaded from a real cassette, its pitch, the border staying put, BREAK waiting for the note; the loudness of the AY at level 15 against the loudspeaker through the TV; `STICK` after the chime and a `BEEP` (the mixer's I/O bits); and the frame rate itself (`PAUSE 600` = 10 s).
+
