@@ -116,3 +116,61 @@ record) were strict expected failures in Phase 1 and are **repaired in Phase 2D*
 * A failed compile followed by a good one in the same session (`D3-failed-compile-then-good`) proves the line counter and compiler state restart cleanly.
 * `rom/test_v2_chunk_refill_boundary.asm` (standalone) TEST3/TEST4 were rewritten for the new mechanism (`LEX_LINE` instead of `CHUNK_CUR_REC_PTR`).
 
+
+## Emulators for release preparation (ZEsarUX qualifies; EightyOne and Fuse are courtesy)
+
+**ZEsarUX is the only qualification emulator.** A release is accepted on ZEsarUX results (the suites
+above, `ts2068-debug`, the release gates); nothing here changes that. EightyOne and Fuse are courtesy
+alternatives: try the release images there if you like, but there is no matrix, no automated gate and
+no qualification requirement for them.
+
+| Emulator | Local install | Images |
+|---|---|---|
+| **ZEsarUX (qualified)** | `~/Applications/ZEsarUX-13.0/zesarux` (13.0, EXROM-mirroring patch applied; required for this ROM, see `patches/README.md`) | `build/ts2068rom_zesarux.bin` (HOME + EXROM) via `--romfile` |
+| EightyOne | `wine ~/EightyOne/EightyOne.exe` (1.41) | `build/test_basic.bin` as ROM File + `build/exrom.dck` as the Timex ROM Cartridge |
+| Fuse | `/usr/local/bin/fuse` (1.9.1) | `fuse --machine ts2068 --rom-ts2068-0 build/test_basic.bin --rom-ts2068-1 build/exrom.bin` |
+
+The step-by-step commands for running **any** custom TS2068 HOME/EXROM ROM (not only this one) in all
+three are in the shared skill reference
+[`z80-skills/skills/ts2068-debug/references/emulators.md`](https://github.com/nchiker/z80-skills/blob/main/skills/ts2068-debug/references/emulators.md)
+(local: `~/z80-skills/skills/ts2068-debug/references/emulators.md`), reusable by the Forth, Pascal and
+other TS2068 ROM projects. The release-asset form of the same instructions for end users is
+[`docs/emulator_setup.md`](../emulator_setup.md) and [`docs/eightyone_setup.md`](../eightyone_setup.md).
+
+## Debugging tools in this workflow
+
+Two independent tools are shared with the other TS2068 projects; neither is part of `make test`'s
+gates, and both are optional aids:
+
+| Tool | Where | Use it for |
+|---|---|---|
+| `ts2068-debug` | `~/ts2068-debug` (own repository; `pip install -e .`) | live runs on the real ROM in ZEsarUX: `diagnose` (registers, symbolised stack, interrupt/banking state, trace in one call), `mem-snapshot`/`mem-diff`, `sessions`/`stop --port` for stray emulators |
+| `z80sim` | `tools/z80sim` (this tree; see its README for the upstream/version note) | replaying one routine's own source from a captured state with per-instruction source-line tracing |
+
+Versions this tree is verified against (update with the commit that changes them):
+
+| Tool | Repository | Commit |
+|---|---|---|
+| `ts2068-debug` | https://github.com/nchiker/2068-Debug (local `~/ts2068-debug`) | `1c5e2a2` (`master`); full `make test` passed with it |
+| `z80sim` | https://github.com/nchiker/z80sim (local `~/z80sim`), vendored in `tools/z80sim/` | `9963857` (`main`); see `tools/z80sim/UPSTREAM.md` |
+| shared skills | https://github.com/nchiker/z80-skills (fork of `ignacioMonge/z80-skills`), plugin 0.9.5 | `14a4b7b` (`main`) |
+
+They meet in `tools/sim_from_debugger.py`: stop a live session at a routine's entry, capture its registers
+and the memory ranges that matter, then replay that exact state in the simulator with source and listing
+correlation:
+
+```sh
+ts2068-debug --json start --rom build/ts2068rom_zesarux.bin --symbols build/test_basic.sym
+ts2068-debug --json run --until MATH_UMUL16 --max-instructions 3000000     # reproduce, stop at the entry
+python3 tools/sim_from_debugger.py --symbols build/test_basic.sym --entry MATH_UMUL16 \
+    --range 0xF100:64 --out /tmp/case.json
+python3 tools/z80sim/extract_routine.py kernel/math/math.asm MATH_UMUL16 MATH_UDIV16 \
+    --with-locations > /tmp/routine.asm
+python3 tools/z80sim/replay_snapshot.py /tmp/routine.asm /tmp/case.json \
+    --symbols build/test_basic.sym --listing build/test_basic.lst -o /tmp/replay.json
+ts2068-debug --json stop
+```
+
+The simulator is an instruction-subset interpreter (see `tools/z80sim/README.md`); the real emulator
+remains the arbiter of behaviour. Run `ts2068-debug sessions` before choosing a port when other suites
+may be running; use an isolated `TS2068_DEBUG_STATE_DIR` and `--port` for your own session.

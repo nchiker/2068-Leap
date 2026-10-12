@@ -30,6 +30,7 @@ check: build
 	tools/check_test_targets.sh
 	python3 tools/check_builtin_tables.py
 	python3 tools/test_check_basic_source.py
+	python3 tools/test_sim_from_debugger.py
 	# tests/err1.txt is excluded: it's tools/run_all_tests.sh's own EXPECTED_CYAN
 	# fixture, deliberately testing an out-of-bounds DIM access -- a genuine,
 	# intentional finding here, not a regression to fail the build over.

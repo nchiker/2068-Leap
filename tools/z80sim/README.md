@@ -1,4 +1,50 @@
-# tools/z80sim — source-level Z80 instruction simulator
+# z80sim — source-level Z80 instruction simulator
+
+A small Python tool for **testing one already-narrowed-down routine of Z80 assembly against a real, observed
+state**. It parses sjasmplus-style `.asm` source directly (no assembling step) and executes it instruction by
+instruction, with exact flag semantics, per-instruction source-file/line tracing, and saved-state
+replay. It is an instruction-subset interpreter, not a general emulator; see
+[Known limitations](#known-limitations).
+
+Authoritative source of truth: this repository (`nchiker/z80sim`). It is developed for the
+[2068-Leap](https://github.com/nchiker/2068-Leap) TS2068 ROM project, which carries a vendored copy in
+`tools/z80sim/` (see [Use in 2068-Leap](#use-in-2068-leap)); the tool itself is project-neutral apart from the
+`SYSVARS` table in `sim.py`, which you edit for your own system variables.
+
+## Install and run
+
+Python 3.8+ and nothing else: no packages, no build step. Clone and run the scripts in place.
+
+```sh
+git clone https://github.com/nchiker/z80sim.git
+cd z80sim
+python3 extract_routine.py my.asm ROUTINE_LABEL NEXT_LABEL --with-locations > /tmp/routine.asm
+python3 replay_snapshot.py /tmp/routine.asm /tmp/case.json -o /tmp/result.json   # see "Saved-state replay"
+```
+
+## Tests
+
+```sh
+python3 -m unittest -v test_flags test_snapshot      # run from the repository root; ~1 s
+```
+
+`test_flags` covers the modelled flag semantics (all 8-bit add/sub helper inputs, logic, shifts, rotates, LDIR,
+parity conditions); `test_snapshot` covers snapshot save/restore, source-line extraction, listing/symbol
+correlation (including sjasmplus's `NN+` include-nesting line numbers) and bounded replay. The
+source-level driver suites that exercise 2068-Leap's own routines (`test_calc_dispatcher.py`,
+`test_sprite_driver.py`, `test_sprite_basic_driver.py`) need that project's source tree, so they live in
+2068-Leap.
+
+## Use in 2068-Leap
+
+2068-Leap vendors these files into `tools/z80sim/`; `tools/z80sim/UPSTREAM.md` there records the exact
+commit of this repository it carries and how to update it. Change the simulator here, then sync it into
+2068-Leap; do not edit the vendored copy. Paths in the rest of this document are relative to this
+directory (`tools/z80sim/` inside 2068-Leap).
+
+License: MIT, see [LICENSE](LICENSE).
+
+---
 
 A Python interpreter that parses this project's own Z80 assembly
 source directly (no separate assembly step) and executes it
@@ -114,13 +160,10 @@ instruction timing, interrupt state changes, or peripheral effects.
 Use a real emulator or hardware whenever the behavior under investigation
 depends on those details.
 
-`make check` runs every simulator suite (the three source-level drivers from the repo root, then
-`test_flags`/`test_snapshot` from `tools/z80sim`). To run the focused regressions by hand, use the tool directory with
-`python3 -m unittest -v test_flags.py test_snapshot.py`. They cover the
-flag semantics, all 8-bit add/sub helper input combinations including
-carry-in, snapshots, source/artifact mapping, and bounded replay. The
-source-level driver scripts remain focused examples for their respective
-routines; they are not a complete Z80 conformance suite.
+Run the regressions with `python3 -m unittest -v test_flags test_snapshot` (see Tests above; in 2068-Leap,
+`make check` runs them together with that project's source-level driver suites). They cover the flag
+semantics, all 8-bit add/sub helper input combinations including carry-in, snapshots, source/artifact
+mapping, and bounded replay. They are not a complete Z80 conformance suite.
 
 ## Saved-state replay and build annotations
 
@@ -137,7 +180,7 @@ retains its original file and line number in a comment understood by
 omitted:
 
 ```sh
-python3 tools/z80sim/extract_routine.py source.asm \
+python3 extract_routine.py source.asm \
     ROUTINE_GLOBAL --with-locations > /tmp/routine.asm
 ```
 
@@ -154,7 +197,7 @@ save_snapshot('/tmp/routine-case.json', sim,
 Replay it with a bounded run and optional SjASMPlus artifacts:
 
 ```sh
-python3 tools/z80sim/replay_snapshot.py /tmp/routine.asm \
+python3 replay_snapshot.py /tmp/routine.asm \
     /tmp/routine-case.json --symbols build/program.sym \
     --listing build/program.lst --max-steps 200000 \
     --output /tmp/routine-replay.json
@@ -165,7 +208,7 @@ source hashes, and artifact hashes. Trace entries include their exact input
 source file/line. A matched `.lst` row adds its assembled address; duplicate
 or mismatched source rows are left unmapped. A `.sym` file adds addresses
 for the nearest known label. SjASMPlus symbol/listing syntax is supported, including the `NN+` line numbers it writes for lines of included files
-(verified against this project's real `build/test_basic.lst`/`.sym`).
+(verified against 2068-Leap's real `build/test_basic.lst`/`.sym`).
 Artifacts must correspond to the code being investigated: the tool checks
 exact listing source text for mapped rows but cannot prove the complete
 build is fresh, so result metadata labels artifact freshness as unverified.
@@ -186,7 +229,7 @@ ranges is not reproduced.
    `extract_routine.py`:
 
    ```
-   python3 tools/z80sim/extract_routine.py kernel/storage/storage.asm \
+   python3 extract_routine.py kernel/storage/storage.asm \
        .bitmap_all_set .count_lost_blocks > /tmp/bitmap_all_set.txt
    ```
 
@@ -205,7 +248,7 @@ ranges is not reproduced.
 
    ```python
    import sys
-   sys.path.insert(0, 'tools/z80sim')
+   sys.path.insert(0, 'tools/z80sim')  # or wherever this directory is
    from sim import Program, Z80Sim, Interp, SYSVARS, Halt
 
    prog = Program()
