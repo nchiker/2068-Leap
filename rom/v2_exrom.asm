@@ -39,6 +39,9 @@ V2_EXROM_ENTRY:
     V2_EXROM_SLOT V2_EXROM_FLOAT_TO_STRING_ADDR, BASIC_FLOAT_TO_STRING_EXROM
     V2_EXROM_SLOT V2_EXROM_SP_TO_PTR_ADDR, CALC_SP_TO_NEXT_FREE_PTR
     V2_EXROM_SLOT V2_EXROM_CLEAR_ADDR, MEM_CLEAR_V2
+    IFDEF V2_MAINT_AY_BEEP
+    V2_EXROM_SLOT V2_EXROM_AY_BEEP_ADDR, AY_BEEP
+    ENDIF
     ASSERT $ == V2_EXROM_ARRSVC_ADDR
     INCLUDE "rom/exrom_v2_arrstore.asm"
 ; V2_VERIFY_KTAB -- the HOME/EXROM contract check every entry slot makes first.
@@ -60,6 +63,9 @@ V2_VERIFY_KTAB:
     INCLUDE "rom/exrom_format.asm"
     INCLUDE "rom/exrom_calc.asm"
     INCLUDE "rom/exrom_sound.asm"
+    IFDEF V2_MAINT_AY_BEEP
+    INCLUDE "rom/v2_ay_beep.asm"            ; MAINT (AY BEEP): the EXROM pieces
+    ENDIF
     INCLUDE "rom/exrom_editor.asm"
     INCLUDE "rom/exrom_v2_shell.asm"
     DS V2_EXROM_IMAGE_END - $, $FF

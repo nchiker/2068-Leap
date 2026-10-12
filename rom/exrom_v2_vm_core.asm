@@ -3681,6 +3681,32 @@ OP_LINE:
 ; hardware stack (push/pop) to hold pitch across the second VM_POP —
 ; the same safe, already-established technique OP_FOR_INIT's own `push
 ; hl / call ... / pop de` uses, not a bare register held across a call.
+    IFDEF V2_MAINT_AY_BEEP
+; MAINT (AY BEEP): Sinclair-style `BEEP seconds,semitones`, sounded by the AY's channel A
+; (rom/v2_ay_beep.asm). Semitones: whole numbers (a fraction is cut off toward zero), -60..69 as
+; the stock ROM, else error 15. Seconds: rounded to display frames (1/60 s on a TS2068); negative
+; or beyond 273 s is error 15; under half a frame plays nothing.
+OP_BEEP:
+        rst $18                 ; HL = semitones
+        push hl
+        rst $10                 ; HL = seconds, A = its tag
+        call VM_FLOAT_PUSH_FIRST
+        ld hl,2*AY_BEEP_FPS
+        call CALC_INT_TO_FP
+        call VM_CALC_MUL_STUB   ; [seconds * 2 * frames per second]
+        call CALC_FP_TO_INT     ; HL = half-frames; carry = beyond 32767
+        jp c,VM_ERR_RANGE
+        bit 7,h
+        jp nz,VM_ERR_RANGE      ; a negative duration
+        inc hl
+        srl h
+        rr l                    ; HL = frames, rounded to the nearest
+        ex de,hl                ; DE = frames
+        pop hl                  ; HL = semitones
+        call AY_BEEP            ; EXROM slot (rom/v2_ay_beep.asm)
+        jp (iy)
+VM_ERR_RANGE EQU BUILTIN_FN_CHR.chr_range_err   ; error 15 (exported to the EXROM)
+    ELSE
 OP_BEEP:
         rst $18                 ; HL = pitch (FLOAT truncated)
         push hl
@@ -3691,6 +3717,7 @@ OP_BEEP:
                                     ; DE held before (unused garbage)
         call SOUND_BEEP
         jp (iy)
+    ENDIF
 
 ; OP_SOUND — pops data then register (compiler pushes register,data,
 ; matching "SOUND register,data"'s real V1 argument order). Calls the
@@ -3705,11 +3732,17 @@ OP_SOUND:
         rst $18                 ; HL = data (FLOAT truncated)
         push hl
         rst $18                 ; HL = register
+    IFDEF V2_MAINT_SOUND0
+        ld b,l                  ; B = register (MAINT: one instruction, was ld a,l / ld b,a)
+        pop hl
+        ld c,l                  ; C = data
+    ELSE
         ld a,l
         ld b,a                    ; B = register
         pop hl                    ; HL = data (restored)
         ld a,l
         ld c,a                    ; C = data
+    ENDIF
         call SOUND_EXROM
         jp c,VM_ERR_INVALID_SOUND_REGISTER
         jp (iy)
