@@ -110,7 +110,7 @@ jobs:
         run: |
           set -euo pipefail
           cp "build/2068-Leap-V2-$VERSION.zip" build/2068-Leap-latest.zip
-          sha256sum build/2068-Leap-latest.zip > build/2068-Leap-latest.zip.sha256
+          (cd build && sha256sum 2068-Leap-latest.zip > 2068-Leap-latest.zip.sha256)   # bare name: sha256sum -c works after download
 
           # Move the "latest" tag to this commit.
           git tag -f latest
