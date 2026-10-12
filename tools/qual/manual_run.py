@@ -41,8 +41,10 @@ def png_bytes(w, h, rgb_rows):
             + chunk(b"IDAT", zlib.compress(raw, 9)) + chunk(b"IEND", b""))
 
 
-def render_screen(scr, scale=2):
-    """256x192 bitmap + attributes (6912 bytes read from $4000) -> PNG bytes (flash shown steady)."""
+def render_screen(scr, scale=2, attr8x1=None):
+    """256x192 bitmap + attributes (6912 bytes read from $4000) -> PNG bytes (flash shown steady).
+    attr8x1 = the 6144 bytes at $6000 when the machine is in the extended-colour mode (MODE 1): one
+    attribute byte per scan line and character column, instead of one per 8 x 8 cell."""
     rows = []
     for y in range(192):
         base = ((y & 0xC0) << 5) | ((y & 0x07) << 8) | ((y & 0x38) << 2)
@@ -50,7 +52,7 @@ def render_screen(scr, scale=2):
         px = bytearray()
         for cx in range(32):
             b = scr[base + cx]
-            at = scr[arow + cx]
+            at = attr8x1[y * 32 + cx] if attr8x1 is not None else scr[arow + cx]
             pal = BRIGHT if at & 0x40 else PALETTE
             ink, paper = pal[at & 7], pal[(at >> 3) & 7]
             for bit in range(7, -1, -1):
@@ -151,6 +153,16 @@ def screen_matches(text, want):
     return pos == len(rows)
 
 
+def mode_attrs(m):
+    """The 8 x 1 attribute bytes when the machine is in the extended-colour mode (port $FF bits 0-2 = 2)."""
+    try:
+        if m.read(m.sym("PORT_FF_SHADOW"), 1)[0] & 7 == 2:
+            return m.read(0x6000, 6144)
+    except Exception:
+        pass
+    return None
+
+
 def run_keys(m, c):
     iok = m.sym("IO_READ_KEY")
     m.restore()
@@ -238,7 +250,7 @@ def _run_case(m, c, write_shots, show):
                 ok = False
                 detail = "bytecode %d (want %s), source %d (want %s)" % (code, c.code, src, c.source)
         if c.shot:
-            shot_bytes = render_screen(m.read(0x4000, 6912))
+            shot_bytes = render_screen(m.read(0x4000, 6912), attr8x1=mode_attrs(m))
     else:
         m.restore()
         for p in c.pkgs:
@@ -273,7 +285,7 @@ def _run_case(m, c, write_shots, show):
                 detail = "step %r: got ce=%s ve=%s out=%r, want %s" % (cmd, r.ce, r.ve, area_text(r), what)
         rec["actual"] = actual
         if c.shot:
-            shot_bytes = render_screen(m.read(0x4000, 6912))
+            shot_bytes = render_screen(m.read(0x4000, 6912), attr8x1=mode_attrs(m))
     if shot_bytes is not None:
         path = os.path.join(M.IMAGE_DIR, c.shot + ".png")
         if write_shots:

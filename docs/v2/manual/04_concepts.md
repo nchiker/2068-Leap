@@ -625,7 +625,7 @@ LINE 128, 60 TO 128, 140
 
 **Character cells and sprites.** `AT row, col` addresses cells (row 0 to 22 for text); the sprite package uses cells too.
 
-**Other modes.** The TS2068 has a second video mode (the mode package's `MODE 1`) and the ULAplus palette; see [Part 5](05_packages.md#the-mode-package).
+**Other modes.** The TS2068 has an extended-colour video mode (the mode package's `MODE 1`), in which each row of eight pixels has its own colours and the colour clash above disappears vertically, and the ULAplus palette; see [Part 5](05_packages.md#the-mode-package).
 
 **See also** PRINT, AT, TAB, CLS, INK, PAPER, PLOT, LINE, POINT, ATTR, BORDER.
 
@@ -747,10 +747,10 @@ NEW
 
 There are two ways to make sound.
 
-**`BEEP`** uses the loudspeaker. It gives a single tone and the program waits until it finishes. Both numbers are raw: the first is the number of cycles, the second the delay in each half-cycle. The frequency is about 3 500 000 / (52 x pitch + 220) hertz. A short tune:
+**`BEEP`** uses the loudspeaker. It gives a single tone and the program waits until it finishes. Both numbers are raw (this is not the Sinclair `BEEP`; see the keyword [BEEP](03_keywords.md#beep) for a procedure that gives it): the first is the number of cycles, the second the delay in each half-cycle. The frequency is about 3 528 000 / (52 x pitch + 222) hertz. A short tune:
 
 ```basic ex=con.sound.1
-DEF FN pitch(f) = DIV(3500000 / f - 220, 52)
+DEF FN pitch(f) = DIV(3528000 / f - 222, 52)
 DIM p(5)
 p(0) = FN pitch(262)
 p(1) = FN pitch(294)
@@ -764,8 +764,8 @@ PRINT p(0)
 PRINT p(4)
 ```
 ```output ex=con.sound.1
-252
-167
+254
+168
 ```
 
 (The program works out the pitch value for each note's frequency from the formula above, plays the five notes of a C major scale's start -- C, D, E, F, G -- about half a second each, and prints the first and last pitch values.)
@@ -808,7 +808,7 @@ Things to take from the table:
 
 * **Whole-number arithmetic is much faster than floating point** -- about twelve times here. Use whole numbers for counters, indices and scaled values (work in hundredths instead of fractions of a unit).
 * **Scrolling is expensive**: moving the whole screen up one line costs about 245 000 T-states, 70 milliseconds. A program that prints line after line to a full screen is limited to about 14 lines a second; one that prints at fixed positions with `AT` is not.
-* `PAUSE n` takes n x 69 700 T-states, and `BEEP` 52 x pitch + 220 per cycle.
+* `PAUSE n` takes n x 69 700 T-states, and `BEEP` 52 x pitch + 222 per cycle.
 * Compilation itself takes a moment for a long program; `RUN` then starts.
 
 ---

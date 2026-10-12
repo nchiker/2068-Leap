@@ -172,22 +172,22 @@ Here 50 = 6 x 8 + 2: paper 6 (yellow) and ink 2 (red).
 
 `BEEP duration, pitch` -- **statement**
 
-Makes a sound through the loudspeaker. **This is not the Sinclair `BEEP`**: there are no seconds and no musical notes. Both numbers are raw counts:
+Makes a sound through the loudspeaker. **In the V2 release this is not the Sinclair `BEEP`**: there are no seconds and no musical notes. Both numbers are raw counts:
 
 * *duration* is the number of complete sound waves (cycles) to produce; 0 produces none;
 * *pitch* is the length of the pause in each half-wave: the **larger** the number, the **lower** the note.
 
-One cycle takes about `52 x pitch + 220` processor T-states, so the frequency is the processor clock divided by that: about **3 500 000 / (52 x pitch + 220)** hertz. The release was measured on the emulator: `BEEP 1000,100` costs 5 421 600 T-states, 650 Hz at 3.5 MHz.
+One cycle takes about `52 x pitch + 222` processor T-states, so the frequency is the processor clock divided by that: about **3 528 000 / (52 x pitch + 222)** hertz on a TS2068 (3 500 000 on the emulator the release was measured on). `BEEP 1000,100` costs 5 421 600 T-states, 650 Hz at 3.5 MHz.
 
 | Wanted note (approximately) | pitch |
 |---|---|
-| 262 Hz (middle C) | 252 |
-| 440 Hz (A) | 148 |
+| 262 Hz (middle C) | 255 |
+| 440 Hz (A) | 149 |
 | 880 Hz | 72 |
 | 1760 Hz | 34 |
 
 ```basic ex=kw.beep.1
-BEEP 220, 148
+BEEP 220, 149
 PAUSE 10
 BEEP 440, 72
 PRINT "done"
@@ -202,7 +202,81 @@ done
 * A pitch of 0 is the slowest wave of all (65 536 steps per half-wave), not the highest.
 * The result was measured on the emulator; the sound itself was not heard on a real machine.
 
-**See also** SOUND, PAUSE.
+**Compared with Sinclair BASIC.** On the Spectrum and in the TS2068's own BASIC, `BEEP seconds, semitones` takes a length in **seconds** and a pitch in **semitones above middle C** (0 is middle C, 12 an octave above, a negative number below; the range is -60 to 69). V2's `BEEP` was inherited from the first release (V1) with raw counts; the intended behaviour was the Sinclair one, and a change is being considered (see `docs/v2/V2_BEEP_SOUND_MODE_COMPATIBILITY.md`). Until then, this procedure gives Sinclair's `BEEP` in BASIC: put the length in seconds in the variable `dur`, and `CALL sbeep(semitones)`. It works out the frequency (middle C is 261.6256 Hz and each semitone is 2^(1/12) higher), turns it into the cycle count and the pitch that V2's `BEEP` wants, and beeps. It accepts whole semitones (a fraction is cut off) from -60 to 69; the pitch it asks for is accurate to about 1% up to three octaves above middle C, but the loudspeaker routine's steps become coarse above that (a note at +60 is about 11% sharp).
+
+```basic ex=kw.beep.2
+dur = 1
+CALL convert(0)
+PRINT cyc; " "; pit
+CALL convert(12)
+PRINT cyc; " "; pit
+CALL convert(-12)
+PRINT cyc; " "; pit
+CALL convert(9)
+PRINT cyc; " "; pit
+END
+PROC sbeep(semi):
+  CALL convert(semi)
+  BEEP cyc, pit
+ENDP
+PROC convert(semi):
+  n = 60 + semi
+  o = DIV(n, 12) - 5
+  f = 261.6256
+  FOR i = 1 TO MOD(n, 12)
+    f = f * 1.0594630944
+  NEXT i
+  IF o > 0 THEN
+    FOR i = 1 TO o
+      f = f * 2
+    NEXT i
+  ENDIF
+  IF o < 0 THEN
+    FOR i = 1 TO 0 - o
+      f = f / 2
+    NEXT i
+  ENDIF
+  cyc = INT(f * dur)
+  pit = INT((3528000 / f - 222) / 52)
+  IF pit < 1 THEN
+    pit = 1
+  ENDIF
+ENDP
+```
+```output ex=kw.beep.2
+261 255
+523 125
+130 514
+440 149
+```
+
+(Each line is the number of cycles and the pitch for one second of that note: middle C, the C above it, the C below it and the A above middle C. The stock TS2068 ROM, run in the emulator, gives the same cycle counts to within one and a pitch that sounds the same to within a fraction of a percent.) To play a tune, set `dur` and call `sbeep` for each note:
+
+```basic ex=kw.beep.3
+dur = 0.2
+FOR note = 0 TO 7
+  CALL sbeep(note * 2 - DIV(note, 4))
+NEXT note
+END
+PROC sbeep(semi):
+  n = 60 + semi
+  o = DIV(n, 12) - 5
+  f = 261.6256
+  FOR i = 1 TO MOD(n, 12)
+    f = f * 1.0594630944
+  NEXT i
+  IF o > 0 THEN
+    FOR i = 1 TO o
+      f = f * 2
+    NEXT i
+  ENDIF
+  cyc = INT(f * dur)
+  pit = INT((3528000 / f - 222) / 52)
+  BEEP cyc, pit
+ENDP
+```
+
+**See also** SOUND, PAUSE, the concept [Sound](04_concepts.md#sound).
 
 ---
 
@@ -1544,7 +1618,7 @@ PRINT MOD(20, 4)
 
 `MODE m` -- **statement**
 
-Selects the video mode: `MODE 0` is the normal mode and `MODE 1` the TS2068's high-resolution mode. Any other value is a run-time error. Needs the **mode** package. See [Part 5](05_packages.md#the-mode-package).
+Selects the video mode: `MODE 0` is the normal mode and `MODE 1` the TS2068's extended-colour mode (every row of eight pixels can have its own colours; the ROM's own source calls it "High Resolution Graphics", which it is not). Any other value is a run-time error. Needs the **mode** package. See [Part 5](05_packages.md#the-mode-package).
 
 *With the mode package loaded (`LOAD "MODE" EXT`):*
 
@@ -2376,10 +2450,11 @@ PRINT SIN(0.5)
 
 Writes *value* (0 to 255) to a register of the AY-3-8912 sound chip. The chip makes three tones and a noise, and keeps playing while the program goes on, until you silence it.
 
-*register* is the register number as the chip knows it, and must be **1 to 16**: any other number is a run-time error. (Register 0, the fine pitch of channel A, therefore cannot be set from BASIC.)
+*register* is the register number as the chip knows it, and V2 requires it to be **1 to 16**: any other number is a run-time error. **This differs from the original TS2068 BASIC**, whose `SOUND` accepts **0 to 16** (checked on the stock ROM in the emulator: it rejects 17 and above and nothing else). V2 therefore cannot write register 0, the fine pitch of channel A, with `SOUND`; the chip has no register 16, so a write to 16 does nothing in either system. (A one-line change to V2's `SOUND` would make it accept 0; see `docs/v2/V2_BEEP_SOUND_MODE_COMPATIBILITY.md`. Until then, `OUT 245, 0` followed by `OUT 246, value` writes register 0 directly: 245 and 246 are the chip's register and data ports.)
 
 | Register | Holds |
 |---|---|
+| 0 | channel A pitch, fine (**not** reachable with V2's `SOUND`; see above) |
 | 1 | channel A pitch, coarse (the low 4 bits) |
 | 2, 3 | channel B pitch, fine and coarse |
 | 4, 5 | channel C pitch, fine and coarse |
@@ -2402,7 +2477,7 @@ silent again
 
 This switches channel A's tone on (mixer 62 turns on only tone A), sets its pitch and volume, waits a second, and silences it. Pitch is the **period**: the larger the number, the lower the note.
 
-**Notes.** The register numbering was read from the ROM and checked on the emulator (the number is sent to the chip unchanged); whether it matches the original TS2068 BASIC `SOUND` on real hardware has not been tested.
+**Notes.** The register number is sent to the chip unchanged (read from the ROM, and checked on the emulator by watching the port writes). The sound itself was not heard on a real machine.
 
 **See also** BEEP, OUT.
 

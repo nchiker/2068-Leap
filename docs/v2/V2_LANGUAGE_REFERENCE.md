@@ -61,8 +61,8 @@ Precedence, highest first: function calls and brackets; unary `-`; `*` `/`; `+` 
 | `BORDER n`, `INK n`, `PAPER n` | low 3 bits of n |
 | `FLASH n`, `BRIGHT n`, `OVER n`, `INVERSE n` | only the **low bit** of n |
 | `PLOT x,y`, `LINE x0,y0 TO x1,y1` | 256 x 192 pixels, x from the left, **y from the top**; coordinates outside the screen are moved to the edge; fractions cut off |
-| `BEEP duration,pitch` | **raw counts**: `duration` cycles, `pitch` the delay per half-cycle; one cycle is about 52 x pitch + 220 T-states; interrupts are off while it sounds |
-| `SOUND register,value` | writes `value` to AY register `register`, which must be **1 to 16** (sent to the chip unchanged; register 0 is not reachable) |
+| `BEEP duration,pitch` | **raw counts**: `duration` cycles, `pitch` the delay per half-cycle; one cycle is 52 x pitch + 222 T-states (this is **not** Sinclair's `BEEP seconds,semitones`: see the manual keyword BEEP and `V2_BEEP_SOUND_MODE_COMPATIBILITY.md`); interrupts are off while it sounds |
+| `SOUND register,value` | writes `value` to AY register `register`, which V2 requires to be **1 to 16** (sent to the chip unchanged; register 0 is not reachable -- the stock TS2068 BASIC accepts 0 to 16, so this is a compatibility discrepancy) |
 | `POKE address,value`, `OUT port,value` | low byte of `value`; address / port 0 .. 65535 (65536 and above: error 15) |
 | `PAUSE n` | wait `n` display frames (0: wait for a key); BREAK interrupts |
 | `RANDOMISE n` | seed `RND`; the number is required |
@@ -173,7 +173,7 @@ A package tape adds statements: `LOAD "NAME" EXT`. One package at a time (a seco
 
 | Package (tape name, size) | Statements |
 |---|---|
-| **mode** (`MODE`, 165 bytes) | `MODE m` (0 normal, 1 the second video mode), `ULAPLUS u` (0/1), `PALETTE i,v` (i 0..63) |
+| **mode** (`MODE`, 165 bytes) | `MODE m` (0 normal, 1 the TS2068's extended-colour mode: 8 x 1 colour attributes at `$6000`; the 512 x 192 mode is not offered), `ULAPLUS u` (0/1), `PALETTE i,v` (i 0..63) |
 | **sprite** (`SPRITE`, 834) | `GRAB slot,row,col,w,h` (slot 0..7, w and h 1..4 cells), `SHOW slot,row,col`, `MOVE slot,row,col`, `HIDE slot` (positions in character cells) |
 | **printer** (`PRINTER`, 345) | `LPRINT x` (one number or string; a number as a whole number), `LLIST` |
 | **shapes** (`SHAPES`, 1007) | `CIRCLE x,y,r`, `FILL x,y` (pixel coordinates) |

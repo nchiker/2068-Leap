@@ -105,9 +105,9 @@ Argument mistakes are found when the statement runs, not when the program is com
 
 ### MODE
 
-`MODE 0` selects the normal screen; `MODE 1` selects the TS2068's second video mode, which this ROM (and the Timex manual it follows) calls **High Resolution Graphics**: the display hardware's port `$FF` is set to the value 2, and the second display file at `$6000` is used as 6144 colour attribute bytes, one per eight pixels across *per scan line* instead of one per 8 x 8 cell. Any other value for `MODE` is a run-time error. Switching to mode 1 first clears that second area (to the default colours); switching back to mode 0 leaves the screen as it was.
+`MODE 0` selects the normal screen. `MODE 1` selects the TS2068's **extended-colour** mode (the Timex calls it "multicolor" mode; this ROM's source code calls it "High Resolution Graphics", which is not what it is): the display hardware's port `$FF` is set to the value 2 (bits 0 to 2 = `010`). The picture (the 256 x 192 pixels) is unchanged, but the colour attributes now come from a second area at address 24576 (`$6000`, 6144 bytes) with **one attribute byte for every eight pixels across on every scan line**, instead of one byte for each 8 x 8 cell at 22528. So, in this mode, the colour of a line of eight pixels can be chosen independently of the lines above and below it: the "colour clash" of the ordinary screen (see [Screen](04_concepts.md#screen)) goes away in the vertical direction. Any other value for `MODE` is a run-time error. Switching to mode 1 first sets the second area to the default colours; switching back to mode 0 shows the ordinary attributes again.
 
-What mode 1 looks like on the screen was **not** examined: the documentation tests read the normal screen only, and nothing was tried on a real machine.
+The ROM's own drawing statements know about the mode: with mode 1 selected, `PLOT`, `LINE` and printed text set the attribute of the **8 x 1 strip** they touch (not the 8 x 8 cell), so each of the eight lines below has its own colour even though they share a cell:
 
 *With the mode package loaded (`LOAD "MODE" EXT`):*
 
@@ -120,6 +120,31 @@ PRINT "back to normal"
 ```output ex=pkg.mode.1
 back to normal
 ```
+
+*With the mode package loaded (`LOAD "MODE" EXT`):*
+
+```basic ex=pkg.mode.5 pkg=mode shot=mode1_strips rows=1
+MODE 1
+PAPER 7
+CLS
+FOR i = 0 TO 7
+  INK i
+  LINE 40, 40 + i TO 215, 40 + i
+NEXT i
+INK 0
+PRINT "eight colours, one row"
+```
+```output ex=pkg.mode.5
+eight colours, one row
+```
+
+![Eight lines, each a different colour, in a single row of character cells (extended-colour mode)](images/mode1_strips.png)
+
+In the ordinary mode the same eight lines would all take the colour of the last one drawn, because they share the same row of 8 x 8 cells. (Only the display changed: `ATTR` still reads the ordinary 8 x 8 attribute area.)
+
+**What V2's `MODE` does not offer.** The TS2068 has a third video mode, **512 x 192 two-colour "extended resolution"** (also called 64-column mode): port `$FF` value 6 (bits `110`; the ink and paper then come from bits 3 to 5 of the same port). V2 does not select it: `MODE 2` is a run-time error (an earlier 64-column mode was removed from the ROM for space). Port `$FF` can still be written directly with `OUT 255, value`, but the system keeps a copy of the port (`$FF` also selects the EXROM bank) and the ROM's drawing routines do not know that mode, so this is not recommended.
+
+(The mode bits are as documented for the TS2068's SCLD video chip: 000 ordinary, 001 second display file, 010 multicolor, 110 extended resolution. These were checked against published port maps and against what the release does -- port `$FF` bits 0 to 2 become 2 and `PLOT` colours a single 8 x 1 strip -- but not on a real machine.)
 
 ```basic ex=pkg.mode.2 pkg=mode err=ve:12
 MODE 2

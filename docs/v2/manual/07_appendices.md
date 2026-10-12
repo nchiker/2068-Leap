@@ -338,7 +338,7 @@ For `PEEK`, `POKE`, `USR`, `IN` and `OUT`. Addresses are decimal with hexadecima
 | 16384 - 22527 (`$4000`-`$57FF`) | 6144 | the display: pixels |
 | 22528 - 23295 (`$5800`-`$5AFF`) | 768 | the display: colour attributes (one per 8 x 8 cell) |
 | **23296 - 24575** (`$5B00`-`$5FFF`) | **1280** | **not used by V2 -- free for your own data and machine code** |
-| 24576 - 30719 (`$6000`-`$77FF`) | 6144 | the second display file: used by `MODE 1` as 8 x 1 colour attributes; free otherwise |
+| 24576 - 30719 (`$6000`-`$77FF`) | 6144 | the second display file: used by `MODE 1` (extended-colour mode) as 8 x 1 colour attributes, one byte for every eight pixels of every scan line; free otherwise |
 | **30720 - 32767** (`$7800`-`$7FFF`) | **2048** | **not used by V2 -- free** |
 | 32768 - 33877 (`$8000`-`$8454`) | 1109 | system variables (editor, tape, calculator, graphics): do not touch |
 | 33878 - 41766 (`$8456`-`$A326`) | about 8.4 KB | the **main memory pool**: program text, variables, arrays (`FREE()`) |
