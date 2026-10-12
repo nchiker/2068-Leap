@@ -13,6 +13,7 @@ that repository; nothing outside it is required or authoritative.
 | Release source | branch `integration/v2-final-rom` at `f4cabad` (pushed; kept as the record of the release source; worktree `~/2068-Leap-v2-final-rom`) |
 | ROM-producing commit | `ef81f49` -- no production source changed after it (`V2_REGRESSION_REPORT.md` s9) |
 | Release tag | **`v2.0.0-emu.1`** (annotated, pushed) -> `f4cabad`; a clean export of it builds the accepted hashes |
+| Maintenance release tag | **`v2.0.1-emu.1`** (annotated) on `v2-development`: the sound maintenance release, emulator-qualified, not hardware-qualified (`V2_MAINT_RELEASE_STATUS.md`); `make build EXTRA_DEFS=` on it still builds the `v2.0.0-emu.1` images |
 
 `integration/v2-final-rom` contains, by merge, the qualification and owner-decision study work it
 was built on (`study/proto-enh-shrink2`, `study/decisions-review` and what they contain).

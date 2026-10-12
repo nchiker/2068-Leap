@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
-"""Collect the 2068-Leap V2 Enhanced release artifacts into build/release-v2-rc/ (make rc-assets; the
+"""Collect the 2068-Leap V2 release artifacts into build/release-v2-rc/ (make rc-assets; the
 directory keeps its release-candidate name so existing references stay valid).
 
-ROM images, package binaries and tapes, the V2 documents, SHA256SUMS and BUILD_INFO.txt (commit,
-budget, and the CRC-16 of the HOME+EXROM pair that SAVE ... ALL stamps on its tapes)."""
+ROM images, package binaries and tapes, the V2 documents and the user manual (Markdown and Word),
+SHA256SUMS and BUILD_INFO.txt (release name and version, commit, budget, and the CRC-16 of the
+HOME+EXROM pair that SAVE ... ALL stamps on its tapes).
+
+RELEASE / VERSION name the release this tree builds. The original release, v2.0.0-emu.1, is the tag
+of that name (its own copy of this script labels it); this tree's default build is the sound
+maintenance release."""
 import hashlib
 import os
 import shutil
@@ -11,6 +16,9 @@ import subprocess
 import sys
 
 OUT = "build/release-v2-rc"
+VERSION = "v2.0.1-emu.1"
+RELEASE = "2068-Leap V2 Enhanced %s — Sound Maintenance Release (emulator-qualified, not hardware-qualified)" % VERSION
+PACKAGES = ("mode", "sprite", "printer", "shapes", "graphics", "cbeep")
 
 
 def crc16(data, c=0xFFFF):
@@ -28,19 +36,26 @@ def sh(*a):
 def main():
     if os.path.isdir(OUT):
         shutil.rmtree(OUT)
-    for d in ("roms", "packages", "docs"):
+    for d in ("roms", "packages", "docs", "docs/manual"):
         os.makedirs(os.path.join(OUT, d))
     home, exrom = open("build/test_basic.bin", "rb").read(), open("build/exrom.bin", "rb").read()
     assert len(home) == 16384 and len(exrom) == 8192
     open(os.path.join(OUT, "roms/leap_v2_home.bin"), "wb").write(home)
     open(os.path.join(OUT, "roms/leap_v2_exrom.bin"), "wb").write(exrom)
     open(os.path.join(OUT, "roms/leap_v2_zesarux.bin"), "wb").write(home + exrom)
-    for n in ("mode", "sprite", "printer", "shapes", "graphics"):
+    for n in PACKAGES:
         shutil.copy("build/v2_package_%s.bin" % n, os.path.join(OUT, "packages"))
         shutil.copy("build/extensions/v2_%s.tzx" % n, os.path.join(OUT, "packages"))
     for f in sorted(os.listdir("docs/v2")):
         if f.startswith("V2_") and f.endswith(".md") or f in ("PACKAGE_ABI.md", "AUTHORITATIVE_SOURCE.md"):
             shutil.copy(os.path.join("docs/v2", f), os.path.join(OUT, "docs"))
+    shutil.copy("docs/v2/2068_Leap_V2_Users_Manual.docx", os.path.join(OUT, "docs"))
+    for f in sorted(os.listdir("docs/v2/manual")):
+        src = os.path.join("docs/v2/manual", f)
+        if os.path.isdir(src):
+            shutil.copytree(src, os.path.join(OUT, "docs/manual", f))
+        else:
+            shutil.copy(src, os.path.join(OUT, "docs/manual"))
     sums = []
     for d in ("roms", "packages"):
         for f in sorted(os.listdir(os.path.join(OUT, d))):
@@ -49,7 +64,9 @@ def main():
     open(os.path.join(OUT, "SHA256SUMS"), "w").write("\n".join(sums) + "\n")
     budget = sh("python3", "tools/report_budget.py", "build/test_basic.lst", "build/exrom.lst", "build/test_basic.sym")
     info = [
-        "2068-Leap V2 Enhanced — Emulator-Qualified Release",
+        RELEASE,
+        "version:     %s" % VERSION,
+        "status:      emulator-qualified, NOT hardware-qualified (docs/v2/V2_MAINT_RELEASE_STATUS.md)",
         "hardware:    NOT TESTED — PHYSICAL HARDWARE UNAVAILABLE (docs/v2/V2_HARDWARE_CHECKLIST.md)",
         "commit:      %s (%s)" % (sh("git", "rev-parse", "HEAD"), sh("git", "rev-parse", "--abbrev-ref", "HEAD")),
         "describe:    %s" % sh("git", "describe", "--always", "--dirty"),
@@ -60,7 +77,7 @@ def main():
         budget,
     ]
     open(os.path.join(OUT, "BUILD_INFO.txt"), "w", encoding="utf-8").write("\n".join(info) + "\n")
-    print("\n".join(info[:6]))
+    print("\n".join(info[:8]))
     print("%d files in %s" % (sum(len(fs) for _, _, fs in os.walk(OUT)), OUT))
     return 0
 

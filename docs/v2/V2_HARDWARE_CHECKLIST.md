@@ -64,9 +64,9 @@ ROMs (EPROMs or a ROM-replacement board).
 | 3.10 | `LOAD "shapes" EXT` from a package tape; `CIRCLE 128,96,40`; `FILL 128,96` | circle drawn, filled | NOT TESTED — PHYSICAL HARDWARE UNAVAILABLE |
 | 3.11 | a V1 / stock BASIC tape | `BAD TAPE VERSION`, program intact | NOT TESTED — PHYSICAL HARDWARE UNAVAILABLE |
 
-## 5. Maintenance candidate: sound (`study/classicbeep`)
+## 5. Maintenance release v2.0.1-emu.1: sound
 
-For the candidate images only (`make build` on that branch; record their SHA-256s). Item 2.7 above describes the release's raw `BEEP`; on the candidate, `BEEP` is the AY note below.
+For the `v2.0.1-emu.1` images (HOME `3f13ec2c...`, EXROM `24b1ebb0...`, identity CRC `$2CFF`; `V2_MAINT_RELEASE_STATUS.md`). Item 2.7 above describes the release's raw `BEEP`; on the candidate, `BEEP` is the AY note below.
 
 | # | Step | Expected | Result |
 |---|---|---|---|
