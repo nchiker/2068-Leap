@@ -107,6 +107,8 @@ NAMES = (
     "SA_S",
     "SA_TAIL",
 )
+# MAINT (AY BEEP): exported only when the HOME build has them (rom/v2_ay_beep.asm placement).
+OPTIONAL = ("VM_ERR_RANGE", "AY_BEEP_PERIOD", "AY_BEEP_PLAY", "AY_WAIT_FRAMES")
 
 
 def main() -> None:
@@ -120,7 +122,7 @@ def main() -> None:
         raise SystemExit(f"missing HOME exports: {sorted(missing)}")
     out = Path(sys.argv[2])
     out.write_text("; Generated from assembled V2 HOME symbols. Do not edit.\n" + "".join(
-        f"{name} EQU ${symbols[name]:04X}\n" for name in NAMES
+        f"{name} EQU ${symbols[name]:04X}\n" for name in NAMES + tuple(n for n in OPTIONAL if n in symbols)
     ))
 
 

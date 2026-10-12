@@ -88,6 +88,18 @@ case ids (`tools/qual/corpus.py`) or suite case names. Source of the Q-/D-/L-/N-
 | RC-11 | TEST | the study battery ran the integer oracles without `ORACLE_PROMOTE=1` on the RC (its promotion marker `FLOAT_BIG_TO_STRING` was replaced by the exact float formatter), so every overflow pair was reported as a mismatch, and the oracle's mismatch printout crashed | Fixed in `run_study_battery.sh` (VM-source marker as well) and `study_vm_oracle.py`. With promotion checked, 0 mismatches. ROM unchanged | `970dc30` |
 | RC-12 | TEST | (found reading the fresh-clone `make test` log) the component-test image `vm_milestone01` had its DIM opcode slots 128 bytes off (`$31CF`/`$31FD`, handlers at `$324F`/`$327D`): `rom/test_v2_local_dim.inc` bound the slot names with an `EQU` before the handlers, a forward reference that lags one assembler pass (sjasmplus "Label has different value in pass 3"). The test passed only because it runs no DIM. Present since R10.9 Phase 2C; production images never include the file | Fixed: the names are bound after the handlers; no warning, slots correct; production images unchanged | `c57e968` |
 
+## Maintenance candidate (branch `study/classicbeep`, not yet released)
+
+Found or changed after the release, in the BEEP/SOUND maintenance work (`V2_AY_BEEP_STUDY.md`, `V2_CLASSICBEEP_STUDY.md`). The release itself is unchanged; these entries describe the candidate.
+
+| Id | Sev | Defect | Status | Evidence |
+|---|---|---|---|---|
+| M-PAUSE | MEDIUM | **`PAUSE n` could end at once.** It waited until `FRAMES` reached `FRAMES + n` in 16 bits, so whenever that sum passed 65535 the target wrapped and the pause ended immediately: `PAUSE 20` with `FRAMES` = 65530 waited 0 frames. Probability n / 65536 per `PAUSE` (about 5 % for a one-minute `PAUSE 3000`). Present in `v2.0.0-emu.1` | Fixed in the candidate: `PAUSE`, `BEEP` and the startup chime share one `HALT`-counting wait (`AY_WAIT_FRAMES`, HOME), which BREAK ends | `tools/maint/ay_beep_tests.py` (`PAUSE 20 from FRAMES=65530`; the release-behaviour assertion on the AY build) |
+| M-1 | DESIGN | `BEEP` took raw cycle/delay counts, not Sinclair's seconds and semitones | Changed in the candidate: AY-based `BEEP seconds,semitones`; the loudspeaker routine moved to the optional cbeep package (`CBEEP ms,semitones,border`) | `ay_beep_tests.py`, `cbeep_tests.py`, `cbeep_tape_test.py` |
+| M-2 | LOW | `SOUND` refused register 0 (the stock ROM accepts 0 to 16) | Fixed in the candidate | `ay_beep_tests.py` (`SOUND 0,123` ... `SOUND 20,1`) |
+| M-3 | LIMIT | With the frame interrupt off (port `$FF` bit 6, or machine code that leaves interrupts off), `PAUSE n` and `PAUSE 0` never end and BREAK cannot stop them; `BEEP` never ends if the frame interrupt is inhibited at port `$FF` | Documented (manual: `PAUSE`, `BEEP`); the same as the release for `PAUSE` | `tools/maint/di_wait_tests.py` |
+| T-4 | TEST | `make test-legacy`: 5 of its 13 V1 storage cases (`extension_roundtrip`, `autorun_*`) cannot be built: the legacy test EXROM (`rom/exrom_build.asm` with `STORAGE_TEST_FAKE_SEND`) overflows by 42 / 17 bytes, so `sjasmplus_strict.sh` refuses it. Identical on the release tag; the production images do not use this build | test debt, open; the other 8 cases pass | `V2_CLASSICBEEP_STUDY.md` s10 |
+
 ## Hardware
 
 Nothing in this register has been checked on a physical TS2068 (all evidence is ZEsarUX): **NOT

@@ -694,12 +694,12 @@ Further shapes -- circles, filled areas, rectangles -- come from the packages (C
 
 ## Chapter 13 -- Sound
 
-`BEEP duration, pitch` makes a note on the loudspeaker. Both numbers are plain counts: the duration is how many waves, the pitch is a delay (a bigger pitch gives a lower note). Try this short rising scale:
+`BEEP seconds, semitones` plays a note on the sound chip, as on the Spectrum: the first number is how long it lasts in seconds (fractions are fine), the second is how many semitones above middle C (0 is middle C, 12 the C an octave higher, a negative number goes lower). Try this short rising tune:
 
 ```basic ex=guide.sound.1
-FOR p = 200 TO 100 STEP -20
-  BEEP 80, p
-NEXT p
+FOR n = 0 TO 4
+  BEEP 0.2, n * 3
+NEXT n
 PRINT "DONE"
 ```
 ```output ex=guide.sound.1
@@ -762,7 +762,7 @@ That is a powerful way to find out why a program did something odd, or to try ou
 
 ## Chapter 16 -- Packages: more statements
 
-The language in the ROM is complete for most programs. Specialist statements come on tape as **packages**, which you load with `LOAD "NAME" EXT`. There are five:
+The language in the ROM is complete for most programs. Specialist statements come on tape as **packages**, which you load with `LOAD "NAME" EXT`. There are six:
 
 | To get | Load | You then have |
 |---|---|---|
@@ -771,6 +771,7 @@ The language in the ROM is complete for most programs. Specialist statements com
 | moving pictures | `SPRITE` | `GRAB`, `SHOW`, `HIDE`, `MOVE` |
 | the printer | `PRINTER` | `LPRINT`, `LLIST` |
 | video modes, ULAplus | `MODE` | `MODE`, `ULAPLUS`, `PALETTE` |
+| the loudspeaker (the old beeper) | `CBEEP` | `CBEEP` |
 
 *With the shapes package loaded (`LOAD "SHAPES" EXT`):*
 

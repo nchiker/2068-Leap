@@ -1,6 +1,6 @@
 # Part 5 -- Packages
 
-The V2 language that is built into the ROM is complete for programs, text, arrays, sound and simple graphics. Everything more specialised lives in **packages**: small programs on tape that add statements to the language. There are five:
+The V2 language that is built into the ROM is complete for programs, text, arrays, sound and simple graphics. Everything more specialised lives in **packages**: small programs on tape that add statements to the language. There are six:
 
 | Package | Tape name | Size | Statements it adds |
 |---|---|---|---|
@@ -9,6 +9,7 @@ The V2 language that is built into the ROM is complete for programs, text, array
 | **printer** | `PRINTER` | 345 bytes | `LPRINT`, `LLIST` |
 | **shapes** | `SHAPES` | 1007 bytes | `CIRCLE`, `FILL` |
 | **graphics** | `GRAPHICS` | 467 bytes | `CPLOT`, `BLOCK`, `FRAME`, `INVERT` |
+| **cbeep** | `CBEEP` | 260 bytes | `CBEEP` (the loudspeaker) |
 
 ## Loading a package
 
@@ -94,6 +95,7 @@ A package statement that is given a bad argument stops the program with `RUNTIME
 | sprite | 18 | `SHOW` or `GRAB` of a sprite that is already shown |
 | sprite | 19 | `HIDE` or `MOVE` of a sprite that is not shown |
 | sprite | 20 | the sprite would not fit on the screen |
+| cbeep | 15 | semitones outside -60 to 69, a negative length, or a note too long for its pitch |
 
 Argument mistakes are found when the statement runs, not when the program is compiled: `RUN` starts, and the program stops when it reaches the bad statement.
 
@@ -354,3 +356,39 @@ PRINT c
 0
 1
 ```
+
+---
+
+## The cbeep package
+
+The ROM's `BEEP` plays on the sound chip. The **cbeep** package brings back the TS2068's own **loudspeaker** (the beeper of the Spectrum and of the first V2 release) with one statement:
+
+`CBEEP milliseconds, semitones, border`
+
+* *milliseconds*: how long, 0 to 32767. Package arguments are whole numbers, so the length is in thousandths of a second: Sinclair's `BEEP 0.5, 0` is `CBEEP 500, 0, ...`.
+* *semitones*: the note, counted from middle C as for `BEEP`, -60 to 69.
+* *border*: the border colour, 0 to 7. The loudspeaker and the border share one port, and a package cannot read the colour that `BORDER` set, so the program says which colour to keep. **Any other number changes the border** to that colour.
+
+*With the cbeep package loaded (`LOAD "CBEEP" EXT`):*
+
+```basic ex=pkg.cbeep.1 pkg=cbeep
+BORDER 5
+FOR n = 0 TO 7
+  CBEEP 120, n * 2 - DIV(n + 1, 4), 5
+NEXT n
+PRINT "scale"
+```
+```output ex=pkg.cbeep.1
+scale
+```
+
+Things to know before using it:
+
+* **Interrupts are off while a `CBEEP` sounds.** The program, the frame counter and the keyboard all wait for the note: **BREAK is not noticed until the note has ended**, and a note can last up to 32.8 seconds. Keep notes short, or use `BEEP`, which BREAK can stop.
+* **It replaces the package you had loaded** (one package at a time): a program cannot use `CBEEP` together with `CIRCLE`, sprites or any other package statement. Loading another package removes `CBEEP`.
+* A note longer than the loudspeaker routine can count is error 15: over 4.6 seconds at +69, proportionally more for lower notes (about 65 000 waves).
+* It does not touch the sound chip: `SOUND` and `BEEP` music carries on as it was.
+* The loudspeaker routine is the one the first V2 release used for its `BEEP`, unchanged; the package only adds the note and length arithmetic. Its pitch on a TS2068 is within 12 cents (hundredths of a semitone) for two octaves above middle C and coarser higher up (see the keyword [CBEEP](03_keywords.md#cbeep--package-cbeep)).
+* Heard only in the emulator, never on a real machine.
+
+The tape for the package is built with the others by `make v2-packages` (`build/extensions/v2_cbeep.tzx`).

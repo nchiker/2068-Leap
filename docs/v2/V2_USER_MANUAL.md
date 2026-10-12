@@ -8,7 +8,7 @@ The V2 user manual has moved to a full multi-part manual, written in the style o
 | [2. Beginner's guide](manual/02_beginners_guide.md) | the editor, a first program, numbers, words, decisions, loops, procedures, arrays, the screen, sound, tapes, sessions |
 | [3. Keywords](manual/03_keywords.md) | every statement, function, operator and command, A to Z |
 | [4. Concepts](manual/04_concepts.md) | numbers, strings, arrays, the Array Store, sessions, tapes, errors, memory, speed ... A to Z |
-| [5. Packages](manual/05_packages.md) | mode, sprite, printer, shapes, graphics |
+| [5. Packages](manual/05_packages.md) | mode, sprite, printer, shapes, graphics, cbeep |
 | [6. Practical examples](manual/06_examples.md) | complete programs |
 | [Appendices](manual/07_appendices.md) | messages, error codes, character set, limits, memory map, package card, hardware notes, keyword index |
 

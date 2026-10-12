@@ -2,6 +2,8 @@
 
 Recorded by the owner at the close of the documentation session (2026-10-11). The accepted release (`v2.0.0-emu.1`) stays as it is until a maintenance release is opened; these are the items the owner asked to be done in it. Evidence and measurements: [`V2_BEEP_SOUND_MODE_COMPATIBILITY.md`](V2_BEEP_SOUND_MODE_COMPATIBILITY.md); the study prototype is on the isolated branch `study/beep-compat` (commit `ccb78a4`).
 
+**Status (2026-10-12):** M-1 and M-2 are implemented and tested on the study branch `study/classicbeep` (on `study/ay-beep`): AY-based `BEEP` with the original startup chime (option C), `SOUND` register 0, a shared frame wait that also fixes a `PAUSE` defect (M-PAUSE in `V2_DEFECT_REGISTER.md`), and the loudspeaker as the optional cbeep package. Owner decisions recorded in `V2_CLASSICBEEP_STUDY.md` (on that branch). Not yet merged. M-3 is not started.
+
 ## M-1. Sinclair-style `BEEP seconds,semitones`, keeping a startup chime
 
 * **Owner's preference:** Sinclair-style `BEEP` (integer semitones, as Leap-Forth; the prototype is accurate enough for normal musical use) **while preserving a startup chime, possibly a smaller one**. Do not simply drop the chime.

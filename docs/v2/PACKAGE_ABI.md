@@ -88,7 +88,7 @@ clear + `A` = slot, or carry set + `A = $FF` (registry full — 12 slots — or 
 bakes into the bytecode; `OP_CALL_EXT` raises runtime error 9 if the slot's generation changed
 (package replaced or cleared) — this part of the mechanism is unchanged and sound.
 
-**Syntax a package gets.** `NAME expr, expr, …` — exactly `B` comma-separated expressions, no
+**Syntax a package gets.** `NAME expr, expr, …` — the name is matched only by a typed word of exactly its stored length (at most 8 characters, so a longer keyword can never be typed: CBEEP, not CLASSICBEEP); exactly `B` comma-separated expressions, no
 parentheses, no optional arguments, no result (statements only; `COMPILE_EXT_CALL` is generic and
 unchanged). Names are matched case-insensitively against the registry at *compile* time, so a
 package must be registered before the program that uses it is compiled (every `RUN` recompiles).
@@ -337,7 +337,8 @@ Negative controls were run when the checker was written (an unpinned `ld a,($820
 | MODE (165 B) | 0, 1 | `EXT_CALL_ARG0–1`, `VM_ERROR_CODE`, `VM_HALTED` | ports `$BF3B/$FF3B` (ULAplus) written directly |
 | GRAPHICS (467 B) | 0, 7, 12, 13 | `EXT_CALL_ARG0–3`, `CURRENT_OVER` | private state inside the image |
 | PRINTER (345 B) | 0, 2, 8, 9, 14, 15 | `EXT_CALL_ARG0`, `VM_ERROR_CODE`, `VM_HALTED`, `PRINT_*` | port `$FB` written directly |
+| CBEEP (260 B; maintenance candidate, optional) | 0 | `EXT_CALL_ARG0–2`, `VM_ERROR_CODE`, `VM_HALTED` | port `$FE` written directly (the loudspeaker; the border colour comes from the third argument, because `PORT_FE_SHADOW` is not a pinned cell); private state inside the image; `kernel/sound/sound.asm` assembled into it |
 
-Hardware ports used directly by packages (`$BF3B`, `$FF3B`, `$FB`) are hardware, not HOME, and are
+Hardware ports used directly by packages (`$BF3B`, `$FF3B`, `$FB`, `$FE`) are hardware, not HOME, and are
 outside the ABI. R10.8's open item A4 (a documented clobber contract for execute routines) is
 closed by §2; A3 (error-code namespace) is documented but not yet redesigned.

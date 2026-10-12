@@ -170,113 +170,53 @@ Here 50 = 6 x 8 + 2: paper 6 (yellow) and ink 2 (red).
 
 ## BEEP
 
-`BEEP duration, pitch` -- **statement**
+`BEEP seconds, semitones` -- **statement**
 
-Makes a sound through the loudspeaker. **In the V2 release this is not the Sinclair `BEEP`**: there are no seconds and no musical notes. Both numbers are raw counts:
-
-* *duration* is the number of complete sound waves (cycles) to produce; 0 produces none;
-* *pitch* is the length of the pause in each half-wave: the **larger** the number, the **lower** the note.
-
-One cycle takes about `52 x pitch + 222` processor T-states, so the frequency is the processor clock divided by that: about **3 528 000 / (52 x pitch + 222)** hertz on a TS2068 (3 500 000 on the emulator the release was measured on). `BEEP 1000,100` costs 5 421 600 T-states, 650 Hz at 3.5 MHz.
-
-| Wanted note (approximately) | pitch |
-|---|---|
-| 262 Hz (middle C) | 255 |
-| 440 Hz (A) | 149 |
-| 880 Hz | 72 |
-| 1760 Hz | 34 |
+Plays a note on the AY-3-8912 sound chip, as Sinclair BASIC's `BEEP` does: *seconds* is how long, *semitones* is the pitch counted from middle C (0 is middle C, 12 the C above it, -12 the C below; the range is -60 to 69). The program waits until the note ends.
 
 ```basic ex=kw.beep.1
-BEEP 220, 149
-PAUSE 10
-BEEP 440, 72
+BEEP 0.25, 0
+BEEP 0.25, 4
+BEEP 0.25, 7
+BEEP 0.5, 12
 PRINT "done"
 ```
 ```output ex=kw.beep.1
 done
 ```
 
-**Notes.**
+* *seconds* may have a fraction. It is turned into display frames (1/60 second on a TS2068) and rounded to the nearest frame, so `BEEP 0.1, 0` lasts 6 frames. Less than half a frame plays nothing; 0 to 273 seconds is allowed.
+* *semitones* must be a whole number: a fraction is cut off toward zero (`BEEP 1, 0.5` plays middle C). The chip cannot go lower than 27.5 Hz (the lowest A on a piano, semitone -39), so -60 to -40 all play that note.
+* A negative or too long *seconds*, or *semitones* outside -60 to 69, stops the program with run-time error 15 and plays nothing.
 
-* The program stops running while it beeps. Interrupts are switched off during the sound, so BREAK is not noticed until it ends: keep *duration* short (a few hundred cycles).
-* A pitch of 0 is the slowest wave of all (65 536 steps per half-wave), not the highest.
-* The result was measured on the emulator; the sound itself was not heard on a real machine.
-
-**Compared with Sinclair BASIC.** On the Spectrum and in the TS2068's own BASIC, `BEEP seconds, semitones` takes a length in **seconds** and a pitch in **semitones above middle C** (0 is middle C, 12 an octave above, a negative number below; the range is -60 to 69). V2's `BEEP` was inherited from the first release (V1) with raw counts; the intended behaviour was the Sinclair one, and a change is being considered (see `docs/v2/V2_BEEP_SOUND_MODE_COMPATIBILITY.md`). Until then, this procedure gives Sinclair's `BEEP` in BASIC: put the length in seconds in the variable `dur`, and `CALL sbeep(semitones)`. It works out the frequency (middle C is 261.6256 Hz and each semitone is 2^(1/12) higher), turns it into the cycle count and the pitch that V2's `BEEP` wants, and beeps. It accepts whole semitones (a fraction is cut off) from -60 to 69; the pitch it asks for is accurate to about 1% up to three octaves above middle C, but the loudspeaker routine's steps become coarse above that (a note at +60 is about 11% sharp).
+A scale, one note a tenth of a second:
 
 ```basic ex=kw.beep.2
-dur = 1
-CALL convert(0)
-PRINT cyc; " "; pit
-CALL convert(12)
-PRINT cyc; " "; pit
-CALL convert(-12)
-PRINT cyc; " "; pit
-CALL convert(9)
-PRINT cyc; " "; pit
-END
-PROC sbeep(semi):
-  CALL convert(semi)
-  BEEP cyc, pit
-ENDP
-PROC convert(semi):
-  n = 60 + semi
-  o = DIV(n, 12) - 5
-  f = 261.6256
-  FOR i = 1 TO MOD(n, 12)
-    f = f * 1.0594630944
-  NEXT i
-  IF o > 0 THEN
-    FOR i = 1 TO o
-      f = f * 2
-    NEXT i
-  ENDIF
-  IF o < 0 THEN
-    FOR i = 1 TO 0 - o
-      f = f / 2
-    NEXT i
-  ENDIF
-  cyc = INT(f * dur)
-  pit = INT((3528000 / f - 222) / 52)
-  IF pit < 1 THEN
-    pit = 1
-  ENDIF
-ENDP
+FOR n = 0 TO 7
+  BEEP 0.1, n * 2 - DIV(n + 1, 4)
+NEXT n
+PRINT "scale"
 ```
 ```output ex=kw.beep.2
-261 255
-523 125
-130 514
-440 149
+scale
 ```
 
-(Each line is the number of cycles and the pitch for one second of that note: middle C, the C above it, the C below it and the A above middle C. The stock TS2068 ROM, run in the emulator, gives the same cycle counts to within one and a pitch that sounds the same to within a fraction of a percent.) To play a tune, set `dur` and call `sbeep` for each note:
-
-```basic ex=kw.beep.3
-dur = 0.2
-FOR note = 0 TO 7
-  CALL sbeep(note * 2 - DIV(note, 4))
-NEXT note
-END
-PROC sbeep(semi):
-  n = 60 + semi
-  o = DIV(n, 12) - 5
-  f = 261.6256
-  FOR i = 1 TO MOD(n, 12)
-    f = f * 1.0594630944
-  NEXT i
-  IF o > 0 THEN
-    FOR i = 1 TO o
-      f = f * 2
-    NEXT i
-  ENDIF
-  cyc = INT(f * dur)
-  pit = INT((3528000 / f - 222) / 52)
-  BEEP cyc, pit
-ENDP
+```basic ex=kw.beep.3 err=ve:15
+BEEP 1, 70
 ```
 
-**See also** SOUND, PAUSE, the concept [Sound](04_concepts.md#sound).
+**Notes.**
+
+* `BEEP` uses the chip's **channel A**: it sets channel A's pitch, switches its tone on and its noise off in the mixer (register 7; the other bits are kept), plays at full volume and leaves channel A **silent** (volume 0) afterwards. Channels B and C, the noise and the envelope are not touched, so music on B and C made with `SOUND` goes on under a `BEEP`; a program that used channel A with `SOUND` must set it again afterwards.
+* Interrupts stay on while the note sounds: the frame counter keeps counting and **BREAK stops a long `BEEP`** at once (the channel is silenced).
+* `BEEP` counts display frames, so it needs the frame interrupt. A machine-code routine that leaves interrupts off is put right by `BEEP` itself (the ROM switches them back on on the way), but a program that switches the frame interrupt off at the source (bit 6 of port 255) makes `BEEP` wait for ever with the note sounding; BREAK cannot end it (the keyboard is read by the same interrupt), only the reset button.
+* Pitch: within 6 cents (hundredths of a semitone) of the true note from middle C up two octaves, 12 cents in the third and 25 in the fourth; the notes above +48 are coarser (up to about 3/4 of a semitone). The stock TS2068 ROM is 14 cents sharp on every note.
+* The sound was measured in the emulator (chip registers and recorded audio), not heard on a real machine. In the emulator a frame is 1/50 second, so there every `BEEP` lasts a fifth longer.
+* The machine's loudspeaker (the original TS2068 beeper) is available with the optional [CBEEP package](05_packages.md#the-cbeep-package).
+
+**Compared with Sinclair BASIC.** The same statement and arguments. Differences: fractional semitones are cut off (Sinclair plays the note in between); notes below -39 play -39; durations are whole frames (Sinclair: whole waves), and up to 273 seconds (Sinclair: 10); Sinclair's `BEEP` uses the loudspeaker and switches interrupts off, V2's uses the sound chip and keeps them on.
+
+**See also** SOUND, PAUSE, CBEEP, the concept [Sound](04_concepts.md#sound).
 
 ---
 
@@ -386,6 +326,36 @@ n = 6
 * `CALL` to a name that is not a procedure is a compile error (an undefined label gives `SYNTAX ERROR`). A known limitation: `CALL` of an ordinary *label* is accepted, jumps there and runs on without ever returning (accepted defect Q-24); always `CALL` procedures only.
 
 **See also** PROC, ENDP, GOTO, DEF FN.
+
+---
+
+## CBEEP  [package: cbeep]
+
+`CBEEP milliseconds, semitones, border` -- **statement** (needs the cbeep package: `LOAD "CBEEP" EXT`)
+
+Plays a note on the machine's **loudspeaker** (the TS2068's original beeper), with the pitch counted in semitones from middle C as `BEEP` does. *milliseconds* is the length (0 to 32767: package arguments are whole numbers, so the length is in thousandths of a second); *semitones* is -60 to 69; *border* is the border colour (0 to 7) to keep while the note sounds and afterwards.
+
+```basic ex=kw.cbeep.1 pkg=cbeep
+BORDER 1
+CBEEP 250, 0, 1
+CBEEP 250, 7, 1
+CBEEP 500, 12, 1
+PRINT "beeped"
+```
+```output ex=kw.cbeep.1
+beeped
+```
+
+**Notes.**
+
+* **Interrupts are switched off while the note sounds**: the frame counter stops and **BREAK does nothing until the note has ended** (a note can last up to 32.8 seconds). Use `BEEP` when BREAK matters.
+* Every write to the loudspeaker port also sets the border, and a package cannot read the border colour that `BORDER` set: give it as the third argument. **A different number changes the border colour** (only its low three bits count, so 9 is blue).
+* Loading the cbeep package **replaces any package already loaded**, and loading another package removes `CBEEP` (one package at a time).
+* Out of range (*semitones* outside -60 to 69, a negative length, or more waves than the routine can count: over 4.6 seconds at +69) is run-time error 15; nothing plays.
+* A fraction in an argument is cut off (`CBEEP 99.9, 0, 7` plays for 99 ms).
+* Pitch on a TS2068: within 3 cents below middle C, 12 cents for two octaves above it, then coarser (31 cents in the fourth octave up, about 1.5 semitones at the very top), because the beeper's delay moves in steps. Heard only in the emulator, whose processor is slightly slower, so there every note is 0.8 % flat.
+
+**See also** BEEP, BORDER, [the cbeep package](05_packages.md#the-cbeep-package).
 
 ---
 
@@ -1849,7 +1819,7 @@ PRINT ATTR(5, 5)
 
 `PAUSE n` -- **statement**
 
-Waits for *n* frames (one frame is one display interrupt: 1/50 s in the qualification emulator; a real TS2068 is expected to run at 60 a second, which has not been measured) and goes on. `PAUSE 0` waits for a key to be pressed. BREAK ends a long pause.
+Waits for *n* frames (one frame is one display interrupt: 1/60 s on a TS2068, 1/50 s in the qualification emulator) and goes on; *n* can be 1 to 65535. `PAUSE 0` waits for a key to be pressed. BREAK ends a long pause.
 
 ```basic ex=kw.pause.1
 PRINT "wait"
@@ -1861,7 +1831,12 @@ wait
 done
 ```
 
-The measured cost is 69 700 T-states per frame count: `PAUSE 100` took 6 978 474 T-states on the emulator, 2.0 seconds at the emulator's 50 frames per second.
+The first frame may be partly over when the pause starts, so `PAUSE n` lasts between n - 1 and n frames: `PAUSE 100` took 6 985 733 T-states in the emulator, 100 frames of 69 888.
+
+**Notes.**
+
+* `PAUSE` waits for the frame interrupt. A program that switches it off (bit 6 of port 255, or machine code that leaves interrupts off) makes `PAUSE` wait for ever, and BREAK cannot end it because the keyboard is read by the same interrupt; only the reset button helps.
+* **Corrected in the maintenance release:** in the first V2 release (`v2.0.0-emu.1`) a `PAUSE` could end at once instead of waiting, whenever the machine's frame counter (which runs from 0 to 65535 and starts again) would have passed 65535 during the pause; a one-minute `PAUSE 3000` did so about one time in twenty. `PAUSE` now counts its frames itself.
 
 **See also** BEEP, INKEY$.
 
@@ -2450,21 +2425,22 @@ PRINT SIN(0.5)
 
 Writes *value* (0 to 255) to a register of the AY-3-8912 sound chip. The chip makes three tones and a noise, and keeps playing while the program goes on, until you silence it.
 
-*register* is the register number as the chip knows it, and V2 requires it to be **1 to 16**: any other number is a run-time error. **This differs from the original TS2068 BASIC**, whose `SOUND` accepts **0 to 16** (checked on the stock ROM in the emulator: it rejects 17 and above and nothing else). V2 therefore cannot write register 0, the fine pitch of channel A, with `SOUND`; the chip has no register 16, so a write to 16 does nothing in either system. (A one-line change to V2's `SOUND` would make it accept 0; see `docs/v2/V2_BEEP_SOUND_MODE_COMPATIBILITY.md`. Until then, `OUT 245, 0` followed by `OUT 246, value` writes register 0 directly: 245 and 246 are the chip's register and data ports.)
+*register* is the register number as the chip knows it, **0 to 16**, as in the original TS2068 BASIC; 17 or more is run-time error 8. The chip has no register 16, so a write to 16 does nothing.
 
 | Register | Holds |
 |---|---|
-| 0 | channel A pitch, fine (**not** reachable with V2's `SOUND`; see above) |
+| 0 | channel A pitch, fine |
 | 1 | channel A pitch, coarse (the low 4 bits) |
 | 2, 3 | channel B pitch, fine and coarse |
 | 4, 5 | channel C pitch, fine and coarse |
 | 6 | noise pitch |
 | 7 | mixer: which tones and noise are on (a bit set = *off*) |
-| 8, 9, 10 | volume of channels A, B, C (0 to 15) |
+| 8, 9, 10 | volume of channels A, B, C (0 to 15; 16 = use the envelope) |
 | 11, 12, 13 | volume envelope |
 
 ```basic ex=kw.sound.1
 SOUND 7, 62
+SOUND 0, 200
 SOUND 1, 1
 SOUND 8, 10
 PAUSE 50
@@ -2475,9 +2451,18 @@ PRINT "silent again"
 silent again
 ```
 
-This switches channel A's tone on (mixer 62 turns on only tone A), sets its pitch and volume, waits a second, and silences it. Pitch is the **period**: the larger the number, the lower the note.
+This switches channel A's tone on (mixer 62 turns on only tone A), sets its pitch (456: 200 + 256 x 1) and volume, waits a second, and silences it. Pitch is the **period**: the larger the number, the lower the note; the note is 110 250 / period hertz on a TS2068 (about 242 Hz here).
 
-**Notes.** The register number is sent to the chip unchanged (read from the ROM, and checked on the emulator by watching the port writes). The sound itself was not heard on a real machine.
+```basic ex=kw.sound.2 err=ve:8
+SOUND 17, 1
+```
+
+**Notes.**
+
+* `BEEP` plays on channel A: after a `BEEP`, channel A is silent and its pitch registers hold the `BEEP`'s note, so set channel A again if your `SOUND` music uses it. Channels B and C are not touched by `BEEP`.
+* Only the low eight bits of *register* are used, so `SOUND 256, x` writes register 0 (the stock TS2068 BASIC refuses 256 and above).
+* **Changed in the maintenance release:** the first V2 release accepted only registers 1 to 16, so channel A's fine pitch could be written only with `OUT 245, 0 : OUT 246, value`.
+* The register number is sent to the chip unchanged (checked in the emulator by reading the chip's registers back). The sound itself was not heard on a real machine.
 
 **See also** BEEP, OUT.
 

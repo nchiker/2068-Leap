@@ -1,6 +1,6 @@
 # 2068-Leap V2 -- language reference (V2 Enhanced release)
 
-The compact, precise description of the language the V2 Enhanced release implements (tag `v2.0.0-emu.1`). It is derived from the ROM source, the five package modules and the qualification evidence, and every statement in it was checked on the release image. The teaching version, with a worked example for every keyword, is the **user manual**: [`manual/01_introduction.md`](manual/01_introduction.md); its keyword part ([`manual/03_keywords.md`](manual/03_keywords.md)) is this reference with examples, and its examples are tests (`make doc-examples`). The language conformance corpus (`tools/qual/corpus.py`, 667 cases, `make qual`) is the historical release record and is unchanged. Where an older document (`docs/user_manual.md`, `docs/basic_language_reference.md`, the V1 manuals) disagrees with this one, this one wins. Corrections made to the previous version of this file are listed in [`V2_DOCUMENTATION_FINDINGS.md`](V2_DOCUMENTATION_FINDINGS.md). Features that are deliberately not in V2 are in section 12 and in `V2_FEATURE_MATRIX.md`.
+The compact, precise description of the language the V2 Enhanced release implements (tag `v2.0.0-emu.1`). It is derived from the ROM source, the package modules and the qualification evidence, and every statement in it was checked on the release image. The teaching version, with a worked example for every keyword, is the **user manual**: [`manual/01_introduction.md`](manual/01_introduction.md); its keyword part ([`manual/03_keywords.md`](manual/03_keywords.md)) is this reference with examples, and its examples are tests (`make doc-examples`). The language conformance corpus (`tools/qual/corpus.py`, 667 cases, `make qual`) is the historical release record and is unchanged. Where an older document (`docs/user_manual.md`, `docs/basic_language_reference.md`, the V1 manuals) disagrees with this one, this one wins. Corrections made to the previous version of this file are listed in [`V2_DOCUMENTATION_FINDINGS.md`](V2_DOCUMENTATION_FINDINGS.md). Features that are deliberately not in V2 are in section 12 and in `V2_FEATURE_MATRIX.md`.
 
 ## 1. Programs, lines and labels
 
@@ -61,10 +61,10 @@ Precedence, highest first: function calls and brackets; unary `-`; `*` `/`; `+` 
 | `BORDER n`, `INK n`, `PAPER n` | low 3 bits of n |
 | `FLASH n`, `BRIGHT n`, `OVER n`, `INVERSE n` | only the **low bit** of n |
 | `PLOT x,y`, `LINE x0,y0 TO x1,y1` | 256 x 192 pixels, x from the left, **y from the top**; coordinates outside the screen are moved to the edge; fractions cut off |
-| `BEEP duration,pitch` | **raw counts**: `duration` cycles, `pitch` the delay per half-cycle; one cycle is 52 x pitch + 222 T-states (this is **not** Sinclair's `BEEP seconds,semitones`: see the manual keyword BEEP and `V2_BEEP_SOUND_MODE_COMPATIBILITY.md`); interrupts are off while it sounds |
-| `SOUND register,value` | writes `value` to AY register `register`, which V2 requires to be **1 to 16** (sent to the chip unchanged; register 0 is not reachable -- the stock TS2068 BASIC accepts 0 to 16, so this is a compatibility discrepancy) |
+| `BEEP seconds,semitones` | Sinclair's `BEEP`, on the AY chip's channel A (maintenance release): `seconds` 0..273, rounded to whole display frames (under half a frame: silent); `semitones` -60..69 from middle C, a fraction cut off toward zero, below -39 plays -39 (27.5 Hz); otherwise run-time error 15. Channel A is left silent, channels B and C untouched; interrupts stay on, BREAK stops a note |
+| `SOUND register,value` | writes `value` to AY register `register`, **0 to 16** as in the stock TS2068 BASIC (low 8 bits of `register`, sent to the chip unchanged); 17 or more: run-time error 8. (The first V2 release refused register 0.) |
 | `POKE address,value`, `OUT port,value` | low byte of `value`; address / port 0 .. 65535 (65536 and above: error 15) |
-| `PAUSE n` | wait `n` display frames (0: wait for a key); BREAK interrupts |
+| `PAUSE n` | wait `n` display frames, counted with `HALT` (0: wait for a key); BREAK interrupts; needs the frame interrupt (with it off, `PAUSE` never ends). The first V2 release's `PAUSE` could end at once when the frame counter wrapped past 65535; fixed in the maintenance release |
 | `RANDOMISE n` | seed `RND`; the number is required |
 | `REM text` | comment |
 
@@ -148,12 +148,14 @@ Internal codes (as used by the tests and the source). **Compile errors**, each w
 | 5 | division by zero (also `TAN(90)`) | `RUNTIME ERROR` |
 | 7 | `NEXT` / return without a frame (jump into a loop; after `CLEAR` inside a loop) | `RUNTIME ERROR` |
 | 10, 11 | array index out of range (10); non-integer or out-of-range value stored in, or used as an index of, a numeric array (11) | `RUNTIME ERROR` |
-| 15 | argument out of range (`CHR$`, `STICK`, `SQR` of a negative number, an address of 65536 or more) | `RUNTIME ERROR` |
+| 8 | `SOUND` register 17 or more | `RUNTIME ERROR` |
+| 15 | argument out of range (`CHR$`, `STICK`, `SQR` of a negative number, an address of 65536 or more, `BEEP` out of range) | `RUNTIME ERROR` |
 | 64, 65 | out of array memory (64); `DIM` differs from the stored array (65) | `OUT OF MEMORY`, `ARRAY SIZE MISMATCH` |
 | 66 | BREAK | `BREAK` |
 | 67 | a float result beyond about 1.7E38 | `RUNTIME ERROR` |
 | 12, 13, 14 | mode package: bad `MODE`, `ULAPLUS`, `PALETTE` | `RUNTIME ERROR` |
 | 15 .. 20 | sprite package: slot; row / column / size; never grabbed; already shown; not shown; does not fit | `RUNTIME ERROR` |
+| 15 | cbeep package: `CBEEP` out of range | `RUNTIME ERROR` |
 
 ## 9. Variable sessions
 
@@ -178,6 +180,7 @@ A package tape adds statements: `LOAD "NAME" EXT`. One package at a time (a seco
 | **printer** (`PRINTER`, 345) | `LPRINT x` (one number or string; a number as a whole number), `LLIST` |
 | **shapes** (`SHAPES`, 1007) | `CIRCLE x,y,r`, `FILL x,y` (pixel coordinates) |
 | **graphics** (`GRAPHICS`, 467) | `CPLOT x,y` (64 x 48 grid), `BLOCK x0,y0,x1,y1`, `FRAME x0,y0,x1,y1`, `INVERT x0,y0,x1,y1` (pixel corners) |
+| **cbeep** (`CBEEP`, 260) | `CBEEP ms,semitones,border`: the loudspeaker (port `$FE`), ms 0..32767, semitones -60..69, border colour 0..7 kept (a different number changes the border); interrupts off while it sounds, so BREAK waits for the note; error 15 out of range (maintenance release) |
 
 ## 12. Not in V2 (deliberately)
 

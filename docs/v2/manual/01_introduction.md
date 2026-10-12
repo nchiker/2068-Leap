@@ -34,7 +34,7 @@ Its main features:
 * **arrays** of numbers and of strings, which can be saved to tape on their own and kept across runs (the *Array Store*);
 * **sessions**: the variables of a program that stopped stay available to typed statements;
 * tape **SAVE**, **LOAD** and **VERIFY** for programs, arrays, and whole programs with their variables;
-* sound from the loudspeaker (`BEEP`) and the AY sound chip (`SOUND`);
+* sound from the AY sound chip (`BEEP` in seconds and semitones, `SOUND` for the chip's registers), and from the loudspeaker with the optional `CBEEP` package;
 * graphics: `PLOT`, `LINE`, colours; and, from loadable **packages**, circles, filled areas, rectangles, sprites, the printer and the TS2068's special video modes.
 
 ## The status of this release

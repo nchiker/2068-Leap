@@ -90,16 +90,24 @@ BASIC_NUM_TO_STRING_EXROM EQU V2_EXROM_NUM_TO_STRING_ADDR
 BASIC_FLOAT_TO_STRING_EXROM EQU V2_EXROM_FLOAT_TO_STRING_ADDR
 DECOMP_END_ADDR EQU V2_DECOMP_END_ADDR
 MEM_CLEAR_V2 EQU V2_EXROM_CLEAR_ADDR
+    IFDEF V2_MAINT_AY_BEEP
+AY_BEEP EQU V2_EXROM_AY_BEEP_ADDR        ; MAINT (AY BEEP)
+    ENDIF
 
     INCLUDE "kernel/memory/memory.asm"
     INCLUDE "kernel/io/io.asm"
     INCLUDE "kernel/graphics/graphics.asm"
     INCLUDE "kernel/math/math.asm"
+    IFNDEF V2_MAINT_AY_BEEP              ; MAINT (AY BEEP): the port-$FE beeper is not used
     INCLUDE "kernel/sound/sound.asm"
+    ENDIF
     INCLUDE "kernel/interrupt/interrupt.asm"
     INCLUDE "kernel/bank/bank.asm"
     INCLUDE "kernel/extensions/ext_registry.asm"
     INCLUDE "rom/exrom_v2_vm_core.asm"
+    IFDEF V2_MAINT_AY_BEEP
+    INCLUDE "rom/v2_ay_beep.asm"            ; MAINT (AY BEEP): the HOME pieces
+    ENDIF
     INCLUDE "rom/exrom_v2_compiler.asm"
     INCLUDE "rom/v2_saveall.asm"            ; RC: SAVE ... ALL (owner decision 2)
     INCLUDE "rom/v2_session_undo.asm"

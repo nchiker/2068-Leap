@@ -137,7 +137,7 @@ RUN  [ve:66]
 1
 ```
 
-BREAK works in tight loops and in `PAUSE`. It does **not** work during `BEEP`, which switches interrupts off while it sounds (use short beeps), nor while the program waits for a tape signal (`SPACE` aborts a tape operation instead). In the editor, BREAK is ignored; in `LIST`, BREAK at a full page ends the listing.
+BREAK works in tight loops, in `PAUSE` and during a `BEEP`. It does **not** work during a `CBEEP` (the optional loudspeaker package), which switches interrupts off while it sounds, nor while the program waits for a tape signal (`SPACE` aborts a tape operation instead). In the editor, BREAK is ignored; in `LIST`, BREAK at a full page ends the listing.
 
 **See also** STOP, END, [Sessions](#sessions).
 
@@ -168,7 +168,7 @@ BREAK works in tight loops and in `PAUSE`. It does **not** work during `BEEP`, w
 | `AND`, `OR`, `NOT` | `AND`/`OR` on numbers give a value | logical only, 0 or 1; short-circuit |
 | number display | up to 8 digits and exponent (`1E+10`) | whole numbers plain; others with 4 decimals; no exponent |
 | coordinates | `PLOT 0,0` bottom left | `PLOT 0,0` **top** left |
-| `BEEP` | seconds and semitones | cycles and pitch delay |
+| `BEEP` | seconds and semitones, on the loudspeaker | seconds and semitones, on the AY sound chip; fractional semitones cut off; the loudspeaker with the `CBEEP` package |
 | `USR` | result in BC | result in HL |
 | `CLEAR` | clears and sets RAMTOP | clears variables only |
 | `CONTINUE` | yes | none: `: GOTO label` restarts at a label |
@@ -747,28 +747,26 @@ NEW
 
 There are two ways to make sound.
 
-**`BEEP`** uses the loudspeaker. It gives a single tone and the program waits until it finishes. Both numbers are raw (this is not the Sinclair `BEEP`; see the keyword [BEEP](03_keywords.md#beep) for a procedure that gives it): the first is the number of cycles, the second the delay in each half-cycle. The frequency is about 3 528 000 / (52 x pitch + 222) hertz. A short tune:
+**`BEEP`** plays one note on the AY-3-8912 sound chip's channel A and waits until it ends: `BEEP seconds, semitones`, with the pitch counted from middle C as on the Spectrum. A short tune -- the start of a C major scale, a quarter of a second a note, then the top note held:
 
 ```basic ex=con.sound.1
-DEF FN pitch(f) = DIV(3528000 / f - 222, 52)
-DIM p(5)
-p(0) = FN pitch(262)
-p(1) = FN pitch(294)
-p(2) = FN pitch(330)
-p(3) = FN pitch(349)
-p(4) = FN pitch(392)
+DIM s(5)
+s(0) = 0
+s(1) = 2
+s(2) = 4
+s(3) = 5
+s(4) = 7
 FOR i = 0 TO 4
-  BEEP 120, p(i)
+  BEEP 0.25, s(i)
 NEXT i
-PRINT p(0)
-PRINT p(4)
+BEEP 1, s(4)
+PRINT s(4)
 ```
 ```output ex=con.sound.1
-254
-168
+7
 ```
 
-(The program works out the pitch value for each note's frequency from the formula above, plays the five notes of a C major scale's start -- C, D, E, F, G -- about half a second each, and prints the first and last pitch values.)
+BREAK stops a long `BEEP`. Afterwards channel A is silent; channels B and C are not touched, so they can play their own notes, set with `SOUND`, while `BEEP` plays a tune on A.
 
 **`SOUND`** writes to the AY-3-8912 sound chip, which has three tone channels and a noise generator that keep playing on their own:
 
@@ -784,7 +782,9 @@ PRINT "done"
 done
 ```
 
-**See also** BEEP, SOUND, PAUSE.
+The TS2068's **loudspeaker** -- the beeper of the Spectrum -- is not used by the ROM's `BEEP`. The optional **cbeep** package (see [Part 5](05_packages.md#the-cbeep-package)) adds `CBEEP milliseconds, semitones, border` for it; it switches interrupts off while it sounds.
+
+**See also** BEEP, SOUND, PAUSE, CBEEP.
 
 ---
 
@@ -808,7 +808,7 @@ Things to take from the table:
 
 * **Whole-number arithmetic is much faster than floating point** -- about twelve times here. Use whole numbers for counters, indices and scaled values (work in hundredths instead of fractions of a unit).
 * **Scrolling is expensive**: moving the whole screen up one line costs about 245 000 T-states, 70 milliseconds. A program that prints line after line to a full screen is limited to about 14 lines a second; one that prints at fixed positions with `AT` is not.
-* `PAUSE n` takes n x 69 700 T-states, and `BEEP` 52 x pitch + 222 per cycle.
+* `PAUSE n` and `BEEP` count display frames (69 888 T-states each in the emulator, 1/60 second on a TS2068): `PAUSE 100` took 6 985 733 T-states, `BEEP 1, 0` 60 frames.
 * Compilation itself takes a moment for a long program; `RUN` then starts.
 
 ---

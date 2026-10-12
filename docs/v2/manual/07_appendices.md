@@ -174,15 +174,17 @@ RUN
 | 2, 6 | `STACK OVERFLOW` | recursion (6) or expression nesting (2) too deep |
 | 5 | `RUNTIME ERROR` | division by zero (`/`, `DIV`, `MOD`), `TAN(90)` |
 | 7 | `RUNTIME ERROR` | `NEXT` or return with no frame: jumping into a loop; a loop ended by `CLEAR` |
+| 8 | `RUNTIME ERROR` | `SOUND` register 17 or more |
 | 10 | `RUNTIME ERROR` | array index outside the array |
 | 11 | `RUNTIME ERROR` | a fraction or out-of-range number stored in a numeric array, or used as an index |
-| 15 | `RUNTIME ERROR` | argument out of range: `CHR$`, `STICK`, `SQR` of a negative number, an address of 65536 or more |
+| 15 | `RUNTIME ERROR` | argument out of range: `CHR$`, `STICK`, `SQR` of a negative number, an address of 65536 or more, `BEEP` seconds negative or over 273 or semitones outside -60 to 69 |
 | 64 | `OUT OF MEMORY` | an array does not fit |
 | 65 | `ARRAY SIZE MISMATCH` | `DIM` differs from a stored array |
 | 66 | `BREAK` | CAPS SHIFT + SPACE |
 | 67 | `RUNTIME ERROR` | a result beyond about 1.7 x 10^38 |
 | 12 to 14 | `RUNTIME ERROR` | mode package: bad `MODE`, `ULAPLUS`, `PALETTE` |
 | 15 to 20 | `RUNTIME ERROR` | sprite package (see [Part 5](05_packages.md#errors)) |
+| 15 | `RUNTIME ERROR` | cbeep package: `CBEEP` out of range |
 
 ```errors ex=app.verr
 ve 5 | PRINT 1 / 0
@@ -195,6 +197,9 @@ ve 15 | PRINT CHR$(256)
 ve 15 | PRINT SQR(-1)
 ve 15 | PRINT STICK(3)
 ve 15 | PRINT PEEK(65536)
+ve 15 | BEEP 1, 70
+ve 15 | BEEP -1, 0
+ve 8 | SOUND 17, 1
 ve 64 | DIM a(5000)
 ve 67 | PRINT 100000 * 100000 * 100000 * 100000 * 100000 * 100000 * 100000 * 100000
 ve 6 | CALL r(5000) ;; END ;; PROC r(n): ;; IF n > 0 THEN ;; CALL r(n - 1) ;; ENDIF ;; ENDP
@@ -207,6 +212,8 @@ ve 17 pkg=sprite | SHOW 0, 1, 1
 ve 18 pkg=sprite | GRAB 0, 0, 0, 1, 1 ;; SHOW 0, 0, 0 ;; SHOW 0, 1, 1
 ve 19 pkg=sprite | HIDE 0
 ve 20 pkg=sprite | GRAB 0, 23, 31, 2, 2
+ve 15 pkg=cbeep | CBEEP 100, 70, 7
+ve 15 pkg=cbeep | CBEEP 32767, 69, 7
 ```
 
 ---
@@ -320,8 +327,10 @@ All figures were measured on the release with an otherwise empty program, unless
 | text screen | 32 columns by 23 rows (row 23 is the status line) |
 | graphics screen | 256 by 192 pixels |
 | `CPLOT` grid | 64 by 48 |
-| `SOUND` registers | 1 to 16 |
+| `SOUND` registers | 0 to 16 |
 | `PAUSE` | up to 65535 frames |
+| `BEEP` | 0 to 273 seconds, in whole frames; semitones -60 to 69 (below -39 plays -39) |
+| `CBEEP` (package) | 0 to 32767 milliseconds, at most 65535 waves; semitones -60 to 69 |
 
 Most of these are limits of **memory** and move with what else the program uses; the compiler's own tables (names, labels, forward references) are fixed. The nesting limits are those of the compiler's and the machine's stacks: a program that needs more than that stops with `NESTING TOO DEEP`, `STACK OVERFLOW` or `OUT OF MEMORY`.
 
@@ -384,6 +393,7 @@ Ports used by the system (`IN`/`OUT`): `$FE` (254) keyboard, speaker, border and
 | | | `BLOCK x0, y0, x1, y1` | pixel corners |
 | | | `FRAME x0, y0, x1, y1` | pixel corners |
 | | | `INVERT x0, y0, x1, y1` | pixel corners |
+| cbeep | `CBEEP` | `CBEEP ms, s, b` | 0-32767 milliseconds; semitones -60 to 69; border colour 0-7 |
 
 One package at a time; `NEW` unloads it; a statement of a package that is not loaded is a compile error.
 
@@ -391,10 +401,10 @@ One package at a time; `NEW` unloads it; a statement of a package that is not lo
 
 ## Appendix G: Hardware notes
 
-Everything in this manual was verified in the **ZEsarUX emulator** on the accepted release ROMs (tag `v2.0.0-emu.1`). **Nothing was tried on a physical TS2068**, a real cassette recorder, a ZX Printer, a joystick, ULAplus hardware or a Dock/EXROM cartridge. In particular:
+Everything in this manual was verified in the **ZEsarUX emulator**: on the accepted release ROMs (tag `v2.0.0-emu.1`), and, for the maintenance release's sound changes (`BEEP`, `SOUND`, `PAUSE`, the cbeep package), on its candidate ROMs. **Nothing was tried on a physical TS2068**, a real cassette recorder, a ZX Printer, a joystick, ULAplus hardware or a Dock/EXROM cartridge. In particular:
 
-* the sound (`BEEP`, `SOUND`) was measured by counting instructions and port writes; it was never listened to;
-* the figures for `PAUSE` assume the emulator's 50 frames a second; a real TS2068 is expected to interrupt at 60 a second (not measured);
+* the sound (`BEEP`, `SOUND`, `CBEEP`) was measured by reading the sound chip's registers back, counting instructions and port writes, and from the emulator's recorded audio; it was never listened to on a TS2068 (the startup chime included);
+* `BEEP` and `PAUSE` count display frames: 1/60 second on a TS2068 is the design figure, the emulator interrupts 50 times a second (not measured on hardware);
 * tape timing was exercised only through the emulator's tape input; the identity-check pause of about 2.4 seconds on `SAVE ... ALL`, `LOAD` and `VERIFY` of an ALL tape has not been timed on real hardware;
 * the printer package, the joysticks, `MODE 1`, ULAplus and the keyboard-matrix details are as the source states, not as seen on a machine;
 * the hardware checklist for the release is `docs/v2/V2_HARDWARE_CHECKLIST.md`.
@@ -421,11 +431,12 @@ Everything in this manual was verified in the **ZEsarUX emulator** on the accept
 | **Package: printer** | `LPRINT`, `LLIST` |
 | **Package: shapes** | `CIRCLE`, `FILL` |
 | **Package: graphics** | `CPLOT`, `BLOCK`, `FRAME`, `INVERT` |
+| **Package: cbeep** | `CBEEP` |
 
 ---
 
 ## Appendix I: How this manual was checked
 
-* Every example marked with an output block, a picture, a transcript or an error code in this manual is a test. `make doc-examples` runs them all on the release image (`tools/qual/manual_run.py`; the parser is `tools/qual/manual_examples.py`): programs are stored and run; `LIST`, `RUN`, `NEW` and the editor keys are typed through the real keyboard path; `SAVE` is captured at the tape transport and `LOAD` / `VERIFY` run the real tape receiver on a synthesised signal; packages are loaded with `LOAD "NAME" EXT` through that same receiver; BREAK is pressed in the emulated keyboard matrix; pictures are rendered from screen memory and compared with the committed images.
+* Every example marked with an output block, a picture, a transcript or an error code in this manual is a test. `make doc-examples` runs them all on the ROM image built from the same tree (the release, `v2.0.0-emu.1`; the `BEEP`, `SOUND`, `PAUSE` and `CBEEP` examples on the maintenance candidate) (`tools/qual/manual_run.py`; the parser is `tools/qual/manual_examples.py`): programs are stored and run; `LIST`, `RUN`, `NEW` and the editor keys are typed through the real keyboard path; `SAVE` is captured at the tape transport and `LOAD` / `VERIFY` run the real tape receiver on a synthesised signal; packages are loaded with `LOAD "NAME" EXT` through that same receiver; BREAK is pressed in the emulated keyboard matrix; pictures are rendered from screen memory and compared with the committed images.
 * This suite is **separate** from the 1010-case release baseline (`make test`, `make qual`, `tools/qual/corpus.py`), which it does not touch and whose totals it does not change.
 * Facts that are not examples (limits, timings) were measured with `tools/qual/manual_measure.py` and the commands recorded in `docs/v2/V2_DOCUMENTATION_FINDINGS.md`, which also lists what in the earlier documents turned out to be wrong.
