@@ -1,0 +1,56 @@
+[
+ {
+  "semitone": -24,
+  "pitch": 1033,
+  "measured_hz": 64.78,
+  "expected_emu_hz": 64.89,
+  "real_ts2068_hz": 65.41,
+  "ideal_hz": 65.41,
+  "err_pct": -0.18
+ },
+ {
+  "semitone": -12,
+  "pitch": 514,
+  "measured_hz": 129.66,
+  "expected_emu_hz": 129.87,
+  "real_ts2068_hz": 130.91,
+  "ideal_hz": 130.81,
+  "err_pct": -0.16
+ },
+ {
+  "semitone": 0,
+  "pitch": 255,
+  "measured_hz": 259.16,
+  "expected_emu_hz": 259.61,
+  "real_ts2068_hz": 261.68,
+  "ideal_hz": 261.63,
+  "err_pct": -0.17
+ },
+ {
+  "semitone": 9,
+  "pitch": 150,
+  "measured_hz": 435.55,
+  "expected_emu_hz": 436.3,
+  "real_ts2068_hz": 439.79,
+  "ideal_hz": 440.0,
+  "err_pct": -0.17
+ },
+ {
+  "semitone": 12,
+  "pitch": 125,
+  "measured_hz": 519.66,
+  "expected_emu_hz": 520.68,
+  "real_ts2068_hz": 524.84,
+  "ideal_hz": 523.25,
+  "err_pct": -0.19
+ },
+ {
+  "semitone": 24,
+  "pitch": 61,
+  "measured_hz": 1028.57,
+  "expected_emu_hz": 1031.23,
+  "real_ts2068_hz": 1039.48,
+  "ideal_hz": 1046.5,
+  "err_pct": -0.26
+ }
+]

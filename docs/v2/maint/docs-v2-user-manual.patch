@@ -1,0 +1,658 @@
+diff --git a/docs/v2/V2_BEEP_SOUND_MODE_COMPATIBILITY.md b/docs/v2/V2_BEEP_SOUND_MODE_COMPATIBILITY.md
+index 5d6f202..74e2145 100644
+--- a/docs/v2/V2_BEEP_SOUND_MODE_COMPATIBILITY.md
++++ b/docs/v2/V2_BEEP_SOUND_MODE_COMPATIBILITY.md
+@@ -4,6 +4,8 @@ Written for the owner during the documentation work (branch `docs/v2-user-manual
+ 
+ **Owner's response (2026-10-11):** prototype accurate enough; prefers Sinclair-style BEEP **with a startup chime kept (possibly smaller)** in a future maintenance release -- about 17 bytes still to find; also wants `SOUND` register 0 and the `MODE` source terminology corrected there. Recorded in [`V2_MAINTENANCE_BACKLOG.md`](V2_MAINTENANCE_BACKLOG.md); no ROM work was done.
+ 
++**Maintenance status (2026-10-12).** BEEP and SOUND were taken further on the study branches `study/ay-beep` and `study/classicbeep` (`V2_AY_BEEP_STUDY.md`, `V2_CLASSICBEEP_STUDY.md` there): `BEEP seconds,semitones` on the AY chip with the startup chime kept, `SOUND` registers 0 to 16, the old loudspeaker routine as the optional cbeep package. The software-beeper prototype below was not adopted. This section is the history of the decision.
++
+ ## Decisions needed from the owner
+ 
+ 1. **BEEP**: adopt the Sinclair-compatible `BEEP seconds,semitones`? Measured cost: HOME **+5 bytes** (54 -> 49 free) and EXROM **+154 bytes** (25 -> -129): it only fits if the **startup chime (135 bytes of EXROM) is removed** (EXROM then 9 bytes free), or replaced by something very small and 20 more bytes are found. Choose: (A) compat BEEP and no chime; (B) compat BEEP and a minimal chime plus about 20 bytes of other savings; (C) keep the raw BEEP and document the difference (done in the manual, with a BASIC procedure that gives Sinclair's `BEEP`).
+diff --git a/docs/v2/V2_DEFECT_REGISTER.md b/docs/v2/V2_DEFECT_REGISTER.md
+index 0088785..4eec79c 100644
+--- a/docs/v2/V2_DEFECT_REGISTER.md
++++ b/docs/v2/V2_DEFECT_REGISTER.md
+@@ -88,6 +88,18 @@ case ids (`tools/qual/corpus.py`) or suite case names. Source of the Q-/D-/L-/N-
+ | RC-11 | TEST | the study battery ran the integer oracles without `ORACLE_PROMOTE=1` on the RC (its promotion marker `FLOAT_BIG_TO_STRING` was replaced by the exact float formatter), so every overflow pair was reported as a mismatch, and the oracle's mismatch printout crashed | Fixed in `run_study_battery.sh` (VM-source marker as well) and `study_vm_oracle.py`. With promotion checked, 0 mismatches. ROM unchanged | `970dc30` |
+ | RC-12 | TEST | (found reading the fresh-clone `make test` log) the component-test image `vm_milestone01` had its DIM opcode slots 128 bytes off (`$31CF`/`$31FD`, handlers at `$324F`/`$327D`): `rom/test_v2_local_dim.inc` bound the slot names with an `EQU` before the handlers, a forward reference that lags one assembler pass (sjasmplus "Label has different value in pass 3"). The test passed only because it runs no DIM. Present since R10.9 Phase 2C; production images never include the file | Fixed: the names are bound after the handlers; no warning, slots correct; production images unchanged | `c57e968` |
+ 
++## Maintenance candidate (branch `study/classicbeep`, not yet released)
++
++Found or changed after the release, in the BEEP/SOUND maintenance work (`V2_AY_BEEP_STUDY.md`, `V2_CLASSICBEEP_STUDY.md`). The release itself is unchanged; these entries describe the candidate.
++
++| Id | Sev | Defect | Status | Evidence |
++|---|---|---|---|---|
++| M-PAUSE | MEDIUM | **`PAUSE n` could end at once.** It waited until `FRAMES` reached `FRAMES + n` in 16 bits, so whenever that sum passed 65535 the target wrapped and the pause ended immediately: `PAUSE 20` with `FRAMES` = 65530 waited 0 frames. Probability n / 65536 per `PAUSE` (about 5 % for a one-minute `PAUSE 3000`). Present in `v2.0.0-emu.1` | Fixed in the candidate: `PAUSE`, `BEEP` and the startup chime share one `HALT`-counting wait (`AY_WAIT_FRAMES`, HOME), which BREAK ends | `tools/maint/ay_beep_tests.py` (`PAUSE 20 from FRAMES=65530`; the release-behaviour assertion on the AY build) |
++| M-1 | DESIGN | `BEEP` took raw cycle/delay counts, not Sinclair's seconds and semitones | Changed in the candidate: AY-based `BEEP seconds,semitones`; the loudspeaker routine moved to the optional cbeep package (`CBEEP ms,semitones,border`) | `ay_beep_tests.py`, `cbeep_tests.py`, `cbeep_tape_test.py` |
++| M-2 | LOW | `SOUND` refused register 0 (the stock ROM accepts 0 to 16) | Fixed in the candidate | `ay_beep_tests.py` (`SOUND 0,123` ... `SOUND 20,1`) |
++| M-3 | LIMIT | With the frame interrupt off (port `$FF` bit 6, or machine code that leaves interrupts off), `PAUSE n` and `PAUSE 0` never end and BREAK cannot stop them; `BEEP` never ends if the frame interrupt is inhibited at port `$FF` | Documented (manual: `PAUSE`, `BEEP`); the same as the release for `PAUSE` | `tools/maint/di_wait_tests.py` |
++| T-4 | TEST | `make test-legacy`: 5 of its 13 V1 storage cases (`extension_roundtrip`, `autorun_*`) cannot be built: the legacy test EXROM (`rom/exrom_build.asm` with `STORAGE_TEST_FAKE_SEND`) overflows by 42 / 17 bytes, so `sjasmplus_strict.sh` refuses it. Identical on the release tag; the production images do not use this build | test debt, open; the other 8 cases pass | `V2_CLASSICBEEP_STUDY.md` s10 |
++
+ ## Hardware
+ 
+ Nothing in this register has been checked on a physical TS2068 (all evidence is ZEsarUX): **NOT
+diff --git a/docs/v2/V2_LANGUAGE_REFERENCE.md b/docs/v2/V2_LANGUAGE_REFERENCE.md
+index e614284..2f71b05 100644
+--- a/docs/v2/V2_LANGUAGE_REFERENCE.md
++++ b/docs/v2/V2_LANGUAGE_REFERENCE.md
+@@ -1,6 +1,6 @@
+ # 2068-Leap V2 -- language reference (V2 Enhanced release)
+ 
+-The compact, precise description of the language the V2 Enhanced release implements (tag `v2.0.0-emu.1`). It is derived from the ROM source, the five package modules and the qualification evidence, and every statement in it was checked on the release image. The teaching version, with a worked example for every keyword, is the **user manual**: [`manual/01_introduction.md`](manual/01_introduction.md); its keyword part ([`manual/03_keywords.md`](manual/03_keywords.md)) is this reference with examples, and its examples are tests (`make doc-examples`). The language conformance corpus (`tools/qual/corpus.py`, 667 cases, `make qual`) is the historical release record and is unchanged. Where an older document (`docs/user_manual.md`, `docs/basic_language_reference.md`, the V1 manuals) disagrees with this one, this one wins. Corrections made to the previous version of this file are listed in [`V2_DOCUMENTATION_FINDINGS.md`](V2_DOCUMENTATION_FINDINGS.md). Features that are deliberately not in V2 are in section 12 and in `V2_FEATURE_MATRIX.md`.
++The compact, precise description of the language the V2 Enhanced release implements (tag `v2.0.0-emu.1`). It is derived from the ROM source, the package modules and the qualification evidence, and every statement in it was checked on the release image. The teaching version, with a worked example for every keyword, is the **user manual**: [`manual/01_introduction.md`](manual/01_introduction.md); its keyword part ([`manual/03_keywords.md`](manual/03_keywords.md)) is this reference with examples, and its examples are tests (`make doc-examples`). The language conformance corpus (`tools/qual/corpus.py`, 667 cases, `make qual`) is the historical release record and is unchanged. Where an older document (`docs/user_manual.md`, `docs/basic_language_reference.md`, the V1 manuals) disagrees with this one, this one wins. Corrections made to the previous version of this file are listed in [`V2_DOCUMENTATION_FINDINGS.md`](V2_DOCUMENTATION_FINDINGS.md). Features that are deliberately not in V2 are in section 12 and in `V2_FEATURE_MATRIX.md`.
+ 
+ ## 1. Programs, lines and labels
+ 
+@@ -61,10 +61,10 @@ Precedence, highest first: function calls and brackets; unary `-`; `*` `/`; `+`
+ | `BORDER n`, `INK n`, `PAPER n` | low 3 bits of n |
+ | `FLASH n`, `BRIGHT n`, `OVER n`, `INVERSE n` | only the **low bit** of n |
+ | `PLOT x,y`, `LINE x0,y0 TO x1,y1` | 256 x 192 pixels, x from the left, **y from the top**; coordinates outside the screen are moved to the edge; fractions cut off |
+-| `BEEP duration,pitch` | **raw counts**: `duration` cycles, `pitch` the delay per half-cycle; one cycle is 52 x pitch + 222 T-states (this is **not** Sinclair's `BEEP seconds,semitones`: see the manual keyword BEEP and `V2_BEEP_SOUND_MODE_COMPATIBILITY.md`); interrupts are off while it sounds |
+-| `SOUND register,value` | writes `value` to AY register `register`, which V2 requires to be **1 to 16** (sent to the chip unchanged; register 0 is not reachable -- the stock TS2068 BASIC accepts 0 to 16, so this is a compatibility discrepancy) |
++| `BEEP seconds,semitones` | Sinclair's `BEEP`, on the AY chip's channel A (maintenance release): `seconds` 0..273, rounded to whole display frames (under half a frame: silent); `semitones` -60..69 from middle C, a fraction cut off toward zero, below -39 plays -39 (27.5 Hz); otherwise run-time error 15. Channel A is left silent, channels B and C untouched; interrupts stay on, BREAK stops a note |
++| `SOUND register,value` | writes `value` to AY register `register`, **0 to 16** as in the stock TS2068 BASIC (low 8 bits of `register`, sent to the chip unchanged); 17 or more: run-time error 8. (The first V2 release refused register 0.) |
+ | `POKE address,value`, `OUT port,value` | low byte of `value`; address / port 0 .. 65535 (65536 and above: error 15) |
+-| `PAUSE n` | wait `n` display frames (0: wait for a key); BREAK interrupts |
++| `PAUSE n` | wait `n` display frames, counted with `HALT` (0: wait for a key); BREAK interrupts; needs the frame interrupt (with it off, `PAUSE` never ends). The first V2 release's `PAUSE` could end at once when the frame counter wrapped past 65535; fixed in the maintenance release |
+ | `RANDOMISE n` | seed `RND`; the number is required |
+ | `REM text` | comment |
+ 
+@@ -148,12 +148,14 @@ Internal codes (as used by the tests and the source). **Compile errors**, each w
+ | 5 | division by zero (also `TAN(90)`) | `RUNTIME ERROR` |
+ | 7 | `NEXT` / return without a frame (jump into a loop; after `CLEAR` inside a loop) | `RUNTIME ERROR` |
+ | 10, 11 | array index out of range (10); non-integer or out-of-range value stored in, or used as an index of, a numeric array (11) | `RUNTIME ERROR` |
+-| 15 | argument out of range (`CHR$`, `STICK`, `SQR` of a negative number, an address of 65536 or more) | `RUNTIME ERROR` |
++| 8 | `SOUND` register 17 or more | `RUNTIME ERROR` |
++| 15 | argument out of range (`CHR$`, `STICK`, `SQR` of a negative number, an address of 65536 or more, `BEEP` out of range) | `RUNTIME ERROR` |
+ | 64, 65 | out of array memory (64); `DIM` differs from the stored array (65) | `OUT OF MEMORY`, `ARRAY SIZE MISMATCH` |
+ | 66 | BREAK | `BREAK` |
+ | 67 | a float result beyond about 1.7E38 | `RUNTIME ERROR` |
+ | 12, 13, 14 | mode package: bad `MODE`, `ULAPLUS`, `PALETTE` | `RUNTIME ERROR` |
+ | 15 .. 20 | sprite package: slot; row / column / size; never grabbed; already shown; not shown; does not fit | `RUNTIME ERROR` |
++| 15 | cbeep package: `CBEEP` out of range | `RUNTIME ERROR` |
+ 
+ ## 9. Variable sessions
+ 
+@@ -178,6 +180,7 @@ A package tape adds statements: `LOAD "NAME" EXT`. One package at a time (a seco
+ | **printer** (`PRINTER`, 345) | `LPRINT x` (one number or string; a number as a whole number), `LLIST` |
+ | **shapes** (`SHAPES`, 1007) | `CIRCLE x,y,r`, `FILL x,y` (pixel coordinates) |
+ | **graphics** (`GRAPHICS`, 467) | `CPLOT x,y` (64 x 48 grid), `BLOCK x0,y0,x1,y1`, `FRAME x0,y0,x1,y1`, `INVERT x0,y0,x1,y1` (pixel corners) |
++| **cbeep** (`CBEEP`, 260) | `CBEEP ms,semitones,border`: the loudspeaker (port `$FE`), ms 0..32767, semitones -60..69, border colour 0..7 kept (a different number changes the border); interrupts off while it sounds, so BREAK waits for the note; error 15 out of range (maintenance release) |
+ 
+ ## 12. Not in V2 (deliberately)
+ 
+diff --git a/docs/v2/V2_MAINTENANCE_BACKLOG.md b/docs/v2/V2_MAINTENANCE_BACKLOG.md
+index 8371293..15a4569 100644
+--- a/docs/v2/V2_MAINTENANCE_BACKLOG.md
++++ b/docs/v2/V2_MAINTENANCE_BACKLOG.md
+@@ -2,6 +2,8 @@
+ 
+ Recorded by the owner at the close of the documentation session (2026-10-11). The accepted release (`v2.0.0-emu.1`) stays as it is until a maintenance release is opened; these are the items the owner asked to be done in it. Evidence and measurements: [`V2_BEEP_SOUND_MODE_COMPATIBILITY.md`](V2_BEEP_SOUND_MODE_COMPATIBILITY.md); the study prototype is on the isolated branch `study/beep-compat` (commit `ccb78a4`).
+ 
++**Status (2026-10-12):** M-1 and M-2 are implemented and tested on the study branch `study/classicbeep` (on `study/ay-beep`): AY-based `BEEP` with the original startup chime (option C), `SOUND` register 0, a shared frame wait that also fixes a `PAUSE` defect (M-PAUSE in `V2_DEFECT_REGISTER.md`), and the loudspeaker as the optional cbeep package. Owner decisions recorded in `V2_CLASSICBEEP_STUDY.md` (on that branch). Not yet merged. M-3 is not started.
++
+ ## M-1. Sinclair-style `BEEP seconds,semitones`, keeping a startup chime
+ 
+ * **Owner's preference:** Sinclair-style `BEEP` (integer semitones, as Leap-Forth; the prototype is accurate enough for normal musical use) **while preserving a startup chime, possibly a smaller one**. Do not simply drop the chime.
+diff --git a/docs/v2/V2_USER_MANUAL.md b/docs/v2/V2_USER_MANUAL.md
+index 2486019..42a98c0 100644
+--- a/docs/v2/V2_USER_MANUAL.md
++++ b/docs/v2/V2_USER_MANUAL.md
+@@ -8,7 +8,7 @@ The V2 user manual has moved to a full multi-part manual, written in the style o
+ | [2. Beginner's guide](manual/02_beginners_guide.md) | the editor, a first program, numbers, words, decisions, loops, procedures, arrays, the screen, sound, tapes, sessions |
+ | [3. Keywords](manual/03_keywords.md) | every statement, function, operator and command, A to Z |
+ | [4. Concepts](manual/04_concepts.md) | numbers, strings, arrays, the Array Store, sessions, tapes, errors, memory, speed ... A to Z |
+-| [5. Packages](manual/05_packages.md) | mode, sprite, printer, shapes, graphics |
++| [5. Packages](manual/05_packages.md) | mode, sprite, printer, shapes, graphics, cbeep |
+ | [6. Practical examples](manual/06_examples.md) | complete programs |
+ | [Appendices](manual/07_appendices.md) | messages, error codes, character set, limits, memory map, package card, hardware notes, keyword index |
+ 
+diff --git a/docs/v2/manual/01_introduction.md b/docs/v2/manual/01_introduction.md
+index 86780f3..e43f17a 100644
+--- a/docs/v2/manual/01_introduction.md
++++ b/docs/v2/manual/01_introduction.md
+@@ -34,7 +34,7 @@ Its main features:
+ * **arrays** of numbers and of strings, which can be saved to tape on their own and kept across runs (the *Array Store*);
+ * **sessions**: the variables of a program that stopped stay available to typed statements;
+ * tape **SAVE**, **LOAD** and **VERIFY** for programs, arrays, and whole programs with their variables;
+-* sound from the loudspeaker (`BEEP`) and the AY sound chip (`SOUND`);
++* sound from the AY sound chip (`BEEP` in seconds and semitones, `SOUND` for the chip's registers), and from the loudspeaker with the optional `CBEEP` package;
+ * graphics: `PLOT`, `LINE`, colours; and, from loadable **packages**, circles, filled areas, rectangles, sprites, the printer and the TS2068's special video modes.
+ 
+ ## The status of this release
+diff --git a/docs/v2/manual/02_beginners_guide.md b/docs/v2/manual/02_beginners_guide.md
+index 82c95d5..0f22a07 100644
+--- a/docs/v2/manual/02_beginners_guide.md
++++ b/docs/v2/manual/02_beginners_guide.md
+@@ -694,12 +694,12 @@ Further shapes -- circles, filled areas, rectangles -- come from the packages (C
+ 
+ ## Chapter 13 -- Sound
+ 
+-`BEEP duration, pitch` makes a note on the loudspeaker. Both numbers are plain counts: the duration is how many waves, the pitch is a delay (a bigger pitch gives a lower note). Try this short rising scale:
++`BEEP seconds, semitones` plays a note on the sound chip, as on the Spectrum: the first number is how long it lasts in seconds (fractions are fine), the second is how many semitones above middle C (0 is middle C, 12 the C an octave higher, a negative number goes lower). Try this short rising tune:
+ 
+ ```basic ex=guide.sound.1
+-FOR p = 200 TO 100 STEP -20
+-  BEEP 80, p
+-NEXT p
++FOR n = 0 TO 4
++  BEEP 0.2, n * 3
++NEXT n
+ PRINT "DONE"
+ ```
+ ```output ex=guide.sound.1
+@@ -762,7 +762,7 @@ That is a powerful way to find out why a program did something odd, or to try ou
+ 
+ ## Chapter 16 -- Packages: more statements
+ 
+-The language in the ROM is complete for most programs. Specialist statements come on tape as **packages**, which you load with `LOAD "NAME" EXT`. There are five:
++The language in the ROM is complete for most programs. Specialist statements come on tape as **packages**, which you load with `LOAD "NAME" EXT`. There are six:
+ 
+ | To get | Load | You then have |
+ |---|---|---|
+@@ -771,6 +771,7 @@ The language in the ROM is complete for most programs. Specialist statements com
+ | moving pictures | `SPRITE` | `GRAB`, `SHOW`, `HIDE`, `MOVE` |
+ | the printer | `PRINTER` | `LPRINT`, `LLIST` |
+ | video modes, ULAplus | `MODE` | `MODE`, `ULAPLUS`, `PALETTE` |
++| the loudspeaker (the old beeper) | `CBEEP` | `CBEEP` |
+ 
+ *With the shapes package loaded (`LOAD "SHAPES" EXT`):*
+ 
+diff --git a/docs/v2/manual/03_keywords.md b/docs/v2/manual/03_keywords.md
+index 7725d6b..9971acb 100644
+--- a/docs/v2/manual/03_keywords.md
++++ b/docs/v2/manual/03_keywords.md
+@@ -170,113 +170,53 @@ Here 50 = 6 x 8 + 2: paper 6 (yellow) and ink 2 (red).
+ 
+ ## BEEP
+ 
+-`BEEP duration, pitch` -- **statement**
++`BEEP seconds, semitones` -- **statement**
+ 
+-Makes a sound through the loudspeaker. **In the V2 release this is not the Sinclair `BEEP`**: there are no seconds and no musical notes. Both numbers are raw counts:
+-
+-* *duration* is the number of complete sound waves (cycles) to produce; 0 produces none;
+-* *pitch* is the length of the pause in each half-wave: the **larger** the number, the **lower** the note.
+-
+-One cycle takes about `52 x pitch + 222` processor T-states, so the frequency is the processor clock divided by that: about **3 528 000 / (52 x pitch + 222)** hertz on a TS2068 (3 500 000 on the emulator the release was measured on). `BEEP 1000,100` costs 5 421 600 T-states, 650 Hz at 3.5 MHz.
+-
+-| Wanted note (approximately) | pitch |
+-|---|---|
+-| 262 Hz (middle C) | 255 |
+-| 440 Hz (A) | 149 |
+-| 880 Hz | 72 |
+-| 1760 Hz | 34 |
++Plays a note on the AY-3-8912 sound chip, as Sinclair BASIC's `BEEP` does: *seconds* is how long, *semitones* is the pitch counted from middle C (0 is middle C, 12 the C above it, -12 the C below; the range is -60 to 69). The program waits until the note ends.
+ 
+ ```basic ex=kw.beep.1
+-BEEP 220, 149
+-PAUSE 10
+-BEEP 440, 72
++BEEP 0.25, 0
++BEEP 0.25, 4
++BEEP 0.25, 7
++BEEP 0.5, 12
+ PRINT "done"
+ ```
+ ```output ex=kw.beep.1
+ done
+ ```
+ 
+-**Notes.**
+-
+-* The program stops running while it beeps. Interrupts are switched off during the sound, so BREAK is not noticed until it ends: keep *duration* short (a few hundred cycles).
+-* A pitch of 0 is the slowest wave of all (65 536 steps per half-wave), not the highest.
+-* The result was measured on the emulator; the sound itself was not heard on a real machine.
++* *seconds* may have a fraction. It is turned into display frames (1/60 second on a TS2068) and rounded to the nearest frame, so `BEEP 0.1, 0` lasts 6 frames. Less than half a frame plays nothing; 0 to 273 seconds is allowed.
++* *semitones* must be a whole number: a fraction is cut off toward zero (`BEEP 1, 0.5` plays middle C). The chip cannot go lower than 27.5 Hz (the lowest A on a piano, semitone -39), so -60 to -40 all play that note.
++* A negative or too long *seconds*, or *semitones* outside -60 to 69, stops the program with run-time error 15 and plays nothing.
+ 
+-**Compared with Sinclair BASIC.** On the Spectrum and in the TS2068's own BASIC, `BEEP seconds, semitones` takes a length in **seconds** and a pitch in **semitones above middle C** (0 is middle C, 12 an octave above, a negative number below; the range is -60 to 69). V2's `BEEP` was inherited from the first release (V1) with raw counts; the intended behaviour was the Sinclair one, and a change is being considered (see `docs/v2/V2_BEEP_SOUND_MODE_COMPATIBILITY.md`). Until then, this procedure gives Sinclair's `BEEP` in BASIC: put the length in seconds in the variable `dur`, and `CALL sbeep(semitones)`. It works out the frequency (middle C is 261.6256 Hz and each semitone is 2^(1/12) higher), turns it into the cycle count and the pitch that V2's `BEEP` wants, and beeps. It accepts whole semitones (a fraction is cut off) from -60 to 69; the pitch it asks for is accurate to about 1% up to three octaves above middle C, but the loudspeaker routine's steps become coarse above that (a note at +60 is about 11% sharp).
++A scale, one note a tenth of a second:
+ 
+ ```basic ex=kw.beep.2
+-dur = 1
+-CALL convert(0)
+-PRINT cyc; " "; pit
+-CALL convert(12)
+-PRINT cyc; " "; pit
+-CALL convert(-12)
+-PRINT cyc; " "; pit
+-CALL convert(9)
+-PRINT cyc; " "; pit
+-END
+-PROC sbeep(semi):
+-  CALL convert(semi)
+-  BEEP cyc, pit
+-ENDP
+-PROC convert(semi):
+-  n = 60 + semi
+-  o = DIV(n, 12) - 5
+-  f = 261.6256
+-  FOR i = 1 TO MOD(n, 12)
+-    f = f * 1.0594630944
+-  NEXT i
+-  IF o > 0 THEN
+-    FOR i = 1 TO o
+-      f = f * 2
+-    NEXT i
+-  ENDIF
+-  IF o < 0 THEN
+-    FOR i = 1 TO 0 - o
+-      f = f / 2
+-    NEXT i
+-  ENDIF
+-  cyc = INT(f * dur)
+-  pit = INT((3528000 / f - 222) / 52)
+-  IF pit < 1 THEN
+-    pit = 1
+-  ENDIF
+-ENDP
++FOR n = 0 TO 7
++  BEEP 0.1, n * 2 - DIV(n + 1, 4)
++NEXT n
++PRINT "scale"
+ ```
+ ```output ex=kw.beep.2
+-261 255
+-523 125
+-130 514
+-440 149
++scale
+ ```
+ 
+-(Each line is the number of cycles and the pitch for one second of that note: middle C, the C above it, the C below it and the A above middle C. The stock TS2068 ROM, run in the emulator, gives the same cycle counts to within one and a pitch that sounds the same to within a fraction of a percent.) To play a tune, set `dur` and call `sbeep` for each note:
+-
+-```basic ex=kw.beep.3
+-dur = 0.2
+-FOR note = 0 TO 7
+-  CALL sbeep(note * 2 - DIV(note, 4))
+-NEXT note
+-END
+-PROC sbeep(semi):
+-  n = 60 + semi
+-  o = DIV(n, 12) - 5
+-  f = 261.6256
+-  FOR i = 1 TO MOD(n, 12)
+-    f = f * 1.0594630944
+-  NEXT i
+-  IF o > 0 THEN
+-    FOR i = 1 TO o
+-      f = f * 2
+-    NEXT i
+-  ENDIF
+-  cyc = INT(f * dur)
+-  pit = INT((3528000 / f - 222) / 52)
+-  BEEP cyc, pit
+-ENDP
++```basic ex=kw.beep.3 err=ve:15
++BEEP 1, 70
+ ```
+ 
+-**See also** SOUND, PAUSE, the concept [Sound](04_concepts.md#sound).
++**Notes.**
++
++* `BEEP` uses the chip's **channel A**: it sets channel A's pitch, switches its tone on and its noise off in the mixer (register 7; the other bits are kept), plays at full volume and leaves channel A **silent** (volume 0) afterwards. Channels B and C, the noise and the envelope are not touched, so music on B and C made with `SOUND` goes on under a `BEEP`; a program that used channel A with `SOUND` must set it again afterwards.
++* Interrupts stay on while the note sounds: the frame counter keeps counting and **BREAK stops a long `BEEP`** at once (the channel is silenced).
++* `BEEP` counts display frames, so it needs the frame interrupt. A machine-code routine that leaves interrupts off is put right by `BEEP` itself (the ROM switches them back on on the way), but a program that switches the frame interrupt off at the source (bit 6 of port 255) makes `BEEP` wait for ever with the note sounding; BREAK cannot end it (the keyboard is read by the same interrupt), only the reset button.
++* Pitch: within 6 cents (hundredths of a semitone) of the true note from middle C up two octaves, 12 cents in the third and 25 in the fourth; the notes above +48 are coarser (up to about 3/4 of a semitone). The stock TS2068 ROM is 14 cents sharp on every note.
++* The sound was measured in the emulator (chip registers and recorded audio), not heard on a real machine. In the emulator a frame is 1/50 second, so there every `BEEP` lasts a fifth longer.
++* The machine's loudspeaker (the original TS2068 beeper) is available with the optional [CBEEP package](05_packages.md#the-cbeep-package).
++
++**Compared with Sinclair BASIC.** The same statement and arguments. Differences: fractional semitones are cut off (Sinclair plays the note in between); notes below -39 play -39; durations are whole frames (Sinclair: whole waves), and up to 273 seconds (Sinclair: 10); Sinclair's `BEEP` uses the loudspeaker and switches interrupts off, V2's uses the sound chip and keeps them on.
++
++**See also** SOUND, PAUSE, CBEEP, the concept [Sound](04_concepts.md#sound).
+ 
+ ---
+ 
+@@ -389,6 +329,36 @@ n = 6
+ 
+ ---
+ 
++## CBEEP  [package: cbeep]
++
++`CBEEP milliseconds, semitones, border` -- **statement** (needs the cbeep package: `LOAD "CBEEP" EXT`)
++
++Plays a note on the machine's **loudspeaker** (the TS2068's original beeper), with the pitch counted in semitones from middle C as `BEEP` does. *milliseconds* is the length (0 to 32767: package arguments are whole numbers, so the length is in thousandths of a second); *semitones* is -60 to 69; *border* is the border colour (0 to 7) to keep while the note sounds and afterwards.
++
++```basic ex=kw.cbeep.1 pkg=cbeep
++BORDER 1
++CBEEP 250, 0, 1
++CBEEP 250, 7, 1
++CBEEP 500, 12, 1
++PRINT "beeped"
++```
++```output ex=kw.cbeep.1
++beeped
++```
++
++**Notes.**
++
++* **Interrupts are switched off while the note sounds**: the frame counter stops and **BREAK does nothing until the note has ended** (a note can last up to 32.8 seconds). Use `BEEP` when BREAK matters.
++* Every write to the loudspeaker port also sets the border, and a package cannot read the border colour that `BORDER` set: give it as the third argument. **A different number changes the border colour** (only its low three bits count, so 9 is blue).
++* Loading the cbeep package **replaces any package already loaded**, and loading another package removes `CBEEP` (one package at a time).
++* Out of range (*semitones* outside -60 to 69, a negative length, or more waves than the routine can count: over 4.6 seconds at +69) is run-time error 15; nothing plays.
++* A fraction in an argument is cut off (`CBEEP 99.9, 0, 7` plays for 99 ms).
++* Pitch on a TS2068: within 3 cents below middle C, 12 cents for two octaves above it, then coarser (31 cents in the fourth octave up, about 1.5 semitones at the very top), because the beeper's delay moves in steps. Heard only in the emulator, whose processor is slightly slower, so there every note is 0.8 % flat.
++
++**See also** BEEP, BORDER, [the cbeep package](05_packages.md#the-cbeep-package).
++
++---
++
+ ## CHR$
+ 
+ `CHR$(n)` -- **function**
+@@ -1849,7 +1819,7 @@ PRINT ATTR(5, 5)
+ 
+ `PAUSE n` -- **statement**
+ 
+-Waits for *n* frames (one frame is one display interrupt: 1/50 s in the qualification emulator; a real TS2068 is expected to run at 60 a second, which has not been measured) and goes on. `PAUSE 0` waits for a key to be pressed. BREAK ends a long pause.
++Waits for *n* frames (one frame is one display interrupt: 1/60 s on a TS2068, 1/50 s in the qualification emulator) and goes on; *n* can be 1 to 65535. `PAUSE 0` waits for a key to be pressed. BREAK ends a long pause.
+ 
+ ```basic ex=kw.pause.1
+ PRINT "wait"
+@@ -1861,7 +1831,12 @@ wait
+ done
+ ```
+ 
+-The measured cost is 69 700 T-states per frame count: `PAUSE 100` took 6 978 474 T-states on the emulator, 2.0 seconds at the emulator's 50 frames per second.
++The first frame may be partly over when the pause starts, so `PAUSE n` lasts between n - 1 and n frames: `PAUSE 100` took 6 985 733 T-states in the emulator, 100 frames of 69 888.
++
++**Notes.**
++
++* `PAUSE` waits for the frame interrupt. A program that switches it off (bit 6 of port 255, or machine code that leaves interrupts off) makes `PAUSE` wait for ever, and BREAK cannot end it because the keyboard is read by the same interrupt; only the reset button helps.
++* **Corrected in the maintenance release:** in the first V2 release (`v2.0.0-emu.1`) a `PAUSE` could end at once instead of waiting, whenever the machine's frame counter (which runs from 0 to 65535 and starts again) would have passed 65535 during the pause; a one-minute `PAUSE 3000` did so about one time in twenty. `PAUSE` now counts its frames itself.
+ 
+ **See also** BEEP, INKEY$.
+ 
+@@ -2450,21 +2425,22 @@ PRINT SIN(0.5)
+ 
+ Writes *value* (0 to 255) to a register of the AY-3-8912 sound chip. The chip makes three tones and a noise, and keeps playing while the program goes on, until you silence it.
+ 
+-*register* is the register number as the chip knows it, and V2 requires it to be **1 to 16**: any other number is a run-time error. **This differs from the original TS2068 BASIC**, whose `SOUND` accepts **0 to 16** (checked on the stock ROM in the emulator: it rejects 17 and above and nothing else). V2 therefore cannot write register 0, the fine pitch of channel A, with `SOUND`; the chip has no register 16, so a write to 16 does nothing in either system. (A one-line change to V2's `SOUND` would make it accept 0; see `docs/v2/V2_BEEP_SOUND_MODE_COMPATIBILITY.md`. Until then, `OUT 245, 0` followed by `OUT 246, value` writes register 0 directly: 245 and 246 are the chip's register and data ports.)
++*register* is the register number as the chip knows it, **0 to 16**, as in the original TS2068 BASIC; 17 or more is run-time error 8. The chip has no register 16, so a write to 16 does nothing.
+ 
+ | Register | Holds |
+ |---|---|
+-| 0 | channel A pitch, fine (**not** reachable with V2's `SOUND`; see above) |
++| 0 | channel A pitch, fine |
+ | 1 | channel A pitch, coarse (the low 4 bits) |
+ | 2, 3 | channel B pitch, fine and coarse |
+ | 4, 5 | channel C pitch, fine and coarse |
+ | 6 | noise pitch |
+ | 7 | mixer: which tones and noise are on (a bit set = *off*) |
+-| 8, 9, 10 | volume of channels A, B, C (0 to 15) |
++| 8, 9, 10 | volume of channels A, B, C (0 to 15; 16 = use the envelope) |
+ | 11, 12, 13 | volume envelope |
+ 
+ ```basic ex=kw.sound.1
+ SOUND 7, 62
++SOUND 0, 200
+ SOUND 1, 1
+ SOUND 8, 10
+ PAUSE 50
+@@ -2475,9 +2451,18 @@ PRINT "silent again"
+ silent again
+ ```
+ 
+-This switches channel A's tone on (mixer 62 turns on only tone A), sets its pitch and volume, waits a second, and silences it. Pitch is the **period**: the larger the number, the lower the note.
++This switches channel A's tone on (mixer 62 turns on only tone A), sets its pitch (456: 200 + 256 x 1) and volume, waits a second, and silences it. Pitch is the **period**: the larger the number, the lower the note; the note is 110 250 / period hertz on a TS2068 (about 242 Hz here).
++
++```basic ex=kw.sound.2 err=ve:8
++SOUND 17, 1
++```
++
++**Notes.**
+ 
+-**Notes.** The register number is sent to the chip unchanged (read from the ROM, and checked on the emulator by watching the port writes). The sound itself was not heard on a real machine.
++* `BEEP` plays on channel A: after a `BEEP`, channel A is silent and its pitch registers hold the `BEEP`'s note, so set channel A again if your `SOUND` music uses it. Channels B and C are not touched by `BEEP`.
++* Only the low eight bits of *register* are used, so `SOUND 256, x` writes register 0 (the stock TS2068 BASIC refuses 256 and above).
++* **Changed in the maintenance release:** the first V2 release accepted only registers 1 to 16, so channel A's fine pitch could be written only with `OUT 245, 0 : OUT 246, value`.
++* The register number is sent to the chip unchanged (checked in the emulator by reading the chip's registers back). The sound itself was not heard on a real machine.
+ 
+ **See also** BEEP, OUT.
+ 
+diff --git a/docs/v2/manual/04_concepts.md b/docs/v2/manual/04_concepts.md
+index 4efbe62..1c28d40 100644
+--- a/docs/v2/manual/04_concepts.md
++++ b/docs/v2/manual/04_concepts.md
+@@ -137,7 +137,7 @@ RUN  [ve:66]
+ 1
+ ```
+ 
+-BREAK works in tight loops and in `PAUSE`. It does **not** work during `BEEP`, which switches interrupts off while it sounds (use short beeps), nor while the program waits for a tape signal (`SPACE` aborts a tape operation instead). In the editor, BREAK is ignored; in `LIST`, BREAK at a full page ends the listing.
++BREAK works in tight loops, in `PAUSE` and during a `BEEP`. It does **not** work during a `CBEEP` (the optional loudspeaker package), which switches interrupts off while it sounds, nor while the program waits for a tape signal (`SPACE` aborts a tape operation instead). In the editor, BREAK is ignored; in `LIST`, BREAK at a full page ends the listing.
+ 
+ **See also** STOP, END, [Sessions](#sessions).
+ 
+@@ -168,7 +168,7 @@ BREAK works in tight loops and in `PAUSE`. It does **not** work during `BEEP`, w
+ | `AND`, `OR`, `NOT` | `AND`/`OR` on numbers give a value | logical only, 0 or 1; short-circuit |
+ | number display | up to 8 digits and exponent (`1E+10`) | whole numbers plain; others with 4 decimals; no exponent |
+ | coordinates | `PLOT 0,0` bottom left | `PLOT 0,0` **top** left |
+-| `BEEP` | seconds and semitones | cycles and pitch delay |
++| `BEEP` | seconds and semitones, on the loudspeaker | seconds and semitones, on the AY sound chip; fractional semitones cut off; the loudspeaker with the `CBEEP` package |
+ | `USR` | result in BC | result in HL |
+ | `CLEAR` | clears and sets RAMTOP | clears variables only |
+ | `CONTINUE` | yes | none: `: GOTO label` restarts at a label |
+@@ -747,28 +747,26 @@ NEW
+ 
+ There are two ways to make sound.
+ 
+-**`BEEP`** uses the loudspeaker. It gives a single tone and the program waits until it finishes. Both numbers are raw (this is not the Sinclair `BEEP`; see the keyword [BEEP](03_keywords.md#beep) for a procedure that gives it): the first is the number of cycles, the second the delay in each half-cycle. The frequency is about 3 528 000 / (52 x pitch + 222) hertz. A short tune:
++**`BEEP`** plays one note on the AY-3-8912 sound chip's channel A and waits until it ends: `BEEP seconds, semitones`, with the pitch counted from middle C as on the Spectrum. A short tune -- the start of a C major scale, a quarter of a second a note, then the top note held:
+ 
+ ```basic ex=con.sound.1
+-DEF FN pitch(f) = DIV(3528000 / f - 222, 52)
+-DIM p(5)
+-p(0) = FN pitch(262)
+-p(1) = FN pitch(294)
+-p(2) = FN pitch(330)
+-p(3) = FN pitch(349)
+-p(4) = FN pitch(392)
++DIM s(5)
++s(0) = 0
++s(1) = 2
++s(2) = 4
++s(3) = 5
++s(4) = 7
+ FOR i = 0 TO 4
+-  BEEP 120, p(i)
++  BEEP 0.25, s(i)
+ NEXT i
+-PRINT p(0)
+-PRINT p(4)
++BEEP 1, s(4)
++PRINT s(4)
+ ```
+ ```output ex=con.sound.1
+-254
+-168
++7
+ ```
+ 
+-(The program works out the pitch value for each note's frequency from the formula above, plays the five notes of a C major scale's start -- C, D, E, F, G -- about half a second each, and prints the first and last pitch values.)
++BREAK stops a long `BEEP`. Afterwards channel A is silent; channels B and C are not touched, so they can play their own notes, set with `SOUND`, while `BEEP` plays a tune on A.
+ 
+ **`SOUND`** writes to the AY-3-8912 sound chip, which has three tone channels and a noise generator that keep playing on their own:
+ 
+@@ -784,7 +782,9 @@ PRINT "done"
+ done
+ ```
+ 
+-**See also** BEEP, SOUND, PAUSE.
++The TS2068's **loudspeaker** -- the beeper of the Spectrum -- is not used by the ROM's `BEEP`. The optional **cbeep** package (see [Part 5](05_packages.md#the-cbeep-package)) adds `CBEEP milliseconds, semitones, border` for it; it switches interrupts off while it sounds.
++
++**See also** BEEP, SOUND, PAUSE, CBEEP.
+ 
+ ---
+ 
+@@ -808,7 +808,7 @@ Things to take from the table:
+ 
+ * **Whole-number arithmetic is much faster than floating point** -- about twelve times here. Use whole numbers for counters, indices and scaled values (work in hundredths instead of fractions of a unit).
+ * **Scrolling is expensive**: moving the whole screen up one line costs about 245 000 T-states, 70 milliseconds. A program that prints line after line to a full screen is limited to about 14 lines a second; one that prints at fixed positions with `AT` is not.
+-* `PAUSE n` takes n x 69 700 T-states, and `BEEP` 52 x pitch + 222 per cycle.
++* `PAUSE n` and `BEEP` count display frames (69 888 T-states each in the emulator, 1/60 second on a TS2068): `PAUSE 100` took 6 985 733 T-states, `BEEP 1, 0` 60 frames.
+ * Compilation itself takes a moment for a long program; `RUN` then starts.
+ 
+ ---
+diff --git a/docs/v2/manual/05_packages.md b/docs/v2/manual/05_packages.md
+index e787f7f..c67682e 100644
+--- a/docs/v2/manual/05_packages.md
++++ b/docs/v2/manual/05_packages.md
+@@ -1,6 +1,6 @@
+ # Part 5 -- Packages
+ 
+-The V2 language that is built into the ROM is complete for programs, text, arrays, sound and simple graphics. Everything more specialised lives in **packages**: small programs on tape that add statements to the language. There are five:
++The V2 language that is built into the ROM is complete for programs, text, arrays, sound and simple graphics. Everything more specialised lives in **packages**: small programs on tape that add statements to the language. There are six:
+ 
+ | Package | Tape name | Size | Statements it adds |
+ |---|---|---|---|
+@@ -9,6 +9,7 @@ The V2 language that is built into the ROM is complete for programs, text, array
+ | **printer** | `PRINTER` | 345 bytes | `LPRINT`, `LLIST` |
+ | **shapes** | `SHAPES` | 1007 bytes | `CIRCLE`, `FILL` |
+ | **graphics** | `GRAPHICS` | 467 bytes | `CPLOT`, `BLOCK`, `FRAME`, `INVERT` |
++| **cbeep** | `CBEEP` | 260 bytes | `CBEEP` (the loudspeaker) |
+ 
+ ## Loading a package
+ 
+@@ -94,6 +95,7 @@ A package statement that is given a bad argument stops the program with `RUNTIME
+ | sprite | 18 | `SHOW` or `GRAB` of a sprite that is already shown |
+ | sprite | 19 | `HIDE` or `MOVE` of a sprite that is not shown |
+ | sprite | 20 | the sprite would not fit on the screen |
++| cbeep | 15 | semitones outside -60 to 69, a negative length, or a note too long for its pitch |
+ 
+ Argument mistakes are found when the statement runs, not when the program is compiled: `RUN` starts, and the program stops when it reaches the bad statement.
+ 
+@@ -354,3 +356,39 @@ PRINT c
+ 0
+ 1
+ ```
++
++---
++
++## The cbeep package
++
++The ROM's `BEEP` plays on the sound chip. The **cbeep** package brings back the TS2068's own **loudspeaker** (the beeper of the Spectrum and of the first V2 release) with one statement:
++
++`CBEEP milliseconds, semitones, border`
++
++* *milliseconds*: how long, 0 to 32767. Package arguments are whole numbers, so the length is in thousandths of a second: Sinclair's `BEEP 0.5, 0` is `CBEEP 500, 0, ...`.
++* *semitones*: the note, counted from middle C as for `BEEP`, -60 to 69.
++* *border*: the border colour, 0 to 7. The loudspeaker and the border share one port, and a package cannot read the colour that `BORDER` set, so the program says which colour to keep. **Any other number changes the border** to that colour.
++
++*With the cbeep package loaded (`LOAD "CBEEP" EXT`):*
++
++```basic ex=pkg.cbeep.1 pkg=cbeep
++BORDER 5
++FOR n = 0 TO 7
++  CBEEP 120, n * 2 - DIV(n + 1, 4), 5
++NEXT n
++PRINT "scale"
++```
++```output ex=pkg.cbeep.1
++scale
++```
++
++Things to know before using it:
++
++* **Interrupts are off while a `CBEEP` sounds.** The program, the frame counter and the keyboard all wait for the note: **BREAK is not noticed until the note has ended**, and a note can last up to 32.8 seconds. Keep notes short, or use `BEEP`, which BREAK can stop.
++* **It replaces the package you had loaded** (one package at a time): a program cannot use `CBEEP` together with `CIRCLE`, sprites or any other package statement. Loading another package removes `CBEEP`.
++* A note longer than the loudspeaker routine can count is error 15: over 4.6 seconds at +69, proportionally more for lower notes (about 65 000 waves).
++* It does not touch the sound chip: `SOUND` and `BEEP` music carries on as it was.
++* The loudspeaker routine is the one the first V2 release used for its `BEEP`, unchanged; the package only adds the note and length arithmetic. Its pitch on a TS2068 is within 12 cents (hundredths of a semitone) for two octaves above middle C and coarser higher up (see the keyword [CBEEP](03_keywords.md#cbeep--package-cbeep)).
++* Heard only in the emulator, never on a real machine.
++
++The tape for the package is built with the others by `make v2-packages` (`build/extensions/v2_cbeep.tzx`).
+diff --git a/docs/v2/manual/07_appendices.md b/docs/v2/manual/07_appendices.md
+index 42561a5..1ad3d9f 100644
+--- a/docs/v2/manual/07_appendices.md
++++ b/docs/v2/manual/07_appendices.md
+@@ -174,15 +174,17 @@ RUN
+ | 2, 6 | `STACK OVERFLOW` | recursion (6) or expression nesting (2) too deep |
+ | 5 | `RUNTIME ERROR` | division by zero (`/`, `DIV`, `MOD`), `TAN(90)` |
+ | 7 | `RUNTIME ERROR` | `NEXT` or return with no frame: jumping into a loop; a loop ended by `CLEAR` |
++| 8 | `RUNTIME ERROR` | `SOUND` register 17 or more |
+ | 10 | `RUNTIME ERROR` | array index outside the array |
+ | 11 | `RUNTIME ERROR` | a fraction or out-of-range number stored in a numeric array, or used as an index |
+-| 15 | `RUNTIME ERROR` | argument out of range: `CHR$`, `STICK`, `SQR` of a negative number, an address of 65536 or more |
++| 15 | `RUNTIME ERROR` | argument out of range: `CHR$`, `STICK`, `SQR` of a negative number, an address of 65536 or more, `BEEP` seconds negative or over 273 or semitones outside -60 to 69 |
+ | 64 | `OUT OF MEMORY` | an array does not fit |
+ | 65 | `ARRAY SIZE MISMATCH` | `DIM` differs from a stored array |
+ | 66 | `BREAK` | CAPS SHIFT + SPACE |
+ | 67 | `RUNTIME ERROR` | a result beyond about 1.7 x 10^38 |
+ | 12 to 14 | `RUNTIME ERROR` | mode package: bad `MODE`, `ULAPLUS`, `PALETTE` |
+ | 15 to 20 | `RUNTIME ERROR` | sprite package (see [Part 5](05_packages.md#errors)) |
++| 15 | `RUNTIME ERROR` | cbeep package: `CBEEP` out of range |
+ 
+ ```errors ex=app.verr
+ ve 5 | PRINT 1 / 0
+@@ -195,6 +197,9 @@ ve 15 | PRINT CHR$(256)
+ ve 15 | PRINT SQR(-1)
+ ve 15 | PRINT STICK(3)
+ ve 15 | PRINT PEEK(65536)
++ve 15 | BEEP 1, 70
++ve 15 | BEEP -1, 0
++ve 8 | SOUND 17, 1
+ ve 64 | DIM a(5000)
+ ve 67 | PRINT 100000 * 100000 * 100000 * 100000 * 100000 * 100000 * 100000 * 100000
+ ve 6 | CALL r(5000) ;; END ;; PROC r(n): ;; IF n > 0 THEN ;; CALL r(n - 1) ;; ENDIF ;; ENDP
+@@ -207,6 +212,8 @@ ve 17 pkg=sprite | SHOW 0, 1, 1
+ ve 18 pkg=sprite | GRAB 0, 0, 0, 1, 1 ;; SHOW 0, 0, 0 ;; SHOW 0, 1, 1
+ ve 19 pkg=sprite | HIDE 0
+ ve 20 pkg=sprite | GRAB 0, 23, 31, 2, 2
++ve 15 pkg=cbeep | CBEEP 100, 70, 7
++ve 15 pkg=cbeep | CBEEP 32767, 69, 7
+ ```
+ 
+ ---
+@@ -320,8 +327,10 @@ All figures were measured on the release with an otherwise empty program, unless
+ | text screen | 32 columns by 23 rows (row 23 is the status line) |
+ | graphics screen | 256 by 192 pixels |
+ | `CPLOT` grid | 64 by 48 |
+-| `SOUND` registers | 1 to 16 |
++| `SOUND` registers | 0 to 16 |
+ | `PAUSE` | up to 65535 frames |
++| `BEEP` | 0 to 273 seconds, in whole frames; semitones -60 to 69 (below -39 plays -39) |
++| `CBEEP` (package) | 0 to 32767 milliseconds, at most 65535 waves; semitones -60 to 69 |
+ 
+ Most of these are limits of **memory** and move with what else the program uses; the compiler's own tables (names, labels, forward references) are fixed. The nesting limits are those of the compiler's and the machine's stacks: a program that needs more than that stops with `NESTING TOO DEEP`, `STACK OVERFLOW` or `OUT OF MEMORY`.
+ 
+@@ -384,6 +393,7 @@ Ports used by the system (`IN`/`OUT`): `$FE` (254) keyboard, speaker, border and
+ | | | `BLOCK x0, y0, x1, y1` | pixel corners |
+ | | | `FRAME x0, y0, x1, y1` | pixel corners |
+ | | | `INVERT x0, y0, x1, y1` | pixel corners |
++| cbeep | `CBEEP` | `CBEEP ms, s, b` | 0-32767 milliseconds; semitones -60 to 69; border colour 0-7 |
+ 
+ One package at a time; `NEW` unloads it; a statement of a package that is not loaded is a compile error.
+ 
+@@ -391,10 +401,10 @@ One package at a time; `NEW` unloads it; a statement of a package that is not lo
+ 
+ ## Appendix G: Hardware notes
+ 
+-Everything in this manual was verified in the **ZEsarUX emulator** on the accepted release ROMs (tag `v2.0.0-emu.1`). **Nothing was tried on a physical TS2068**, a real cassette recorder, a ZX Printer, a joystick, ULAplus hardware or a Dock/EXROM cartridge. In particular:
++Everything in this manual was verified in the **ZEsarUX emulator**: on the accepted release ROMs (tag `v2.0.0-emu.1`), and, for the maintenance release's sound changes (`BEEP`, `SOUND`, `PAUSE`, the cbeep package), on its candidate ROMs. **Nothing was tried on a physical TS2068**, a real cassette recorder, a ZX Printer, a joystick, ULAplus hardware or a Dock/EXROM cartridge. In particular:
+ 
+-* the sound (`BEEP`, `SOUND`) was measured by counting instructions and port writes; it was never listened to;
+-* the figures for `PAUSE` assume the emulator's 50 frames a second; a real TS2068 is expected to interrupt at 60 a second (not measured);
++* the sound (`BEEP`, `SOUND`, `CBEEP`) was measured by reading the sound chip's registers back, counting instructions and port writes, and from the emulator's recorded audio; it was never listened to on a TS2068 (the startup chime included);
++* `BEEP` and `PAUSE` count display frames: 1/60 second on a TS2068 is the design figure, the emulator interrupts 50 times a second (not measured on hardware);
+ * tape timing was exercised only through the emulator's tape input; the identity-check pause of about 2.4 seconds on `SAVE ... ALL`, `LOAD` and `VERIFY` of an ALL tape has not been timed on real hardware;
+ * the printer package, the joysticks, `MODE 1`, ULAplus and the keyboard-matrix details are as the source states, not as seen on a machine;
+ * the hardware checklist for the release is `docs/v2/V2_HARDWARE_CHECKLIST.md`.
+@@ -421,11 +431,12 @@ Everything in this manual was verified in the **ZEsarUX emulator** on the accept
+ | **Package: printer** | `LPRINT`, `LLIST` |
+ | **Package: shapes** | `CIRCLE`, `FILL` |
+ | **Package: graphics** | `CPLOT`, `BLOCK`, `FRAME`, `INVERT` |
++| **Package: cbeep** | `CBEEP` |
+ 
+ ---
+ 
+ ## Appendix I: How this manual was checked
+ 
+-* Every example marked with an output block, a picture, a transcript or an error code in this manual is a test. `make doc-examples` runs them all on the release image (`tools/qual/manual_run.py`; the parser is `tools/qual/manual_examples.py`): programs are stored and run; `LIST`, `RUN`, `NEW` and the editor keys are typed through the real keyboard path; `SAVE` is captured at the tape transport and `LOAD` / `VERIFY` run the real tape receiver on a synthesised signal; packages are loaded with `LOAD "NAME" EXT` through that same receiver; BREAK is pressed in the emulated keyboard matrix; pictures are rendered from screen memory and compared with the committed images.
++* Every example marked with an output block, a picture, a transcript or an error code in this manual is a test. `make doc-examples` runs them all on the ROM image built from the same tree (the release, `v2.0.0-emu.1`; the `BEEP`, `SOUND`, `PAUSE` and `CBEEP` examples on the maintenance candidate) (`tools/qual/manual_run.py`; the parser is `tools/qual/manual_examples.py`): programs are stored and run; `LIST`, `RUN`, `NEW` and the editor keys are typed through the real keyboard path; `SAVE` is captured at the tape transport and `LOAD` / `VERIFY` run the real tape receiver on a synthesised signal; packages are loaded with `LOAD "NAME" EXT` through that same receiver; BREAK is pressed in the emulated keyboard matrix; pictures are rendered from screen memory and compared with the committed images.
+ * This suite is **separate** from the 1010-case release baseline (`make test`, `make qual`, `tools/qual/corpus.py`), which it does not touch and whose totals it does not change.
+ * Facts that are not examples (limits, timings) were measured with `tools/qual/manual_measure.py` and the commands recorded in `docs/v2/V2_DOCUMENTATION_FINDINGS.md`, which also lists what in the earlier documents turned out to be wrong.

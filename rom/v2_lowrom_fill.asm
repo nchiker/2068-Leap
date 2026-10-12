@@ -11,9 +11,11 @@ MATH_RND_SEED:
     ret
     ASSERT $ <= $0008
     ORG $000B                     ; after RST $08's jp
+    IFNDEF V2_MAINT_SHARED_WAIT       ; MAINT (shared wait): its only caller, OP_PAUSE, no longer uses it
 INT_GET_FRAMES:
     ld   hl, (FRAMES)
     ret
+    ENDIF
     ASSERT $ <= $0010
     ORG $0013                     ; after RST $10's jp
 OP_NL:

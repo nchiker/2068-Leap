@@ -35,8 +35,12 @@
 ; ============================================================================
 SOUND_EXROM:
     ld   a, b
+    IFNDEF V2_MAINT_SOUND0
     or   a
     jr   z, .bad_register             ; register 0 -> error
+    ENDIF
+    ; MAINT (SOUND0): the stock ROM accepts registers 0-16 (its `DEC A / INC A / JP M` tests
+    ; nothing for 0): only 17 and above are rejected. B and C are preserved.
     cp   17
     jr   nc, .bad_register             ; register >= 17 -> error
     out  (PORT_AY_REG), a
@@ -47,3 +51,4 @@ SOUND_EXROM:
 .bad_register:
     scf
     ret
+
