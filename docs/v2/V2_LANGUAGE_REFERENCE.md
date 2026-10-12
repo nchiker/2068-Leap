@@ -1,35 +1,23 @@
 # 2068-Leap V2 -- language reference (V2 Enhanced release)
 
-This is the authoritative description of the language the V2 Enhanced release implements
-(`integration/v2-final-rom`). Where an older document (`docs/user_manual.md`,
-`docs/basic_language_reference.md`, the V1 manuals) disagrees, this one wins; the executable form of
-it is the conformance corpus `tools/qual/corpus.py` (667 cases, run by `make qual`). Features that
-are deliberately not in V2 are listed in section 12 and in `V2_FEATURE_MATRIX.md`.
-`V2_LANGUAGE_SPEC.md` is the planning-phase *target* (MUST HAVE / DESIRABLE, with cost estimates);
-this document is what the V2 Enhanced release implements.
+The compact, precise description of the language the V2 Enhanced release implements (tag `v2.0.0-emu.1`). It is derived from the ROM source, the five package modules and the qualification evidence, and every statement in it was checked on the release image. The teaching version, with a worked example for every keyword, is the **user manual**: [`manual/01_introduction.md`](manual/01_introduction.md); its keyword part ([`manual/03_keywords.md`](manual/03_keywords.md)) is this reference with examples, and its examples are tests (`make doc-examples`). The language conformance corpus (`tools/qual/corpus.py`, 667 cases, `make qual`) is the historical release record and is unchanged. Where an older document (`docs/user_manual.md`, `docs/basic_language_reference.md`, the V1 manuals) disagrees with this one, this one wins. Corrections made to the previous version of this file are listed in [`V2_DOCUMENTATION_FINDINGS.md`](V2_DOCUMENTATION_FINDINGS.md). Features that are deliberately not in V2 are in section 12 and in `V2_FEATURE_MATRIX.md`.
 
 ## 1. Programs, lines and labels
 
 * A program is a list of lines, edited in the full-screen editor; there are **no line numbers**.
 * A line holds one or more statements separated by `:`. A line is at most 127 characters.
-* A **label** is a line `name:` -- it names the next statement. Labels are the only jump targets
-  (`GOTO name`, `IF ... THEN GOTO name`). A duplicate label is compile error 57.
-* `REM` comments run to the end of the line.
-* The whole program is compiled before it runs (`RUN`); a compile error shows the message and
-  moves the cursor to the failing line, and nothing runs.
+* A **label** is a line `name:` -- it names the next statement. Labels are the only jump targets (`GOTO name`, `IF ... THEN GOTO name`). A duplicate label is compile error 57.
+* `REM` comments run to the end of the line (a `:` in a comment does not end it). `'` is not a comment character.
+* The whole program is compiled before it runs (`RUN`): a compile error shows its message on the status line and, at the next key, moves the cursor to the failing line; nothing runs.
+* Keywords, names and statements are not case-sensitive.
 
 ## 2. Names, types and values
 
-* Identifiers: a letter, then letters/digits, up to 31 significant characters (longer: error 61),
-  case-insensitive. `name$` is a string variable; `name(i)` / `name$(i)` an array element.
-* **Numbers** are 16-bit integers (-32768 .. 32767) or 5-byte floats (the Sinclair format: 32-bit
-  mantissa, about 9 significant digits, magnitude up to about 1.7E38). Integer arithmetic that
-  overflows promotes to a float; a float result beyond the range is runtime error **67** (number
-  too big); a result below the range becomes 0.
-* **Strings** hold 0..31 characters. A string literal longer than 31 characters is compile error
-  **70**; a concatenation longer than 31 characters keeps the first 31.
-* Variables need no declaration; a variable never assigned is 0 / "" (see section 9 for when
-  variables are fresh).
+* Identifiers: a letter, then letters and digits, up to 31 characters (longer: error 61), case-insensitive. **No underscore.** A keyword or the name of a built-in function (`print`, `abs`, `code`, `len` ...) cannot be used as a variable, array, label, procedure or function name; a name that merely *begins* with one can (`tomato`, `format`).
+* `name$` is a string variable; `name(i)` / `name$(i)` an array element. `x`, `x$` and `x(1)` are three different things.
+* **Numbers** are 16-bit integers (-32768 .. 32767) or 5-byte floats (the Sinclair format: 32-bit mantissa, about 9 significant digits, magnitude up to about 1.7E38). Integer arithmetic that overflows promotes to a float; a float result beyond the range is run-time error **67**; a result below the range becomes 0.
+* **Strings** hold 0..31 characters. A string literal longer than 31 characters is compile error **70**; a concatenation longer than 31 characters keeps the first 31.
+* Variables need no declaration; a variable never assigned is 0 / "" (section 9 says when variables are fresh).
 
 ## 3. Literals
 
@@ -38,142 +26,155 @@ this document is what the V2 Enhanced release implements.
 | `0` .. `32767` | integer |
 | `32768` .. `65535` | a positive float (literal rule L-C); still usable wherever an address is expected (`POKE 65000,1`, `PEEK`, `USR`) |
 | larger integers, decimals (`3.14159`, `0.000001`, `12345.5`) | exact 5-byte float (decimal-to-binary rounding of the 32-bit mantissa) |
-| beyond about 1.7E38 | compile error 64 |
-| `"text"` | a string, at most 31 characters |
+| beyond about 1.7E38 | compile error 64 (message `UNEXPECTED TOKEN`) |
+| `"text"` | a string, at most 31 characters; no escape for a quote |
 
 There is no exponent notation and no hexadecimal literal. A minus sign is an operator.
 
 ## 4. Expressions
 
-Precedence, highest first: function calls and parentheses; unary `-`; `*` `/`; `+` `-`; relations
-`=` `<>` `<` `>` `<=` `>=`; `NOT`; `AND`; `OR`.
+Precedence, highest first: function calls and brackets; unary `-`; `*` `/`; `+` `-`; relations `=` `<>` `<` `>` `<=` `>=`; `NOT`; `AND`; `OR`. Equal ranks work left to right. There is no power operator, and `DIV`/`MOD` are functions.
 
-* `/` is exact division (an inexact integer quotient becomes a float); `DIV(a,b)` and `MOD(a,b)`
-  are integer division and remainder (floats are truncated first); division by zero is runtime
-  error 5.
-* Relations give 1 (true) or 0 (false). Strings compare with all six relations, character by
-  character (a prefix sorts first).
-* `AND` / `OR` short-circuit (the right operand is not evaluated when the left decides) and give
-  0/1; `NOT` gives 0/1. Any nonzero number (integer or float) is true.
-* `+` concatenates strings.
-* `PRINT` shows an integer as is and a float with four decimals, rounded (`0.1 + 0.2` prints
-  `0.3000`, `PRINT 65535` prints `65535.0000`).
+* `/` is exact division (an inexact integer quotient becomes a float); `DIV(a,b)` and `MOD(a,b)` are integer division and remainder (floats are truncated first); division by zero is run-time error 5.
+* Relations give 1 (true) or 0 (false), on numbers and on strings (all six, character by character by code; a prefix sorts first). An integer and a float with the same value compare equal.
+* `AND` / `OR` short-circuit and give 0/1 (they are logical, not bitwise: `3 AND 5` is 1); `NOT` gives 0/1. Any nonzero number is true.
+* `+` concatenates strings; a string and a number cannot be mixed (compile error).
+* `PRINT` shows an integer as is and a float with four decimals, the stored value rounded (`0.1 + 0.2` prints `0.3000`, `PRINT 65535` prints `65535.0000`).
 
 ## 5. Statements
 
 | Statement | Notes |
 |---|---|
 | `var = expr`, `var$ = expr$`, `a(i) = expr`, `a$(i) = expr$` | assignment (no `LET`) |
-| `PRINT items`, `LPRINT items` | items separated by `;` (no space) or `,` (next 16-column zone); a trailing `;` keeps the cursor. Position and colour are separate statements (below), not `PRINT` items |
-| `AT row,col`, `TAB col` | move the `PRINT` position (out-of-range values are clamped) |
-| `INPUT var` / `INPUT var$` | numeric input accepts integers and decimals (up to 20 characters); string input up to 31 |
-| `IF cond THEN` ... [`ELSE` ...] `ENDIF` | always a block (each part on its own lines); single-line form: `IF cond THEN GOTO label` only. There is no `ELSEIF`: use `ELSE` + a nested `IF ... ENDIF` |
-| `FOR v = a TO b [STEP s]` ... `NEXT [v]` | integer or float loop (any of a, b, s a float makes it a float loop); the limit and step are evaluated once; a loop whose start is already past the limit runs zero times; after a normal exit `v` is the first value past the limit; `STEP 0` never advances (counts as ascending: `BREAK` or `EXIT FOR` ends it); `NEXT` may omit the variable; `EXIT FOR` leaves the innermost loop; a `NEXT` without its `FOR` is a compile error |
-| `GOTO label` | jumping out of loops is allowed; jumping into one is an error |
-| `PROC name(p):` ... `ENDP` | a procedure with one by-value parameter `p` (restored on return); recursion works |
-| `CALL name(expr)` | call a procedure |
-| `DEF FN f(x) = expr` / `FN f(expr)` | one-parameter user function |
-| `DIM a(n)`, `DIM a$(n)`, `DIM a$(n,w)` | arrays of `n` elements, indices 0 .. n-1; `n` a literal (1 .. 16383); numeric elements are 16-bit integers (storing a float or a value outside -32768..32767 is runtime error 11); string elements are `w` bytes (`w`-1 characters; default `w` = 16, i.e. 15 characters; `DIM a$(n,32)` holds 31); a name is DIM'd once per run; out-of-range index: runtime error 10 |
-| `CLEAR` | ordinary variables and arrays back to zero / empty; ends enclosing loops (a later `NEXT` is runtime error 7); the program, packages and the Array Store stay |
-| `END`, `STOP` | stop the program (variables stay, section 9) |
-| `CLS` | clear the screen |
-| `BORDER n`, `INK n`, `PAPER n`, `FLASH n`, `BRIGHT n`, `OVER n`, `INVERSE n` | screen attributes for what is printed next |
-| `PLOT x,y`, `LINE x0,y0 TO x1,y1` | 256x192 pixels; coordinates outside the screen are clamped to the edge |
-| `BEEP duration,pitch`, `SOUND register,value` | sound (AY registers 0..15) |
-| `POKE address,value`, `OUT port,value` | memory and port writes (addresses 0 .. 65535) |
-| `PAUSE n` | wait `n` frames (`BREAK` interrupts) |
-| `RANDOMISE [n]` | seed `RND` |
+| `PRINT [item {; or , item} [; or ,]]` | `;` joins with nothing, `,` goes to the next 16-column zone; a trailing separator keeps the cursor on the line; bare `PRINT` is an empty line; text wraps at column 32 and the screen scrolls after row 22 (row 23 is the status line) |
+| `AT row,col`, `TAB col` | move the `PRINT` position: row above 23 is 23, **column modulo 32** |
+| `INPUT var`, `INPUT "prompt"; var`, `INPUT "prompt", var` | numeric input accepts integers and decimals (up to 20 characters; non-numbers give 0, trailing text is ignored); string input up to 31; the answer is echoed; **only a plain variable** (an array element is compile error 64) |
+| `IF cond THEN` ... [`ELSE` ...] `ENDIF` | always a block; the only one-line form is `IF cond THEN GOTO label`; no `ELSEIF` |
+| `FOR v = a TO b [STEP s]` ... `NEXT [v]` | integer or float loop (any of a, b, s a float makes it a float loop; the step is added each time, so a fractional count is as exact as the arithmetic); limit and step evaluated once; a start already past the limit runs zero times; after a normal exit `v` is the first value past the limit; `STEP 0` never advances (stop with `BREAK` or `EXIT FOR`); `EXIT FOR` leaves the innermost loop; a `NEXT` without its `FOR`, or for another variable, is a compile error |
+| `GOTO label` | out of loops allowed; into one: run-time error 7 at its `NEXT` |
+| `PROC name(p):` ... `ENDP`, `CALL name(expr)` | one by-value parameter (restored on return); recursion works (about 670 levels); other variables are shared; a `PROC` in the flow of control is skipped; `CALL` of a plain label is accepted and does not return (Q-24, accepted) |
+| `DEF FN f(x) = expr` / `FN f(expr)` | numeric, one parameter; may be used before its definition; duplicate names are compile error 57 |
+| `DIM a(n)`, `DIM a$(n)`, `DIM a$(n,w)` | arrays of `n` elements, indices 0 .. n-1; `n` a literal (1 .. 16383; what fits is memory-limited); numeric elements are 16-bit integers (a float or a value outside -32768..32767 is run-time error 11); string elements are `w` bytes (`w`-1 characters; default `w` = 16); a name is DIM'd once per run (error 38); out-of-range index run-time error 10; one dimension |
+| `CLEAR` | variables and ordinary arrays back to 0 / empty; ends enclosing loops (a later `NEXT` is run-time error 7); program, packages and the Array Store stay |
+| `END`, `STOP` | stop (variables stay, section 9) |
+| `CLS` | clear the text area to the current colours, home the `PRINT` position |
+| `BORDER n`, `INK n`, `PAPER n` | low 3 bits of n |
+| `FLASH n`, `BRIGHT n`, `OVER n`, `INVERSE n` | only the **low bit** of n |
+| `PLOT x,y`, `LINE x0,y0 TO x1,y1` | 256 x 192 pixels, x from the left, **y from the top**; coordinates outside the screen are moved to the edge; fractions cut off |
+| `BEEP duration,pitch` | **raw counts**: `duration` cycles, `pitch` the delay per half-cycle; one cycle is about 52 x pitch + 220 T-states; interrupts are off while it sounds |
+| `SOUND register,value` | writes `value` to AY register `register`, which must be **1 to 16** (sent to the chip unchanged; register 0 is not reachable) |
+| `POKE address,value`, `OUT port,value` | low byte of `value`; address / port 0 .. 65535 (65536 and above: error 15) |
+| `PAUSE n` | wait `n` display frames (0: wait for a key); BREAK interrupts |
+| `RANDOMISE n` | seed `RND`; the number is required |
 | `REM text` | comment |
 
 ## 6. Built-in functions
 
 | Function | Result |
 |---|---|
-| `ABS(n)`, `SGN(n)`, `INT(n)` | absolute value, sign (-1/0/1), the integer part -- **truncated toward zero** (`INT(-3.5)` = -3; stock Sinclair BASIC floors to -4: a documented V2 difference, R10.8 L6) |
-| `MOD(a,b)`, `DIV(a,b)` | truncated integer remainder / quotient (`MOD(-7,3)` = -1, `DIV(-7,2)` = -3; error 5 for b = 0) |
-| `SQR(n)` | square root (error 15 for n < 0) |
-| `SIN(d)`, `COS(d)`, `TAN(d)` | trigonometry in **degrees** (fractional degrees allowed); `TAN(90)` is error 5 |
+| `ABS(n)`, `SGN(n)`, `INT(n)` | absolute value, sign (-1/0/1), the integer part **truncated toward zero** (`INT(-3.5)` = -3; Sinclair BASIC floors) |
+| `MOD(a,b)`, `DIV(a,b)` | truncated remainder / quotient (`MOD(-7,3)` = -1, `DIV(-7,2)` = -3; error 5 for b = 0) |
+| `SQR(n)` | square root (a float; error 15 for n < 0) |
+| `SIN(d)`, `COS(d)`, `TAN(d)` | degrees (fractions allowed); `TAN(90)` is error 5 |
 | `PI()`, `RAD(d)`, `DEG(r)` | pi; degrees to radians; radians to degrees |
-| `RND(n)` | a random integer 0 .. n-1 (0 when n < 1) |
-| `LEN(s$)`, `CODE(s$)`, `VAL(s$)` | length; code of the first character; the leading number in the text (spaces and a sign skipped; stops at the first character that cannot continue the number) |
-| `CHR$(n)` | a 1-character string (error 15 outside 0..255) |
+| `RND(n)` | a random whole number 0 .. n-1 (0 when n < 1) |
+| `LEN(s$)`, `CODE(s$)`, `VAL(s$)` | length; code of the first character (0 if empty); the leading number of the text (spaces and a sign skipped; 0 if none) |
+| `CHR$(n)` | one character (error 15 outside 0..255) |
 | `STR$(n)` | the number as `PRINT` shows it |
 | `UPPER$(s$)`, `LOWER$(s$)` | case conversion |
-| `LEFT$(s$,n)`, `RIGHT$(s$,n)`, `MID$(s$,start,n)` | substrings (1-based start, a start below 1 counts as 1; out-of-range counts are clamped) |
-| `INKEY$()` | the key being pressed, or "" |
-| `PEEK(a)`, `USR(a)` | byte at an address; call machine code at an address (result: BC as 0..65535) |
-| `IN(port)`, `STICK(n)` | port read; joystick 1 or 2 (other n: error 15) |
-| `POINT(x,y)`, `ATTR(row,col)` | pixel (0/1, clamped coordinates); attribute byte |
+| `LEFT$(s$,n)`, `RIGHT$(s$,n)`, `MID$(s$,start,n)` | substrings (1-based start, below 1 counts as 1; counts clamped) |
+| `INKEY$()` | the key now held, or "" |
+| `PEEK(a)` | byte at an address (0..65535) |
+| `USR(a)` | calls machine code at `a` with `CALL`; **the result is HL on return**, 0..65535 (a result of 32768 or more is a float); the ROM saves and restores `IY`; everything else may be destroyed; interrupts must stay enabled; the routine must `RET` |
+| `IN(port)`, `STICK(n)` | port read (full 16-bit address); joystick 1 (0..15) or 2 (0..1); other n: error 15 |
+| `POINT(x,y)`, `ATTR(row,col)` | pixel (0/1); attribute (ink + 8 paper + 64 bright + 128 flash; 0 off-screen) |
 | `FREE()`, `FREE(1)` | free bytes of the main pool / of segment 2 |
-| `DIMN(a)`, `DIMN(a$)` | an array's declared size |
+| `DIMN(a)` | the declared size of a **numeric** array (a string array: compile error 47) |
 
-## 7. Commands (typed in the editor, not in programs)
+Functions are always written with brackets, even without an argument.
+
+## 7. Commands (typed on the editor's empty last line, not in programs)
 
 | Command | Effect |
 |---|---|
 | `RUN` | compile and run the program with fresh variables |
 | `: statements` | run immediately, in the current variable session (section 9) |
-| `LIST` | list the program |
-| `NEW` | clear the program, variables, packages and the Array Store |
+| `LIST` | list the program, 23 lines a page; BREAK at a full page stops it |
+| `NEW` | clear the program, variables, package and the Array Store |
 | `SAVE "name"` / `LOAD "name"` / `VERIFY "name"` | program tapes (a name of up to 10 characters; `LOAD ""` takes the next program) |
-| `SAVE "name" ALL` | program + variable session + Array Store in one tape block (`V2_SAVE_ALL_FORMAT.md`) |
+| `SAVE "name" ALL` | program + variable session + Array Store in one tape block (`V2_SAVE_ALL_FORMAT.md`); about 2.4 s identity check before the tones, also on `LOAD` and `VERIFY` of an ALL tape |
 | `SAVE "name" ARRAY a` / `LOAD "name" ARRAY a` | one array to / from tape; `LOAD ... ARRAY` puts it in the Array Store, where it survives `RUN`, `CLEAR` and edits, and a matching `DIM` adopts it |
-| `SAVE "name" EXT` / `LOAD "name" EXT` | a loadable package (`PACKAGE_ABI.md`); its keywords become part of the language until `NEW` |
+| `SAVE "name" EXT` / `LOAD "name" EXT` | a loadable package (`PACKAGE_ABI.md`); `NO PACKAGE` if `SAVE` has none |
 
 ## 8. Errors
 
-Compile errors stop before anything runs; runtime errors stop the program (`ERROR`-class message
-on the status line). Codes the user meets most often:
+The screen shows a **message**, never a number. Compile errors stop before anything runs; run-time errors stop the program (its variables are kept). The messages: `SYNTAX ERROR`, `UNEXPECTED TOKEN`, `NAME TOO LONG`, `NESTING TOO DEEP`, `TOO MANY VARIABLES`, `OUT OF MEMORY`, `STACK OVERFLOW`, `RUNTIME ERROR`, `ARRAY SIZE MISMATCH`, `BREAK`, `PROGRAM FULL`, and the tape messages `SAVED`, `LOADED`, `VERIFIED`, `VERIFY FAILED`, `LOAD FAILED`, `NO VARIABLES`, `BAD TAPE VERSION`, `ABORTED`, `NO PACKAGE`, `ARRAY NOT DIMD`, `ARRAY STORE FULL`, `BAD ARRAY TAPE`. Appendix A of the manual explains each.
 
-| Code | Kind | Meaning |
+Internal codes (as used by the tests and the source). **Compile errors**, each with a program that causes it in Appendix B of the manual (`app.cerr.*`, run by `make doc-examples`):
+
+| Code | Cause | Message |
 |---|---|---|
-| 1, 39 | compile | more than 251 numeric / 251 string / 255 array names ("TOO MANY VARIABLES") |
-| 2, 3, 9..48 | compile | syntax: expected token missing (full list in `rom/exrom_v2_compiler.asm`, header) |
-| 5, 6, 45, 55, 62 | compile | out of compile memory ("OUT OF MEMORY") |
-| 7 | compile | `GOTO` an undefined label |
-| 56, 63, 65 | compile | `NEXT` for another variable; `EXIT FOR` outside a loop; `FOR` without `NEXT` |
-| 57 | compile | duplicate label |
-| 60 / 61 | compile | nesting too deep / name too long |
-| 64 | compile | unexpected token (also: a literal beyond the float range) |
-| 70 | compile | string literal longer than 31 characters |
-| 71 | compile | an immediate statement defined a label, `PROC` or `DEF FN` |
-| 2, 6 | runtime | expression or call stack overflow ("STACK OVERFLOW") |
-| 5 | runtime | division by zero (also `TAN(90)`) |
-| 7 | runtime | `NEXT` / `RET` without a frame (e.g. after `CLEAR` inside a loop) |
-| 10 | runtime | array index out of range |
-| 15 | runtime | argument out of range (`CHR$`, `STICK`, `SQR` of a negative number) |
-| 64 | runtime | out of array memory ("OUT OF MEMORY") |
-| 65 | runtime | `DIM` size or width differs from the stored array of that name ("ARRAY SIZE MISMATCH") |
-| 66 | runtime | `BREAK` (CAPS SHIFT + SPACE) |
-| 67 | runtime | number too big (a float result beyond about 1.7E38) |
+| 1, 39 | more than 251 number / 251 string names (1), more than 255 array names (39) | `TOO MANY VARIABLES` |
+| 2 | identifier not followed by `=`, unknown word, package statement without its package | `SYNTAX ERROR` |
+| 3 | an expression could not start | `SYNTAX ERROR` |
+| 5, 6, 55, 62 | out of compile memory: label table, forward references, code area, workspace | `OUT OF MEMORY` |
+| 7 | `GOTO` an undefined label | `SYNTAX ERROR` |
+| 8, 9 | `IF` without `THEN` (8); block `IF` without `ELSE`/`ENDIF` (9) | `SYNTAX ERROR` |
+| 10, 11, 12 | `FOR`/`NEXT` without a variable (10); `FOR` without `TO` (11); no label after `GOTO` (12) | `SYNTAX ERROR` |
+| 13 .. 15 | `CALL`: no name, no `(`, no `)` | `SYNTAX ERROR` |
+| 16 .. 20 | `PROC`: no `ENDP` (16); no name, `(`, parameter, `)` (17..20) | `SYNTAX ERROR` |
+| 22 .. 25 | missing comma / `TO` in `PLOT`, `BEEP`, `POKE`, `SOUND`, `OUT`, `AT`, `LINE` | `SYNTAX ERROR` |
+| 28 | wrong number of arguments of a package statement | `SYNTAX ERROR` |
+| 29 .. 31 | built-in function call: no `(`, comma, `)` | `SYNTAX ERROR` |
+| 32 .. 38 | `DIM`: no name (32; also `LPRINT` without its package), no `(` (33), size not a literal (34), size 0 (35), no `)` (37), declared twice (38) | `SYNTAX ERROR` |
+| 41, 42 | array index without `)` (41); assignment to an array never DIM'd (42) | `SYNTAX ERROR` |
+| 43, 44 | `INPUT` without a plain variable; `EXIT` without `FOR` | `SYNTAX ERROR` |
+| 46 .. 48 | `DIMN`: no `(`, not a numeric array, no `)` | `SYNTAX ERROR` |
+| 49 .. 54 | `DEF FN`: no `FN`, name, `(`, parameter, `)`, `=` | `SYNTAX ERROR` |
+| 56, 57, 63 | `NEXT` for another variable; duplicate label / `PROC` / `DEF FN`; `EXIT FOR` outside a loop | `SYNTAX ERROR` |
+| 60, 61 | nesting too deep; name too long | `NESTING TOO DEEP`, `NAME TOO LONG` |
+| 64 | unexpected token (also a literal beyond the number range) | `UNEXPECTED TOKEN` |
+| 65, 66 | `FOR` without `NEXT`; bracket not closed | `SYNTAX ERROR` |
+| 70 | string literal longer than 31 characters | `SYNTAX ERROR` |
+| 71 | an immediate statement defined a label, `PROC` or `DEF FN` | `SYNTAX ERROR` |
+
+**Run-time errors** (`ve`):
+
+| Code | Cause | Message |
+|---|---|---|
+| 2, 6 | expression stack (2) / control stack, i.e. recursion or nested loops (6) overflow | `STACK OVERFLOW` |
+| 5 | division by zero (also `TAN(90)`) | `RUNTIME ERROR` |
+| 7 | `NEXT` / return without a frame (jump into a loop; after `CLEAR` inside a loop) | `RUNTIME ERROR` |
+| 10, 11 | array index out of range (10); non-integer or out-of-range value stored in, or used as an index of, a numeric array (11) | `RUNTIME ERROR` |
+| 15 | argument out of range (`CHR$`, `STICK`, `SQR` of a negative number, an address of 65536 or more) | `RUNTIME ERROR` |
+| 64, 65 | out of array memory (64); `DIM` differs from the stored array (65) | `OUT OF MEMORY`, `ARRAY SIZE MISMATCH` |
+| 66 | BREAK | `BREAK` |
+| 67 | a float result beyond about 1.7E38 | `RUNTIME ERROR` |
+| 12, 13, 14 | mode package: bad `MODE`, `ULAPLUS`, `PALETTE` | `RUNTIME ERROR` |
+| 15 .. 20 | sprite package: slot; row / column / size; never grabbed; already shown; not shown; does not fit | `RUNTIME ERROR` |
 
 ## 9. Variable sessions
 
-`RUN` starts with fresh variables. When the program stops -- at its end, `END`, `STOP`, `BREAK`
-or an error -- its variables stay: immediate statements (`: PRINT x`, `: x = 7`, `: GOTO label`)
-use them and may add new ones; `CLEAR` resets them; any edit, `NEW` or `LOAD` ends the session.
-Full rules: `V2_SESSION_VARIABLES.md`.
+`RUN` starts with fresh variables. When the program stops -- at its end, `END`, `STOP`, `BREAK` or an error -- its variables stay: immediate statements (`: PRINT x`, `: x = 7`, `: GOTO label`) use them and may add new ones; `CLEAR` resets them; any edit, `NEW` or `LOAD` ends the session. An immediate statement may not define a label, `PROC` or `DEF FN` (error 71). Full rules: `V2_SESSION_VARIABLES.md`; with examples: manual concept *Sessions*.
 
 ## 10. Memory and capacity
 
-* The main pool (program text, symbol table, arrays, variables) is about 8.4 KB; arrays that do
-  not fit go to segment 2 (2 KB at `$E000`), which also holds the Array Store. `FREE()`/`FREE(1)`
-  report what is left.
-* 251 numeric and 251 string variables; 255 numeric and 255 string arrays; up to ~4 KB of compiled
-  bytecode; recursion depth is limited by the call stack (150 levels with one parameter pass the
-  production checks).
-* A string array element costs its width; a numeric element 2 bytes.
+* The main pool (program text, symbol table, arrays, variables) is about 8.4 KB (`FREE()` is 8153 on an empty machine with a one-line program); arrays that do not fit go to segment 2 (2 KB at `$E000`), which also holds the Array Store. `FREE(1)` reports segment 2.
+* 251 numeric and 251 string names (strings are limited by memory long before: about 155 one-character strings); 255 array names; about 4 KB of compiled code (749 lines of `PRINT n` is the longest program of that shape that compiles); recursion about 670 levels; nesting: brackets 105, `IF` 211, `FOR` 141. See manual Appendix D.
+* A numeric array element costs 2 bytes, a string array element its width; an array about 12-14 bytes more; a program line its length + 3; a number variable about 13, a string variable about 37.
 
 ## 11. Packages
 
-A package tape adds keywords (graphics shapes, sprites, printer, screen modes, ...): `LOAD "name"
-EXT`. One package at a time; `NEW` removes it. Package authors: `PACKAGE_ABI.md`.
+A package tape adds statements: `LOAD "NAME" EXT`. One package at a time (a second replaces the first); `NEW` unloads it; a statement of a package that is not loaded is a compile error. Package arguments are whole numbers and statements that take positions use only the low 8 bits. Package authors: `PACKAGE_ABI.md`; users: manual Part 5.
+
+| Package (tape name, size) | Statements |
+|---|---|
+| **mode** (`MODE`, 165 bytes) | `MODE m` (0 normal, 1 the second video mode), `ULAPLUS u` (0/1), `PALETTE i,v` (i 0..63) |
+| **sprite** (`SPRITE`, 834) | `GRAB slot,row,col,w,h` (slot 0..7, w and h 1..4 cells), `SHOW slot,row,col`, `MOVE slot,row,col`, `HIDE slot` (positions in character cells) |
+| **printer** (`PRINTER`, 345) | `LPRINT x` (one number or string; a number as a whole number), `LLIST` |
+| **shapes** (`SHAPES`, 1007) | `CIRCLE x,y,r`, `FILL x,y` (pixel coordinates) |
+| **graphics** (`GRAPHICS`, 467) | `CPLOT x,y` (64 x 48 grid), `BLOCK x0,y0,x1,y1`, `FRAME x0,y0,x1,y1`, `INVERT x0,y0,x1,y1` (pixel corners) |
 
 ## 12. Not in V2 (deliberately)
 
-Line numbers, `GOSUB`/`RETURN` (use `PROC`/`CALL`), `LET`, single-line `IF ... THEN stmt` (other
-than `THEN GOTO`), `ELSEIF`, `INSTR`, string slicing `a$(i TO j)` (use `MID$`), `READ`/`DATA`,
-multi-dimensional arrays, `DIM` with a variable size, float array elements, `PRINT AT`/colour
-items inside `PRINT` (use the statements), exponent and hex literals, `CONTINUE` (an immediate
-`: GOTO label` restarts at a label instead). The characters `[`, `\`, `]`, `^`, `` ` ``, `{`, `|`, `}` and `~` print as
-blanks (the font has no glyphs for them -- open defect Q-26).
+Line numbers, `GOSUB`/`RETURN` (use `PROC`/`CALL`), `LET`, single-line `IF ... THEN stmt` (other than `THEN GOTO`), `ELSEIF`, `INSTR`, string slicing `a$(i TO j)` (use `MID$`), `READ`/`DATA`, multi-dimensional arrays, `DIM` with a variable size, float array elements, `PRINT AT`/colour items inside `PRINT` (use the statements), exponent and hex literals, a power operator, `CONTINUE` (an immediate `: GOTO label` restarts at a label instead), `DIMN` of a string array. The characters `[`, `\`, `]`, `^`, `` ` ``, `{`, `|`, `}` and `~` print as blanks (the font has no glyphs for them -- accepted defect Q-26).

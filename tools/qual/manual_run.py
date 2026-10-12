@@ -69,6 +69,22 @@ def screen_text(r, rows):
     return "\n".join(out)
 
 
+def step_matches(actual, want):
+    """Exact, except that a last line `...` in `want` means "and then whatever drawing is on the screen"."""
+    wl = want.split("\n")
+    if wl[-1] == "...":
+        return actual.split("\n")[:len(wl) - 1] == wl[:-1]
+    return actual == want
+
+
+def area_text(r):
+    """The text area only (rows 0..22): row 23 is the status bar, which is not program output."""
+    out = list(r.rows[:23])
+    while out and not out[-1]:
+        out.pop()
+    return "\n".join(out)
+
+
 def check_result(r, want_out, err, rows=None):
     """-> (ok, detail).  want_out None = output not checked.  rows = compare only the first N rows."""
     text = screen_text(r, rows)
@@ -153,7 +169,44 @@ def run_keys(m, c):
     return "\n".join(rows), scr
 
 
+_PKG = {}          # (package names) -> a machine booted from a tape, with the package LOADed, snapshotted
+
+
+def package_machine(m, names, base_port):
+    """A machine on which `LOAD "NAME" EXT` has been run through the real tape receiver for each
+    package in `names` (the same command and the same loader a user uses); its snapshot is taken after
+    the load, so every example starts from 'package loaded, empty program'."""
+    key = tuple(names)
+    if key in _PKG:
+        return _PKG[key]
+    import manual_tapes
+    blocks = []
+    for n in names:
+        blocks.extend(manual_tapes.package_blocks(n))
+    pm = manual_tapes.boot_with_tape(M.ROOT, base_port + 100 + 10 * len(_PKG), m.glyphs, blocks)
+    for n in names:
+        pm.write(pm.sym("EDIT_LINE_BUF"), ('LOAD "%s" EXT' % n.upper()).encode() + b"\0")
+        r = pm.call_routine("V2_DISPATCH", maxi=900_000_000)
+        got = manual_tapes.MSG.get(r.msg)
+        if got != "LOADED":
+            raise RuntimeError('LOAD "%s" EXT gave %r' % (n.upper(), got))
+    pm.snap = os.path.join(pm.snapdir, "pkg.zsf")
+    pm.cmd("snapshot-save " + pm.snap)
+    _PKG[key] = pm
+    return pm
+
+
 def run_case(m, c, write_shots, show):
+    if c.pkgs and c.kind != "tape":
+        names, c.pkgs = c.pkgs, ()
+        try:
+            return _run_case(package_machine(m, names, m.port), c, write_shots, show)
+        finally:
+            c.pkgs = names
+    return _run_case(m, c, write_shots, show)
+
+
+def _run_case(m, c, write_shots, show):
     from qharness import Machine  # noqa: F401  (import for type clarity)
     rec = {"id": c.cid, "where": c.where(), "kind": c.kind}
     shot_bytes = None
@@ -169,7 +222,13 @@ def run_case(m, c, write_shots, show):
         ok, detail, transcript = manual_tapes.run_tape_case(m, c, m.port + 40)
         rec["actual"] = transcript
     elif c.kind == "run":
-        r = m.run_program(c.lines, keys=c.keys, maxi=c.maxi, packages=c.pkgs)
+        if c.brk:
+            import manual_tapes
+            m.restore()
+            m.put_store(c.lines)
+            r = manual_tapes.call_routine_break(m, "V2_RUN_STORED", c.brk)
+        else:
+            r = m.run_program(c.lines, keys=c.keys, maxi=c.maxi, packages=c.pkgs)
         ok, detail = check_result(r, c.out, c.err, c.rows)
         rec["actual"] = screen_text(r, c.rows)
         if c.shot:
@@ -183,26 +242,29 @@ def run_case(m, c, write_shots, show):
         actual = []
         keys = list(c.keys)
         for cmd, want in c.steps:
-            if cmd == "RUN":
+            if cmd == "RUN" and c.brk:
+                import manual_tapes
+                r = manual_tapes.call_routine_break(m, "V2_RUN_STORED", c.brk)
+            elif cmd == "RUN":
                 r = m.call_routine("V2_RUN_STORED", keys=keys, maxi=c.maxi)
             elif cmd == "EDIT":
                 r = m.call_routine("V2_CLEAR_ARRAYS")
             else:
                 m.write(m.sym("EDIT_LINE_BUF"), (cmd if cmd.startswith(":") else cmd).encode("latin-1") + b"\0")
                 r = m.call_routine("V2_DISPATCH", keys=keys, maxi=c.maxi)
-            actual.append((cmd, r.text, r.ce, r.ve))
+            actual.append((cmd, area_text(r), r.ce, r.ve))
             if isinstance(want, tuple):
                 k, n = want
                 good = (r.ce if k == "ce" else r.ve) == n
                 what = "%s=%d" % (k, n)
-            elif cmd == "EDIT":
-                good, what = True, ""
+            elif cmd in ("EDIT", "NEW"):
+                good, what = r.ce == 0 and r.ve == 0, ""      # the screen is not redrawn by the harness
             else:
-                good = r.ce == 0 and r.ve == 0 and r.text == want
+                good = r.ce == 0 and r.ve == 0 and step_matches(area_text(r), want)
                 what = repr(want)
             if not good and ok:
                 ok = False
-                detail = "step %r: got ce=%s ve=%s out=%r, want %s" % (cmd, r.ce, r.ve, r.text, what)
+                detail = "step %r: got ce=%s ve=%s out=%r, want %s" % (cmd, r.ce, r.ve, area_text(r), what)
         rec["actual"] = actual
         if c.shot:
             shot_bytes = render_screen(m.read(0x4000, 6912))
@@ -252,6 +314,8 @@ def worker(cfgdir, port, ids, outpath, q, write_shots, show):
             fo.write(json.dumps(rec) + "\n")
             fo.flush()
             q.put(rec)
+    for pm in _PKG.values():
+        pm.stop()
     m.stop()
 
 

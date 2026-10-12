@@ -2,16 +2,18 @@
 
 ### ▶ [Try it now, live in your browser — no install](https://nchiker.github.io/TSRun/?rom=leap)
 
-> **2068-Leap V2 Enhanced — Emulator-Qualified Release** (branch `v2-development`). Start with
-> [`docs/v2/V2_RC_STATUS.md`](docs/v2/V2_RC_STATUS.md); the V2 manual is
-> [`docs/v2/V2_USER_MANUAL.md`](docs/v2/V2_USER_MANUAL.md) and the language reference
-> [`docs/v2/V2_LANGUAGE_REFERENCE.md`](docs/v2/V2_LANGUAGE_REFERENCE.md). V2 has no line numbers:
-> the numbered "Try it" examples, the manual linked just below and the demo programs describe the
-> earlier V1 "Release 1 Beta" ROM (a V2 documentation update is planned:
-> [`docs/v2/V2_DOCUMENTATION_HANDOFF.md`](docs/v2/V2_DOCUMENTATION_HANDOFF.md)). Physical TS2068
-> hardware: not tested.
+> **2068-Leap V2 Enhanced -- Emulator-Qualified Release** (tag `v2.0.0-emu.1`, branch `v2-development`) is
+> the current system. **Start with the [V2 User Manual](docs/v2/manual/01_introduction.md)** -- a
+> beginner's guide, an alphabetical keyword reference and concepts reference, the five packages,
+> practical examples and appendices, every example of which is run on the release ROM by
+> `make doc-examples` -- and the compact [language reference](docs/v2/V2_LANGUAGE_REFERENCE.md). The
+> release status is in [`docs/v2/V2_RC_STATUS.md`](docs/v2/V2_RC_STATUS.md). Physical TS2068 hardware: **not
+> tested**.
 
-### 📖 [V1 User Manual (Release 1 Beta)](docs/user_manual.md) ([Word/DOCX version](docs/2068_Leap_Users_Manual.docx))
+### 📖 [V2 User Manual](docs/v2/manual/01_introduction.md) · [Language reference](docs/v2/V2_LANGUAGE_REFERENCE.md) · [Word edition](docs/v2/2068_Leap_V2_Users_Manual.docx)
+
+> The Release 1 Beta ("V1") manual, [`docs/user_manual.md`](docs/user_manual.md), is kept as history. V1
+> programs have line numbers and V1 tapes are refused; most of that manual does **not** apply to V2.
 
 2068-Leap is an alternate-history ROM for the Timex Sinclair 2068: a
 structured BASIC, a real full-screen editor, AY sound, and TS2068-specific
@@ -20,11 +22,11 @@ monolith of the original ROM — while still fitting a stock 48K machine and
 staying instant-on.
 
 **Current production builds use the Architecture B V2 BASIC environment.**
-Programs are numbered, editable source lines stored in the generic line store;
-`RUN` compiles the whole program to bytecode and executes it in the V2 VM.
-The Release 1 Beta manual and change log remain historical references while
-the V2 manual update is underway. See the [R9 cutover ledger](docs/v2/R9_CUTOVER_LEDGER.md)
-for the current boot path, capacities, test status, and known limits.
+Programs have **no line numbers**: they are lists of editable lines, with labels, `IF` blocks, `FOR` loops
+and procedures. `RUN` compiles the whole program to bytecode and executes it in the V2 VM, so a mistake
+anywhere is reported before anything runs. The Release 1 Beta manual and change log remain historical
+references. See the [V2 status document](docs/v2/V2_RC_STATUS.md) for what the release is, how it was
+qualified and what is still open.
 
 See the sibling project [2068-Leap-Forth](https://github.com/nchiker/2068-Leap-Forth)
 for a from-scratch Forth built on the same hardware kernel.
@@ -41,22 +43,25 @@ usable on a stock 48K machine.
 
 Highlights:
 
-- **An in-place full-screen line editor** with numbered source lines,
-  insert/replace/delete, navigation, and LIST.
+- **An in-place full-screen line editor** with unnumbered source lines,
+  insert/replace/delete, navigation, bold keywords, and LIST.
 - **Whole-program compilation on RUN** — the editor keeps plain-text source;
   the V2 compiler emits bytecode for the V2 VM.
 - **Structured control flow and runtime errors**, including `IF`, `FOR`,
   labels, procedures, and clean recovery to the editor.
 - **Integer and floating-point expressions**, strings, arrays, and the
   TS2068 calculator services.
-- **TS2068 graphics and sound**: `PLOT`, `LINE`, `BEEP`, `SOUND`, sprites,
-  plus loadable MODE/ULAPLUS/PALETTE and CIRCLE/FILL packages.
+- **TS2068 graphics and sound**: `PLOT`, `LINE`, `BEEP`, `SOUND`, plus the loadable
+  sprite, MODE/ULAPLUS/PALETTE, CIRCLE/FILL and graphics packages.
 - **Editable plain-text BASIC programs** in the generic line store. `RUN`
   compiles the complete program to V2 bytecode and executes it; tape SAVE/LOAD
-  persists source and regenerates bytecode on the next RUN.
-- **Four loadable V2 packages**: MODE/ULAplus, sprites, printer (`LPRINT` and
-  source-based `LLIST`), and CIRCLE/FILL. One package occupies the 1KB package
-  window at a time.
+  persists source (and, with `SAVE ... ALL`, the variables and arrays) and regenerates
+  bytecode on the next RUN. A program's variables survive its stopping, so typed
+  statements can inspect and change them (`: PRINT total`).
+- **Five loadable V2 packages**: MODE/ULAplus/PALETTE, sprites (`GRAB`, `SHOW`,
+  `HIDE`, `MOVE`), printer (`LPRINT` and source-based `LLIST`), CIRCLE/FILL, and the
+  graphics package (`CPLOT`, `BLOCK`, `FRAME`, `INVERT`). One package occupies the 1KB
+  package window at a time.
 - **EXROM banking** — a second 8K ROM bank for sprites and the calculator
   engine and interactive shell, while the V2 compiler and VM run from the
   always-visible 16K Home ROM.
@@ -68,28 +73,40 @@ tour.
 ## Try it
 
 For a local emulator, grab a built ROM from the latest release (see
-"Download" below), or build it yourself (see "Building from source"). Enter
-these numbered lines, pressing ENTER after each one:
+"Download" below), or build it yourself (see "Building from source"). You
+are in the editor when the machine starts. There are no line numbers: type each
+line, pressing ENTER after it, then type `RUN` on the empty line that follows:
 
 ```
-10 X=5
-20 PRINT X
+x = 5
+PRINT x * 2
 RUN
 ```
 
-To try CIRCLE and FILL, load the SHAPES package first with `LOAD "SHAPES"
-EXT`, then enter:
+Press any key to return to the editor. A program that uses a loop and a label:
 
 ```
-10 CIRCLE 100,100,30
-20 FILL 100,100
+n = 0
+again:
+n = n + 1
+PRINT n
+IF n < 3 THEN GOTO again
 RUN
 ```
 
-See [`docs/user_manual.md`](docs/user_manual.md) for a complete,
-example-driven tour of the language. The older V1 demo programs are retained
-as historical examples and are not all compatible with the V2 production
-language.
+To try `CIRCLE` and `FILL`, load the SHAPES package first (type `LOAD "SHAPES" EXT` and start the tape), then
+enter:
+
+```
+CIRCLE 128, 96, 40
+FILL 128, 96
+RUN
+```
+
+The [V2 User Manual](docs/v2/manual/01_introduction.md) starts from the beginning (Part 2, the beginner's
+guide) and has a reference entry with examples for every keyword. The older V1 demo programs and
+examples in `demos/` and `examples/` use V1 syntax and are retained as historical examples; they are not
+compatible with the V2 production language.
 
 ## Running it locally
 
@@ -125,28 +142,28 @@ Select the TS2068 machine, use `test_basic.bin` as the ROM file, and use
 [`docs/eightyone_setup.md`](docs/eightyone_setup.md) for the exact
 configuration steps.
 
-Full per-emulator setup, including how to load the four V2 packages, is in
+Full per-emulator setup, including how to load the V2 packages, is in
 [`docs/emulator_setup.md`](docs/emulator_setup.md).
 
 ## Status
 
-**R9 V2 production cutover in progress.** The production ROM boots the V2
-editor, whole-program compiler, and VM. Four V2 packages are built separately;
-the six optional V1 packages are omitted from this cutover. `make test` runs
-the current checks and 14 buildable standalone V2 fixtures in real ZEsarUX.
-Physical production cassette LOAD remains unproven in ZEsarUX. See the
-[R9 cutover ledger](docs/v2/R9_CUTOVER_LEDGER.md) for measured details. See
-[`docs/whats_new_release_1_beta.md`](docs/whats_new_release_1_beta.md) for
-what's changed since Public Preview 1, or
-[`docs/development_log.md`](docs/development_log.md) for the full,
-module-by-module build history and every bug found and fixed along the way.
+**2068-Leap V2 Enhanced is the current system: an emulator-qualified release** (tag `v2.0.0-emu.1`). The
+production ROM boots the V2 editor, whole-program compiler, and VM; five V2 packages are built
+separately (the six optional V1 packages are not part of V2). It passed the documented emulator
+qualification (a 667-case language corpus, the full `make test` gate, the editor, tape and package
+suites -- 1010 cases in all); the accepted limitations are in
+[`docs/v2/V2_DEFECT_REGISTER.md`](docs/v2/V2_DEFECT_REGISTER.md). **It has not been tried on a physical
+TS2068**: hardware qualification is deferred ([`docs/v2/V2_HARDWARE_CHECKLIST.md`](docs/v2/V2_HARDWARE_CHECKLIST.md)).
+Start with [`docs/v2/V2_RC_STATUS.md`](docs/v2/V2_RC_STATUS.md). The V2 user manual's examples are a separate
+test suite (`make doc-examples`) and do not change the release baseline. The V1 notes
+([`docs/whats_new_release_1_beta.md`](docs/whats_new_release_1_beta.md),
+[`docs/development_log.md`](docs/development_log.md)) are the history of earlier work.
 
 The 102 legacy V1 source fixtures remain under `tests/` for static checking
 and historical reference; they are not the production V2 runtime test suite.
 
-This is beta software — keep backups of programs saved with beta builds,
-since the native program payload may still evolve before the final
-Release 1 build.
+This is an emulator-qualified release, not yet tried on physical hardware: keep backups of programs saved
+on tape, and see the hardware notes in the manual's Appendix G.
 
 ## Download
 
@@ -169,7 +186,8 @@ The zip contains, per [`docs/emulator_setup.md`](docs/emulator_setup.md):
 - `roms/exrom.dck` — the EXROM wrapped as a Timex ROM Cartridge, for
   EightyOne 1.41.
 - `roms/ts2068rom_zesarux.bin` — Home ROM + EXROM concatenated, for ZEsarUX.
-- `extensions/*.tzx` — MODE, SPRITE, PRINTER, and SHAPES V2 packages.
+- `extensions/*.tzx` — the V2 package tapes (MODE, SPRITE, PRINTER, SHAPES; `make rc-assets` collects all
+  five, with GRAPHICS, in `build/release-v2-rc/`).
 - `docs/`, `patches/`, `SHA256SUMS.txt` — manuals (Markdown + DOCX), the two
   emulator patches above, and a checksum manifest.
 
@@ -185,6 +203,7 @@ or a compatible newer release.
 make check    # build + static checks + smoke ROMs
 make budget   # report exact Home ROM / EXROM / integrated V2 RAM regions
 make test     # full regression gate, including 14 V2 ZEsarUX fixtures
+make doc-examples   # every example of the V2 manual, run on the release image
 ```
 
 The production images are written to `build/test_basic.bin` (Home ROM),
@@ -216,8 +235,23 @@ examples/   sample BASIC/assembly programs
 
 ## Documentation
 
-- [`docs/user_manual.md`](docs/user_manual.md) — the maintained,
-  example-driven user manual ([DOCX edition](docs/2068_Leap_Users_Manual.docx),
+**V2 (current):**
+
+- [`docs/v2/manual/01_introduction.md`](docs/v2/manual/01_introduction.md) — the **V2 user manual**: introduction,
+  [beginner's guide](docs/v2/manual/02_beginners_guide.md), [keywords A-Z](docs/v2/manual/03_keywords.md),
+  [concepts A-Z](docs/v2/manual/04_concepts.md), [packages](docs/v2/manual/05_packages.md),
+  [practical examples](docs/v2/manual/06_examples.md) and [appendices](docs/v2/manual/07_appendices.md)
+  ([Word edition](docs/v2/2068_Leap_V2_Users_Manual.docx), rebuild with `make manual-v2`). Every example is a test.
+- [`docs/v2/V2_LANGUAGE_REFERENCE.md`](docs/v2/V2_LANGUAGE_REFERENCE.md) — the compact language reference.
+- [`docs/v2/V2_RC_STATUS.md`](docs/v2/V2_RC_STATUS.md) — release status; [`docs/v2/V2_DEFECT_REGISTER.md`](docs/v2/V2_DEFECT_REGISTER.md),
+  [`docs/v2/V2_FEATURE_MATRIX.md`](docs/v2/V2_FEATURE_MATRIX.md), [`docs/v2/V2_SESSION_VARIABLES.md`](docs/v2/V2_SESSION_VARIABLES.md),
+  [`docs/v2/V2_SAVE_ALL_FORMAT.md`](docs/v2/V2_SAVE_ALL_FORMAT.md), [`docs/v2/PACKAGE_ABI.md`](docs/v2/PACKAGE_ABI.md) (for package
+  authors).
+- [`docs/v2/V2_DOCUMENTATION_FINDINGS.md`](docs/v2/V2_DOCUMENTATION_FINDINGS.md) — what the documentation work found.
+
+**V1 (historical, Release 1 Beta; line-numbered BASIC):**
+
+- [`docs/user_manual.md`](docs/user_manual.md) — the V1 manual ([DOCX edition](docs/2068_Leap_Users_Manual.docx),
   rebuild with `make manual`).
 - [`docs/technical_overview.md`](docs/technical_overview.md) — the shareable
   architectural and feature overview.

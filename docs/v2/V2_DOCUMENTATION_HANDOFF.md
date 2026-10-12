@@ -163,3 +163,23 @@ accepts the documentation. In that session:
   qualification baseline (section 4);
 * change no ROM code: record any ROM defect found in `V2_DEFECT_REGISTER.md`.
 
+
+## 8. Resolution (the documentation session, branch `docs/v2-user-manual`)
+
+The plan above was carried out; nothing in the ROM or in the release artifacts changed.
+
+* The manual is `docs/v2/manual/` (7 parts; entry `01_introduction.md`); `V2_USER_MANUAL.md` now points to it.
+  `V2_LANGUAGE_REFERENCE.md` was rewritten (items 2-6); `README.md` presents V2 as the current system (item 1).
+* The 13 gaps of section 2: 1 README (done); 2 `LPRINT`/`LLIST` (keywords, Part 5); 3 the five packages (Part 5, one
+  entry per statement in Part 3); 4 `INPUT` (keyword entry); 5 the five messages (Appendix A, concept *Array
+  Store*); 6 the compile-error table, one program per code (Appendix B); 7 float `FOR` (keyword `FOR`);
+  8 Q-24 (keyword `CALL`, concept *Procedures*); 9 the 2.4 s pause (keyword `SAVE`, concept *Tapes*);
+  10 units and ranges, **measured** (keywords `BEEP`, `SOUND`, `PAUSE`, `PLOT`, `ATTR`, ... and
+  `V2_DOCUMENTATION_FINDINGS.md` A5-A10); 11 `LIST`, status bar, keyword display (concept *The editor*,
+  keyword `LIST`); 12 `USR` (keyword `USR`: the result is in **HL**, not BC -- the earlier reference was wrong);
+  13 performance (concept *Speed*, `tools/qual/manual_measure.py`).
+* The examples are tests: `make doc-examples` (`tools/qual/manual_run.py`, parser `manual_examples.py`, tape
+  support `manual_tapes.py`, static checks `tools/check_manual.py`), separate from the 1010-case baseline.
+* What the work found out about the earlier documents and the implementation: `V2_DOCUMENTATION_FINDINGS.md`
+  (section B lists observations for the owner; `V2_DEFECT_REGISTER.md` was not edited).
+* The Word edition: `make manual-v2` -> `docs/v2/2068_Leap_V2_Users_Manual.docx`.

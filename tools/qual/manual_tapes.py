@@ -97,6 +97,24 @@ def boot_with_tape(root, port, glyphs, blocks, lead=BOOT_T + 2_000_000):
     return m
 
 
+def step_matches(actual, want):
+    wl = want.split("\n")
+    if wl[-1] == "...":
+        return actual.split("\n")[:len(wl) - 1] == wl[:-1]
+    return actual == want
+
+
+def lead_for(steps):
+    """Silence before the tape starts: long when the program is RUN (or immediate statements are typed)
+    before the LOAD / VERIFY that reads the tape, so that the tape has not started playing by then."""
+    for cmd, _ in steps:
+        if cmd.startswith(("LOAD ", "VERIFY ")):
+            return BOOT_T + 2_000_000
+        if cmd == "RUN" or cmd.startswith(":"):
+            return BOOT_T + 120_000_000
+    return BOOT_T + 2_000_000
+
+
 def run_tape_case(m0, c, port):
     """-> (ok, detail, transcript).  `m0` is the worker's normal machine (phase 1)."""
     m = m0
@@ -109,7 +127,7 @@ def run_tape_case(m0, c, port):
     ok, detail, transcript = True, "ok", []
     pending_boot = False
     try:
-        for cmd, want in c.steps:
+        for n_step, (cmd, want) in enumerate(c.steps):
             if cmd in ("power on", "---"):
                 pending_boot = True
                 continue
@@ -120,14 +138,14 @@ def run_tape_case(m0, c, port):
                 if pending_boot:
                     if extra:
                         extra.stop()
-                    extra = m = boot_with_tape(ROOT, port, m0.glyphs, tape)
+                    extra = m = boot_with_tape(ROOT, port, m0.glyphs, tape, lead_for(c.steps[n_step:]))
                     pending_boot = False
                 m.put_store([x.strip() for x in cmd[6:].split(";;")])
                 continue
             if pending_boot:
                 if extra:
                     extra.stop()
-                extra = m = boot_with_tape(ROOT, port, m0.glyphs, tape)
+                extra = m = boot_with_tape(ROOT, port, m0.glyphs, tape, lead_for(c.steps[n_step:]))
                 pending_boot = False
             if cmd.startswith("SAVE "):
                 blocks, msg = capture_save(m, cmd)
@@ -143,7 +161,7 @@ def run_tape_case(m0, c, port):
                     m.write(m.sym("EDIT_LINE_BUF"), cmd.encode("latin-1") + b"\0")
                     r = m.call_routine("V2_DISPATCH", maxi=900_000_000)
                 msg = MSG.get(r.msg) if r.msg else None
-                text = r.text
+                text = "\n".join(r.rows[:23]).rstrip("\n")
             transcript.append((cmd, msg, text))
             if isinstance(want, tuple) and want[0] == "msg":
                 good = msg == want[1]
@@ -151,8 +169,10 @@ def run_tape_case(m0, c, port):
             elif isinstance(want, tuple):
                 good = r is not None and (r.ce if want[0] == "ce" else r.ve) == want[1]
                 what = "%s=%d" % want
+            elif cmd in ("NEW", "EDIT"):
+                good, what = r is not None and r.ce == 0 and r.ve == 0, ""
             else:
-                good = r is not None and r.ce == 0 and r.ve == 0 and text == want
+                good = r is not None and r.ce == 0 and r.ve == 0 and step_matches(text, want)
                 what = "output %r" % want
             if not good and ok:
                 ok = False
@@ -161,3 +181,40 @@ def run_tape_case(m0, c, port):
         if extra:
             extra.stop()
     return ok, detail, transcript
+
+
+def call_routine_break(m, routine, after, maxi=60_000_000):
+    """Like Machine.call_routine, but CAPS SHIFT + SPACE is pressed in the emulated keyboard matrix
+    (ZEsarUX `send-keys-event`, the real ISR scan -> BREAK request path) after `after` instructions.
+    Returns a qharness Result."""
+    from qharness import Result
+    ret, iok, msg_at = m.sym("V2_COMMAND_LOOP.loop"), m.sym("IO_READ_KEY"), m.sym("V2_SHOW_MESSAGE")
+    m.write(HARNESS_RET_SLOT, struct.pack("<H", ret))
+    m.setreg("SP", HARNESS_RET_SLOT)
+    m.setreg("PC", m.sym(routine))
+    m.set_bps([iok, msg_at, ret])
+    m.run(after)
+    if m.pc() in (iok, msg_at, ret):
+        raise RuntimeError("the program stopped by itself before BREAK was pressed")
+    m.cmd("send-keys-event 135 1")
+    m.cmd("send-keys-event 128 1")
+    m.run(after)
+    m.cmd("send-keys-event 128 0")
+    m.cmd("send-keys-event 135 0")
+    msg, scr = None, None
+    for _ in range(40):
+        if m.pc() in (iok, msg_at, ret):
+            break
+        m.run(after)
+    if m.pc() == msg_at:
+        hl = m.regs()["HL"]
+        msg = m.msgs.get(hl)
+        scr = m.read(0x4000, 6912)
+        m.set_bps([iok, ret])
+        m.step()
+        m.run(maxi)
+    if scr is None:
+        scr = m.read(0x4000, 6912)
+    return Result(ce=m.read(m.sym("COMPILE_ERROR_CODE"), 1)[0], ve=m.read(m.sym("VM_ERROR_CODE"), 1)[0],
+                  msg=msg, rows=m.screen_rows(scr), attrs=scr[6144:], pc=m.pc(), status="OK",
+                  line=0, edit_index=0, t=0)

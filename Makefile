@@ -1,4 +1,4 @@
-.PHONY: all build check smoke-build test qual rc-assets test-prod test-legacy test-all budget audit-basic manual clean cplot-extension block-extension frame-extension invert-extension ayreg-extension out-extension sprite-extension shapes-extension v2-packages v2-standalone-test release-assets
+.PHONY: all build check smoke-build test qual doc-examples manual-v2 rc-assets test-prod test-legacy test-all budget audit-basic manual clean cplot-extension block-extension frame-extension invert-extension ayreg-extension out-extension sprite-extension shapes-extension v2-packages v2-standalone-test release-assets
 
 all: check build
 
@@ -74,6 +74,18 @@ test: all v2-packages smoke-build
 qual: build v2-packages
 	python3 tools/qual/qrun.py --tree . --fixed rc --out build/qual --workers-per-cfg 3
 	python3 tools/qual/qlifecycle.py --tree .
+
+# The V2 user manual's examples (docs/v2/manual/*.md): a SEPARATE suite, with its own runner and its own
+# totals; it is not part of `make test` / `make qual` and does not change the 1010-case release baseline.
+# Checks the manual's links/figures first (tools/check_manual.py), then runs every example on the release
+# image (tools/qual/manual_run.py -> build/doc-examples/results.jsonl).
+doc-examples: build v2-packages
+	python3 tools/check_manual.py
+	python3 tools/qual/manual_run.py --out build/doc-examples --workers 4
+
+# The Word edition of the V2 manual (the V1 manual is `make manual`).
+manual-v2:
+	python3 tools/build_v2_manual_docx.py
 
 # R10.9 Phase 1: only the production-ROM regression gate + the strict known-defect suite
 # (editor keys, real tape receiver fed an EAR stream, packages, package ABI). Headless.

@@ -21,6 +21,8 @@ Block syntax (info string = language, then attributes):
 * `err=ce:N` / `err=ve:N` : the program must stop with that compile / runtime error code (the codes
   are internal; the user sees the message) -- the output block, if any, is what was printed first.
 * `keys=` : keys delivered, in order, to INPUT / key waits.  Python-style escapes: `\\n` is ENTER.
+* `break=N` : the run is stopped with BREAK (CAPS SHIFT + SPACE, pressed in the emulated keyboard
+  matrix) after N instructions; use `err=ve:66` -- BREAK is run-time error 66.
 * `rows=N` : compare only the first N text rows of the screen (examples that draw: the pixels
   drawn lower on the screen are not text); the output block then lists just those rows.
 * `shot=name` : the final screen is rendered to images/name.png and must equal the committed file.
@@ -42,6 +44,12 @@ Block syntax (info string = language, then attributes):
   everything saved so far playing as the EAR signal; the next step must be a `LOAD`/`VERIFY`, which
   runs the real tape receiver on it.  `store: line ;; line` puts lines into the program store (for
   VERIFY); `package NAME` adds that package's tape to the cassette.  Expected messages: `[LOADED]`.
+* `errors` block (stand-alone, no `basic` block): one case per line, `ce N | program` or `ve N | program`
+  (optionally `ce N pkg=shapes | ...`): the program (lines separated by ` ;; `) must stop with that
+  compile / run-time error code.  A line `@repeat COUNT template` stands for COUNT lines, `{i}` being
+  0, 1, 2, ...  Case ids are `<ex>.ce<N>` / `<ex>.ve<N>`.
+* in `session` / `tape` output, a last line `...` means "then whatever drawing is on the screen" (only the
+  lines before it are compared).
 * `table`-style blocks and plain code blocks without `ex=` are not tests.
 
 `CASES` is the list of parsed cases.  Cases that need the tape or the keyboard-driven editor live in
@@ -74,6 +82,7 @@ class Case:
         self.keys = []
         self.maxi = 60_000_000
         self.shot = None
+        self.brk = None               # press BREAK after this many instructions of the run
         self.rows = None              # compare only the first N screen rows (graphics examples)
         self.steps = []               # session: [(command, expected text | ("ce"|"ve", n))]
         self.noscreen = False
@@ -185,10 +194,36 @@ def parse_file(path):
             if "maxi" in a:
                 c.maxi = int(a["maxi"])
             c.shot = a.get("shot")
+            if "break" in a:
+                c.brk = int(a["break"])
             if "rows" in a:
                 c.rows = int(a["rows"])
             cases.append(c)
             last = c
+        elif lang == "errors":
+            seen_codes = {}
+            for ln in body:
+                if not ln.strip():
+                    continue
+                head, _, prog = ln.partition("|")
+                toks = head.split()
+                kind, code = toks[0], int(toks[1])
+                n = seen_codes.get((kind, code), 0)
+                seen_codes[(kind, code)] = n + 1
+                c = Case("%s.%s%d%s" % (cid, kind, code, "" if n == 0 else "." + chr(ord("a") + n)), path, start)
+                lines = []
+                for part in prog.strip().split(" ;; "):
+                    mm = re.match(r"@repeat (\d+) (.*)$", part)
+                    if mm:
+                        lines += [mm.group(2).replace("{i}", str(i)) for i in range(int(mm.group(1)))]
+                    else:
+                        lines.append(part)
+                c.lines = lines
+                c.err = (kind, code)
+                for t in toks[2:]:
+                    if t.startswith("pkg="):
+                        c.pkgs = tuple(t[4:].split(","))
+                cases.append(c)
         elif lang == "keys":
             c = Case(cid, path, start)
             c.kind = "keys"
