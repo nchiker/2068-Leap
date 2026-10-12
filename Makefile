@@ -1,4 +1,4 @@
-.PHONY: all build check smoke-build test qual rc-assets test-prod test-legacy test-all budget audit-basic manual clean cplot-extension block-extension frame-extension invert-extension ayreg-extension out-extension sprite-extension shapes-extension v2-packages v2-standalone-test release-assets
+.PHONY: all build check smoke-build test qual qual-maint rc-assets test-prod test-legacy test-all budget audit-basic manual clean cplot-extension block-extension frame-extension invert-extension ayreg-extension out-extension sprite-extension shapes-extension v2-packages v2-standalone-test release-assets
 
 all: check build
 
@@ -74,6 +74,7 @@ test: all v2-packages smoke-build
 	python3 tools/v2_fill_check.py
 	tools/run_v2_prod_tests.sh
 	$(MAKE) qual
+	$(MAKE) qual-maint
 
 # RC: the qualification suites on the in-tree build (docs/v2/V2_REGRESSION_REPORT.md): the language
 # corpus with the release-candidate expectations (strict PASS/FAIL/XFAIL/XPASS accounting: any FAIL,
@@ -81,6 +82,11 @@ test: all v2-packages smoke-build
 qual: build v2-packages
 	python3 tools/qual/qrun.py --tree . --fixed rc --out build/qual --workers-per-cfg 3
 	python3 tools/qual/qlifecycle.py --tree .
+
+# V2 maintenance qualification: AY BEEP, SOUND 0, the shared frame wait (BREAK, PAUSE rollover), the
+# cbeep package (model, tape, interrupts off). Headless; logs in build/maint-qual/.
+qual-maint: build v2-packages
+	tools/maint/run_maint_qual.sh
 
 # R10.9 Phase 1: only the production-ROM regression gate + the strict known-defect suite
 # (editor keys, real tape receiver fed an EAR stream, packages, package ABI). Headless.
