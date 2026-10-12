@@ -64,6 +64,24 @@ ROMs (EPROMs or a ROM-replacement board).
 | 3.10 | `LOAD "shapes" EXT` from a package tape; `CIRCLE 128,96,40`; `FILL 128,96` | circle drawn, filled | NOT TESTED — PHYSICAL HARDWARE UNAVAILABLE |
 | 3.11 | a V1 / stock BASIC tape | `BAD TAPE VERSION`, program intact | NOT TESTED — PHYSICAL HARDWARE UNAVAILABLE |
 
+## 5. Maintenance candidate: sound (`study/classicbeep`)
+
+For the candidate images only (`make build` on that branch; record their SHA-256s). Item 2.7 above describes the release's raw `BEEP`; on the candidate, `BEEP` is the AY note below.
+
+| # | Step | Expected | Result |
+|---|---|---|---|
+| 5.1 | Power on, listen | the startup chime: C, E, G entering one after another and held, then fading (identical to the release's; `docs/v2/maint_audio/chime_release.wav` / `chime_chimeC_L1.wav` are the emulator's 50 Hz renderings, a TS2068 plays them in five sixths of the time) | NOT TESTED — PHYSICAL HARDWARE UNAVAILABLE |
+| 5.2 | `BEEP 1,0`, `BEEP 1,9`, `BEEP 1,12` with a tuner or a reference | middle C 261.6 Hz, A 440 Hz, C 523 Hz within a few cents; each **1.0 s** (60 frames at 60 Hz) | NOT TESTED — PHYSICAL HARDWARE UNAVAILABLE |
+| 5.3 | `PAUSE 600` timed | 10 s (confirms 60 frames a second) | NOT TESTED — PHYSICAL HARDWARE UNAVAILABLE |
+| 5.4 | `BEEP 10,0`, BREAK after 2 s | the note stops at once, `BREAK` | NOT TESTED — PHYSICAL HARDWARE UNAVAILABLE |
+| 5.5 | `BEEP 0.5,-39`, `BEEP 0.5,48`, `BEEP 0.5,69` | lowest A (27.5 Hz), audible high notes; no clicks between consecutive notes of a scale (`FOR n = 0 TO 12 : BEEP 0.1,n : NEXT n`) | NOT TESTED — PHYSICAL HARDWARE UNAVAILABLE |
+| 5.6 | `SOUND 7,62 : SOUND 0,200 : SOUND 1,1 : SOUND 8,10` | channel A tone, about 242 Hz (register 0 now accepted) | NOT TESTED — PHYSICAL HARDWARE UNAVAILABLE |
+| 5.7 | `SOUND 2,100 : SOUND 3,1 : SOUND 9,12 : SOUND 7,56`, then `BEEP 1,12` | channel B keeps sounding under and after the BEEP | NOT TESTED — PHYSICAL HARDWARE UNAVAILABLE |
+| 5.8 | `LOAD "CBEEP" EXT` from the package tape; `BORDER 2 : CBEEP 1000,0,2 : CBEEP 1000,12,2` | loudspeaker middle C then C an octave up, 1 s each; border stays red | NOT TESTED — PHYSICAL HARDWARE UNAVAILABLE |
+| 5.9 | `CBEEP 5000,0,7`, BREAK during it | the note plays to the end, then `BREAK` (interrupts are off while it sounds) | NOT TESTED — PHYSICAL HARDWARE UNAVAILABLE |
+| 5.10 | relative loudness of `BEEP` (AY, level 15) and `CBEEP` (loudspeaker) through the TV / monitor audio | both audible and comfortable; note the levels | NOT TESTED — PHYSICAL HARDWARE UNAVAILABLE |
+| 5.11 | `PRINT STICK(1)` after the chime and after a `BEEP` | joystick still read (the mixer's I/O-port bits are kept) | NOT TESTED — PHYSICAL HARDWARE UNAVAILABLE |
+
 ## 4. Machine-specific risks to look for
 
 * EXROM paging (chunk 6) with the real MMU; FILL's use of the RAM under the EXROM while a package
