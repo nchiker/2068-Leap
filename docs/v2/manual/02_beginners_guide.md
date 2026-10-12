@@ -673,7 +673,24 @@ NEXT x
 
 ![A triangle with a dotted line below it](images/first_drawing.png)
 
-Further shapes -- circles, filled areas, rectangles -- come from the packages (Chapter 15).
+**Your own characters.** You can design 21 characters of your own, 8 x 8 dots each, and print them like letters with `PRINT CHR$(144)` to `PRINT CHR$(164)`. Each is defined by eight `POKE`s: one number for each row of dots, starting at address 61824 for character 144. A row of dots is a number: add 128, 64, 32, 16, 8, 4, 2 and 1 for the dots that are on, from left to right (so `..####..` is 16 + 8 + 4 + 2 = 60). This makes character 144 into a solid block and prints it:
+
+```basic ex=guide.udg.1 shot=udg_blocks rows=1
+FOR r = 0 TO 7
+  POKE 61824 + r, 255
+NEXT r
+PRINT PEEK(61824)
+PRINT CHR$(144); CHR$(144); CHR$(144)
+```
+```output ex=guide.udg.1
+255
+```
+
+![The number 255, and three solid blocks on the row below](images/udg_blocks.png)
+
+The whole story, with a program that lets you draw a character with `#` and `.`, is in the concept [User-defined characters](04_concepts.md#user-defined-characters).
+
+Further shapes -- circles, filled areas, rectangles -- come from the packages (Chapter 16).
 
 ## Chapter 13 -- Sound
 

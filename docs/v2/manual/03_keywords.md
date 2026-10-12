@@ -330,7 +330,7 @@ Hi
 200
 ```
 
-See the [character set](07_appendices.md#appendix-c-the-character-set) for the characters that exist.
+See the [character set](07_appendices.md#appendix-c-the-character-set) for the characters that exist. `CHR$(144)` to `CHR$(164)` are the 21 [user-defined characters](04_concepts.md#user-defined-characters), which you define with `POKE`.
 
 **See also** CODE, STR$.
 
@@ -1931,7 +1931,7 @@ PRINT PEEK(23296)
 
 **Warning.** `POKE` can overwrite the memory the system itself uses -- the program, the variables, the screen handler -- and so crash the machine. Use the addresses in the [memory map](07_appendices.md#appendix-e-memory-map) that are free.
 
-**See also** PEEK, USR, OUT.
+**See also** PEEK, USR, OUT, and for designing your own characters with `POKE` the concept [User-defined characters](04_concepts.md#user-defined-characters).
 
 ---
 

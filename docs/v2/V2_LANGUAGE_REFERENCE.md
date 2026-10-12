@@ -79,7 +79,7 @@ Precedence, highest first: function calls and brackets; unary `-`; `*` `/`; `+` 
 | `PI()`, `RAD(d)`, `DEG(r)` | pi; degrees to radians; radians to degrees |
 | `RND(n)` | a random whole number 0 .. n-1 (0 when n < 1) |
 | `LEN(s$)`, `CODE(s$)`, `VAL(s$)` | length; code of the first character (0 if empty); the leading number of the text (spaces and a sign skipped; 0 if none) |
-| `CHR$(n)` | one character (error 15 outside 0..255) |
+| `CHR$(n)` | one character (error 15 outside 0..255); codes 32..127 the ROM font, 128..143 block graphics, **144..164 the 21 user-defined characters**, other codes blank |
 | `STR$(n)` | the number as `PRINT` shows it |
 | `UPPER$(s$)`, `LOWER$(s$)` | case conversion |
 | `LEFT$(s$,n)`, `RIGHT$(s$,n)`, `MID$(s$,start,n)` | substrings (1-based start, below 1 counts as 1; counts clamped) |
@@ -92,6 +92,8 @@ Precedence, highest first: function calls and brackets; unary `-`; `*` `/`; `+` 
 | `DIMN(a)` | the declared size of a **numeric** array (a string array: compile error 47) |
 
 Functions are always written with brackets, even without an argument.
+
+**User-defined characters.** Codes 144..164 print the 8 x 8 bitmap held in the 168-byte table `UDG_TABLE` at **61824 (`$F180`)**: character *c* at `61824 + (c - 144) * 8`, eight bytes, top row first, bit 7 the leftmost pixel. They are defined with `POKE` (there is no statement and no `USR "a"`), print in the current colours and follow `OVER`/`INVERSE`, survive `RUN`, `CLEAR`, `CLS`, `NEW`, `MODE` and `LOAD` of a program, are not saved on tape and are **not initialised at start-up** (the emulator's RAM is zero; a real machine's may not be). The ROM font (codes 32..127) and the block graphics cannot be redefined. See manual concept *User-defined characters*.
 
 ## 7. Commands (typed on the editor's empty last line, not in programs)
 
@@ -159,9 +161,11 @@ Internal codes (as used by the tests and the source). **Compile errors**, each w
 
 ## 10. Memory and capacity
 
-* The main pool (program text, symbol table, arrays, variables) is about 8.4 KB (`FREE()` is 8153 on an empty machine with a one-line program); arrays that do not fit go to segment 2 (2 KB at `$E000`), which also holds the Array Store. `FREE(1)` reports segment 2.
-* 251 numeric and 251 string names (strings are limited by memory long before: about 155 one-character strings); 255 array names; about 4 KB of compiled code (749 lines of `PRINT n` is the longest program of that shape that compiles); recursion about 670 levels; nesting: brackets 105, `IF` 211, `FOR` 141. See manual Appendix D.
-* A numeric array element costs 2 bytes, a string array element its width; an array about 12-14 bytes more; a program line its length + 3; a number variable about 13, a string variable about 37.
+* **Storage model.** The program is kept as source text: each line is stored as a 2-byte length, the text and an end mark (length + 3 bytes) in the main pool, and stays as typed (`LIST`, `SAVE`, `LLIST` use it; no decompiler is in the release). `RUN` and immediate statements compile it to bytecode in a separate 4011-byte code area (`$A455-$B3FF`) that is rebuilt every time, is not part of the pool, not counted by `FREE()` and never saved.
+* **The pool** is 8397 bytes (`$825A-$A326`): program text, the table of names (a 4-byte header + the name + any extra for every name), an 81-byte gap kept for immediate statements, the arrays (growing up), the control stack (growing down from the top of the free space) and, at the top, the run-time tables carved exactly for the compiler's counts (3 + 5 bytes per number name, 32 per string name, 2 per array, plus 4 spare number and 4 spare string slots = 148 bytes on an empty program).
+* `FREE()` = the gap between the top of the arrays and the control stack (8153 on an empty machine with a one-line program); it excludes the code area, segment 2 and the run-time tables, and falls by 12 for every active procedure call or `FOR` loop. `FREE(1)` = free bytes of segment 2 (2 KB at `$E000`: arrays that do not fit in the pool, and the Array Store). Packages load into their own 1 KB window (`$F400`) and do not change `FREE()`.
+* Costs: text length + 3 per line; first use of a number name 12 + length; string name 36 + length; label / `PROC` / `DEF FN` name 7 + length; numeric array 2 per element + about 11 + length; string array width (default 16) per element + about 13 + length. Numbers and string constants are in the code, not the pool.
+* Limits: 251 number and 251 string names (strings are limited by memory long before: about 155 one-character strings); 255 array names; code area 4011 bytes (1000 lines of `x = 1`); recursion about 670 levels (12 bytes a level); nesting: brackets 105, `IF` 211, `FOR` 141. See manual Appendix D and the concept *Memory*.
 
 ## 11. Packages
 

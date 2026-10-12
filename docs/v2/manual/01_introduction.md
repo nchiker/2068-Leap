@@ -29,6 +29,7 @@ Its main features:
 * a full-screen **editor** with bold keywords and a status line;
 * programs **without line numbers**: labels, `IF` blocks, `FOR` loops, procedures (`PROC`/`CALL`), one-line functions (`DEF FN`);
 * whole numbers and 5-byte **floating-point** numbers, converted automatically, with maths functions in degrees;
+* 21 **user-defined characters** that you design yourself (defined with `POKE`, printed with `CHR$(144)` to `CHR$(164)`);
 * **strings** up to 31 characters and the full set of string functions;
 * **arrays** of numbers and of strings, which can be saved to tape on their own and kept across runs (the *Array Store*);
 * **sessions**: the variables of a program that stopped stay available to typed statements;

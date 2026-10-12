@@ -21,6 +21,8 @@ Block syntax (info string = language, then attributes):
 * `err=ce:N` / `err=ve:N` : the program must stop with that compile / runtime error code (the codes
   are internal; the user sees the message) -- the output block, if any, is what was printed first.
 * `keys=` : keys delivered, in order, to INPUT / key waits.  Python-style escapes: `\\n` is ENTER.
+* `code=N` / `source=N` : after the run the compiled program is exactly N bytes (the bytecode area,
+  VM_CODE_BASE .. end of code) / the stored program text is N bytes (3 + length per line).
 * `break=N` : the run is stopped with BREAK (CAPS SHIFT + SPACE, pressed in the emulated keyboard
   matrix) after N instructions; use `err=ve:66` -- BREAK is run-time error 66.
 * `rows=N` : compare only the first N text rows of the screen (examples that draw: the pixels
@@ -82,6 +84,8 @@ class Case:
         self.keys = []
         self.maxi = 60_000_000
         self.shot = None
+        self.code = None              # expected bytecode bytes after the run (memory examples)
+        self.source = None            # expected source bytes (program text, 3 + length per line)
         self.brk = None               # press BREAK after this many instructions of the run
         self.rows = None              # compare only the first N screen rows (graphics examples)
         self.steps = []               # session: [(command, expected text | ("ce"|"ve", n))]
@@ -194,6 +198,10 @@ def parse_file(path):
             if "maxi" in a:
                 c.maxi = int(a["maxi"])
             c.shot = a.get("shot")
+            if "code" in a:
+                c.code = int(a["code"])
+            if "source" in a:
+                c.source = int(a["source"])
             if "break" in a:
                 c.brk = int(a["break"])
             if "rows" in a:

@@ -174,7 +174,7 @@ BREAK works in tight loops and in `PAUSE`. It does **not** work during `BEEP`, w
 | `CONTINUE` | yes | none: `: GOTO label` restarts at a label |
 | `RUN` | line-by-line | whole program compiled first; mistakes reported before anything happens |
 | tapes | Sinclair tapes | V2 tapes; Sinclair and V1 tapes are refused |
-| characters | full set | nine characters have no glyph (see [Appendix C](07_appendices.md#appendix-c-the-character-set)) |
+| characters | full set | nine characters have no glyph (see [Appendix C](07_appendices.md#appendix-c-the-character-set)); 21 [user-defined characters](#user-defined-characters), defined by `POKE` at 61824, printed with `CHR$(144)` to `CHR$(164)`; no `USR "a"` |
 
 ---
 
@@ -309,23 +309,141 @@ Procedures and functions have names too, and `CALL` and `FN` find them wherever 
 
 ## Memory
 
-The program, its variables and its arrays share one **main memory pool** of about 8.4 KB. `FREE()` reports how much is left. For comparison, an empty machine has 8153 bytes free (with a one-line program that prints `FREE()`), measured on the release.
+This concept explains where your program and its data live, what `FREE()` tells you, and what things cost. Every figure was measured on the release.
 
-What things cost, as measured:
+### How a program is stored and compiled
 
-| Item | Cost |
+Your program is kept as **plain text**: the lines exactly as you typed them. Each line costs its length in characters plus **3 bytes** (a 2-byte length in front and an end mark behind), and that includes any spaces you indented it with. That text is the program: `LIST` shows it, `SAVE` writes it to tape, `LLIST` prints it, and the editor works on it. It is never replaced by anything.
+
+When you type `RUN` (or an immediate statement after a colon), V2 **compiles** the text. It reads the whole program, checks it, and writes a second, compact version made of **bytecode**: one-byte instruction codes with small operands (a variable is a one-byte number, a small whole number one byte, a jump two bytes, a fractional number five bytes, a string constant its characters). The bytecode is then run. It lives in a **separate area of its own** (4011 bytes, addresses 42069 to 46079), **not** in the main memory pool and **not** counted by `FREE()`. It is built again at every `RUN`, thrown away when you edit, and never saved: tapes hold only the text. Because the text is kept, `LIST` always shows your program as you wrote it; nothing is reconstructed from the bytecode, and there is no way to get the compiled form back out.
+
+So a line's cost has two parts, which you must not confuse: **the text** (length + 3, in the pool, always) and **the code** (a few bytes in the code area, only while compiled). The code is usually *smaller* than the text. Here is a small program and what the compiler makes of it:
+
+```basic ex=mem.compile.1 code=31 source=73
+total = 0
+FOR i = 1 TO 10
+total = total + i
+NEXT i
+PRINT total
+```
+```output ex=mem.compile.1
+55
+```
+
+| Line (text bytes: length + 3) | Compiled to | Code bytes |
+|---|---|---|
+| `total = 0` (12) | push 0, store in variable 0 | 4 |
+| `FOR i = 1 TO 10` (18) | push 1 (start), push 10 (limit), push 1 (step), start the loop on variable 1 | 10 |
+| `total = total + i` (20) | load `total`, load `i`, add, store `total` | 7 |
+| `NEXT i` (9) | next of variable 1: add the step, go round again | 4 |
+| (after the loop) | drop the loop's frame | 1 |
+| `PRINT total` (14) | load `total`, print the number, new line | 4 |
+| (end of program) | halt | 1 |
+| **Total** | **73 bytes of text** | **31 bytes of code** |
+
+Typical figures: a small assignment such as `x = 1` is 4 bytes of code; `x = 1.5` is 7 (a fractional number takes five bytes); `x = 40000` is 8; `PRINT "hello"` is 9 (the five letters are in the code); a label or a `REM` takes none; `PROC` 8 and `DEF FN` 10. The code area holds 4011 bytes, which is about a thousand lines of `x = 1`: that is the **second limit** on program size (the program stops compiling with `OUT OF MEMORY` when the code does not fit). The first limit, usually reached sooner, is the pool.
+
+### The main memory pool
+
+The program text, the names, the variables and the arrays all share one **pool** of 8397 bytes (addresses 33370 to 41766). On an empty machine, with a one-line program that prints `FREE()`, it is divided like this:
+
+| What | Bytes | Notes |
+|---|---|---|
+| program text | 15 | this one line: `PRINT FREE()` is 12 characters + 3 |
+| table of names | 0 | one record for every name in the program (below); empty here |
+| gap kept for typed statements | 81 | room for the new names an immediate statement may create (see [Sessions](#sessions)) |
+| **free** | **8153** | what `FREE()` reports |
+| run-time tables for the variables | 148 | slots for every variable, plus 4 spare number slots and 4 spare string slots that expressions use for their intermediate results |
+
+From the bottom of the pool upward: the program text, then the table of names, then the 81-byte gap, then the **arrays** as they are created by `DIM`. From the top downward: the run-time tables (carved when the program starts, sized exactly for the variables the compiler found), and below them the **control stack**, which holds one frame for every active procedure call and every active `FOR` loop. The free space is the gap between the top of the arrays and the control stack: arrays grow into it from below and the stack grows into it from above.
+
+### What `FREE()` measures
+
+`FREE()` is the size of that free gap in bytes: the room left for **arrays** and for **procedure calls and loops** to come. It does not include the code area, the overflow segment (`FREE(1)`, 2048 bytes at its own address; see [Arrays](#arrays) and the [Array Store](#array-store)), or the variables' tables, which were already taken out when the program started. Because the tables are sized when the program starts, **a variable costs memory from the beginning of the run**, even if the program has not got to the line that uses it. What changes while the program runs is:
+
+* `DIM` takes the space for the array, and `CLEAR` gives it back;
+* every procedure call and every `FOR` loop that is still going takes **12 bytes** of the same space until it ends: a program that calls itself 600 times deep uses over 7000 bytes. This is why recursion has a limit.
+
+```basic ex=mem.free.1
+PRINT FREE()
+DIM a(100)
+PRINT FREE()
+DIM n$(5)
+PRINT FREE()
+CLEAR
+PRINT FREE()
+```
+```output ex=mem.free.1
+8056
+7853
+7769
+8056
+```
+
+(`DIM a(100)` took 203 bytes: 200 for the hundred two-byte elements and 3 for its description. `DIM n$(5)` took 84: five 16-byte elements and 4. `CLEAR` gave both back. The first figure is 8056 rather than 8153 because this program's own text and names are in the pool too.)
+
+```basic ex=mem.free.2
+CALL deeper(3)
+END
+PROC deeper(n):
+PRINT FREE()
+IF n > 0 THEN
+CALL deeper(n - 1)
+ENDIF
+ENDP
+```
+```output ex=mem.free.2
+8022
+8010
+7998
+7986
+```
+
+(Each level of the procedure costs 12 bytes while it is active.)
+
+### What things cost
+
+| Item | Cost, in bytes of pool |
 |---|---|
-| a line of program | its length in characters + 3 |
-| the first use of a number variable | about 13 more (whole or fractional) |
-| the first use of a string variable | about 37 more |
-| a numeric array `DIM a(n)` | 2 bytes per element + about 12 |
-| a string array `DIM a$(n)` | 16 bytes per element (the *width*, with a width) + about 14 |
+| a line of program text | its length + 3 (a `REM` and the spaces you indent with cost exactly as much as code) |
+| the program's **first** use of a number name (whole or fractional) | **12 + the length of the name**: 4 + the name in the table of names, 3 + 5 in the run-time tables |
+| each further use of the same name | nothing (the code area takes a byte or two) |
+| a string name | **36 + the length of the name**: the name, and a 32-byte slot (31 characters and a length) |
+| a label, or a `PROC` or `DEF FN` name | **7 + the length of the name** (a `PROC` or `DEF FN` also has its parameter, which is a number name) |
+| a numeric array `DIM a(n)` | **2 per element**, plus about 11 + the length of the name |
+| a string array `DIM a$(n)` | **16 per element** (the width, with a width), plus about 13 + the length of the name |
+| a procedure call, or a `FOR` loop, while active | 12 (taken from the free gap, returned at the end) |
+| numbers and string constants in the program | nothing in the pool (they are in the code area) |
+| the 4 + 4 spare slots, and the 81-byte gap | 148 + 81, always |
+| a package | nothing (below) |
 
-Beyond the main pool there is the 2 KB **overflow segment** (`FREE(1)`), where an array goes if it does not fit in the main pool; it is also where the [Array Store](#array-store) lives. The compiled program has its own area of about 4 KB, separate from `FREE()`. A program of 749 lines of the form `PRINT n` was the longest that compiled on an otherwise empty machine.
+A name's cost is paid **once per name**, not once per use, and a longer name costs one byte more per character: a 31-character name is 31 bytes dearer than a one-character one. Whole numbers and fractional numbers cost the same (every number name has both kinds of slot).
 
-The full address map for `PEEK`, `POKE` and `USR` is in [Appendix E](07_appendices.md#appendix-e-memory-map).
+### Packages and memory
 
-**See also** FREE, DIM, [Limits](07_appendices.md#appendix-d-limits).
+A package is loaded into a 1 KB window of its own (addresses 62464 to 63487) which is not part of the pool: **loading a package does not reduce `FREE()`**. The same program prints the same figure with and without a package loaded:
+
+*With the shapes package loaded (`LOAD "SHAPES" EXT`):*
+
+```basic ex=mem.pkg.1 pkg=shapes
+PRINT FREE()
+```
+```output ex=mem.pkg.1
+8153
+```
+
+### Making the best use of memory
+
+* **Arrays are cheaper than variables.** A number variable costs at least 13 bytes; an array element costs 2. If you have many similar values, put them in an array and use a loop. A string variable costs at least 37 bytes, a string array element 16.
+* **Use fewer, shorter names** where memory is tight; reuse a variable instead of a new name for something you have finished with. (Reuse costs nothing; a new name costs 12 or more.)
+* **Text costs memory.** A remark line is 3 + its length, and so are blank-looking lines and indentation: a long program that is nearly out of memory is helped by removing comments and indentation, or by shortening them.
+* **Put repeated code in a procedure**: it is text once and a few bytes of code at each `CALL`.
+* **Give back arrays you have finished with** with `CLEAR` (it also clears the variables, so keep what you need elsewhere first), and keep arrays as small as they need to be: string arrays are 16 bytes an element even when the strings are short; a width of 8 (`DIM a$(n, 8)`) makes them half the size.
+* **Remember what runs out first.** The pool (about 8.1 KB of text, names and data) normally runs out before the 4 KB code area; a program of about 750 short `PRINT` lines does not run, because its text fills the pool. If the pool is the problem the message is `OUT OF MEMORY` when you `RUN`; if the code area is, it is `OUT OF MEMORY` when the compiler runs out of room.
+* **Recursion is limited by the 12 bytes a level**: a procedure that calls itself needs 12 bytes of free space for every level.
+* If a program needs more space for **arrays**, remember the 2 KB overflow segment: a numeric array that does not fit in the pool is placed there if it fits there (see [Arrays](#arrays)).
+
+For the figures of every limit see [Appendix D](07_appendices.md#appendix-d-limits), and for the address map of the whole machine [Appendix E](07_appendices.md#appendix-e-memory-map). `FREE()` and `FREE(1)` are described under [FREE](03_keywords.md#free).
 
 ---
 
@@ -942,3 +1060,313 @@ ENDIF
 ```
 
 `AND` and `OR` **short-circuit**: the right-hand side is not worked out if the left-hand side has already decided the answer. That makes a guard like `y <> 0 AND 10 / y > 1` safe. See AND and OR.
+
+---
+
+## User-defined characters
+
+V2 has **21 user-defined characters** (UDGs), as the Spectrum does: character codes **144 to 164**. Each is an 8 x 8 picture that you design yourself and then print like any letter with `PRINT CHR$(144)`. The pictures live in a table of 168 bytes (8 bytes for each of the 21 characters) at **address 61824** (`$F180`); there is no statement to define one: you **`POKE`** the eight bytes.
+
+* **The picture.** Each of the eight bytes is one row of the character, from the top row down. A byte is eight pixels: the bit values 128, 64, 32, 16, 8, 4, 2, 1 are the pixels from left to right, so a row `..####..` is 16 + 8 + 4 + 2 = 60. (The `#` pixels are ink, the `.` pixels paper.)
+* **The address.** Character code *c* (144 to 164) has its eight bytes at `61824 + (c - 144) * 8`. Character 144 is at 61824 to 61831, 145 at 61832 to 61839, and so on up to 164 at 61992 to 61999. (On the Spectrum the letters A to U name the same 21 characters; here you use their codes, and `USR "a"` does not exist.)
+* **Printing.** `PRINT CHR$(144)` prints character 144 in the current colours at the printing position, exactly like a letter: it follows `INK`, `PAPER`, `BRIGHT`, `FLASH`, `OVER` and `INVERSE`. It may be put in a string (`a$ = CHR$(144) + CHR$(145)`), and strings of it can be joined, measured and compared like any other. There is no way to *type* a user-defined character on the keyboard into a program, so always write it as `CHR$(code)`.
+
+The easiest way to design a character is to draw it with `#` and `.`, and let the program work out the bytes. Here a smiling face is drawn as eight strings, and a loop turns each one into a number and pokes it:
+
+```basic ex=udg.face.1 shot=udg_face rows=2
+DIM g$(8, 9)
+g$(0) = "..####.."
+g$(1) = ".#....#."
+g$(2) = "#.#..#.#"
+g$(3) = "#......#"
+g$(4) = "#.#..#.#"
+g$(5) = "#..##..#"
+g$(6) = ".#....#."
+g$(7) = "..####.."
+FOR r = 0 TO 7
+  v = 0
+  FOR c = 1 TO 8
+    v = v * 2
+    IF MID$(g$(r), c, 1) = "#" THEN
+      v = v + 1
+    ENDIF
+  NEXT c
+  POKE 61824 + r, v
+NEXT r
+INK 2
+PAPER 6
+CLS
+AT 0, 0
+PRINT PEEK(61824); " "; PEEK(61826)
+AT 5, 8
+FOR i = 1 TO 12
+  PRINT CHR$(144);
+NEXT i
+```
+```output ex=udg.face.1
+60 165
+```
+
+![A smiling face printed twelve times as character 144](images/udg_face.png)
+
+(Row 0, `..####..`, is 60; row 2, `#.#..#.#`, is 165. The face is character 144, printed twelve times in red on yellow.)
+
+A character can be redefined at any time, and each of the 21 can be different. This program makes two characters, a solid square (144) and a diamond (145), by poking the byte values directly, and prints a pattern with them:
+
+```basic ex=udg.two.1 shot=udg_pattern rows=1
+FOR r = 0 TO 7
+  POKE 61824 + r, 255
+NEXT r
+POKE 61832, 24
+POKE 61833, 60
+POKE 61834, 126
+POKE 61835, 255
+POKE 61836, 255
+POKE 61837, 126
+POKE 61838, 60
+POKE 61839, 24
+INK 1
+CLS
+FOR row = 3 TO 18
+  FOR col = 4 TO 27
+    AT row, col
+    IF MOD(row + col, 2) = 0 THEN
+      PRINT CHR$(144);
+    ELSE
+      PRINT CHR$(145);
+    ENDIF
+  NEXT col
+NEXT row
+AT 0, 0
+INK 0
+PRINT PEEK(61832)
+```
+```output ex=udg.two.1
+24
+```
+
+![A chess-board pattern of squares and diamonds](images/udg_pattern.png)
+
+### Using them
+
+Defining a character is only half of the job; here is what they are good for, with a program for each.
+
+**1. A reusable way to define them.** Designing in `#` and `.` is so much easier than working out numbers that it is worth turning into a procedure once. This `PROC` defines character *c* from eight strings kept in the array `g$` (rows 0 to 7). Put it at the end of any program that uses UDGs:
+
+```
+PROC defchar(c):
+  FOR r = 0 TO 7
+    v = 0
+    FOR k = 1 TO 8
+      v = v * 2
+      IF MID$(g$(r), k, 1) = "#" THEN
+        v = v + 1
+      ENDIF
+    NEXT k
+    POKE 61824 + (c - 144) * 8 + r, v
+  NEXT r
+ENDP
+```
+
+**2. Pictures bigger than one character.** One character is only 8 x 8 dots. A bigger picture is several characters side by side, printed in the right places. This program draws a 16 x 16 rocket from four characters (144 and 145 on the top row, 146 and 147 below), cutting the picture into four quarters:
+
+```basic ex=udg.rocket.1 shot=udg_rocket rows=1
+DIM p$(16, 17)
+DIM g$(8, 9)
+p$(0) = ".......##......."
+p$(1) = "......####......"
+p$(2) = "......####......"
+p$(3) = ".....######....."
+p$(4) = ".....######....."
+p$(5) = ".....##..##....."
+p$(6) = ".....##..##....."
+p$(7) = ".....######....."
+p$(8) = ".....######....."
+p$(9) = "....########...."
+p$(10) = "...##########..."
+p$(11) = "..####.##.####.."
+p$(12) = "..###..##..###.."
+p$(13) = "..##...##...##.."
+p$(14) = ".......##......."
+p$(15) = "......#..#......"
+FOR q = 0 TO 3
+  FOR r = 0 TO 7
+    g$(r) = MID$(p$(DIV(q, 2) * 8 + r), MOD(q, 2) * 8 + 1, 8)
+  NEXT r
+  CALL defchar(144 + q)
+NEXT q
+INK 2
+CLS
+AT 8, 15
+PRINT CHR$(144); CHR$(145)
+AT 9, 15
+PRINT CHR$(146); CHR$(147)
+AT 0, 0
+INK 0
+PRINT "rocket"
+END
+PROC defchar(c):
+  FOR r = 0 TO 7
+    v = 0
+    FOR k = 1 TO 8
+      v = v * 2
+      IF MID$(g$(r), k, 1) = "#" THEN
+        v = v + 1
+      ENDIF
+    NEXT k
+    POKE 61824 + (c - 144) * 8 + r, v
+  NEXT r
+ENDP
+```
+```output ex=udg.rocket.1
+rocket
+```
+
+![A 16 by 16 rocket made of four user-defined characters](images/udg_rocket.png)
+
+(The four characters must touch, so they are printed with `AT` on two neighbouring rows, with a semicolon at the end of the first so the cursor does not move to the next line before the second `AT`.)
+
+**3. Moving pictures.** Redefine a character, or switch between two, and the picture on the screen changes. Here two characters are two poses of a figure (148 and 149), and the program shows one pose after the other while it moves the figure across the screen. With `OVER 1` in force, printing a character draws it, and printing the same character again in the same place erases it, so each pose is drawn, held for a moment with `PAUSE`, and erased before the next one appears a column further on:
+
+```basic ex=udg.walk.1 shot=udg_walk rows=1
+DIM g$(8, 9)
+g$(0) = "...##..."
+g$(1) = "...##..."
+g$(2) = "..####.."
+g$(3) = ".#.##.#."
+g$(4) = "...##..."
+g$(5) = "..#..#.."
+g$(6) = ".#....#."
+g$(7) = "#......#"
+CALL defchar(148)
+g$(0) = "...##..."
+g$(1) = "...##..."
+g$(2) = "..####.."
+g$(3) = "..#.##.."
+g$(4) = "...##..."
+g$(5) = "...##..."
+g$(6) = "...##..."
+g$(7) = "..#..#.."
+CALL defchar(149)
+INK 1
+CLS
+x = 0
+FOR n = 1 TO 20
+  pose = 148 + MOD(n, 2)
+  AT 10, x
+  OVER 1
+  PRINT CHR$(pose);
+  PAUSE 3
+  AT 10, x
+  PRINT CHR$(pose);
+  OVER 0
+  x = x + 1
+NEXT n
+AT 10, x
+PRINT CHR$(148);
+AT 0, 0
+PRINT x
+END
+PROC defchar(c):
+  FOR r = 0 TO 7
+    v = 0
+    FOR k = 1 TO 8
+      v = v * 2
+      IF MID$(g$(r), k, 1) = "#" THEN
+        v = v + 1
+      ENDIF
+    NEXT k
+    POKE 61824 + (c - 144) * 8 + r, v
+  NEXT r
+ENDP
+```
+```output ex=udg.walk.1
+20
+```
+
+![The figure at the end of its walk](images/udg_walk.png)
+
+**4. Characters in strings.** A user-defined character is a character like any other, so a **string** can hold a whole row of them. This builds a status line of lives -- one heart character for each life left -- and a bar of the same character to show a level:
+
+```basic ex=udg.string.1 shot=udg_hearts rows=3
+DIM g$(8, 9)
+g$(0) = ".##..##."
+g$(1) = "########"
+g$(2) = "########"
+g$(3) = "########"
+g$(4) = ".######."
+g$(5) = "..####.."
+g$(6) = "...##..."
+g$(7) = "........"
+CALL defchar(150)
+heart$ = CHR$(150)
+lives$ = ""
+FOR i = 1 TO 5
+  lives$ = lives$ + heart$
+NEXT i
+INK 2
+CLS
+AT 5, 2
+PRINT lives$
+INK 0
+AT 0, 0
+PRINT LEN(lives$)
+PRINT CODE(lives$)
+END
+PROC defchar(c):
+  FOR r = 0 TO 7
+    v = 0
+    FOR k = 1 TO 8
+      v = v * 2
+      IF MID$(g$(r), k, 1) = "#" THEN
+        v = v + 1
+      ENDIF
+    NEXT k
+    POKE 61824 + (c - 144) * 8 + r, v
+  NEXT r
+ENDP
+```
+```output ex=udg.string.1
+5
+150
+```
+
+![Five red hearts made from one user-defined character](images/udg_hearts.png)
+
+(`LEN` counts five characters and `CODE` gives 150, the code of the heart.)
+
+**What they survive.** The table is ordinary memory that nothing in V2 clears, so a user-defined character stays defined when you `RUN` again, `CLEAR`, `CLS`, `NEW`, change the video mode (the `MODE` statement) or `LOAD` another program; it is **not** saved on tape (not even by `SAVE ... ALL`), and it is lost when the machine is switched off. The table is **not set to zero when the machine starts** (on the emulator it is; on real hardware the memory may hold anything), so a program should define every character it uses, at its start. An undefined character prints as a blank.
+
+```basic ex=udg.keep.1
+FOR r = 0 TO 7
+  POKE 61824 + r, 255
+NEXT r
+PRINT "defined"
+```
+```tape ex=udg.keep.1
+store: CLS ;; AT 5, 0 ;; PRINT CHR$(144); ;; AT 0, 0 ;; PRINT POINT(0, 40); POINT(7, 47)
+SAVE "show"                            [SAVED]
+power on
+store: FOR r = 0 TO 7 ;; POKE 61824 + r, 255 ;; NEXT r
+RUN
+LOAD "show"                            [LOADED]
+RUN
+11
+...
+```
+
+(The first program defines character 144 as a solid square. Then another program is loaded from tape with `LOAD` and run: the square is still defined, so it prints, and both corner pixels are set.)
+
+**Differences from stock TS2068 and Sinclair BASIC.**
+
+| | Sinclair / stock TS2068 BASIC | 2068-Leap V2 |
+|---|---|---|
+| number of user characters | 21 (`A` to `U` in graphics mode) | 21, codes 144 to 164 |
+| defining one | `POKE USR "a" + n, value` | `POKE 61824 + (code - 144) * 8 + n, value` |
+| typing one | graphics mode (`G`) and a letter key | not possible: use `CHR$(code)` |
+| `USR "a"` | address of the character | not available: `USR` takes only a number |
+| contents when switched on | the machine's own copy of the letters A to U | **not set**: define what you use |
+| redefining the ordinary letters | by changing `CHARS` | not possible: the letters (codes 32 to 127) are in the ROM |
+| the 16 block graphics (128 to 143) | typed in graphics mode | printed with `CHR$(128)` to `CHR$(143)`; they cannot be redefined |
+
+**See also** CHR$, POKE, PEEK, [Appendix C](07_appendices.md#appendix-c-the-character-set), [Screen](#screen).

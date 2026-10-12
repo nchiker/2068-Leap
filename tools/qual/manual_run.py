@@ -231,6 +231,12 @@ def _run_case(m, c, write_shots, show):
             r = m.run_program(c.lines, keys=c.keys, maxi=c.maxi, packages=c.pkgs)
         ok, detail = check_result(r, c.out, c.err, c.rows)
         rec["actual"] = screen_text(r, c.rows)
+        if c.code is not None or c.source is not None:
+            code = m.w16(m.sym("SESS_CODE_END")) - m.sym("VM_CODE_BASE")
+            src = m.w16(m.sym("PROG_END")) - m.sym("PROG_AREA_START")
+            if (c.code is not None and code != c.code) or (c.source is not None and src != c.source):
+                ok = False
+                detail = "bytecode %d (want %s), source %d (want %s)" % (code, c.code, src, c.source)
         if c.shot:
             shot_bytes = render_screen(m.read(0x4000, 6912))
     else:

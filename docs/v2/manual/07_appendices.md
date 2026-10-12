@@ -213,7 +213,7 @@ ve 20 pkg=sprite | GRAB 0, 23, 31, 2, 2
 
 ## Appendix C: The character set
 
-Characters are the standard Spectrum-family set for codes **32 to 127**, plus 16 **block graphics** for codes **128 to 143**. Nothing is drawn for codes 0 to 31 or 144 to 255. `PRINT CHR$(n)` prints character *n*; `CODE` gives the code of a character.
+Characters are the standard Spectrum-family set for codes **32 to 127**, plus 16 **block graphics** for codes **128 to 143**, and 21 **user-defined characters** for codes **144 to 164** that you design yourself (see [User-defined characters](04_concepts.md#user-defined-characters)): they are blank until you `POKE` a picture into them. Nothing is drawn for codes 0 to 31 or 165 to 255. `PRINT CHR$(n)` prints character *n*; `CODE` gives the code of a character.
 
 ```basic ex=app.chars.1 shot=charset
 CLS
@@ -310,9 +310,10 @@ All figures were measured on the release with an otherwise empty program, unless
 | operands nested in `1+(1+(1+(...` | about 40 |
 | `EXIT FOR` statements in one loop | at least 261 |
 | depth of recursion of a one-parameter procedure | 671 |
-| lines of the form `PRINT n` in one program | 749 |
+| program text | about 8.1 KB: the pool is 8397 bytes, shared with names, variables and arrays; 749 lines of `PRINT n` is the most that runs (750 lines fill the pool: `OUT OF MEMORY` at `RUN`) |
 | free main memory on an empty machine | 8153 bytes (`FREE()`); 2048 in the overflow segment (`FREE(1)`) |
-| bytes of compiled program | about 4 KB (4011) |
+| bytes of compiled program (the code area, separate from the pool) | 4011; 1000 lines of `x = 1` fit, 1010 do not (`OUT OF MEMORY` while compiling) |
+| procedure calls and `FOR` loops active at once | 12 bytes of the free gap each (671 deep recursion with an empty program) |
 | session variables created by immediate statements | about ten short names |
 | sprite slots | 8 |
 | sprite size | 1 to 4 by 1 to 4 character cells |
@@ -347,7 +348,9 @@ For `PEEK`, `POKE`, `USR`, `IN` and `OUT`. Addresses are decimal with hexadecima
 | 49152 - 57343 (`$C000`-`$DFFF`) | 8 KB | RAM under the EXROM: while a program runs the EXROM is switched in and this RAM is **not visible**; the FILL work area lives here; do not use |
 | 57344 - 59391 (`$E000`-`$E7FF`) | 2048 | the overflow segment: the Array Store and arrays that did not fit |
 | 59392 - 61695 (`$E800`-`$F0FF`) | 2304 | sprite images and saved backgrounds (the sprite package) |
-| 61696 - 62419 (`$F100`-`$F3D2`) | 723 | label table, user-defined graphics, the editor's line buffer, string and function workspace: do not touch |
+| 61696 - 61823 (`$F100`-`$F17F`) | 128 | label table (reserved by the system): do not touch |
+| **61824 - 61991** (`$F180`-`$F227`) | **168** | **the user-defined characters**: 8 bytes for each of the codes 144 to 164; yours to `POKE` (see [User-defined characters](04_concepts.md#user-defined-characters)) |
+| 61992 - 62419 (`$F228`-`$F3D2`) | 428 | the editor's line buffer, the listing buffer, string and function workspace: do not touch |
 | 62420 - 62463 (`$F3D3`-`$F3FF`) | 45 | unused |
 | 62464 - 63487 (`$F400`-`$F7FF`) | 1024 | the **package window**: a loaded package lives here |
 | 63488 - 65279 (`$F800`-`$FEFF`) | 1792 | the machine stack grows down into this from `$FF00`; keep off it |
