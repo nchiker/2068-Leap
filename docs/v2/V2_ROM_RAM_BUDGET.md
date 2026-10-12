@@ -51,6 +51,13 @@ the end.
 
 ## RAM
 
+> **Current layout (after the RAM-efficiency change, `docs/v2/RAM_EFFICIENCY_RESULTS.md`):** main pool
+> `$825A-$A654` (9211 bytes) running straight into the bytecode area `$A655-$B5FF` (4011); fixed V2 area
+> `$B600-$BFFF`, which now also holds the compile zone (`$B850-$B97D`, 302). `FREE()` on an empty machine
+> 8967 (was 8153). The ROM free space after the maintenance release is HOME 19 / EXROM 26 bytes
+> (`V2_MAINT_RELEASE_STATUS.md`), HOME 25 after this change. The figures below are those of the
+> v2.0.0-emu.1 release.
+
 * Main pool (program text, symbol table, session gap, arrays, run-time tables): `$825A-$A326`, 8397
   bytes. Compile zone `$A327-$A454` (302). Bytecode `$A455-$B3FF` (4011). Fixed V2 area
   `$B400-$BFFF`. Segment 2 `$E000-$E7FF` (2048: Array Store + overflow arrays).

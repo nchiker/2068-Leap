@@ -1,21 +1,23 @@
 ; Integrated R9 source, compiler input, and bytecode regions.
     IFNDEF V2_LAYOUT_INC
     DEFINE V2_LAYOUT_INC
-; R10.7 P1 -- the idle staging region is reclaimed for the source/array pool.
-; The pool now ends where the compile/run zone begins; the zone is only as big
-; as the chunk buffer + its state + the identifier buffer (278 B), anchored at
-; the bytecode base so the two can never drift apart (ASSERT below). The
-; run-only scalar/string overflow tiers (240 B) overlay the chunk buffer in
-; the same zone: compile and run are disjoint phases (docs/v2/
-; R10_7_CAPACITY_ARCHITECTURE_AUDIT.md s0/s7; verified by canary in the
-; production ROM, docs/v2/R10_7_WORKSPACE_MANAGER_FEASIBILITY.md s9).
-V2_CODE_BASE    EQU $A455
+; RAM efficiency (docs/v2/RAM_EFFICIENCY_RESULTS.md): the pool now runs straight into the bytecode
+; area (V2_SOURCE_END = V2_CODE_BASE). The compile zone -- the chunk buffer, its state and the
+; identifier buffer, compile-only scratch (the run-only overflow tiers that once overlaid it are
+; gone since R10.7 P3) -- lives in dead space of the fixed V2 area at V2_ZONE_BASE, and the
+; bytecode area ends at $B600: $B400-$B5FF held nothing a production build or package touches
+; (static census + a canary over the whole qualification corpus). Pool 8397 -> 9211 bytes; the
+; bytecode area keeps its 4011 bytes.
+V2_CODE_LIMIT   EQU $B600
+V2_CODE_SIZE    EQU 4011
+V2_CODE_BASE    EQU V2_CODE_LIMIT - V2_CODE_SIZE   ; = $A655
 CHUNK_SIZE      EQU 264
 IDENT_MAX_LEN   EQU 31                    ; R10.7 P2: significant identifier characters
 STMT_IDENT_NAME_BUF_LEN EQU IDENT_MAX_LEN + 1
-V2_ZONE_SIZE    EQU CHUNK_SIZE + 6 + STMT_IDENT_NAME_BUF_LEN ; chunk + 3 state words + ident buf
-V2_SOURCE_END   EQU V2_CODE_BASE - V2_ZONE_SIZE   ; = $A33F
-V2_SOURCE_STAGE EQU V2_SOURCE_END
+V2_ZONE_SIZE    EQU CHUNK_SIZE + 6 + STMT_IDENT_NAME_BUF_LEN ; chunk + 3 state words + ident buf = 302
+V2_ZONE_BASE    EQU $B850                 ; after the session cells, below FOR_FRAME_ADDR_TMP ($B9E9)
+V2_SOURCE_END   EQU V2_CODE_BASE          ; the pool top (= $A655)
+V2_SOURCE_STAGE EQU V2_ZONE_BASE
 
 ; R10.7 source-staging-architecture change (docs/v2/R10_7_SOURCE_STAGING_
 ; ARCHITECTURE_AUDIT.md): V2_SOURCE_STAGE no longer holds a full flattened
@@ -66,12 +68,13 @@ LEX_LINE            EQU CHUNK_FILL_PTR + 2             ; 2B: R10.9 2D -- zero-ba
 ; preserves, and get overwritten by the very next appended record. Found
 ; live (an array assignment failed "never DIM'd" even though DIM had
 ; already run) via ts2068-debug single-stepping, not by inspection.
-; STMT_IDENT_NAME_BUF is a copy destination immune to this -- 8 bytes,
-; matching CLAMP_LEN8's own already-established "identifiers significant
-; to 8 characters" convention used by every symbol-table FIND_OR_CREATE/
-; LOOKUP call site, so no behavior beyond this bug fix changes.
-STMT_IDENT_NAME_BUF EQU LEX_LINE + 2          ; 8B: see above
-    ASSERT STMT_IDENT_NAME_BUF + STMT_IDENT_NAME_BUF_LEN == V2_CODE_BASE    ; zone ends exactly at the code
+; STMT_IDENT_NAME_BUF is a copy destination immune to this -- now
+; STMT_IDENT_NAME_BUF_LEN (32) bytes since R10.7 P2 (originally 8, matching
+; CLAMP_LEN8's "identifiers significant to 8 characters" convention used by every symbol-table FIND_OR_CREATE/
+; LOOKUP call site), so no behavior beyond this bug fix changes.
+STMT_IDENT_NAME_BUF EQU LEX_LINE + 2          ; STMT_IDENT_NAME_BUF_LEN (32) B: see above
+    ASSERT STMT_IDENT_NAME_BUF + STMT_IDENT_NAME_BUF_LEN == V2_ZONE_BASE + V2_ZONE_SIZE
+    ASSERT V2_ZONE_BASE + V2_ZONE_SIZE <= $B9E9   ; FOR_FRAME_ADDR_TMP (also ASSERTed there)
 
 ; R10.7 P2 -- tagged compile symbol table state (see rom/exrom_v2_symtab.asm).
 SYM_K_NUM       equ 0
@@ -134,7 +137,7 @@ ASV_CHECK:        equ CSTK_BASE + 2        ; 1: nonzero = ARR_RUN_CHECK (compare
 SA_BUILT:         equ ASV_CHECK + 1        ; 1: nonzero while SAVE/VERIFY has the session laid out as a
                                            ; SAVE ... ALL image (V2_SHOW_MESSAGE undoes it); zeroed by
                                            ; MEM_COLD_INIT ($8000 .. PROG_AREA_MAX)
-    ASSERT SA_BUILT + 1 <= $B900
+    ASSERT SA_BUILT + 1 <= V2_ZONE_BASE
     ASSERT GFX_FILL_STACK_END <= ARR2_BASE
     ASSERT ARR2_LIMIT <= SPRITE_SLOT_IMG_BUF
 CSYM_COUNT:     equ SYM_COUNTS + SYM_K_NUM
@@ -143,8 +146,6 @@ ARRSYM_COUNT:   equ SYM_COUNTS + SYM_K_ARR
 STRARRSYM_COUNT: equ SYM_COUNTS + SYM_K_SARR
 
 
-V2_CODE_LIMIT   EQU $B400
-V2_FLOATTAB_BASE EQU V2_CODE_LIMIT
 V2_DECOMP_END_ADDR EQU $BD9F
 V2_MACHINE_STACK_TOP EQU $FF00
 V2_HOME_IMAGE_END EQU $4000

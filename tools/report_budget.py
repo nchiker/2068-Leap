@@ -42,6 +42,7 @@ def main() -> int:
     stage_start = syms["V2_SOURCE_STAGE"]
     code_start = syms["VM_CODE_BASE"]
     code_end = syms["V2_CODE_LIMIT"]
+    zone_size = syms["V2_ZONE_SIZE"]
     fixed_end = syms["PROG_AREA_MAX"]
     print(f"Home ROM: {home_end:#06x}/0x4000 used, {0x4000-home_end} bytes free")
     print(f"EXROM:    {exrom_end:#06x}/0xe000 end, {0xE000-exrom_end} bytes free")
@@ -49,12 +50,11 @@ def main() -> int:
         f"Source:   {program_start:#06x}-{source_end-1:#06x}, "
         f"{source_end-program_start} bytes"
     )
-    print(
-        f"Zone:     {stage_start:#06x}-{code_start-1:#06x}, "
-        f"{code_start-stage_start} bytes (chunk buffer / run-only tiers)"
-    )
     print(f"Bytecode: {code_start:#06x}-{code_end-1:#06x}, {code_end-code_start} bytes")
-    print(f"Fixed V2: {code_end:#06x}-{fixed_end-1:#06x}, {fixed_end-code_end} bytes")
+    print(
+        f"Fixed V2: {code_end:#06x}-{fixed_end-1:#06x}, {fixed_end-code_end} bytes "
+        f"(incl. compile zone {stage_start:#06x}-{stage_start+zone_size-1:#06x}, {zone_size} bytes)"
+    )
     return 0
 
 

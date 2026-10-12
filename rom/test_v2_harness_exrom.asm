@@ -86,7 +86,7 @@ KTAB_CALC_EXIT_TRAMPOLINE EQU TEST_V2_CALC_EXIT_ADDR
 ; EXROM bank on their own) HOME-resident and the decompiler EXROM-
 ; resident. Reproduced/stubbed narrowly rather than pulling vm_core or
 ; compiler wholesale into EXROM too:
-VM_CODE_BASE EQU $A455        ; matches include/v2_layout.inc's own
+VM_CODE_BASE EQU $A655        ; matches include/v2_layout.inc's own
                                 ; V2_CODE_BASE -- bytecode JMP offsets
                                 ; are relative to this, not absolute,
                                 ; so the exact value only needs to

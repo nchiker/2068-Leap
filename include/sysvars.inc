@@ -2099,9 +2099,9 @@ SPRITE_DISPLAY_STACK: DEFS 8          ; slot numbers in SHOW order;
                                 ; in reverse order to preserve overlaps
 ; The two large buffers are persistent across EXROM calls, so they live in
 ; chunk 7, which this project never pages. This returns 2304 bytes below
-; PROG_AREA_START to BASIC while keeping the buffers visible to the EXROM-
-; resident sprite driver. Their $F100 end leaves $0E00 (3584) bytes before
-; the machine stack at $FF00.
+; PROG_AREA_START to BASIC. V2: only the SPRITE package uses them (it runs
+; with EXROM paged out), so hidden chunk 6 would also do -- see
+; docs/v2/RAM_EFFICIENCY_RESULTS.md s5 (a package-ABI major change).
 SPRITE_SLOT_IMG_BUF  EQU $E800         ; 1152 bytes — captured sprite
                                 ; image itself (SPRITE_SLOT_MAX *
                                 ; SPRITE_SLOT_BYTES), filled once per
@@ -2978,7 +2978,9 @@ PRINT_LLIST_LINE:    DEFS 2           ; LLIST's own current program-line
                                 ; pointer while walking MEM_LINE_FIRST/
                                 ; MEM_LINE_NEXT
 
-PROG_AREA_START:   ; Current value $8455 (confirmed against a real
+PROG_AREA_START:   ; V2 production (V2_COMPACT_SYSVARS): $825A -- read it
+                                ; from build/test_basic.sym, not from here.
+                                ; Historical V1 value $8455 (confirmed against a real
                                 ; assembled build, not hand-computed —
                                 ; see this file's own "assembler-
                                 ; computed addresses" header). LPRINT/

@@ -315,7 +315,7 @@ This concept explains where your program and its data live, what `FREE()` tells 
 
 Your program is kept as **plain text**: the lines exactly as you typed them. Each line costs its length in characters plus **3 bytes** (a 2-byte length in front and an end mark behind), and that includes any spaces you indented it with. That text is the program: `LIST` shows it, `SAVE` writes it to tape, `LLIST` prints it, and the editor works on it. It is never replaced by anything.
 
-When you type `RUN` (or an immediate statement after a colon), V2 **compiles** the text. It reads the whole program, checks it, and writes a second, compact version made of **bytecode**: one-byte instruction codes with small operands (a variable is a one-byte number, a small whole number one byte, a jump two bytes, a fractional number five bytes, a string constant its characters). The bytecode is then run. It lives in a **separate area of its own** (4011 bytes, addresses 42069 to 46079), **not** in the main memory pool and **not** counted by `FREE()`. It is built again at every `RUN`, thrown away when you edit, and never saved: tapes hold only the text. Because the text is kept, `LIST` always shows your program as you wrote it; nothing is reconstructed from the bytecode, and there is no way to get the compiled form back out.
+When you type `RUN` (or an immediate statement after a colon), V2 **compiles** the text. It reads the whole program, checks it, and writes a second, compact version made of **bytecode**: one-byte instruction codes with small operands (a variable is a one-byte number, a small whole number one byte, a jump two bytes, a fractional number five bytes, a string constant its characters). The bytecode is then run. It lives in a **separate area of its own** (4011 bytes, addresses 42581 to 46591), **not** in the main memory pool and **not** counted by `FREE()`. It is built again at every `RUN`, thrown away when you edit, and never saved: tapes hold only the text. Because the text is kept, `LIST` always shows your program as you wrote it; nothing is reconstructed from the bytecode, and there is no way to get the compiled form back out.
 
 So a line's cost has two parts, which you must not confuse: **the text** (length + 3, in the pool, always) and **the code** (a few bytes in the code area, only while compiled). The code is usually *smaller* than the text. Here is a small program and what the compiler makes of it:
 
@@ -345,14 +345,14 @@ Typical figures: a small assignment such as `x = 1` is 4 bytes of code; `x = 1.5
 
 ### The main memory pool
 
-The program text, the names, the variables and the arrays all share one **pool** of 8397 bytes (addresses 33370 to 41766). On an empty machine, with a one-line program that prints `FREE()`, it is divided like this:
+The program text, the names, the variables and the arrays all share one **pool** of 9211 bytes (addresses 33370 to 42580). On an empty machine, with a one-line program that prints `FREE()`, it is divided like this:
 
 | What | Bytes | Notes |
 |---|---|---|
 | program text | 15 | this one line: `PRINT FREE()` is 12 characters + 3 |
 | table of names | 0 | one record for every name in the program (below); empty here |
 | gap kept for typed statements | 81 | room for the new names an immediate statement may create (see [Sessions](#sessions)) |
-| **free** | **8153** | what `FREE()` reports |
+| **free** | **8967** | what `FREE()` reports |
 | run-time tables for the variables | 148 | slots for every variable, plus 4 spare number slots and 4 spare string slots that expressions use for their intermediate results |
 
 From the bottom of the pool upward: the program text, then the table of names, then the 81-byte gap, then the **arrays** as they are created by `DIM`. From the top downward: the run-time tables (carved when the program starts, sized exactly for the variables the compiler found), and below them the **control stack**, which holds one frame for every active procedure call and every active `FOR` loop. The free space is the gap between the top of the arrays and the control stack: arrays grow into it from below and the stack grows into it from above.
@@ -374,13 +374,13 @@ CLEAR
 PRINT FREE()
 ```
 ```output ex=mem.free.1
-8056
-7853
-7769
-8056
+8870
+8667
+8583
+8870
 ```
 
-(`DIM a(100)` took 203 bytes: 200 for the hundred two-byte elements and 3 for its description. `DIM n$(5)` took 84: five 16-byte elements and 4. `CLEAR` gave both back. The first figure is 8056 rather than 8153 because this program's own text and names are in the pool too.)
+(`DIM a(100)` took 203 bytes: 200 for the hundred two-byte elements and 3 for its description. `DIM n$(5)` took 84: five 16-byte elements and 4. `CLEAR` gave both back. The first figure is 8870 rather than 8967 because this program's own text and names are in the pool too.)
 
 ```basic ex=mem.free.2
 CALL deeper(3)
@@ -393,10 +393,10 @@ ENDIF
 ENDP
 ```
 ```output ex=mem.free.2
-8022
-8010
-7998
-7986
+8836
+8824
+8812
+8800
 ```
 
 (Each level of the procedure costs 12 bytes while it is active.)
@@ -429,7 +429,7 @@ A package is loaded into a 1 KB window of its own (addresses 62464 to 63487) whi
 PRINT FREE()
 ```
 ```output ex=mem.pkg.1
-8153
+8967
 ```
 
 ### Making the best use of memory
@@ -439,7 +439,7 @@ PRINT FREE()
 * **Text costs memory.** A remark line is 3 + its length, and so are blank-looking lines and indentation: a long program that is nearly out of memory is helped by removing comments and indentation, or by shortening them.
 * **Put repeated code in a procedure**: it is text once and a few bytes of code at each `CALL`.
 * **Give back arrays you have finished with** with `CLEAR` (it also clears the variables, so keep what you need elsewhere first), and keep arrays as small as they need to be: string arrays are 16 bytes an element even when the strings are short; a width of 8 (`DIM a$(n, 8)`) makes them half the size.
-* **Remember what runs out first.** The pool (about 8.1 KB of text, names and data) normally runs out before the 4 KB code area; a program of about 750 short `PRINT` lines does not run, because its text fills the pool. If the pool is the problem the message is `OUT OF MEMORY` when you `RUN`; if the code area is, it is `OUT OF MEMORY` when the compiler runs out of room.
+* **Remember what runs out first.** The pool (about 9 KB of text, names and data) normally runs out before the 4 KB code area; a program of about 900 short `PRINT` lines does not run, because its text fills the pool. If the pool is the problem the message is `OUT OF MEMORY` when you `RUN`; if the code area is, it is `OUT OF MEMORY` when the compiler runs out of room.
 * **Recursion is limited by the 12 bytes a level**: a procedure that calls itself needs 12 bytes of free space for every level.
 * If a program needs more space for **arrays**, remember the 2 KB overflow segment: a numeric array that does not fit in the pool is placed there if it fits there (see [Arrays](#arrays)).
 

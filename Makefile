@@ -23,6 +23,7 @@ check: build
 	python3 tools/check_asm.py
 	python3 tools/check_docs.py
 	python3 tools/check_ram_aliases.py build/test_basic.sym
+	python3 tools/check_ram_layout.py build/test_basic.lst build/exrom.lst build/test_basic.sym build/exrom.sym
 	python3 tools/check_package_abi.py
 	python3 tools/check_storage_contract.py
 	python3 tools/check_tape_fixture.py

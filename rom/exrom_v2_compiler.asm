@@ -269,6 +269,7 @@ FOR_LOOP_VAR_INDEX: equ $BA1E    ; COMPILE_FOR/COMPILE_NEXT scratch (1 byte):
                                   ; role as FOR_LOOP_TOP_OFFSET above.
 FOR_FRAME_ADDR_TMP:   equ $B9E9  ; COMPILE_FOR/COMPILE_NEXT scratch (2 bytes): a frame
                                    ; address parked across a call that would clobber it
+    ASSERT V2_ZONE_BASE + V2_ZONE_SIZE <= FOR_FRAME_ADDR_TMP   ; the compile zone sits below
 NEXT_VAR_INDEX_TMP:   equ $B9EB  ; COMPILE_NEXT scratch (1 byte): this NEXT's own variable index
 BRANCH_PATCH_TMP:   equ $BA1F   ; COMPILE_BRANCH_TARGET scratch (2 bytes)
 RESOLVE_PATCH_TMP:  equ $BA26   ; RESOLVE_ALL_FIXUPS scratch (2 bytes)
@@ -4590,8 +4591,10 @@ COMPILE_PROGRAM:
 .no_open_for:
         call EMIT_OP_HALT
         call LABEL_CHECK_ALL
+        IFNDEF V2_PRODUCTION            ; RAM efficiency: no decompiler in the release
         ld hl,(EMIT_PTR)
         ld (DECOMP_END_ADDR),hl
+        ENDIF
         ret
 
 ; ===========================================================================

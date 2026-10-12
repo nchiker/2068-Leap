@@ -242,9 +242,10 @@ def sa_package_same():
 
 @case("sa-no-room", "SAVE ALL when the image would pass the bytecode area (bytecode + segment 2 > ~3.9K): OUT OF MEMORY, nothing sent")
 def sa_no_room():
-    # ~2.4K of bytecode and ~6.8K of source, a(600) fills what is left of the main pool, b(1000) goes
-    # to segment 2: bytecode + segment 2 > V2_CODE_LIMIT - VM_CODE_BASE - the tail
-    prog = ["POKE 16384,%d" % (i % 200) for i in range(400)] + ["DIM a(600)", "DIM b(1000)"]
+    # ~2.4K of bytecode and ~6.8K of source, a(1000) fills what is left of the main pool, b(1000) goes
+    # to segment 2: bytecode + segment 2 > V2_CODE_LIMIT - VM_CODE_BASE - the tail.  (RAM efficiency:
+    # the pool is 814 bytes larger, so a(600) no longer filled it -- docs/v2/RAM_EFFICIENCY_RESULTS.md.)
+    prog = ["POKE 16384,%d" % (i % 200) for i in range(400)] + ["DIM a(1000)", "DIM b(1000)"]
     P.boot()
     P.put_store(prog)
     run()

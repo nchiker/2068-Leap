@@ -368,25 +368,24 @@ STRARR_DESC_WIDTH_OFF: equ 3      ; offset of the 1-byte element width
 STRARR_DESC_DATA_OFF:  equ 4      ; offset of the data (string)
 
 ; R10.7 Dynamic Data Phase 2 -- string arrays (DIM A$(n[,w])). Runtime
-; scratch, placed in the real free 32-byte gap between STRARR_PTR_TABLE's
-; own end ($B4D0+8*2=$B4E0) and STRTAB_BASE ($B500) -- confirmed free by
-; direct address-collision grep before picking this span (same discipline
-; as every other hand-placed cell in this file).
-VM_STRARR_INDEX_TMP: equ $B4E0  ; OP_STRARR_LOAD/STORE/DIM_STR: the
+; scratch (10 bytes). RAM efficiency: moved from $B4E0 to the dead span after
+; VM_FOR_STEP so that $B400-$B5FF could join the bytecode area (include/
+; v2_layout.inc); the offsets inside the group are unchanged.
+VM_STRARR_INDEX_TMP: equ $B6E4  ; OP_STRARR_LOAD/STORE/DIM_STR: the
                                    ; operand-baked array slot (1 byte)
-VM_STRARR_COUNT_TMP: equ $B4E1  ; OP_STRARR_LOAD/STORE: the operand-baked
+VM_STRARR_COUNT_TMP: equ $B6E5  ; OP_STRARR_LOAD/STORE: the operand-baked
                                    ; declared element count (2 bytes)
-                                   ; ($B4E3-$B4E4 deliberately left
+                                   ; ($B6E7-$B6E8 deliberately left
                                    ; unused here -- the element-index
                                    ; scratch is VM_ARR_ELEM_TMP, shared
                                    ; with the numeric array opcodes, see
                                    ; VM_ARR_VALIDATE_INDEX's own header)
-VM_STRARR_WIDTH_TMP: equ $B4E5  ; VM_STRARR_ADDR's own resolved per-
+VM_STRARR_WIDTH_TMP: equ $B6E9  ; VM_STRARR_ADDR's own resolved per-
                                    ; element width, read from the arena
                                    ; descriptor (1 byte) -- saved to memory
                                    ; because the immediately-following
                                    ; MATH_MULTIPLY16 call destroys A
-VM_STRARR_ADDR_TMP:  equ $B4E6  ; VM_STRARR_ADDR's own data-base address,
+VM_STRARR_ADDR_TMP:  equ $B6EA  ; VM_STRARR_ADDR's own data-base address,
                                    ; parked across MATH_MULTIPLY16 (which
                                    ; destroys AF/BC/DE); OP_STRARR_STORE
                                    ; also reuses this cell (its own use of
@@ -394,7 +393,7 @@ VM_STRARR_ADDR_TMP:  equ $B4E6  ; VM_STRARR_ADDR's own data-base address,
                                    ; then) to park the resolved destination
                                    ; address across the following
                                    ; VM_STR_ADDR call (2 bytes)
-VM_STRARR_VALUE_IDX_TMP: equ $B4E8 ; OP_STRARR_STORE only: the popped
+VM_STRARR_VALUE_IDX_TMP: equ $B6EC ; OP_STRARR_STORE only: the popped
                                    ; source string's own STRTAB index,
                                    ; saved across the second VM_POP (the
                                    ; array index) that follows it (1 byte)

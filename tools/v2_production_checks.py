@@ -72,7 +72,9 @@ def seg2(idx, want_seg2, end_after=None):
 case("seg2-numeric", ["dim a(3600)", "dim b(900)", "a(3599) = 7", "b(899) = 9", "b(0) = 3",
                       "x = b(899) + a(3599) + b(0)"], vals={0: 19}, extra=seg2(("n", 1), True, 0xE000 + 1803))
 case("seg2-main-first", ["dim a(100)", "a(99) = 5", "x = a(99)"], vals={0: 5}, extra=seg2(("n", 0), False, 0xE000))
-case("seg2-string", ["dim a(3600)", "dim s$(10,100)", "s$(9) = \"hello\"", "t$ = s$(9)", "n = len(t$)"],
+# RAM efficiency: the pool grew by 814 bytes, so a(3600) no longer leaves too little room for s$(10,100);
+# a(4000) (still in the main pool, whose limit is now 4443 elements) keeps the string array overflowing.
+case("seg2-string", ["dim a(4000)", "dim s$(10,100)", "s$(9) = \"hello\"", "t$ = s$(9)", "n = len(t$)"],
      vals={0: 5}, extra=seg2(("s", 0), True))
 case("seg2-exhausted", ["dim a(3600)", "dim b(900)", "dim c(900)"], ve=64)
 case("seg2-reset-on-rerun", ["dim a(3600)", "dim b(900)", "b(899) = 4", "x = b(899)"], vals={0: 4},
@@ -81,10 +83,31 @@ case("seg2-reset-on-rerun", ["dim a(3600)", "dim b(900)", "b(899) = 4", "x = b(8
 # 74 = two more string temps (2 x 32) and two more float temps (2 x 5) -- QUAL Q-02, temporaries are
 # never reused while referenced (817667f); 80 = SESS_GAP, room for the symbols that immediate statements
 # add to a session (owner decision 2). The bounds are the old ones moved by exactly that 154.
+# RAM efficiency (docs/v2/RAM_EFFICIENCY_RESULTS.md): the pool is 814 bytes larger (813 -> 1627 free,
+# measured); the bounds move up by exactly that.
 case("free-1", ["x = free(1)", "dim a(3600)", "dim b(900)", "y = free(1)", "z = free()", "w = free(0)"],
      vals={0: 2048, 1: 2048 - 1803},
-     extra=lambda v: (v(2) == v(3) and 900 - 154 < v(2) < 1100 - 154, f"free()={v(2)} free(0)={v(3)}"))
+     extra=lambda v: (v(2) == v(3) and 900 - 154 + 814 < v(2) < 1100 - 154 + 814, f"free()={v(2)} free(0)={v(3)}"))
 case("free-expr-arg", ["n = 1", "x = free(n)"], vals={1: 2048})
+# RAM efficiency (docs/v2/RAM_EFFICIENCY_RESULTS.md): the pool runs straight into the bytecode area and
+# the compile zone moved to the fixed V2 area. pool-814-program: 38 units of procedures, loops, strings and
+# IFs (6,472 source bytes) compile and run; the v2.0.1 release ran out of memory (error 64) above 34.
+# Its run-time tables sit directly below the code they run, and the compile stack started there too.
+_unit = ["PROC p{k}(n)", "  s{k} = 0", "  FOR i = 1 TO n", "    s{k} = s{k} + i * 2", "  NEXT i",
+         "  t{k}$ = \"unit \" + STR$(s{k})", "ENDP", "CALL p{k}(3)", "IF s{k} > 5 THEN", "  c = c + 1", "ENDIF"]
+case("pool-814-program", ["c = 0"] + [l.format(k=k) for k in range(38) for l in _unit] + ["q = c"],
+     vals={0: 38})
+# pool-top-array: the largest numeric array the main pool holds (4,443 elements, was 4,036); its last
+# element ends a few bytes below the run-time tables, which end at the first bytecode byte.
+case("pool-top-array", ["dim a(4443)", "a(4442) = 5", "a(0) = 2", "x = a(4442) + a(0)"], vals={0: 7},
+     extra=seg2(("n", 0), False, 0xE000))
+# the compile zone (chunk buffer, LEX_LINE, identifier buffer) lies outside the pool and the bytecode
+case("zone-outside-pool", ["x = 1"], vals={0: 1},
+     extra=lambda: (HSYM["V2_SOURCE_END"] == HSYM["VM_CODE_BASE"]
+                    and HSYM["V2_ZONE_BASE"] >= HSYM["V2_CODE_LIMIT"]
+                    and HSYM["CHUNK_BUF"] == HSYM["V2_ZONE_BASE"],
+                    f"pool end {HSYM['V2_SOURCE_END']:04X} code {HSYM['VM_CODE_BASE']:04X}-"
+                    f"{HSYM['V2_CODE_LIMIT'] - 1:04X} zone {HSYM['V2_ZONE_BASE']:04X}"))
 # 8. capacity: 251 numeric variables ok, 252nd a clean compile error. RC: the cap is 255 minus the float
 # temporaries (SYM_CAPS), which QUAL Q-02 raised from 2 to 4 (817667f) -- it was 253.
 case("251-vars", [f"w{i} = {i % 100}" for i in range(1, 252)])

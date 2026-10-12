@@ -302,7 +302,7 @@ All figures were measured on the release with an otherwise empty program, unless
 | characters in an `INPUT` of a number | 20 |
 | characters in a tape name | 10 |
 | number names (different number variables) | 251 |
-| string names | 251; but each costs memory, and about 155 one-character strings fit in a program that does nothing else |
+| string names | 251; but each costs memory, and about 170 one-character strings fit in a program that does nothing else |
 | array names | 255 |
 | size of one numeric array | up to 16383 in the program, but memory allows 4063 on an empty program |
 | size of one string array | 508 elements of 15 characters, or 254 of 31 (empty program) |
@@ -316,11 +316,11 @@ All figures were measured on the release with an otherwise empty program, unless
 | nested `FOR` loops | 141 |
 | operands nested in `1+(1+(1+(...` | about 40 |
 | `EXIT FOR` statements in one loop | at least 261 |
-| depth of recursion of a one-parameter procedure | 671 |
-| program text | about 8.1 KB: the pool is 8397 bytes, shared with names, variables and arrays; 749 lines of `PRINT n` is the most that runs (750 lines fill the pool: `OUT OF MEMORY` at `RUN`) |
-| free main memory on an empty machine | 8153 bytes (`FREE()`); 2048 in the overflow segment (`FREE(1)`) |
+| depth of recursion of a one-parameter procedure | 739 |
+| program text | about 8.9 KB: the pool is 9211 bytes, shared with names, variables and arrays; 896 lines of `PRINT n` is the most that runs (897 lines fill the pool: `OUT OF MEMORY` at `RUN`) |
+| free main memory on an empty machine | 8967 bytes (`FREE()`); 2048 in the overflow segment (`FREE(1)`) |
 | bytes of compiled program (the code area, separate from the pool) | 4011; 1000 lines of `x = 1` fit, 1010 do not (`OUT OF MEMORY` while compiling) |
-| procedure calls and `FOR` loops active at once | 12 bytes of the free gap each (671 deep recursion with an empty program) |
+| procedure calls and `FOR` loops active at once | 12 bytes of the free gap each (739 deep recursion with an empty program) |
 | session variables created by immediate statements | about ten short names |
 | sprite slots | 8 |
 | sprite size | 1 to 4 by 1 to 4 character cells |
@@ -349,15 +349,14 @@ For `PEEK`, `POKE`, `USR`, `IN` and `OUT`. Addresses are decimal with hexadecima
 | **23296 - 24575** (`$5B00`-`$5FFF`) | **1280** | **not used by V2 -- free for your own data and machine code** |
 | 24576 - 30719 (`$6000`-`$77FF`) | 6144 | the second display file: used by `MODE 1` (extended-colour mode) as 8 x 1 colour attributes, one byte for every eight pixels of every scan line; free otherwise |
 | **30720 - 32767** (`$7800`-`$7FFF`) | **2048** | **not used by V2 -- free** |
-| 32768 - 33877 (`$8000`-`$8454`) | 1109 | system variables (editor, tape, calculator, graphics): do not touch |
-| 33878 - 41766 (`$8456`-`$A326`) | about 8.4 KB | the **main memory pool**: program text, variables, arrays (`FREE()`) |
-| 41767 - 42068 (`$A327`-`$A454`) | 302 | compiler workspace |
-| 42069 - 46079 (`$A455`-`$B3FF`) | 4011 | the compiled program |
-| 46080 - 49151 (`$B400`-`$BFFF`) | 3072 | the system's fixed tables and registers |
+| 32768 - 33369 (`$8000`-`$8259`) | 602 | system variables (editor, tape, calculator, graphics): do not touch |
+| 33370 - 42580 (`$825A`-`$A654`) | 9211 | the **main memory pool**: program text, variables, arrays (`FREE()`) |
+| 42581 - 46591 (`$A655`-`$B5FF`) | 4011 | the compiled program |
+| 46592 - 49151 (`$B600`-`$BFFF`) | 2560 | the system's fixed tables and registers, and the compiler's workspace |
 | 49152 - 57343 (`$C000`-`$DFFF`) | 8 KB | RAM under the EXROM: while a program runs the EXROM is switched in and this RAM is **not visible**; the FILL work area lives here; do not use |
 | 57344 - 59391 (`$E000`-`$E7FF`) | 2048 | the overflow segment: the Array Store and arrays that did not fit |
 | 59392 - 61695 (`$E800`-`$F0FF`) | 2304 | sprite images and saved backgrounds (the sprite package) |
-| 61696 - 61823 (`$F100`-`$F17F`) | 128 | label table (reserved by the system): do not touch |
+| 61696 - 61823 (`$F100`-`$F17F`) | 128 | reserved by the system (unused by this release): do not touch |
 | **61824 - 61991** (`$F180`-`$F227`) | **168** | **the user-defined characters**: 8 bytes for each of the codes 144 to 164; yours to `POKE` (see [User-defined characters](04_concepts.md#user-defined-characters)) |
 | 61992 - 62419 (`$F228`-`$F3D2`) | 428 | the editor's line buffer, the listing buffer, string and function workspace: do not touch |
 | 62420 - 62463 (`$F3D3`-`$F3FF`) | 45 | unused |
