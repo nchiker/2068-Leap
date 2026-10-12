@@ -17,6 +17,7 @@ called from a deeper stack position than the earlier, known-working
 instruction, rather than trusting another isolated simulation.
 """
 import re
+import json
 
 SYSVARS = {
     'STORAGE_BLOCK_COUNT': 0x60DC,
@@ -213,9 +214,9 @@ class Z80Sim:
     def __init__(self):
         self.regs = {'A':0,'B':0,'C':0,'D':0,'E':0,'H':0,'L':0,
                      'IX':0,'IY':0,'SP':0xFF00}
-        self.flags = {'Z':0,'C':0,'S':0,'PV':0}
+        self.flags = {'Z':0,'C':0,'S':0,'PV':0,'H':0,'N':0}
         self.alt_a = 0             # A' -- see 'ex af,af'' handler below
-        self.alt_flags = {'Z':0,'C':0,'S':0,'PV':0}
+        self.alt_flags = {'Z':0,'C':0,'S':0,'PV':0,'H':0,'N':0}
         self.mem = bytearray(65536)
         self.stack_list = []  # logical push/pop stack -- see push/pop
         self.tuple_regs16 = {}  # overlay for code-address markers held
@@ -284,24 +285,84 @@ class Z80Sim:
         self.regs['SP'] = (self.regs['SP'] + 2) & 0xFFFF
         return self.stack_list.pop()
 
-    def set_flags_from(self, val8):
-        v = val8 & 0xFF
-        self.flags['Z'] = 1 if v == 0 else 0
-        self.flags['S'] = 1 if v & 0x80 else 0
+    @staticmethod
+    def even_parity(value):
+        return 1 if (value & 0xFF).bit_count() % 2 == 0 else 0
+
+    def set_szp(self, value):
+        value &= 0xFF
+        self.flags['S'] = (value >> 7) & 1
+        self.flags['Z'] = int(value == 0)
+        self.flags['PV'] = self.even_parity(value)
+
+    def add8_flags(self, left, right, carry=0):
+        total = left + right + carry
+        result = total & 0xFF
+        self.set_szp(result)
+        self.flags['H'] = int(((left & 0xF) + (right & 0xF) + carry) > 0xF)
+        self.flags['PV'] = int((~(left ^ right) & (left ^ result) & 0x80) != 0)
+        self.flags['N'] = 0
+        self.flags['C'] = int(total > 0xFF)
+        return result
+
+    def sub8_flags(self, left, right, carry=0):
+        result_full = left - right - carry
+        result = result_full & 0xFF
+        self.set_szp(result)
+        self.flags['H'] = int((left & 0xF) < ((right & 0xF) + carry))
+        self.flags['PV'] = int(((left ^ right) & (left ^ result) & 0x80) != 0)
+        self.flags['N'] = 1
+        self.flags['C'] = int(result_full < 0)
+        return result
 
 class Program:
     def __init__(self):
         self.lines = []  # (global_scope, local_label_or_None, mnemonic, operand)
         self.label_index = {}  # (scope_or_None, name) -> line index
         self.entry_points = {}  # global_name -> line index
+        self.source_map = []    # source file/line and nearest label per instruction row
+        self.symbols = {}       # optional SjASMPlus symbol name -> address
+
+    def _append_line(self, row, source_path, source_line, context_scope, context_label,
+                     source_text):
+        self.lines.append(row)
+        self.source_map.append({
+            "path": str(source_path),
+            "line": source_line,
+            "text": source_text.strip(),
+            "scope": context_scope,
+            "label": context_label,
+            "assembled_address": None,
+        })
 
     def load_file(self, path, only_labels=None):
         current_scope = None
+        context_label = None
+        source_override = None
         with open(path) as f:
-            for raw in f:
+            for source_line, raw in enumerate(f, 1):
+                source_text = raw.rstrip("\r\n")
                 line = raw.strip()
                 if not line:
                     continue
+                marker = re.match(r'^;\s*z80sim-source:\s*(\{.*\})\s*$', line)
+                if marker:
+                    try:
+                        source_override = json.loads(marker.group(1))
+                    except json.JSONDecodeError as exc:
+                        raise ValueError(f"invalid z80sim source marker on {path}:{source_line}") from exc
+                    if (not isinstance(source_override, dict) or
+                            not isinstance(source_override.get("path"), str) or
+                            not isinstance(source_override.get("line"), int) or
+                            not isinstance(source_override.get("text"), str)):
+                        raise ValueError(f"incomplete z80sim source marker on {path}:{source_line}")
+                    continue
+                row_source_path, row_source_line, row_source_text = path, source_line, source_text
+                if source_override is not None:
+                    row_source_path = source_override['path']
+                    row_source_line = source_override['line']
+                    row_source_text = source_override['text']
+                    source_override = None
                 # A trailing inline comment on the label's own line (e.g.
                 # "DECOMP_BINARY_OP:    ; input: HL = ...") previously fell
                 # through this exact-match regex entirely -- the label
@@ -313,25 +374,126 @@ class Program:
                 if m:
                     name = m.group(1)
                     current_scope = name
+                    context_label = name
                     self.entry_points[name] = len(self.lines)
                     self.label_index[(None, name)] = len(self.lines)
-                    self.lines.append((current_scope, name, None, None))
+                    self._append_line((current_scope, name, None, None), row_source_path,
+                                      row_source_line, current_scope, context_label, row_source_text)
                     continue
                 m = re.match(r'^(\.[A-Za-z_][A-Za-z0-9_]*):(.*)$', line)
                 if m:
                     name = m.group(1)
+                    context_label = name
                     self.label_index[(current_scope, name)] = len(self.lines)
                     rest = m.group(2).strip()
                     if rest:
                         mn, op = self._split_instr(rest)
-                        self.lines.append((current_scope, name, mn, op))
+                        self._append_line((current_scope, name, mn, op), row_source_path,
+                                          row_source_line, current_scope, context_label, row_source_text)
                     else:
-                        self.lines.append((current_scope, name, None, None))
+                        self._append_line((current_scope, name, None, None), row_source_path,
+                                          row_source_line, current_scope, context_label, row_source_text)
                     continue
                 mn, op = self._split_instr(line)
                 if mn is None:
                     continue
-                self.lines.append((current_scope, None, mn, op))
+                self._append_line((current_scope, None, mn, op), row_source_path,
+                                  row_source_line, current_scope, context_label, row_source_text)
+
+    def load_symbols(self, path):
+        """Load SjASMPlus `NAME: EQU 0x...` symbols for trace annotation."""
+        symbol_re = re.compile(
+            r'^\s*([A-Za-z_][A-Za-z0-9_.]*)\s*:\s*EQU\s+'
+            r'(0[xX][0-9A-Fa-f]+|\$[0-9A-Fa-f]+|\d+)\s*$')
+        loaded = 0
+        with open(path, encoding='utf-8') as symbols_file:
+            for raw in symbols_file:
+                match = symbol_re.match(raw)
+                if not match:
+                    continue
+                name, token = match.groups()
+                if token.startswith('$'):
+                    address = int(token[1:], 16)
+                elif token.lower().startswith('0x'):
+                    address = int(token, 16)
+                else:
+                    address = int(token, 10)
+                self.symbols[name] = address
+                loaded += 1
+        if loaded == 0:
+            raise ValueError(f"no SjASMPlus EQU symbols found in {path!r}")
+        matched = sum(1 for scope, name in self.label_index
+                      if self.address_for(scope, name) is not None)
+        if matched == 0:
+            raise ValueError(f"symbol file {path!r} has no labels matching the loaded source")
+        return {"loaded": loaded, "matched_labels": matched}
+
+    @staticmethod
+    def _normalize_asm_text(text):
+        return " ".join(text.split(";", 1)[0].lower().split())
+
+    def load_listing(self, path):
+        """Map exact source file/line text to addresses from a SjASMPlus .lst."""
+        entries = {}
+        current_file = None
+        file_stack = []
+        file_marker = re.compile(r'^\s*#\s*file opened:\s*(.+?)\s*$')
+        close_marker = re.compile(r'^\s*#\s*file closed:\s*.+?\s*$')
+        with open(path, encoding='utf-8', errors='replace') as listing_file:
+            for raw in listing_file:
+                if close_marker.match(raw):
+                    current_file = file_stack.pop() if file_stack else None
+                    continue
+                marker = file_marker.match(raw)
+                if marker:
+                    file_stack.append(current_file)
+                    current_file = marker.group(1).strip().strip('"')
+                    continue
+                parts = raw.split(None, 2)
+                # sjasmplus appends one '+' per include nesting level to the line
+                # number ("59+ 0CDB ..." for a line of an included file).
+                line_field = parts[0].rstrip('+') if parts else ''
+                if current_file is None or len(parts) != 3 or not line_field.isdigit():
+                    continue
+                if not re.fullmatch(r'[0-9A-Fa-f]{4}', parts[1]):
+                    continue
+                tokens = parts[2].split()
+                opcode_bytes = []
+                while tokens and re.fullmatch(r'[0-9A-Fa-f]{2}', tokens[0]):
+                    opcode_bytes.append(tokens.pop(0))
+                if not opcode_bytes:
+                    continue
+                while tokens and tokens[0] == '>':
+                    tokens.pop(0)
+                listed_text = ' '.join(tokens)
+                key = (current_file.replace('\\', '/').rsplit('/', 1)[-1].lower(),
+                       int(line_field))
+                entries.setdefault(key, []).append({
+                    "address": int(parts[1], 16),
+                    "text": self._normalize_asm_text(listed_text),
+                })
+
+        mapped = 0
+        ambiguous = 0
+        for source in self.source_map:
+            basename = source['path'].replace('\\', '/').rsplit('/', 1)[-1].lower()
+            candidates = entries.get((basename, source['line']), [])
+            expected = self._normalize_asm_text(source['text'])
+            addresses = {item['address'] for item in candidates if item['text'] == expected}
+            if len(addresses) == 1:
+                source['assembled_address'] = addresses.pop()
+                mapped += 1
+            elif len(addresses) > 1:
+                ambiguous += 1
+        if mapped == 0:
+            raise ValueError(f"listing {path!r} has no exact source-line matches for loaded files")
+        return {"mapped_lines": mapped, "ambiguous_lines": ambiguous}
+
+    def address_for(self, scope, name):
+        if name is None:
+            return None
+        key = f"{scope}{name}" if name.startswith('.') else name
+        return self.symbols.get(key)
 
     def _split_instr(self, text):
         text = text.split(';')[0].strip()
@@ -408,7 +570,10 @@ class Interp:
         self.sim = sim
         self.call_stack = []  # for trace/debug only
         self.trace_log = []
+        self.trace_metadata = []  # source and optional nearest-symbol annotation
         self.max_trace = 5000
+        self.trace_dropped = 0
+        self.step_count = 0
         self.scripts = {}       # routine name -> list of (regs, flags)
         self.script_pos = {}    # routine name -> next index to consume
 
@@ -582,24 +747,35 @@ class Interp:
     def run(self, start_scope, start_label, max_steps=200000):
         idx = self.prog.resolve_label(None, start_scope) if start_label is None \
               else self.prog.resolve_label(start_scope, start_label)
-        steps = 0
+        self.step_count = 0
         while True:
-            steps += 1
-            if steps > max_steps:
+            scope, label, mn, op = self.prog.lines[idx]
+            if mn is None:
+                idx += 1
+                continue
+            if self.step_count >= max_steps:
                 raise Halt(f"exceeded max_steps ({max_steps}) -- likely infinite loop; "
                             f"last ~20 trace entries: {self.trace_log[-20:]}")
-            scope, label, mn, op = self.prog.lines[idx]
+            self.step_count += 1
             self.current_idx = idx        # needed by 'call' to compute its
                                           # own return address — real
                                           # (non-stub, non-scripted) CALLs
                                           # were never exercised through
                                           # this simulator before, so this
                                           # was never set at all
-            if mn is None:
-                idx += 1
-                continue
             if len(self.trace_log) < self.max_trace:
                 self.trace_log.append((scope, label, mn, op, dict(self.sim.regs), dict(self.sim.flags)))
+                source = self.prog.source_map[idx] if idx < len(self.prog.source_map) else {}
+                context_scope = source.get("scope", scope)
+                context_label = source.get("label", label)
+                self.trace_metadata.append({
+                    "source": {"path": source.get("path"), "line": source.get("line")},
+                    "nearest_label": context_label,
+                    "label_address": self.prog.address_for(context_scope, context_label),
+                    "assembled_address": source.get("assembled_address"),
+                })
+            else:
+                self.trace_dropped += 1
             result = self.exec_instr(scope, mn, op)
             if result == 'HALT':
                 return
@@ -675,13 +851,21 @@ class Interp:
                 self.set_reg16(r, (self.get_reg16(r)+1) & 0xFFFF)
             elif r == '(HL)':
                 addr = self.get_reg16('HL')
-                v = (s.rb(addr)+1) & 0xFF
+                old = s.rb(addr)
+                v = (old+1) & 0xFF
                 s.wb(addr, v)
-                s.set_flags_from(v)
+                s.set_szp(v)
+                s.flags['H'] = int((old & 0x0F) == 0x0F)
+                s.flags['PV'] = int(old == 0x7F)
+                s.flags['N'] = 0
             else:
-                v = (s.regs[r]+1) & 0xFF
+                old = s.regs[r]
+                v = (old+1) & 0xFF
                 s.regs[r] = v
-                s.set_flags_from(v)
+                s.set_szp(v)
+                s.flags['H'] = int((old & 0x0F) == 0x0F)
+                s.flags['PV'] = int(old == 0x7F)
+                s.flags['N'] = 0
             return None
         if mn == 'dec':
             r = parts[0].strip()
@@ -689,13 +873,21 @@ class Interp:
                 self.set_reg16(r, (self.get_reg16(r)-1) & 0xFFFF)
             elif r == '(HL)':
                 addr = self.get_reg16('HL')
-                v = (s.rb(addr)-1) & 0xFF
+                old = s.rb(addr)
+                v = (old-1) & 0xFF
                 s.wb(addr, v)
-                s.set_flags_from(v)
+                s.set_szp(v)
+                s.flags['H'] = int((old & 0x0F) == 0)
+                s.flags['PV'] = int(old == 0x80)
+                s.flags['N'] = 1
             else:
-                v = (s.regs[r]-1) & 0xFF
+                old = s.regs[r]
+                v = (old-1) & 0xFF
                 s.regs[r] = v
-                s.set_flags_from(v)
+                s.set_szp(v)
+                s.flags['H'] = int((old & 0x0F) == 0)
+                s.flags['PV'] = int(old == 0x80)
+                s.flags['N'] = 1
             return None
 
         if mn == 'add':
@@ -705,8 +897,11 @@ class Interp:
             if dst == 'HL':
                 a16 = self.get_reg16('HL')
                 b16 = self.get_reg16(src) if src in ('BC','DE','HL','SP') else parse_val(src, s, scope)
-                res = (a16 + b16) & 0xFFFF
+                total = a16 + b16
+                res = total & 0xFFFF
+                s.flags['H'] = int(((a16 & 0xFFF) + (b16 & 0xFFF)) > 0xFFF)
                 s.flags['C'] = 1 if (a16+b16) > 0xFFFF else 0
+                s.flags['N'] = 0
                 self.set_reg16('HL', res)
             elif dst in ('IX', 'IY'):
                 # "add ix,bc" style table-pointer advance -- IX/IY must
@@ -720,30 +915,32 @@ class Interp:
                         f"{dst} holds a code-address marker, not a real "
                         f"address -- seed it with an actual integer first")
                 b16 = self.get_reg16(src) if src in ('BC','DE','HL','SP') else parse_val(src, s, scope)
-                res = (a16 + b16) & 0xFFFF
+                total = a16 + b16
+                res = total & 0xFFFF
+                s.flags['H'] = int(((a16 & 0xFFF) + (b16 & 0xFFF)) > 0xFFF)
                 s.flags['C'] = 1 if (a16+b16) > 0xFFFF else 0
+                s.flags['N'] = 0
                 self.set_reg16(dst, res)
             elif dst == 'a' or dst == 'A':
                 val = self.resolve_operand_value(src, scope)
-                res = s.regs['A'] + val
-                s.flags['C'] = 1 if res > 0xFF else 0
-                s.regs['A'] = res & 0xFF
-                s.set_flags_from(s.regs['A'])
+                s.regs['A'] = s.add8_flags(s.regs['A'], val)
+            else:
+                raise ValueError(f"unhandled add destination: {dst!r}")
             return None
         if mn == 'adc':
             dst, src = parts[0].strip(), parts[1].strip()
+            if dst not in ('A', 'a'):
+                raise ValueError(f"unhandled adc destination: {dst!r}")
             val = self.resolve_operand_value(src, scope)
-            res = s.regs['A'] + val + s.flags['C']
-            s.flags['C'] = 1 if res > 0xFF else 0
-            s.regs['A'] = res & 0xFF
-            s.set_flags_from(s.regs['A'])
+            s.regs['A'] = s.add8_flags(s.regs['A'], val, s.flags['C'])
             return None
         if mn == 'sbc':
             dst, src = parts[0].strip(), parts[1].strip()
             if dst.lower() == 'hl':
+                carry_in = s.flags['C']
                 b16 = self.get_reg16(src)
                 a16 = self.get_reg16('HL')
-                res = a16 - b16 - s.flags['C']
+                res = a16 - b16 - carry_in
                 s.flags['C'] = 1 if res < 0 else 0
                 self.set_reg16('HL', res & 0xFFFF)
                 # BUG FIX: the 16-bit sign flag must come from bit 15
@@ -763,65 +960,65 @@ class Interp:
                 res16 = res & 0xFFFF
                 s.flags['S'] = 1 if res16 & 0x8000 else 0
                 s.flags['Z'] = 1 if res16 == 0 else 0
+                s.flags['H'] = int((a16 & 0x0FFF) < ((b16 & 0x0FFF) + carry_in))
+                s.flags['PV'] = int(((a16 ^ b16) & (a16 ^ res16) & 0x8000) != 0)
+                s.flags['N'] = 1
             else:
+                if dst not in ('A', 'a'):
+                    raise ValueError(f"unhandled sbc destination: {dst!r}")
                 val = self.resolve_operand_value(src, scope)
-                res = s.regs['A'] - val - s.flags['C']
-                s.flags['C'] = 1 if res < 0 else 0
-                s.regs['A'] = res & 0xFF
-                s.set_flags_from(s.regs['A'])
+                s.regs['A'] = s.sub8_flags(s.regs['A'], val, s.flags['C'])
             return None
         if mn == 'sub':
             src = parts[0].strip()
             val = self.resolve_operand_value(src, scope)
-            res = s.regs['A'] - val
-            s.flags['C'] = 1 if res < 0 else 0
-            s.regs['A'] = res & 0xFF
-            s.set_flags_from(s.regs['A'])
+            s.regs['A'] = s.sub8_flags(s.regs['A'], val)
             return None
         if mn == 'and':
             src = parts[0].strip()
             val = self.resolve_operand_value(src, scope)
             s.regs['A'] &= val
             s.flags['C'] = 0
-            s.set_flags_from(s.regs['A'])
+            s.set_szp(s.regs['A'])
+            s.flags['H'] = 1
+            s.flags['N'] = 0
             return None
         if mn == 'or':
             src = parts[0].strip()
             val = self.resolve_operand_value(src, scope)
             s.regs['A'] |= val
             s.flags['C'] = 0
-            s.set_flags_from(s.regs['A'])
+            s.set_szp(s.regs['A'])
+            s.flags['H'] = 0
+            s.flags['N'] = 0
             return None
         if mn == 'xor':
             src = parts[0].strip()
             val = self.resolve_operand_value(src, scope)
             s.regs['A'] ^= val
             s.flags['C'] = 0
-            s.set_flags_from(s.regs['A'])
+            s.set_szp(s.regs['A'])
+            s.flags['H'] = 0
+            s.flags['N'] = 0
             return None
         if mn == 'cp':
             src = parts[0].strip()
             val = self.resolve_operand_value(src, scope)
-            res = s.regs['A'] - val
-            s.flags['C'] = 1 if res < 0 else 0
-            s.set_flags_from(res & 0xFF)
+            s.sub8_flags(s.regs['A'], val)
             return None
         if mn == 'bit':
-            # BIT n,r -- tests bit n of r, sets Z=1 if that bit is
-            # clear (0 if set). Doesn't touch C. S set only for the
-            # well-known "BIT 7,r" sign-check idiom (S = the tested
-            # bit itself in that specific case) -- this project's
-            # real code uses exactly that idiom (GFX_CIRCLE's own
-            # 16-bit decision-variable sign check via BIT 7,H) and
-            # nothing else, so this is the only case that needs to be
-            # right; not a full BIT implementation for every n.
+            # Documented BIT flags: Z and PV are the inverse of the
+            # tested bit; H=1, N=0, and C is preserved. S reflects the
+            # tested bit only for BIT 7.
             bit_n = int(parts[0].strip())
             reg = parts[1].strip()
             val = self.resolve_operand_value(reg, scope)
             tested = (val >> bit_n) & 1
             s.flags['Z'] = 1 if tested == 0 else 0
-            if bit_n == 7:
-                s.flags['S'] = tested
+            s.flags['S'] = tested if bit_n == 7 else 0
+            s.flags['PV'] = s.flags['Z']
+            s.flags['H'] = 1
+            s.flags['N'] = 0
             return None
 
         if mn in ('rrca',):
@@ -829,38 +1026,44 @@ class Interp:
             bit0 = a & 1
             s.regs['A'] = ((a >> 1) | (bit0 << 7)) & 0xFF
             s.flags['C'] = bit0
+            s.flags['H'] = s.flags['N'] = 0
             return None
         if mn in ('rlca',):
             a = s.regs['A']
             bit7 = (a >> 7) & 1
             s.regs['A'] = ((a << 1) | bit7) & 0xFF
             s.flags['C'] = bit7
+            s.flags['H'] = s.flags['N'] = 0
             return None
         if mn == 'rra':
             a = s.regs['A']
             oldc = s.flags['C']
             s.flags['C'] = a & 1
             s.regs['A'] = ((a >> 1) | (oldc << 7)) & 0xFF
+            s.flags['H'] = s.flags['N'] = 0
             return None
         if mn == 'rla':
             a = s.regs['A']
             oldc = s.flags['C']
             s.flags['C'] = (a >> 7) & 1
             s.regs['A'] = ((a << 1) | oldc) & 0xFF
+            s.flags['H'] = s.flags['N'] = 0
             return None
         if mn == 'sla':
             r = parts[0].strip()
             v = s.regs[r]
             s.flags['C'] = (v >> 7) & 1
             s.regs[r] = (v << 1) & 0xFF
-            s.set_flags_from(s.regs[r])
+            s.set_szp(s.regs[r])
+            s.flags['H'] = s.flags['N'] = 0
             return None
         if mn == 'srl':
             r = parts[0].strip()
             v = s.regs[r]
             s.flags['C'] = v & 1
             s.regs[r] = (v >> 1) & 0xFF
-            s.set_flags_from(s.regs[r])
+            s.set_szp(s.regs[r])
+            s.flags['H'] = s.flags['N'] = 0
             return None
         if mn == 'rr':
             r = parts[0].strip()
@@ -868,7 +1071,8 @@ class Interp:
             oldc = s.flags['C']
             s.flags['C'] = v & 1
             s.regs[r] = ((v >> 1) | (oldc << 7)) & 0xFF
-            s.set_flags_from(s.regs[r])
+            s.set_szp(s.regs[r])
+            s.flags['H'] = s.flags['N'] = 0
             return None
         if mn == 'rl':
             r = parts[0].strip()
@@ -876,7 +1080,8 @@ class Interp:
             oldc = s.flags['C']
             s.flags['C'] = (v >> 7) & 1
             s.regs[r] = ((v << 1) | oldc) & 0xFF
-            s.set_flags_from(s.regs[r])
+            s.set_szp(s.regs[r])
+            s.flags['H'] = s.flags['N'] = 0
             return None
 
         if mn == 'ex':
@@ -897,19 +1102,28 @@ class Interp:
 
         if mn == 'ldir':
             hl = self.get_reg16('HL'); de = self.get_reg16('DE'); bc = self.get_reg16('BC')
-            while bc > 0:
+            # LDIR with BC=0 performs 65,536 transfers before BC wraps
+            # back to zero; model its repeated-instruction effect.
+            while True:
                 s.wb(de, s.rb(hl))
                 hl = (hl+1)&0xFFFF; de=(de+1)&0xFFFF; bc=(bc-1)&0xFFFF
+                if bc == 0:
+                    break
             self.set_reg16('HL', hl); self.set_reg16('DE', de); self.set_reg16('BC', bc)
+            s.flags['H'] = s.flags['N'] = 0
+            s.flags['PV'] = int(bc != 0)
             return None
 
         if mn == 'scf':
             s.flags['C'] = 1
+            s.flags['H'] = s.flags['N'] = 0
             return None
 
         if mn in ('jr','jp'):
             if ',' in op and not op.strip().startswith('('):
                 cond, target = [x.strip() for x in op.split(',', 1)]
+                if mn == 'jr' and cond.lower() not in ('z', 'nz', 'c', 'nc'):
+                    raise ValueError(f"unsupported JR condition {cond!r}")
                 take = self.check_cond(cond)
                 if not take:
                     return None
@@ -1017,6 +1231,8 @@ class Interp:
         if c == 'nc': return s.flags['C'] == 0
         if c == 'm': return s.flags['S'] == 1
         if c == 'p': return s.flags['S'] == 0
+        if c == 'pe': return s.flags['PV'] == 1
+        if c == 'po': return s.flags['PV'] == 0
         raise ValueError(f"unknown condition {cond}")
 
     def flags_byte(self):
@@ -1024,12 +1240,18 @@ class Interp:
         b = 0
         if s.flags['S']: b |= 0x80
         if s.flags['Z']: b |= 0x40
+        if s.flags['H']: b |= 0x10
+        if s.flags['PV']: b |= 0x04
+        if s.flags['N']: b |= 0x02
         if s.flags['C']: b |= 0x01
         return b
     def set_flags_byte(self, b):
         s = self.sim
         s.flags['S'] = 1 if b & 0x80 else 0
         s.flags['Z'] = 1 if b & 0x40 else 0
+        s.flags['H'] = 1 if b & 0x10 else 0
+        s.flags['PV'] = 1 if b & 0x04 else 0
+        s.flags['N'] = 1 if b & 0x02 else 0
         s.flags['C'] = 1 if b & 0x01 else 0
 
     def jump_target(self, target, scope, mn):

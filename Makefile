@@ -37,6 +37,8 @@ check: build
 	python3 tools/z80sim/test_calc_dispatcher.py
 	python3 tools/z80sim/test_sprite_driver.py
 	python3 tools/z80sim/test_sprite_basic_driver.py
+	# z80sim flag semantics + snapshot/replay (run in-directory: they import sim/snapshot as siblings)
+	cd tools/z80sim && python3 -m unittest test_flags test_snapshot
 	tools/build_smoke_roms.sh
 	# Assemble-only guard for the non-production legacy/component-test
 	# fixture (basic/basic.asm + rom/exrom_build.asm, see docs/v2/

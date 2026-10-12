@@ -6,6 +6,12 @@ loader.
 
 Usage:
     python3 extract_routine.py <source.asm> <GLOBAL_LABEL> [<END_LABEL>] > out.txt
+    python3 extract_routine.py <source.asm> <GLOBAL_LABEL> [<END_LABEL>] \
+        --with-locations > out.asm
+
+--with-locations inserts assembler-comment metadata before copied lines.
+Program.load_file consumes it to preserve original file/line locations for
+z80sim traces and SjASMPlus listing correlation; assemblers ignore it.
 
 If END_LABEL is omitted, extraction stops at the next line matching
 '^[A-Za-z_][A-Za-z0-9_]*:' (i.e. the next global label) or EOF.
@@ -22,12 +28,13 @@ Program.load_file docstring-equivalent comments for the mechanics.
 """
 import sys
 import re
+import json
 
-def extract(path, start_label, end_label=None):
+def extract(path, start_label, end_label=None, with_locations=False):
     lines = []
     capturing = False
     with open(path) as f:
-        for raw in f:
+        for source_line, raw in enumerate(f, 1):
             stripped = raw.rstrip('\n')
             if not capturing:
                 if re.match(rf'^{re.escape(start_label)}:', stripped):
@@ -48,6 +55,13 @@ def extract(path, start_label, end_label=None):
                 continue
             if stripped.strip().startswith(';'):
                 continue
+            if with_locations and stripped.strip():
+                location = json.dumps({
+                    "path": str(path),
+                    "line": source_line,
+                    "text": text,
+                }, separators=(',', ':'))
+                lines.append(f"; z80sim-source: {location}")
             lines.append(stripped)
     return lines
 
@@ -55,11 +69,14 @@ def raw_first_line(label):
     return f'{label}:'
 
 if __name__ == '__main__':
-    if len(sys.argv) < 3:
+    args = sys.argv[1:]
+    with_locations = '--with-locations' in args
+    args = [arg for arg in args if arg != '--with-locations']
+    if len(args) < 2:
         print(__doc__)
         sys.exit(1)
-    src = sys.argv[1]
-    start = sys.argv[2]
-    end = sys.argv[3] if len(sys.argv) > 3 else None
-    for line in extract(src, start, end):
+    src = args[0]
+    start = args[1]
+    end = args[2] if len(args) > 2 else None
+    for line in extract(src, start, end, with_locations=with_locations):
         print(line)
