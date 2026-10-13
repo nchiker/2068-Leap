@@ -1,6 +1,6 @@
 # 2068-Leap (V1 — legacy)
 
-> **This is the archived V1 version of 2068-Leap (Release 1 Beta).** V1 is superseded by **2068-Leap V2**, the current project: see the repository's default branch [`v2-development`](https://github.com/nchiker/2068-Leap/tree/v2-development), the [V2 release](https://github.com/nchiker/2068-Leap/releases/tag/v2.0.1-emu.1) and the [V2 user manual](https://github.com/nchiker/2068-Leap/blob/v2-development/docs/v2/manual/01_introduction.md). The browser demo link below now runs V2. V1 downloads: [Release 1 Beta](https://github.com/nchiker/2068-Leap/releases/tag/v1.0.0-beta.1).
+> **This is the archived V1 version of 2068-Leap (Release 1 Beta).** V1 is superseded by **2068-Leap V2**, the current project: see the repository's default branch [`v2-development`](https://github.com/nchiker/2068-Leap/tree/v2-development), the [V2 release](https://github.com/nchiker/2068-Leap/releases/tag/v2.0.1-emu.1) and the [V2 user manual](https://github.com/nchiker/2068-Leap/blob/v2-development/docs/manual/01_introduction.md). The browser demo link below now runs V2. V1 downloads: [Release 1 Beta](https://github.com/nchiker/2068-Leap/releases/tag/v1.0.0-beta.1).
 
 ### ▶ [Try it now, live in your browser — no install](https://nchiker.github.io/TSRun/?rom=leap)
 
