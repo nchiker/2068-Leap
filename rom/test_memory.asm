@@ -258,7 +258,7 @@ SHIFT_PATTERN:
 ; asm (serving GOTO/PROC/DEF FN), already covered by rom/test_v2_*.asm
 ; (proc_recursion, deffn, relational, etc.). MEM_LABEL_FIND/LOOKUP/ADD/
 ; REMOVE themselves were removed from kernel/memory/memory.asm as dead
-; production code (R10.7 dormant-ROM audit, docs/v2/R10_7_DORMANT_ROM_
+; production code (R10.7 dormant-ROM audit, docs/R10_7_DORMANT_ROM_
 ; CONSOLIDATION_AUDIT.md) — confirmed zero callers in the real V2 build
 ; (rom/v2_home.asm/rom/v2_exrom.asm's own INCLUDE chains); this test was
 ; their only other consumer, and it verified an obsolete V1 mechanism with

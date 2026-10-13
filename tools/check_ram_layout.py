@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""V2 RAM layout guard (docs/v2/RAM_EFFICIENCY_RESULTS.md).
+"""V2 RAM layout guard (docs/RAM_EFFICIENCY_RESULTS.md).
 
 The main pool runs straight into the bytecode area and the compile zone lives in the fixed V2 area,
 in space nothing else uses.  This check proves that from the production listings, so a cell added

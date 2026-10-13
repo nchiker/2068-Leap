@@ -14,7 +14,7 @@
 ; ROM on this project's own TS2068 memory model (V2_HOME_IMAGE_END=$4000).
 ; A write to such a cell silently fails, read back as 0 forever — this
 ; was found and root-caused during the R10.7 GRAPHICS pixel-level
-; validation session (docs/v2/R10_7_CAPACITY_ARCHITECTURE_AUDIT.md's
+; validation session (docs/R10_7_CAPACITY_ARCHITECTURE_AUDIT.md's
 ; graphics-validation section has the full diagnosis) as a test-harness
 ; construction defect, not a GRAPHICS or VM defect.
 ;

@@ -5,7 +5,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 # ---------------------------------------------------------------------------
-# Post-R9 test-infrastructure milestone (docs/v2/POST_R9_TEST_INFRASTRUCTURE.
+# Post-R9 test-infrastructure milestone (docs/POST_R9_TEST_INFRASTRUCTURE.
 # md): the post-R9 semantic-completion milestone added roughly 850 bytes to
 # rom/exrom_v2_compiler.asm + rom/exrom_v2_vm_core.asm (all real, necessary
 # product code), plus further growth in rom/exrom_v2_decompiler.asm -- and
@@ -27,7 +27,7 @@ cd "$(dirname "$0")/.."
 #
 # This is TEST scaffolding only -- it does not change BASIC semantics, and
 # it is separate from rom/exrom_build.asm/rom/v2_exrom.asm, the real
-# production EXROM build (see docs/v2/POST_R9_TEST_INFRASTRUCTURE.md for the
+# production EXROM build (see docs/POST_R9_TEST_INFRASTRUCTURE.md for the
 # full test-target classification: which targets are component tests vs
 # genuine production-integration tests, and which are V1-derived vs V2).
 # ---------------------------------------------------------------------------
@@ -142,4 +142,4 @@ if [ ${#failed[@]} -gt 0 ]; then
     echo "V2 standalone: ${pass}/${#names[@]} PASS, FAILED: ${failed[*]}" >&2
     exit 1
 fi
-echo "V2 standalone: ${pass}/${#names[@]} PASS (component tests -- see docs/v2/POST_R9_TEST_INFRASTRUCTURE.md; these do NOT boot the real production EXROM build)"
+echo "V2 standalone: ${pass}/${#names[@]} PASS (component tests -- see docs/POST_R9_TEST_INFRASTRUCTURE.md; these do NOT boot the real production EXROM build)"

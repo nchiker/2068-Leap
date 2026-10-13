@@ -11,7 +11,7 @@
 ; shared production-shaped test harness (rom/test_v2_harness_home_head.
 ; inc/_tail.inc + rom/test_v2_harness_exrom.asm) -- see that harness's
 ; own header for why (post-semantic-milestone test-infrastructure fix,
-; docs/v2/POST_R9_TEST_INFRASTRUCTURE.md). This harness now has real
+; docs/POST_R9_TEST_INFRASTRUCTURE.md). This harness now has real
 ; TEST_V2_NEEDS_CALC support (unlike the old flat-16K image this test
 ; predates), so a future milestone could extend this into a genuine
 ; runtime SQR/SIN value check; not attempted here, to keep this

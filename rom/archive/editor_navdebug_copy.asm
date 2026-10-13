@@ -27,7 +27,7 @@
 ; EDITOR_EXIT with the edited text committed to the program area via the
 ; normal kernel storage routines (kernel/memory, not yet written).
 ;
-; NO LINE NUMBERS (design decision, see docs/programmers_reference.md):
+; NO LINE NUMBERS (design decision, see docs/v1/programmers_reference.md):
 ; following QL SuperBASIC rather than classic Sinclair BASIC, this ROM's
 ; BASIC has no line numbers. GOTO/GOSUB targets are labels; structured
 ; control flow (procedures, REPeat/END REPeat, etc.) covers most of what
@@ -161,7 +161,7 @@ EDITOR_LOOP:
 
     call IO_READ_KEY              ; kernel/io — implemented, including
                                   ; CAPS SHIFT+digit cursor/delete combos
-                                  ; (see docs/hardware_notes.md — the
+                                  ; (see docs/v1/hardware_notes.md — the
                                   ; TS2068 uses the standard Spectrum
                                   ; scheme, not dedicated cursor keys, an
                                   ; earlier draft here got that wrong)
@@ -541,7 +541,7 @@ EDITOR_SEARCH:
 ; number — this ROM's BASIC has no line numbers (see header note above).
 ; No-op if the range is empty or out of order. Aborts without changing
 ; the program if any label inside the range is still referenced by a
-; GOTO/GOSUB/RESTORE outside it (see docs/basic_language_reference.md,
+; GOTO/GOSUB/RESTORE outside it (see docs/v1/basic_language_reference.md,
 ; "Label table") — the same non-destructive property originally scoped
 ; for the (now-removed) EDITOR_RENUMBER.
 ; In:  HL = first line position, DE = last line position
@@ -553,7 +553,7 @@ EDITOR_BLOCK_DELETE:
     ; still doesn't exist (TODO, unchanged) — HL/DE below are shown as
     ; already-resolved positions for now.
     ;
-    ; Non-destructive guarantee (see docs/basic_language_reference.md,
+    ; Non-destructive guarantee (see docs/v1/basic_language_reference.md,
     ; "Label table"): before deleting, check the enclosing scope's label
     ; table for any label defined inside [HL, DE] that's referenced by a
     ; GOTO/GOSUB/RESTORE outside the range but still in that scope. This

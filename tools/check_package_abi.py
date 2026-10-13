@@ -2,7 +2,7 @@
 """Package-ABI drift check (part of `make check`; needs `make build` first).
 
 Fails when the HOME image, the five package images and include/v2_package_abi.inc
-stop agreeing.  It is the automated half of docs/v2/PACKAGE_ABI.md:
+stop agreeing.  It is the automated half of docs/PACKAGE_ABI.md:
 
  1. the service table in the built HOME image matches the ABI file (header bytes, slot
     count, every slot is `jp <the named HOME routine>`), and fits the KTAB padding;

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Pixel-level validation for the unified EXT2 GRAPHICS package (CPLOT,
-# BLOCK, FRAME, INVERT) — closes the gap flagged in docs/v2/
+# BLOCK, FRAME, INVERT) — closes the gap flagged in docs/
 # R10_7_CAPABILITY_RESTORATION.md section 3: the existing standalone
 # suite (rom/test_v2_graphics_module.asm) only proves compile/decompile
 # reachability with GFX_WRITE_PIXEL stubbed out; it never checks a real

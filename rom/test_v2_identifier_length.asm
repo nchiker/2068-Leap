@@ -1,6 +1,6 @@
 ; ============================================================================
 ; rom/test_v2_identifier_length.asm — R10.7 dormant-ROM audit bug-fix
-; test: the >8-character identifier-length inconsistency (docs/v2/
+; test: the >8-character identifier-length inconsistency (docs/
 ; R10_7_DORMANT_ROM_CONSOLIDATION_AUDIT.md). Before this fix, COMPILE_DIM
 ; clamped an array name to 8 significant characters before registering
 ; it, but COMPILE_FACTOR.ident's array-read path, COMPILE_ARRAY_ASSIGN,

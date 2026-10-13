@@ -134,7 +134,7 @@ explicitly rather than treating red as success for any other test.
 ## Gaps not covered by this suite
 
 - **`DATA`/`RESTORE`/`READ`** — design-documented
-  (`docs/basic_language_reference.md`) but deliberately not
+  (`docs/v1/basic_language_reference.md`) but deliberately not
   implemented: scoped out in full, then set aside 2026-08-22 once
   weighed against this dialect's own integer-only numeric arrays,
   which already cover the same ground with none of `READ`'s one-shot
@@ -166,7 +166,7 @@ explicitly rather than treating red as success for any other test.
   a compile-time label) fixed all six. Worth remembering: after any
   Home-side budget change, re-run the WHOLE suite before calling it
   fixed, not just the file(s) that happened to catch attention first —
-  see docs/programmers_reference.md's "Multi-keyword bold highlighting"
+  see docs/v1/programmers_reference.md's "Multi-keyword bold highlighting"
   section for the full writeup.
 - **`DIMN`/multi-dimensional arrays built; 2D archived, `DIMN` kept
   (2026-08-22).** Full 2D array support (`DIM name(rows,cols)`, 2D
@@ -196,7 +196,7 @@ explicitly rather than treating red as success for any other test.
   because it didn't fit — it did, cleanly, at ~89 bytes of unavoidable
   Home-side dispatch/wrapper cost — but because the user judged it
   didn't clear the bar over what numeric arrays already do in an
-  integer-only dialect (see `docs/basic_language_reference.md`'s own
+  integer-only dialect (see `docs/v1/basic_language_reference.md`'s own
   "Status" note on that decision). Every sysvar, KTAB entry, dispatch
   entry, and file this attempt touched was manually reverted (no git
   in this repo) and confirmed byte-for-byte back to the pre-attempt
@@ -211,7 +211,7 @@ explicitly rather than treating red as success for any other test.
   leaving whatever the program had already printed on screen intact.
   Cost ~19 bytes net in Home ROM, which pushed `str4.txt` and `cf6.txt`
   (both already near the per-file budget) over the edge — split into
-  `str4`/`str7` and `cf6`/`cf7`. See `docs/programmers_reference.md`'s
+  `str4`/`str7` and `cf6`/`cf7`. See `docs/v1/programmers_reference.md`'s
   "Unified runtime error display" section for the full writeup,
   including a real latent-overflow bug fixed in `BASIC_APPEND_STR`
   along the way (no length cap before this — never triggered by any

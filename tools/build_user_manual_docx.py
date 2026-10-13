@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the styled Word edition of docs/user_manual.md."""
+"""Build the styled Word edition of docs/v1/user_manual.md."""
 
 import re
 import sys
@@ -15,8 +15,8 @@ from docx.oxml.ns import qn
 from docx.shared import Inches, Pt, RGBColor
 
 ROOT = Path(__file__).resolve().parent.parent
-SOURCE = ROOT / "docs" / "user_manual.md"
-OUTPUT = ROOT / "docs" / "2068_Leap_Users_Manual.docx"
+SOURCE = ROOT / "docs" / "v1" / "user_manual.md"
+OUTPUT = ROOT / "docs" / "v1" / "2068_Leap_Users_Manual.docx"
 BOOKMARK_ID = 0
 
 

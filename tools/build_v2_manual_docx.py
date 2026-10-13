@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the Word edition of the V2 user manual (docs/v2/manual/*.md -> docs/v2/2068_Leap_V2_Users_Manual.docx).
+"""Build the Word edition of the V2 user manual (docs/manual/*.md -> docs/2068_Leap_V2_Users_Manual.docx).
 
 Adapted from tools/build_user_manual_docx.py (the V1 manual's builder, whose helpers it reuses): the seven
 Markdown parts are concatenated in order, headings become Word headings with bookmarks (so the in-manual
@@ -19,8 +19,8 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH  # noqa: E402
 from docx.shared import Inches, Pt, RGBColor  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
-MANUAL = ROOT / "docs" / "v2" / "manual"
-OUTPUT = ROOT / "docs" / "v2" / "2068_Leap_V2_Users_Manual.docx"
+MANUAL = ROOT / "docs" / "manual"
+OUTPUT = ROOT / "docs" / "2068_Leap_V2_Users_Manual.docx"
 PARTS = ["01_introduction.md", "02_beginners_guide.md", "03_keywords.md", "04_concepts.md",
          "05_packages.md", "06_examples.md", "07_appendices.md"]
 FLOW_PARTS = {"03_keywords.md", "04_concepts.md"}      # entries flow on: no page break before each ##

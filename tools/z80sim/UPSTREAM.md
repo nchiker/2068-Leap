@@ -30,4 +30,4 @@ Rules:
   the commits before the upgrade are the originals; the upgrade is commit `ba32f6c` in 2068-Leap.
 
 Related: `tools/sim_from_debugger.py` turns a live `ts2068-debug` session's registers and memory into a
-simulator snapshot (`docs/v2/TESTING.md`, "Debugging tools in this workflow").
+simulator snapshot (`docs/TESTING.md`, "Debugging tools in this workflow").

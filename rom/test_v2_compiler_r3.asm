@@ -5,7 +5,7 @@
 ; (GOTO, IF...THEN GOTO, FOR/NEXT, labels, forward-reference fixups)
 ; together with R1's real rom/exrom_v2_vm_core.asm — a real, nontrivial,
 ; BASIC-shaped program, compiled and executed for real, per
-; docs/v2/ARCHITECTURE_B_IMPLEMENTATION_PLAN.md's R3 success gate. NOT
+; docs/ARCHITECTURE_B_IMPLEMENTATION_PLAN.md's R3 success gate. NOT
 ; wired into the production BASIC dispatch or the shipping EXROM build.
 ;
 ; Source program compiled and executed:

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Feature-level coverage matrix (docs/v2/V2_LANGUAGE_COVERAGE.csv) and case-level results
-(docs/v2/V2_LANGUAGE_CASES.csv) from the inventory, the corpus and one or more run directories.
+"""Feature-level coverage matrix (docs/V2_LANGUAGE_COVERAGE.csv) and case-level results
+(docs/V2_LANGUAGE_CASES.csv) from the inventory, the corpus and one or more run directories.
 
   python3 tools/qual/qcoverage.py <rundir-with-baseline/essential/enhanced.jsonl> [--fixdir <rundir> --fixcfg costs-ess]
          --features out.csv --cases out.csv

@@ -11,8 +11,8 @@ from docx.shared import Pt, RGBColor
 from build_user_manual_docx import configure, parse
 
 ROOT = Path(__file__).resolve().parent.parent
-SOURCE = ROOT / "docs" / "whats_new_release_1_beta.md"
-OUTPUT = ROOT / "docs" / "2068-Leap_Whats_New_Release_1_Beta.docx"
+SOURCE = ROOT / "docs" / "v1" / "whats_new_release_1_beta.md"
+OUTPUT = ROOT / "docs" / "v1" / "2068-Leap_Whats_New_Release_1_Beta.docx"
 
 
 def main():

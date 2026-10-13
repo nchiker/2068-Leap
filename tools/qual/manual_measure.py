@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Reproduces the timing figures quoted in docs/v2/manual (concept "Speed").
+"""Reproduces the timing figures quoted in docs/manual (concept "Speed").
 
 Each figure is T-states per pass of a loop body, measured on the release image in the headless
 emulator with ZRCP get-tstates-partial around the real RUN: (T(2000 passes) - T(1000 passes)) / 1000, so

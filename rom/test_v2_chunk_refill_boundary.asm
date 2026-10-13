@@ -1,6 +1,6 @@
 ; ============================================================================
 ; rom/test_v2_chunk_refill_boundary.asm — R10.7 source-staging-architecture
-; change (docs/v2/R10_7_SOURCE_STAGING_ARCHITECTURE_AUDIT.md): boundary
+; change (docs/R10_7_SOURCE_STAGING_ARCHITECTURE_AUDIT.md): boundary
 ; coverage for the new CHUNK_SIZE=264/CHUNK_MARGIN=128 rolling-window
 ; compiler-input mechanism that replaced V2_SOURCE_STAGE's old full
 ; 4096-byte flatten.

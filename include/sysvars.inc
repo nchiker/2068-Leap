@@ -3,11 +3,11 @@
 ;
 ; Replaces the placeholder addresses kernel/editor/editor.asm originally
 ; defined for itself before kernel/memory existed (see that file's history
-; and docs/programmers_reference.md's suggested-changes notes). All fixed
+; and docs/v1/programmers_reference.md's suggested-changes notes). All fixed
 ; RAM addresses used by more than one module go here, not in the module
 ; that happens to use them first.
 ;
-; ---- $8000+ migration (see docs/memory_map.md for the full writeup) ----
+; ---- $8000+ migration (see docs/v1/memory_map.md for the full writeup) ----
 ; This entire block used to start at $5D00 — inside the TS2068's dedicated
 ; 16K video RAM chip pool ($4000-$7FFF), not the general 32K RAM pool
 ; ($8000-$FFFF). Harmless while only Standard video mode existed, but a
@@ -51,7 +51,7 @@
 ; normal ROM assembly can resume exactly where it left off afterward.
 ;
 ; Layout within $8000+ is still provisional in the same sense
-; docs/memory_map.md already flags — this migration fixes WHICH pool
+; docs/v1/memory_map.md already flags — this migration fixes WHICH pool
 ; everything lives in, not the final internal layout within it.
 ; ============================================================================
 
@@ -80,7 +80,7 @@ STORAGE_LOAD_NAME_BUF EQU EDIT_LINE_BUF
     ASSERT STORAGE_LOAD_NAME_BUF != STATUS_BUF
 
 ; ---- kernel/memory label table (top-level scope only, for now) ----
-; TODO: per-procedure scopes (see docs/basic_language_reference.md,
+; TODO: per-procedure scopes (see docs/v1/basic_language_reference.md,
 ; "Label table") each need their own table once DEFine PROCedure/
 ; DEFine FuNction storage exists. Single top-level table is enough to
 ; get kernel/memory's label routines working before that's built.
@@ -93,7 +93,7 @@ LABEL_TABLE_MAXLEN  EQU 128     ; bytes reserved for the top-level table;
 
 ; ---- BASIC program area ----
 ; Program text (line-length-prefixed statements, no line numbers — see
-; docs/basic_language_reference.md) starts here and grows upward.
+; docs/v1/basic_language_reference.md) starts here and grows upward.
 ; PROG_AREA_START — CURRENT VALUE now defined further down (near
 ; STMT_TARGET_MASK — see this file's own header on why an EQU moves
 ; instead of getting a second definition). Last moved from
@@ -174,7 +174,7 @@ LABEL_TABLE_MAXLEN  EQU 128     ; bytes reserved for the top-level table;
                                 ; shifted by a uniform +$2300 out of
                                 ; the video RAM chip pool and into the
                                 ; general RAM pool (see this file's own
-                                ; header and docs/memory_map.md) —
+                                ; header and docs/v1/memory_map.md) —
                                 ; $61AD from that point in the chain is
                                 ; $84AD today; every other address
                                 ; quoted in the history below is
@@ -615,7 +615,7 @@ MATH_SIGN:           DEFS 1           ; 1 byte — MATH_MULTIPLY16/
 ; Was $FF00 (matching main.asm's placeholder stack pointer, "a round
 ; number, not a considered RAM budget"). Lowered to $C000 (2026-08-18)
 ; to formally reserve chunk 6 ($C000-$DFFF) for EXROM paging — see
-; docs/memory_map.md's chunk-by-chunk audit for why chunk 6 is the
+; docs/v1/memory_map.md's chunk-by-chunk audit for why chunk 6 is the
 ; paging target (general RAM, distant from both live sysvar state and
 ; the stack; independently corroborated by the stock ROM's own
 ; EXTINIT routine marking chunk 6 as expendable). The two live-editing
@@ -1892,7 +1892,7 @@ FOR_NEXT_NEWVAL:     DEFS 2           ; 2 bytes
 ; ---- kernel/storage: incoming-length guard (2026-08-18) ----
 ; STORAGE_LOAD's own In: contract gained a caller-supplied max-length
 ; bound after an audit (in the course of designing EXROM paging —
-; see docs/memory_map.md's chunk-6 reservation) found that the write
+; see docs/v1/memory_map.md's chunk-6 reservation) found that the write
 ; itself had NO ceiling check at all: it grows straight from the
 ; caller's destination pointer for as many bytes as the tape header
 ; CLAIMS, so a corrupted or oversized incoming header could already
@@ -2101,7 +2101,7 @@ SPRITE_DISPLAY_STACK: DEFS 8          ; slot numbers in SHOW order;
 ; chunk 7, which this project never pages. This returns 2304 bytes below
 ; PROG_AREA_START to BASIC. V2: only the SPRITE package uses them (it runs
 ; with EXROM paged out), so hidden chunk 6 would also do -- see
-; docs/v2/RAM_EFFICIENCY_RESULTS.md s5 (a package-ABI major change).
+; docs/RAM_EFFICIENCY_RESULTS.md s5 (a package-ABI major change).
 SPRITE_SLOT_IMG_BUF  EQU $E800         ; 1152 bytes — captured sprite
                                 ; image itself (SPRITE_SLOT_MAX *
                                 ; SPRITE_SLOT_BYTES), filled once per
@@ -2325,7 +2325,7 @@ CALC_DIV_QUOT:       DEFS 4           ; 4 bytes — 32-bit quotient accumulator
 ; ---- "function-result float" scratch (2026-08-22): SQR and SIN now
 ; compute through the calculator engine and can PRINT a genuine
 ; fractional result, while every other keyword stays int-only (see
-; docs/programmers_reference.md's function-table section for the
+; docs/v1/programmers_reference.md's function-table section for the
 ; full per-keyword audit). FUNC_RESULT_IS_FLOAT/_NEGATIVE/_FLOAT are
 ; how a function call tells BASIC_STMT_PRINT "the value you're about
 ; to print has a truer float answer than the truncated int you also
@@ -2681,7 +2681,7 @@ VAR_CHECK_SCRATCH:   DEFS 32          ; 32 bytes — BASIC_VAR_FIND_OR_
 ; COUNT/ARRAY_INDEX2/ARRAY_SUBSCRIPT_COUNT/ARRAY_DIMN_ARG) was built,
 ; verified structurally, and then archived 2026-08-22 — it worked, but
 ; cost more Home ROM than this project could spare at the time. See
-; docs/programmers_reference.md's "Multi-dimensional arrays (archived)"
+; docs/v1/programmers_reference.md's "Multi-dimensional arrays (archived)"
 ; section for the full design if this is ever worth reviving; DIMN
 ; itself survived the archival, simplified to DIMN(name) (single
 ; argument, no dimension number — nothing left to ask for one).

@@ -4,7 +4,7 @@
 ; 16-element ceiling, numeric indexing/bounds, and DIMN. Built on the
 ; shared production-shaped harness. Does NOT exercise DECOMPILE_PROGRAM
 ; (OP_DIM/widened OP_ARR_LOAD/STORE decompile support is a known,
-; reported gap -- see docs/v2/R10_7_CAPABILITY_RESTORATION.md) --
+; reported gap -- see docs/R10_7_CAPABILITY_RESTORATION.md) --
 ; TEST_V2_CUSTOM_CHECKS drives COMPILE/VM_RUN directly and asserts on
 ; real VM/memory state instead.
 ; ============================================================================

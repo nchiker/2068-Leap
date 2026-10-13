@@ -1,7 +1,7 @@
 ; ============================================================================
 ; V2 PACKAGE ABI 2.0 -- the single source of truth.        (R10.9 Phase 1)
 ;
-; Human-readable contract: docs/v2/PACKAGE_ABI.md.  This file is parsed by
+; Human-readable contract: docs/PACKAGE_ABI.md.  This file is parsed by
 ; tools/v2_abi.py / tools/check_package_abi.py (make check) and consumed three
 ; ways, selected by which of these is defined when the lists are expanded:
 ;
@@ -28,7 +28,7 @@
     IFNDEF V2_PACKAGE_ABI_INC
     DEFINE V2_PACKAGE_ABI_INC
 
-; ---- versions (tape header "autostart" word; see docs/v2/PACKAGE_ABI.md s6) ----
+; ---- versions (tape header "autostart" word; see docs/PACKAGE_ABI.md s6) ----
 ; word = $8000 | (major << 8) | minor.  Bit 15 set keeps the field a legal "no
 ; autostart" value for stock BASIC tooling; major 0 / bit 15 clear = unversioned.
 V2_TAPE_TAG             EQU $8000

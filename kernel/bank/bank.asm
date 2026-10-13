@@ -10,14 +10,14 @@
 ;
 ; WHY THIS EXISTS: Home bank is hard-capped at 16K — see the ROM-size
 ; crisis writeup in this project's own working memory. EXROM gives 8K
-; more, paged into chunk 6 ($C000-$DFFF) only — see docs/memory_map.md
+; more, paged into chunk 6 ($C000-$DFFF) only — see docs/v1/memory_map.md
 ; for the full chunk-by-chunk audit (why chunk 6 specifically: general
 ; RAM, distant from live sysvar state and the stack, independently
 ; corroborated by the stock ROM's own EXTINIT marking that chunk
 ; expendable too). That audit, and the interrupt-safety reasoning
 ; behind this file's DI/EI placement, are sourced against the real
 ; Timex Sinclair 2068 ROM Disassembly (David Anderson, 2023), not
-; guessed — see docs/memory_map.md for the citations.
+; guessed — see docs/v1/memory_map.md for the citations.
 ;
 ; INTERRUPT SAFETY — the one thing this file gets right or wrong for
 ; everything built on top of it: interrupts are disabled ONLY across
@@ -126,7 +126,7 @@ BANK_PAGE_EXROM_OUT:
     ei
     ret
 
-; BANK_CALL_EXROM removed (R10.7 dormant-ROM audit, docs/v2/R10_7_DORMANT_
+; BANK_CALL_EXROM removed (R10.7 dormant-ROM audit, docs/R10_7_DORMANT_
 ; ROM_CONSOLIDATION_AUDIT.md): a convenience wrapper (page in / call fixed
 ; $C000 entry / page out) whose only caller was rom/test_exrom_isolation.
 ; asm, an orphaned early isolation test not wired into any Makefile target

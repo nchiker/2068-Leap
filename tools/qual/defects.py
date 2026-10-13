@@ -91,7 +91,7 @@ D = {
           "OP_CALL_EXT pops the arguments with VM_POP and ignores the tag",
           "arguments through VM_POP_ADDR [M] HOME -2 (study/proto-lc 7372441)"),
  "DD-1": ("DOC", "all", "Manual: a string array element holds 31 characters; the default width is 16 (15 characters)",
-          "docs/user_manual.md section 6", "correct the manual or the default"),
+          "docs/v1/user_manual.md section 6", "correct the manual or the default"),
  "DEC-PLOT": ("DECISION", "all", "PLOT/POINT coordinates above 255 wrap modulo 256 (y > 191 is clamped)", "OP_PLOT uses L only", "decide: wrap / clamp / error"),
  "T-1": ("TEST", "all", "The CALC variant of the component-test EXROM was 1653-1670 B over 8 KB and silently truncated",
          "plain sjasmplus only warns on a negative DS", "fixed on study/qualification-b: strict build, no decompiler in the CALC image"),
@@ -122,7 +122,7 @@ FIX = {k: v[4] for k, v in D.items()}
 
 # RC (integration/v2-final-rom): the defect markers the release candidate has fixed or decided, so a run
 # with `--fixed rc` drops them (a marked case must then PASS; one that still fails is a FAIL, one that
-# passes while marked would be an XPASS). Still open: Q-24, Q-26 (LOW, deferred -- docs/v2/
+# passes while marked would be an XPASS). Still open: Q-24, Q-26 (LOW, deferred -- docs/
 # V2_DEFECT_REGISTER.md). L-INSTR and L-ELIF are decisions, not fixes: their corpus cases now expect
 # the V2 behaviour (a compile error) directly. DD-1 was the manual's error (corrected).
 RC_FIXED = ("Q-01 Q-02 Q-03 Q-04 Q-05 Q-06 Q-07 Q-08 Q-09 Q-10 Q-11 Q-12 Q-13 Q-14 Q-15 Q-16 Q-17 Q-18 Q-19 Q-20 "

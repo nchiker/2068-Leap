@@ -62,7 +62,7 @@ check(
 # Budget is derived live from include/sysvars.inc; build a program certain to
 # exceed it regardless of the real value. Label names are letters-only in this
 # dialect (digits/underscores aren't valid -- confirmed the hard way per
-# docs/basic_language_reference.md), so repeat one real label name enough
+# docs/v1/basic_language_reference.md), so repeat one real label name enough
 # times to blow any realistic budget rather than trying to generate unique
 # ones; check_label_budget sums bytes over every match, duplicates included.
 over_budget_labels = "\n".join(["LOOPLABEL:"] * (cbs.LABEL_TABLE_MAXLEN // 4 + 5))

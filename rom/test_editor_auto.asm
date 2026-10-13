@@ -103,7 +103,7 @@
 ; TEST_VERIFY, COLD_START's own init lines) still has to fit on top of
 ; basic/basic.asm's own budget, same as rom/test_basic.asm — that
 ; budget is razor-thin after the Phase 4 dynamic-scalar-pool migration
-; (docs/programmers_reference.md), down to low single-digit bytes free.
+; (docs/v1/programmers_reference.md), down to low single-digit bytes free.
 ; Moving TEST_KEY_QUEUE's 34 bytes of data out to injected RAM
 ; (2026-08-23) was necessary but not sufficient by itself; TEST_VERIFY
 ; stays in ROM (see file header's own "no host-file-write primitive"

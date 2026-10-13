@@ -8,7 +8,7 @@
 ; not synthetic test data, actual keyboard-to-screen editing.
 ;
 ; What to try: type some letters/digits, use CAPS SHIFT+5/6/7/8 to move
-; the cursor left/right within the line (see docs/hardware_notes.md —
+; the cursor left/right within the line (see docs/v1/hardware_notes.md —
 ; CAPS SHIFT held with 5/6/7/8, not dedicated cursor keys), CAPS SHIFT+0
 ; to delete forward, and confirm the line on screen matches what you'd
 ; expect after each edit. Press ENTER to exit (border turns yellow —

@@ -41,7 +41,7 @@ PORT_PRINTER        EQU $FB
 ; ---- TS2068 banking (Home / Exrom / Dock) ----
 ; Confirmed against the real port $F4/$FF description AND the real
 ; Timex Sinclair 2068 ROM Disassembly (David Anderson, 2023) — see
-; docs/memory_map.md's EXROM section for the full sourced writeup.
+; docs/v1/memory_map.md's EXROM section for the full sourced writeup.
 ; Horizontal Select Register: one bit per 8K chunk of the 64K address
 ; space (chunk N = $0000 + N*$2000, N=0-7; A13-A15 decode). 0 = that
 ; chunk comes from Home, 1 = from whichever alternate bank PORT_SCLD's

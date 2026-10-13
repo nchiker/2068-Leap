@@ -4,7 +4,7 @@
 ;
 ; The original item-7 attempt was implemented, built, and reverted after a
 ; real regression traced to an unrelated VM_ARR_VALUE_TMP/VM_INPUT_COUNT
-; collision (docs/v2/R10_7_CAPABILITY_RESTORATION.md). This re-attempt (docs/
+; collision (docs/R10_7_CAPABILITY_RESTORATION.md). This re-attempt (docs/
 ; v2/R10_7_CAPACITY_ARCHITECTURE_AUDIT.md) keeps the existing base tables
 ; (CSYMTAB_BASE/SYMTAB_BASE/STRSYMTAB_BASE/STRTAB_BASE) at their proven,
 ; unchanged addresses, and adds the extra capacity as a SEPARATE overflow

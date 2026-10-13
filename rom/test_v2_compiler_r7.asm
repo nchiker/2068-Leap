@@ -7,7 +7,7 @@
 ; with rom/exrom_v2_vm_core.asm's five new R7 opcodes (OP_CLS/OP_BORDER/
 ; OP_INK/OP_PAPER/OP_PLOT) — each a real native-call into the existing,
 ; UNMODIFIED kernel/graphics primitives (GFX_CLS/GFX_SET_BORDER/
-; GFX_PAINT_ATTR/GFX_WRITE_PIXEL/GFX_READ_PIXEL), per docs/v2/
+; GFX_PAINT_ATTR/GFX_WRITE_PIXEL/GFX_READ_PIXEL), per docs/
 ; ARCHITECTURE_B_IMPLEMENTATION_PLAN.md's R7 scope ("calling convention
 ; into existing platform modules, no changes to those modules
 ; themselves"). NOT wired into the production BASIC dispatch or the

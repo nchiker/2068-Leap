@@ -104,7 +104,7 @@ NMI_ENTRY:
 ; not-yet-written module — this milestone stands alone.
 ; ============================================================================
 COLD_START:
-    ; Placeholder stack pointer. docs/memory_map.md hasn't finalized the
+    ; Placeholder stack pointer. docs/v1/memory_map.md hasn't finalized the
     ; real BASIC-area/stack boundary yet (see its "Open questions" list),
     ; so this value is provisional — revisit once kernel/memory exists.
     ld   sp, $FF00
@@ -153,6 +153,6 @@ BORDER_COUNTER EQU $8000
                             ; for --rom-ts2068-0 (confirmed by Fuse itself
                             ; rejecting an 8K file — corrects this project's
                             ; earlier "8K Home bank" assumption in
-                            ; docs/memory_map.md, now also fixed there)
+                            ; docs/v1/memory_map.md, now also fixed there)
 
     SAVEBIN "rom0.bin", $0000, $4000

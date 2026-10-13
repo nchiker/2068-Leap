@@ -97,7 +97,7 @@ RST_38:
 
     DS   $0100 - $, $FF
 
-; TEST_BANK_CALL_EXROM -- inlined here (R10.7 dormant-ROM audit, docs/v2/
+; TEST_BANK_CALL_EXROM -- inlined here (R10.7 dormant-ROM audit, docs/
 ; R10_7_DORMANT_ROM_CONSOLIDATION_AUDIT.md): previously kernel/bank/
 ; bank.asm's own BANK_CALL_EXROM, a convenience wrapper whose only real
 ; caller was this file. Removed from the shared kernel file as dead

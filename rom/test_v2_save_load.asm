@@ -2,7 +2,7 @@
 ; rom/test_v2_save_load.asm — Architecture B, R8 SAVE/LOAD hard-gate
 ; smoke test
 ;
-; R7 explicitly deferred SAVE/LOAD to R8 (docs/v2/ARCHITECTURE_B_
+; R7 explicitly deferred SAVE/LOAD to R8 (docs/ARCHITECTURE_B_
 ; IMPLEMENTATION_PLAN.md's own R7 section). Investigation this session
 ; found the clean Architecture B answer: kernel/storage/storage.asm's
 ; STORAGE_SAVE/STORAGE_LOAD are already a GENERIC raw-byte-block
@@ -23,7 +23,7 @@
 ; CODE_BASE, ready to VM_RUN immediately with NO recompile step at all.
 ; LIST/EDIT after a LOAD decompiles on demand, same as any other
 ; freshly-compiled program -- SAVE/LOAD never touch source text, matching
-; docs/v2/REWRITE_RAM_BUDGET.md's own Option 2 (bytecode-primary storage)
+; docs/REWRITE_RAM_BUDGET.md's own Option 2 (bytecode-primary storage)
 ; extended naturally from RAM to persistent storage too. This reuses the
 ; REAL, unmodified, real-ROM-verified STORAGE_SAVE/STORAGE_LOAD --
 ; genuinely "reuse mature tape/storage primitives underneath a new V2-
@@ -60,7 +60,7 @@
 ; Built on the shared production-shaped test harness (rom/
 ; test_v2_harness_home_head.inc/_tail.inc + rom/test_v2_harness_exrom.
 ; asm) -- see that harness's own header for why (post-semantic-milestone
-; test-infrastructure fix, docs/v2/POST_R9_TEST_INFRASTRUCTURE.md).
+; test-infrastructure fix, docs/POST_R9_TEST_INFRASTRUCTURE.md).
 ; kernel/storage/storage.asm + rom/exrom_storage_test.asm are HOME-
 ; resident here (same bank as vm_core/compiler, via the tail's own
 ; unconditional includes) -- STORAGE_SAVE/LOAD never touch EXROM, so no

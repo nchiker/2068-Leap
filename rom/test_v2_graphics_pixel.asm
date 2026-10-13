@@ -1,13 +1,13 @@
 ; ============================================================================
 ; rom/test_v2_graphics_pixel.asm — closes the pixel-level validation gap
-; flagged in docs/v2/R10_7_CAPABILITY_RESTORATION.md section 3 and
-; docs/v2/R10_7_CAPACITY_ARCHITECTURE_AUDIT.md's graphics follow-up: proves
+; flagged in docs/R10_7_CAPABILITY_RESTORATION.md section 3 and
+; docs/R10_7_CAPACITY_ARCHITECTURE_AUDIT.md's graphics follow-up: proves
 ; CPLOT/BLOCK/FRAME/INVERT (rom/ext_v2_graphics_module.asm) write the exact
 ; expected bitmap/attribute bytes through the REAL production call path —
 ; EXT2_REGISTER -> OP_CALL_EXT -> GRAPHICS_*_EXEC -> the real
 ; kernel/graphics/graphics.asm GFX_WRITE_PIXEL/GFX_SET_ATTR — not a stub.
 ;
-; Earlier attempts (see docs/v2/R10_7_CAPABILITY_RESTORATION.md section 3)
+; Earlier attempts (see docs/R10_7_CAPABILITY_RESTORATION.md section 3)
 ; used either a flat single-bank image (too small to host vm_core+compiler+
 ; the real graphics.asm together) or the shared two-bank harness WITH
 ; GFX_WRITE_PIXEL stubbed out (rom/test_v2_graphics_module.asm — proves only
@@ -338,7 +338,7 @@ INVERT2_EXPECT_TABLE:
 ; one of these cells silently failed, read back as 0 forever, causing
 ; GRAPHICS_CPLOT_EXEC's own DX/DY loop counters to never advance past 0/1,
 ; an apparent "hang" that was actually this harness's own construction
-; defect, not a GRAPHICS or VM defect -- see docs/v2/
+; defect, not a GRAPHICS or VM defect -- see docs/
 ; R10_7_CAPACITY_ARCHITECTURE_AUDIT.md's graphics-validation section for
 ; the full diagnosis). Fix: the real module is assembled SEPARATELY at a
 ; genuine RAM address (tools/build_graphics_pixel_test.sh does this,

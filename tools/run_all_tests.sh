@@ -23,7 +23,7 @@
 # error and halt BEFORE reaching their own final green BORDER — for
 # those, the border they set right before attempting the failing
 # operation (5 = cyan, by convention) IS the pass signal, not a failure.
-# See docs/programmers_reference.md's "Verified byte-for-byte" section
+# See docs/v1/programmers_reference.md's "Verified byte-for-byte" section
 # for the origin of this convention. EXPECTED_CYAN below is the list
 # of fixtures that use it — add a fixture here only if its own .txt
 # explicitly documents "this should error and halt", never just
@@ -46,7 +46,7 @@ EXPECTED_RED="mem2"
 # CHECK_ERROR_COUNT reads (nonzero for the plain "_unloaded" fixtures,
 # via test_suite_inject.bin) that this really is the checker correctly
 # rejecting the unregistered keyword, not a coincidental idle color --
-# see docs/v2/milestones/MILESTONE_00_RESULTS.md. Also required fixing a
+# see docs/milestones/MILESTONE_00_RESULTS.md. Also required fixing a
 # real bug in this script itself: a hand-rolled break+run sequence must
 # clear the breakpoint before its second run(), or execution that
 # legitimately revisits INJECT_POINT's address re-triggers it and runs

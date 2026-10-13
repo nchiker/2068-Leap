@@ -15,7 +15,7 @@ V2_ACTIVE_ROW EQU BASIC_ACTIVE_ROW
 V2_REQUEST_TYPE EQU $BE81
 V2_PACKAGE_LEN EQU $BE82
 ; R10.9: the package ABI / tape format versions live in include/v2_package_abi.inc.
-; R10 correction: single-error return-to-line (docs/v2/POST_R9_
+; R10 correction: single-error return-to-line (docs/POST_R9_
 ; SEMANTIC_MILESTONE.md's own editor-audit findings). Placed in the
 ; $BE84-$BED7 reserved gap (R9_CUTOVER_LEDGER.md's RAM table) -- fixed
 ; EQUs, not sequential sysvars.inc offsets, so this costs no address
@@ -642,7 +642,7 @@ V2_NAV_COMMIT:
     scf
     ret
 
-; R10.7 source-staging-architecture change (docs/v2/R10_7_SOURCE_STAGING_
+; R10.7 source-staging-architecture change (docs/R10_7_SOURCE_STAGING_
 ; ARCHITECTURE_AUDIT.md): V2_BUILD_SOURCE no longer flattens the whole
 ; stored program into V2_SOURCE_STAGE. It primes the small CHUNK_SIZE-byte
 ; rolling window instead; the lexer (rom/exrom_v2_compiler.asm) refills it
@@ -722,7 +722,7 @@ V2_COMPILE_RUN:
     ; editor happened to be before RUN. Compile-time only -- runtime
     ; errors have no source-position backreference from bytecode and
     ; remain a separate, documented, unresolved problem (see this
-    ; routine's own header and docs/v2/POST_R9_SEMANTIC_MILESTONE.md's
+    ; routine's own header and docs/POST_R9_SEMANTIC_MILESTONE.md's
     ; editor-audit findings).
     ld a,(V2_RUN_IS_STORED)
     or a
@@ -1218,7 +1218,7 @@ V2_SAVE:
     ld hl,V2_MSG_NO_PACKAGE
     jp V2_SHOW_MESSAGE
 ; RC: SAVE "name" ALL -- the program, its variable session and the Array Store in one program
-; block (rom/v2_saveall.asm, docs/v2/V2_SAVE_ALL_FORMAT.md). Without a session since the last
+; block (rom/v2_saveall.asm, docs/V2_SAVE_ALL_FORMAT.md). Without a session since the last
 ; edit, a new one (fresh variables) is started first.
 .all:
     call V2_ENSURE_SESSION
@@ -1244,7 +1244,7 @@ V2_SAVE:
 ; not between a RUN finishing and a command typed afterward) -- reached
 ; here via the build/v2_crossbank.inc binding to rom/exrom_v2_compiler.
 ; asm's own ARRSYM_LOOKUP/STRARRSYM_LOOKUP, no new lookup logic
-; duplicated. See docs/v2/R10_7_CAPABILITY_RESTORATION.md for the full
+; duplicated. See docs/R10_7_CAPABILITY_RESTORATION.md for the full
 ; design (stored object format, write-once LOAD policy).
 ; ============================================================================
 
@@ -1391,7 +1391,7 @@ V2_LOAD:
     ld (V2_PACKAGE_LEN),de
     call EXTENSION_MODULE_BASE   ; R10.9: the ABI version word was already checked by
                                    ; STORAGE_LOAD against the header, before any byte of
-                                   ; the package reached the window (docs/v2/PACKAGE_ABI.md s6)
+                                   ; the package reached the window (docs/PACKAGE_ABI.md s6)
     jr c,.invalid_package
     ld hl,V2_MSG_LOADED
     jp V2_SHOW_MESSAGE
@@ -2233,7 +2233,7 @@ V2_ATTR_SWATCH_BLUE  EQU $08   ; PAPER 1 (blue),  INK 0
 ; inverse status-bar treatment plus the three-cell RGB branding swatch
 ; (echoing the real TS2068's "PERSONAL COLOR COMPUTER" logo) on top of
 ; V2's own existing status/message routing (V2_DRAW_STATUS/V2_SHOW_
-; MESSAGE), per docs/v2/R10_7_UX_PARITY_INVESTIGATION.md's Option C.
+; MESSAGE), per docs/R10_7_UX_PARITY_INVESTIGATION.md's Option C.
 ;
 ; RGB design note (per that investigation's own preference order): a
 ; single character cell has exactly ONE attribute byte -- PAPER and INK,

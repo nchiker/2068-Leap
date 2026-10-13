@@ -12,7 +12,7 @@
 ; This deliberately does NOT include the real ext_v2_graphics_module.asm
 ; body (a flat single-bank attempt to exercise the real GFX_WRITE_PIXEL
 ; path hit unresolved ts2068-debug/ZEsarUX session friction in this
-; milestone's own session — see docs/v2/R10_7_CAPABILITY_RESTORATION.md
+; milestone's own session — see docs/R10_7_CAPABILITY_RESTORATION.md
 ; for the full note). Registers all four names with the SAME real
 ; argcount/argtype the real module uses, proving compiler-level
 ; reachability/decompile-round-trip; the pixel-drawing bodies

@@ -83,13 +83,13 @@ case("seg2-reset-on-rerun", ["dim a(3600)", "dim b(900)", "b(899) = 4", "x = b(8
 # 74 = two more string temps (2 x 32) and two more float temps (2 x 5) -- QUAL Q-02, temporaries are
 # never reused while referenced (817667f); 80 = SESS_GAP, room for the symbols that immediate statements
 # add to a session (owner decision 2). The bounds are the old ones moved by exactly that 154.
-# RAM efficiency (docs/v2/RAM_EFFICIENCY_RESULTS.md): the pool is 814 bytes larger (813 -> 1627 free,
+# RAM efficiency (docs/RAM_EFFICIENCY_RESULTS.md): the pool is 814 bytes larger (813 -> 1627 free,
 # measured); the bounds move up by exactly that.
 case("free-1", ["x = free(1)", "dim a(3600)", "dim b(900)", "y = free(1)", "z = free()", "w = free(0)"],
      vals={0: 2048, 1: 2048 - 1803},
      extra=lambda v: (v(2) == v(3) and 900 - 154 + 814 < v(2) < 1100 - 154 + 814, f"free()={v(2)} free(0)={v(3)}"))
 case("free-expr-arg", ["n = 1", "x = free(n)"], vals={1: 2048})
-# RAM efficiency (docs/v2/RAM_EFFICIENCY_RESULTS.md): the pool runs straight into the bytecode area and
+# RAM efficiency (docs/RAM_EFFICIENCY_RESULTS.md): the pool runs straight into the bytecode area and
 # the compile zone moved to the fixed V2 area. pool-814-program: 38 units of procedures, loops, strings and
 # IFs (6,472 source bytes) compile and run; the v2.0.1 release ran out of memory (error 64) above 34.
 # Its run-time tables sit directly below the code they run, and the compile stack started there too.

@@ -41,7 +41,7 @@
 ;
 ; DESIGN: a real IM1 handler (RST_38), run every 50/60Hz timer tick
 ; regardless of what the foreground is doing — modeled on the stock
-; TS2068 HOME ROM's KEYBOARD/UPD_K (see docs/hardware_notes.md's
+; TS2068 HOME ROM's KEYBOARD/UPD_K (see docs/v1/hardware_notes.md's
 ; keyboard research), simplified to a single tracked key rather than
 ; stock's two-slot KSTATE buffer. This does NOT mean rollover is
 ; unhandled — see the paragraph above — only that two keys can't BOTH

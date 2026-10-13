@@ -6,7 +6,7 @@
 [![Release](https://img.shields.io/badge/release-v2.0.1--emu.1-blue)](https://github.com/nchiker/2068-Leap/releases/tag/v2.0.1-emu.1)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-| ▶ [**Try V2 in your browser**](https://nchiker.github.io/TSRun/?rom=leap) | ⬇ [**Download V2**](https://github.com/nchiker/2068-Leap/releases/download/v2.0.1-emu.1/2068-Leap-V2-v2.0.1-emu.1.zip) | 📖 [**Read the V2 User Manual**](docs/v2/manual/01_introduction.md) | 🖥 [**Emulator Setup**](docs/v2/EMULATOR_SETUP.md) | 🗄 [**V1 Legacy Version**](#2068-leap-v1--legacy--archived-version) |
+| ▶ [**Try V2 in your browser**](https://nchiker.github.io/TSRun/?rom=leap) | ⬇ [**Download V2**](https://github.com/nchiker/2068-Leap/releases/download/v2.0.1-emu.1/2068-Leap-V2-v2.0.1-emu.1.zip) | 📖 [**Read the V2 User Manual**](docs/manual/01_introduction.md) | 🖥 [**Emulator Setup**](docs/EMULATOR_SETUP.md) | 🗄 [**V1 Legacy Version**](#2068-leap-v1--legacy--archived-version) |
 |:---:|:---:|:---:|:---:|:---:|
 
 > **Current release: [v2.0.1-emu.1](https://github.com/nchiker/2068-Leap/releases/tag/v2.0.1-emu.1)** (2068-Leap V2 Enhanced, Sound Maintenance Release) — **emulator-qualified** on ZEsarUX, **not hardware-qualified**: nothing has been tried on a physical TS2068 yet. Development continues on this branch, `v2-development`.
@@ -15,12 +15,12 @@
 
 <table>
 <tr>
-<td align="center"><img src="docs/v2/manual/images/editor_lines.png" width="256" alt="The V2 editor with bold keywords and the status line"><br><sub>The full-screen editor</sub></td>
-<td align="center"><img src="docs/v2/manual/images/spiral.png" width="256" alt="A spiral drawn with PLOT, SIN and COS"><br><sub>Floating-point graphics</sub></td>
+<td align="center"><img src="docs/manual/images/editor_lines.png" width="256" alt="The V2 editor with bold keywords and the status line"><br><sub>The full-screen editor</sub></td>
+<td align="center"><img src="docs/manual/images/spiral.png" width="256" alt="A spiral drawn with PLOT, SIN and COS"><br><sub>Floating-point graphics</sub></td>
 </tr>
 <tr>
-<td align="center"><img src="docs/v2/manual/images/first_circles.png" width="256" alt="Three circles, the middle one filled"><br><sub>CIRCLE and FILL (shapes package)</sub></td>
-<td align="center"><img src="docs/v2/manual/images/sprite_tour.png" width="256" alt="A sprite that has travelled round the screen"><br><sub>Sprites (sprite package)</sub></td>
+<td align="center"><img src="docs/manual/images/first_circles.png" width="256" alt="Three circles, the middle one filled"><br><sub>CIRCLE and FILL (shapes package)</sub></td>
+<td align="center"><img src="docs/manual/images/sprite_tour.png" width="256" alt="A sprite that has travelled round the screen"><br><sub>Sprites (sprite package)</sub></td>
 </tr>
 </table>
 
@@ -43,11 +43,11 @@ V2 is the current 2068-Leap system: a complete redesign of the first release (V1
 - **Hardware access.** `PEEK`, `POKE`, `IN`, `OUT` and `USR`.
 - **Loadable packages.** Six optional packages on tape add statements without costing ROM space (see [below](#loadable-packages)).
 
-V2 is not a compatibility clone of Sinclair BASIC: the differences are listed in the manual's concept [Differences from Sinclair BASIC](docs/v2/manual/04_concepts.md#differences-from-sinclair-basic).
+V2 is not a compatibility clone of Sinclair BASIC: the differences are listed in the manual's concept [Differences from Sinclair BASIC](docs/manual/04_concepts.md#differences-from-sinclair-basic).
 
 ## Try it
 
-**In your browser, no install: [nchiker.github.io/TSRun/?rom=leap](https://nchiker.github.io/TSRun/?rom=leap)** runs the qualified `v2.0.1-emu.1` ROMs in the [TSRun](https://github.com/josef-jelinek/TSRun) browser emulator (our fork: [nchiker/TSRun](https://github.com/nchiker/TSRun)). Startup, typing, running programs and AY sound were checked there on 2026-10-12; click the page once so the browser allows sound. *Known limitation:* the package tapes do not load in TSRun yet (`LOAD FAILED`, a TSRun tape-detection issue reported to its author), so the package examples need a desktop emulator for now.
+**In your browser, no install: [nchiker.github.io/TSRun/?rom=leap](https://nchiker.github.io/TSRun/?rom=leap)** runs the qualified `v2.0.1-emu.1` ROMs in the [TSRun](https://github.com/josef-jelinek/TSRun) browser emulator (our fork: [nchiker/TSRun](https://github.com/nchiker/TSRun)). Startup, typing, running programs and AY sound were checked there on 2026-10-12; click the page once so the browser allows sound. *Known limitation:* the package tapes do not load in TSRun yet (`LOAD FAILED`, a TSRun tape-detection issue; reported with a tested fix as [TSRun issue #3](https://github.com/josef-jelinek/TSRun/issues/3)), so the package examples need a desktop emulator for now.
 
 The machine starts in the editor. Type each line and press ENTER after it, then type `RUN` on the empty line that follows:
 
@@ -68,7 +68,7 @@ IF n < 3 THEN GOTO again
 RUN
 ```
 
-The [beginner's guide](docs/v2/manual/02_beginners_guide.md) (Part 2 of the manual) starts from here.
+The [beginner's guide](docs/manual/02_beginners_guide.md) (Part 2 of the manual) starts from here.
 
 ## Download
 
@@ -93,17 +93,17 @@ The **2068-Leap V2 User Manual and Language Reference** has seven parts — intr
 
 | Format | Link |
 |---|---|
-| Markdown, with illustrations (read on GitHub) | [**docs/v2/manual/**](docs/v2/manual/01_introduction.md) — [1 Introduction](docs/v2/manual/01_introduction.md) · [2 Beginner's guide](docs/v2/manual/02_beginners_guide.md) · [3 Keywords](docs/v2/manual/03_keywords.md) · [4 Concepts](docs/v2/manual/04_concepts.md) · [5 Packages](docs/v2/manual/05_packages.md) · [6 Examples](docs/v2/manual/06_examples.md) · [Appendices](docs/v2/manual/07_appendices.md) |
-| Microsoft Word (`.docx`) | [**2068_Leap_V2_Users_Manual.docx**](docs/v2/2068_Leap_V2_Users_Manual.docx) |
-| Word 97–2003 (`.doc`) | [**2068_Leap_V2_Users_Manual.doc**](docs/v2/2068_Leap_V2_Users_Manual.doc) |
+| Markdown, with illustrations (read on GitHub) | [**docs/manual/**](docs/manual/01_introduction.md) — [1 Introduction](docs/manual/01_introduction.md) · [2 Beginner's guide](docs/manual/02_beginners_guide.md) · [3 Keywords](docs/manual/03_keywords.md) · [4 Concepts](docs/manual/04_concepts.md) · [5 Packages](docs/manual/05_packages.md) · [6 Examples](docs/manual/06_examples.md) · [Appendices](docs/manual/07_appendices.md) |
+| Microsoft Word (`.docx`) | [**Download 2068_Leap_V2_Users_Manual.docx**](https://github.com/nchiker/2068-Leap/raw/v2-development/docs/2068_Leap_V2_Users_Manual.docx) |
+| Word 97–2003 (`.doc`) | [**Download 2068_Leap_V2_Users_Manual.doc**](https://github.com/nchiker/2068-Leap/raw/v2-development/docs/2068_Leap_V2_Users_Manual.doc) |
 
-The compact [**language reference**](docs/v2/V2_LANGUAGE_REFERENCE.md) is the same language without the teaching.
+The Word files open in Word or LibreOffice; to fill in the Contents page, update the table of contents (in LibreOffice: Tools → Update → Update All). The compact [**language reference**](docs/V2_LANGUAGE_REFERENCE.md) is the same language without the teaching.
 
 **Which edition?** The manual in this branch is the maintained **development edition**: it describes release v2.0.1-emu.1 plus the development ROM's larger memory pool (9211 bytes, `FREE()` = 8967 on an empty machine, where the v2.0.1-emu.1 ROM — also the one in the browser demo — has 8397 and 8153). Everything else applies to both. The manual exactly as released is inside the release archive (`docs/manual/` and the `.docx`). The Word editions are generated from the Markdown with `make manual-v2` (the `.doc` by LibreOffice, checked against the `.docx`).
 
 ## Running it in an emulator
 
-The full guide, with the exact files, settings and limitations, is [**docs/v2/EMULATOR_SETUP.md**](docs/v2/EMULATOR_SETUP.md).
+The full guide, with the exact files, settings and limitations, is [**docs/EMULATOR_SETUP.md**](docs/EMULATOR_SETUP.md).
 
 | Emulator | Status | Files | Notes |
 |---|---|---|---|
@@ -158,7 +158,7 @@ CIRCLE 128, 96, 20
 FILL 128, 96
 ```
 
-Part 6 of the manual, [Practical examples](docs/v2/manual/06_examples.md), has complete programs to type in. The programs in the top-level `demos/` and `examples/` folders are **V1** programs and do not run on V2.
+Part 6 of the manual, [Practical examples](docs/manual/06_examples.md), has complete programs to type in. The programs in the top-level `demos/` and `examples/` folders are **V1** programs and do not run on V2.
 
 ## Loadable packages
 
@@ -173,7 +173,7 @@ Packages are optional statements on tape. Type `LOAD "NAME" EXT` on the editor's
 | mode | `LOAD "MODE" EXT` | `MODE` (extended-colour mode), `ULAPLUS`, `PALETTE` |
 | cbeep | `LOAD "CBEEP" EXT` | `CBEEP milliseconds, semitones, border` on the loudspeaker |
 
-Details: manual [Part 5](docs/v2/manual/05_packages.md). Writing a package: [PACKAGE_ABI.md](docs/v2/PACKAGE_ABI.md) (ABI 2.0).
+Details: manual [Part 5](docs/manual/05_packages.md). Writing a package: [PACKAGE_ABI.md](docs/PACKAGE_ABI.md) (ABI 2.0).
 
 ## How it works
 
@@ -192,17 +192,17 @@ Details: manual [Part 5](docs/v2/manual/05_packages.md). Writing a package: [PAC
 - The program is kept as **plain source text**; `RUN` compiles it into a separate 4011-byte bytecode area that is rebuilt each time. `LIST`, `SAVE` and the editor always work on the text you typed.
 - The HOME ROM holds the compiler, the VM and the hardware kernel; the EXROM holds the editor, the tape routines, the calculator and other code that is not on the hot path, reached through cross-bank calls.
 - Both ROMs are essentially full: the release has 19 bytes free in HOME and 26 in the EXROM. Features that do not fit are packages, loaded from tape into a 1 KB RAM window.
-- Memory map and limits: manual [Appendix E](docs/v2/manual/07_appendices.md#appendix-e-memory-map) and [Appendix D](docs/v2/manual/07_appendices.md#appendix-d-limits); design: [V2_ARCHITECTURE.md](docs/v2/V2_ARCHITECTURE.md), [RAM_EFFICIENCY_RESULTS.md](docs/v2/RAM_EFFICIENCY_RESULTS.md).
+- Memory map and limits: manual [Appendix E](docs/manual/07_appendices.md#appendix-e-memory-map) and [Appendix D](docs/manual/07_appendices.md#appendix-d-limits); design: [V2_ARCHITECTURE.md](docs/V2_ARCHITECTURE.md), [RAM_EFFICIENCY_RESULTS.md](docs/RAM_EFFICIENCY_RESULTS.md).
 
 ## Status, qualification and limitations
 
 | | |
 |---|---|
-| **Release** | [v2.0.1-emu.1](https://github.com/nchiker/2068-Leap/releases/tag/v2.0.1-emu.1), 2026-10-12 — Sound Maintenance Release: AY `BEEP` in seconds and semitones, `SOUND` register 0, a `PAUSE` rollover fix, the `cbeep` package. Record: [V2_MAINT_RELEASE_STATUS.md](docs/v2/V2_MAINT_RELEASE_STATUS.md). First V2 release: [v2.0.0-emu.1](https://github.com/nchiker/2068-Leap/releases/tag/v2.0.0-emu.1) ([V2_RC_STATUS.md](docs/v2/V2_RC_STATUS.md)). |
+| **Release** | [v2.0.1-emu.1](https://github.com/nchiker/2068-Leap/releases/tag/v2.0.1-emu.1), 2026-10-12 — Sound Maintenance Release: AY `BEEP` in seconds and semitones, `SOUND` register 0, a `PAUSE` rollover fix, the `cbeep` package. Record: [V2_MAINT_RELEASE_STATUS.md](docs/V2_MAINT_RELEASE_STATUS.md). First V2 release: [v2.0.0-emu.1](https://github.com/nchiker/2068-Leap/releases/tag/v2.0.0-emu.1) ([V2_RC_STATUS.md](docs/V2_RC_STATUS.md)). |
 | **Qualification** | **Emulator-qualified on ZEsarUX**: a 667-case language corpus, the editor, tape and package suites and the full `make test` gate (over 1,000 automated cases), plus the 325 manual examples. |
-| **Hardware** | **Not tested on a physical TS2068**, cassette recorder, printer, joystick or ULAplus hardware: see the [hardware checklist](docs/v2/V2_HARDWARE_CHECKLIST.md). Keep backups of programs saved on tape. |
-| **In development** (`v2-development`, unqualified) | +814 bytes of program memory (pool 8397 → 9211 bytes, `FREE()` 8153 → 8967) with no change to the language, the package ABI or the tape formats ([RAM_EFFICIENCY_RESULTS.md](docs/v2/RAM_EFFICIENCY_RESULTS.md)); upgraded developer tooling. Not yet a release. |
-| **Accepted limitations** | strings up to 31 characters; numeric array elements are 16-bit integers; one package at a time; `SAVE ... ALL` variables restore only on the same ROM build; nine ASCII symbols (brackets, braces, backslash, caret, backquote, bar, tilde) print as blanks; a bare `FOR` loop is slower than in early V2 builds. All are in the [defect register](docs/v2/V2_DEFECT_REGISTER.md) and the manual's [limits](docs/v2/manual/07_appendices.md#appendix-d-limits). |
+| **Hardware** | **Not tested on a physical TS2068**, cassette recorder, printer, joystick or ULAplus hardware: see the [hardware checklist](docs/V2_HARDWARE_CHECKLIST.md). Keep backups of programs saved on tape. |
+| **In development** (`v2-development`, unqualified) | +814 bytes of program memory (pool 8397 → 9211 bytes, `FREE()` 8153 → 8967) with no change to the language, the package ABI or the tape formats ([RAM_EFFICIENCY_RESULTS.md](docs/RAM_EFFICIENCY_RESULTS.md)); upgraded developer tooling. Not yet a release. |
+| **Accepted limitations** | strings up to 31 characters; numeric array elements are 16-bit integers; one package at a time; `SAVE ... ALL` variables restore only on the same ROM build; nine ASCII symbols (brackets, braces, backslash, caret, backquote, bar, tilde) print as blanks; a bare `FOR` loop is slower than in early V2 builds. All are in the [defect register](docs/V2_DEFECT_REGISTER.md) and the manual's [limits](docs/manual/07_appendices.md#appendix-d-limits). |
 | **Not in V2** | line numbers, `GOSUB` (use `PROC`/`CALL`), V1 tapes (refused with `BAD TAPE VERSION`), V1's `AYREG` extension (use `SOUND`). |
 
 ## Building from source
@@ -220,7 +220,7 @@ make doc-examples   # every example of the user manual, run on the ROM
 make manual-v2      # regenerate the Word editions (.docx, and .doc via LibreOffice)
 ```
 
-A local build of this branch is a development build and is labelled as one in its archive. The qualified images are reproducible from the release tag (`git checkout v2.0.1-emu.1 && make build`). Generated ROMs are not committed. Testing, the tools and the emulator used by the suites: [docs/v2/TESTING.md](docs/v2/TESTING.md); runtime debugging uses [ts2068-debug](https://github.com/nchiker/2068-Debug) and the source-level simulator [z80sim](https://github.com/nchiker/z80sim).
+A local build of this branch is a development build and is labelled as one in its archive. The qualified images are reproducible from the release tag (`git checkout v2.0.1-emu.1 && make build`). Generated ROMs are not committed. Testing, the tools and the emulator used by the suites: [docs/TESTING.md](docs/TESTING.md); runtime debugging uses [ts2068-debug](https://github.com/nchiker/2068-Debug) and the source-level simulator [z80sim](https://github.com/nchiker/z80sim).
 
 **Continuous integration** ([.github/workflows/check.yml](.github/workflows/check.yml)): every push and pull request runs `make check` and `make budget` and builds the archive as a workflow artifact; pushes to `v2-development` update the unqualified [latest](https://github.com/nchiker/2068-Leap/releases/tag/latest) pre-release; a release tag `vX.Y.Z[-suffix]` publishes a numbered release, never replacing assets already on one.
 
@@ -231,7 +231,7 @@ rom/       ROM images: v2_home.asm, v2_exrom.asm, the V2 compiler/VM/shell, the 
 kernel/    hardware kernel: memory, io, graphics, math, sound, interrupt, bank, storage, editor, extensions
 include/   shared constants, RAM layout (v2_layout.inc), package ABI
 tools/     build, check, packaging and test tools; tools/qual (qualification), tools/z80sim (simulator)
-docs/v2/   V2 documentation (docs/ also holds the archived V1 documents)
+docs/      V2 documentation: manual/ (the user manual), reference, release records, studies; docs/v1/ = archived V1
 tests/     the 102 legacy V1 source fixtures (static checks only)
 basic/     retained V1 interpreter source; not linked into V2
 ```
@@ -240,15 +240,15 @@ basic/     retained V1 interpreter source; not linked into V2
 
 **Using V2**
 
-- [User manual](docs/v2/manual/01_introduction.md) ([.docx](docs/v2/2068_Leap_V2_Users_Manual.docx), [.doc](docs/v2/2068_Leap_V2_Users_Manual.doc)) and [language reference](docs/v2/V2_LANGUAGE_REFERENCE.md)
-- [Emulator setup](docs/v2/EMULATOR_SETUP.md) — ZEsarUX, EightyOne, Fuse, TSRun
-- [Release record v2.0.1-emu.1](docs/v2/V2_MAINT_RELEASE_STATUS.md), [defect register](docs/v2/V2_DEFECT_REGISTER.md), [hardware checklist](docs/v2/V2_HARDWARE_CHECKLIST.md), [feature matrix](docs/v2/V2_FEATURE_MATRIX.md)
+- [User manual](docs/manual/01_introduction.md) (download [.docx](https://github.com/nchiker/2068-Leap/raw/v2-development/docs/2068_Leap_V2_Users_Manual.docx), [.doc](https://github.com/nchiker/2068-Leap/raw/v2-development/docs/2068_Leap_V2_Users_Manual.doc)) and [language reference](docs/V2_LANGUAGE_REFERENCE.md)
+- [Emulator setup](docs/EMULATOR_SETUP.md) — ZEsarUX, EightyOne, Fuse, TSRun
+- [Release record v2.0.1-emu.1](docs/V2_MAINT_RELEASE_STATUS.md), [defect register](docs/V2_DEFECT_REGISTER.md), [hardware checklist](docs/V2_HARDWARE_CHECKLIST.md), [feature matrix](docs/V2_FEATURE_MATRIX.md)
 
 **Technical**
 
-- [V2 architecture](docs/v2/V2_ARCHITECTURE.md), [language specification](docs/v2/V2_LANGUAGE_SPEC.md), [ROM/RAM budget](docs/v2/V2_ROM_RAM_BUDGET.md), [RAM efficiency results](docs/v2/RAM_EFFICIENCY_RESULTS.md)
-- [Package ABI](docs/v2/PACKAGE_ABI.md), [SAVE ... ALL format](docs/v2/V2_SAVE_ALL_FORMAT.md), [sessions](docs/v2/V2_SESSION_VARIABLES.md), [compatibility breaks from V1](docs/v2/COMPATIBILITY_BREAKS.md)
-- [Testing and tools](docs/v2/TESTING.md), [qualification study index](docs/v2/V2_QUALIFICATION_STUDY_INDEX.md), [maintenance backlog](docs/v2/V2_MAINTENANCE_BACKLOG.md)
+- [V2 architecture](docs/V2_ARCHITECTURE.md), [language specification](docs/V2_LANGUAGE_SPEC.md), [ROM/RAM budget](docs/V2_ROM_RAM_BUDGET.md), [RAM efficiency results](docs/RAM_EFFICIENCY_RESULTS.md)
+- [Package ABI](docs/PACKAGE_ABI.md), [SAVE ... ALL format](docs/V2_SAVE_ALL_FORMAT.md), [sessions](docs/V2_SESSION_VARIABLES.md), [compatibility breaks from V1](docs/COMPATIBILITY_BREAKS.md)
+- [Testing and tools](docs/TESTING.md), [qualification study index](docs/V2_QUALIFICATION_STUDY_INDEX.md), [maintenance backlog](docs/V2_MAINTENANCE_BACKLOG.md)
 
 ## 2068-Leap V1 — Legacy / Archived Version
 
@@ -256,7 +256,7 @@ basic/     retained V1 interpreter source; not linked into V2
 
 - **Source:** branch [`main`](https://github.com/nchiker/2068-Leap/tree/main), V1's final state (its [README](https://github.com/nchiker/2068-Leap/blob/main/README.md) was the former front page). The earlier Preview 1 line is branch [`release/v1`](https://github.com/nchiker/2068-Leap/tree/release/v1).
 - **Downloads:** [Release 1 Beta, `v1.0.0-beta.1`](https://github.com/nchiker/2068-Leap/releases/tag/v1.0.0-beta.1) (`2068-Leap-Release-1-Beta.zip`) and [Private Preview 1, `v0.1.0-preview.1`](https://github.com/nchiker/2068-Leap/releases/tag/v0.1.0-preview.1).
-- **Documents:** the [V1 archive index](docs/V1_LEGACY.md) — the V1 user manual, technical overview, emulator setup and extension contract. Do not use them for V2.
+- **Documents:** the [V1 archive index](docs/v1/README.md) — the V1 user manual, technical overview, emulator setup and extension contract. Do not use them for V2.
 
 V1 programs need changes to run on V2, and V1 tapes are not read by V2.
 
@@ -270,6 +270,6 @@ V1 programs need changes to run on V2, and V1 tapes are not read by V2.
 
 ## Contributing and license
 
-Bug reports, emulator results and — especially — **real-hardware test reports** are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md) and the [hardware checklist](docs/v2/V2_HARDWARE_CHECKLIST.md). Changes must keep both ROMs within budget and pass `make check`; behaviour changes need tests and documentation.
+Bug reports, emulator results and — especially — **real-hardware test reports** are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md) and the [hardware checklist](docs/V2_HARDWARE_CHECKLIST.md). Changes must keep both ROMs within budget and pass `make check`; behaviour changes need tests and documentation.
 
 2068-Leap is released under the [MIT License](LICENSE) ([NOTICE.md](NOTICE.md)). The emulator patches in `patches/` modify GPL-licensed emulators and are distributed under their licences ([patches/README.md](patches/README.md)).

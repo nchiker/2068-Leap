@@ -6,7 +6,7 @@
 ; WHY (2026-08-23): preload_gen.py's --autorun harness embeds the whole
 ; encoded test program as a PRELOAD_DATA block INSIDE the same 16K ROM
 ; image as all of basic.asm — after the Phase 4 dynamic-scalar-pool
-; migration (see docs/programmers_reference.md's "sysvars.inc:
+; migration (see docs/v1/programmers_reference.md's "sysvars.inc:
 ; assembler-computed addresses" and the scalar-pool sections),
 ; individual test_suite_*.asm builds ran 83-113 bytes over budget even
 ; though basic.asm itself still fits rom/test_basic.asm exactly. The

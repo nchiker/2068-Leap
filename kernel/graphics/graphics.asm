@@ -477,7 +477,7 @@ GFX_CHAR_TO_FONT_OFFSET:
     ; generates the 8-byte bitmap from the low nibble every time one is
     ; printed, and this mirrors that exact bit-to-quadrant algorithm
     ; (SBC A,A + mask, confirmed from the disassembly's PO-GR-2/PO-GR-3
-    ; — see docs/programmers_reference.md for the full derivation,
+    ; — see docs/v1/programmers_reference.md for the full derivation,
     ; including the one part — the bottom-half repeat — reconstructed
     ; from the universal Spectrum-family technique rather than read
     ; directly, since the source PDF's text extraction cuts out exactly
@@ -591,7 +591,7 @@ GFX_CHAR_SETUP:
                                    ; internally, which clobbered the row
                                    ; parameter for any punctuation
                                    ; character before this was fixed —
-                                   ; see docs/programmers_reference.md's
+                                   ; see docs/v1/programmers_reference.md's
                                    ; kernel/graphics "Bugs caught" entry
     call GFX_CHAR_TO_FONT_OFFSET
     jr   nc, .have_offset
@@ -774,7 +774,7 @@ GFX_PRINT_STRING:
 ; attribute $00 (black-on-black) regardless of INK/PAPER, found via a
 ; real memory dump showing GFX_CLS's own fill elsewhere on screen was
 ; correctly $38 while PRINT's own writes were stuck at $00. See
-; docs/programmers_reference.md's "INK / PAPER / FLASH / INVERSE /
+; docs/v1/programmers_reference.md's "INK / PAPER / FLASH / INVERSE /
 ; OVER" section for the full writeup.
 ; In:  HL = pointer to null-terminated string, B = row, C = column,
 ;      A = attribute byte to set at every printed cell, D = OVER flag
@@ -832,7 +832,7 @@ GFX_PRINT_STRING_ATTR:
 ; than duplicated in both, given how much trouble duplicated addressing
 ; logic has already caused in this project. The bit-swap instruction
 ; sequence was verified numerically against all 256 possible attribute
-; byte values before being trusted — see docs/programmers_reference.md's
+; byte values before being trusted — see docs/v1/programmers_reference.md's
 ; kernel/graphics section.
 ;
 ; REAL BUG FOUND AND FIXED (word-wrap cursor investigation): this had
@@ -1099,7 +1099,7 @@ GFX_SET_ATTR_EXT:
 ; default GFX_CLS already uses) rather than to raw zero deliberately
 ; avoids repeating the exact "invisible white-on-white" class of
 ; confusion a real test program already hit once with INK/PAPER (see
-; docs/programmers_reference.md's Tier-2 session writeup) — zero would
+; docs/v1/programmers_reference.md's Tier-2 session writeup) — zero would
 ; decode as PAPER 0/INK 0 here, black-on-black, same trap.
 ; In:  A = mode (0 = Normal, 1 = High Resolution Graphics — this
 ;      project's own friendly numbering, NOT the raw port $FF value;

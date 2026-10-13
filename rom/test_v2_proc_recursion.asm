@@ -1,6 +1,6 @@
 ; ============================================================================
 ; rom/test_v2_proc_recursion.asm — post-R9 semantic-completion milestone:
-; PROC/DEF-FN recursion safety (docs/v2/V2_SEMANTIC_CAPABILITY_AUDIT.md S11).
+; PROC/DEF-FN recursion safety (docs/V2_SEMANTIC_CAPABILITY_AUDIT.md S11).
 ;
 ; Standalone ROM image exercising rom/exrom_v2_compiler.asm's new
 ; EMIT_OP_PARAM_BIND/EMIT_OP_PARAM_UNBIND (COMPILE_PROC) and rom/
@@ -9,7 +9,7 @@
 ; shipping EXROM build. Built on the shared production-shaped test
 ; harness (rom/test_v2_harness_home_head.inc/_tail.inc + rom/
 ; test_v2_harness_exrom.asm) -- see that harness's own header for why
-; (post-semantic-milestone test-infrastructure fix, docs/v2/
+; (post-semantic-milestone test-infrastructure fix, docs/
 ; POST_R9_TEST_INFRASTRUCTURE.md).
 ;
 ; Source program compiled and executed:
@@ -19,7 +19,7 @@
 ;
 ; Genuine recursion (COUNT calls itself 3 times, depth 4: N=3,2,1,0), and
 ; critically, "R=R+N" reads N AFTER the recursive CALL COUNT(N-1) returns
-; -- exactly the audit's own failing case (docs/v2/
+; -- exactly the audit's own failing case (docs/
 ; V2_SEMANTIC_CAPABILITY_AUDIT.md S11: "a function that reads its own
 ; parameter after a recursive self-call"). Under the OLD shared-global-
 ; slot design, N would read the INNERMOST call's own leftover value (0)

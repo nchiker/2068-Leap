@@ -585,7 +585,7 @@ EDITOR_MOVE_CURSOR:
 ; number — this ROM's BASIC has no line numbers.
 ; No-op if the range is empty or out of order. Aborts without changing
 ; the program if any label inside the range is still referenced by a
-; GOTO/GOSUB/RESTORE outside it (see docs/basic_language_reference.md,
+; GOTO/GOSUB/RESTORE outside it (see docs/v1/basic_language_reference.md,
 ; "Label table").
 ; In:  HL = first line position, DE = last line position
 ; Out: carry clear on success, carry set + program unchanged on abort
@@ -596,7 +596,7 @@ EDITOR_BLOCK_DELETE:
     ; still doesn't exist (TODO, unchanged) — HL/DE below are shown as
     ; already-resolved positions for now.
     ;
-    ; Non-destructive guarantee (see docs/basic_language_reference.md,
+    ; Non-destructive guarantee (see docs/v1/basic_language_reference.md,
     ; "Label table"): before deleting, check the enclosing scope's label
     ; table for any label defined inside [HL, DE] that's referenced by a
     ; GOTO/GOSUB/RESTORE outside the range but still in that scope. This

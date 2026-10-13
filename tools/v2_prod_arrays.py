@@ -2,7 +2,7 @@
 """R10.9 Phase 2C -- production-ROM gate for the persistent Array Store (architecture C).
 
 Every case runs on the real production image (`build/ts2068rom_zesarux.bin`: HOME + EXROM as
-shipped) through tools/v2_prod.py; see that module and docs/v2/TESTING.md for what is real
+shipped) through tools/v2_prod.py; see that module and docs/TESTING.md for what is real
 (compiler, VM, the EXROM DIM handlers, the Array Store service, the tape receiver reading a
 synthesised EAR line) and what is substituted.  These are GATE cases: each must PASS.  The
 former known defects D6, D8, D12, D13, D14, D15 and D16 live here now, as the fixed

@@ -42,7 +42,7 @@ RST_00:
 COLD_START:
     ld   sp, $FF00
 
-; TEST_ANY_KEY_DOWN -- inlined here (R10.7 dormant-ROM audit, docs/v2/
+; TEST_ANY_KEY_DOWN -- inlined here (R10.7 dormant-ROM audit, docs/
 ; R10_7_DORMANT_ROM_CONSOLIDATION_AUDIT.md): previously kernel/io/io.asm's
 ; own IO_ANY_KEY_DOWN, whose own header said it existed "e.g. [for] the
 ; interactive test in rom/test_io.asm" -- i.e. this file was its only

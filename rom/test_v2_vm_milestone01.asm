@@ -22,7 +22,7 @@
 ; setting PC directly to VM_TEST2_ENTRY via `ts2068-debug set-register PC`,
 ; then running BOUNDED (`--max-instructions`) from outside, exactly per
 ; ts2068-debug's own designed workflow for this kind of measurement — see
-; docs/v2/STATEMENT_COMPILER_SPIKE.md's "GOTO/branch architecture
+; docs/STATEMENT_COMPILER_SPIKE.md's "GOTO/branch architecture
 ; verification" for what this test is meant to demonstrate on real hardware
 ; (a real ZEsarUX TSTATES measurement, not just code inspection).
 ;
@@ -346,7 +346,7 @@ KTAB_CALC_EXIT_TRAMPOLINE:
 MEM_CLEAR_V2:
     ret
 
-; FOLD_UPPER -- a local copy, test-only (R10.7 dormant-ROM audit, docs/v2/
+; FOLD_UPPER -- a local copy, test-only (R10.7 dormant-ROM audit, docs/
 ; R10_7_DORMANT_ROM_CONSOLIDATION_AUDIT.md): this VM-only test includes
 ; kernel/extensions/ext_registry.asm's own EXT2_LOOKUP without also
 ; including rom/exrom_v2_compiler.asm (the real, production FOLD_UPPER's

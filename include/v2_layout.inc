@@ -1,7 +1,7 @@
 ; Integrated R9 source, compiler input, and bytecode regions.
     IFNDEF V2_LAYOUT_INC
     DEFINE V2_LAYOUT_INC
-; RAM efficiency (docs/v2/RAM_EFFICIENCY_RESULTS.md): the pool now runs straight into the bytecode
+; RAM efficiency (docs/RAM_EFFICIENCY_RESULTS.md): the pool now runs straight into the bytecode
 ; area (V2_SOURCE_END = V2_CODE_BASE). The compile zone -- the chunk buffer, its state and the
 ; identifier buffer, compile-only scratch (the run-only overflow tiers that once overlaid it are
 ; gone since R10.7 P3) -- lives in dead space of the fixed V2 area at V2_ZONE_BASE, and the
@@ -19,7 +19,7 @@ V2_ZONE_BASE    EQU $B850                 ; after the session cells, below FOR_F
 V2_SOURCE_END   EQU V2_CODE_BASE          ; the pool top (= $A655)
 V2_SOURCE_STAGE EQU V2_ZONE_BASE
 
-; R10.7 source-staging-architecture change (docs/v2/R10_7_SOURCE_STAGING_
+; R10.7 source-staging-architecture change (docs/R10_7_SOURCE_STAGING_
 ; ARCHITECTURE_AUDIT.md): V2_SOURCE_STAGE no longer holds a full flattened
 ; copy of the whole program. It now holds a small CHUNK_SIZE-byte rolling
 ; window, refilled one authoritative line-store record at a time by

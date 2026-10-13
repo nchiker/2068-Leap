@@ -7,7 +7,7 @@
 # separate ZEsarUX ports and state directories.  Exit status is non-zero if the gate has
 # any FAIL, or the known-defect suite has any FAIL or XPASS (a defect that silently
 # stopped reproducing).  XFAIL lines are reproduced KNOWN defects, not failures: see
-# docs/v2/TESTING.md and docs/v2/R10_9_PHASE1_REPORT.md.
+# docs/TESTING.md and docs/R10_9_PHASE1_REPORT.md.
 #
 # Needs `make build v2-packages` first (the `test` target does that).
 set -uo pipefail

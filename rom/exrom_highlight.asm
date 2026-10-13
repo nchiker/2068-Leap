@@ -5,7 +5,7 @@
 ; BASIC_DETECT_KEYWORD_PREFIX/BASIC_FIND_DISPLAY_STMT_BOUNDARY, once
 ; extending BASIC_DETECT_KEYWORD_PREFIX to bold every colon-separated
 ; segment's own leading keyword (not just the line's very first word —
-; see docs/programmers_reference.md's own writeup for the full
+; see docs/v1/programmers_reference.md's own writeup for the full
 ; feature) landed at ~159 bytes of new Home ROM cost and left the
 ; plain interactive build's own margin (40 bytes free) too thin for
 ; the preload test harness (tools/preload_gen.py) to still fit

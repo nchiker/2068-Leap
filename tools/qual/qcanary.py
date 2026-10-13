@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""RAM canary probe over the qualification corpus (docs/v2/RAM_EFFICIENCY_RESULTS.md).
+"""RAM canary probe over the qualification corpus (docs/RAM_EFFICIENCY_RESULTS.md).
 
 Before every case: restore the booted snapshot, fill the RAM spans believed unused (the dead parts of the
 fixed V2 area and of chunk 7) and the machine-stack headroom with a canary byte, then install the case's

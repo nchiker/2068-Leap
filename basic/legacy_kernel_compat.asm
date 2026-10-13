@@ -2,7 +2,7 @@
 ; basic/legacy_kernel_compat.asm — legacy-fixture-only kernel compatibility
 ; shims, owned entirely by the non-production V1 component-test chain
 ; (basic/basic.asm and friends — see this file's own header and
-; docs/v2/R10_7_DORMANT_ARCHITECTURE_AUDIT.md §3/§6.4 for the full
+; docs/R10_7_DORMANT_ARCHITECTURE_AUDIT.md §3/§6.4 for the full
 ; disposition).
 ;
 ; The six routines below (MEM_LABEL_TABLE_CLEAR/FIND/LOOKUP/ADD,

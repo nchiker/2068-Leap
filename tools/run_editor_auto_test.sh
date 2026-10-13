@@ -6,7 +6,7 @@
 # It is a legitimate regression test of the shared, still-used generic
 # editor engine, but its PASS does NOT prove rom/v2_home.asm/rom/
 # v2_exrom.asm (the real V2 production ROM) boots or works -- see
-# docs/v2/POST_R9_TEST_INFRASTRUCTURE.md for the full test-target
+# docs/POST_R9_TEST_INFRASTRUCTURE.md for the full test-target
 # classification. This is also the test that visibly shows the OLD V1
 # editor in a real Fuse window, which is expected here (it IS a V1
 # harness), not a bug.

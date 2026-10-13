@@ -6,13 +6,13 @@
 ; (rom/exrom_v2_vm_core.asm, 17 integer-domain opcodes, 731 real bytes).
 ;
 ; 2068-Leap V2 rewrite. R2 (assignment-only) is real-hardware-validated —
-; see docs/v2/ARCHITECTURE_B_IMPLEMENTATION_PLAN.md's R2 section. This
+; see docs/ARCHITECTURE_B_IMPLEMENTATION_PLAN.md's R2 section. This
 ; revision adds R3's scope: GOTO, IF...THEN GOTO, FOR/NEXT, and the label/
 ; fixup mechanism GOTO's forward references need. Promotes
 ; spikes/v2_vm_sizing/statement_compiler_spike.asm's branch/loop/fixup
 ; architecture to production quality (that spike's fixup routines were
 ; explicitly stubbed — count-only, no real label table or patch-writing —
-; per docs/v2/STATEMENT_COMPILER_SPIKE.md's own "honest residual
+; per docs/STATEMENT_COMPILER_SPIKE.md's own "honest residual
 ; uncertainty" section; this file's `LABEL_DEFINE`/`LABEL_LOOKUP`/
 ; `FIXUP_RECORD`/`RESOLVE_ALL_FIXUPS` are real). Procedures (`CALL`/`RET`)
 ; remain R4's scope, per the implementation plan's own staging, even
@@ -22,13 +22,13 @@
 ; copied): a REAL compile-time symbol table with REAL name storage and REAL
 ; byte-by-byte name comparison (the spikes' `CSYM_FIND_OR_CREATE` was an
 ; increment-and-return stub, explicitly flagged as such in
-; docs/v2/STATEMENT_COMPILER_SPIKE.md's own "honest residual uncertainty"
+; docs/STATEMENT_COMPILER_SPIKE.md's own "honest residual uncertainty"
 ; section) — this is what makes multi-character identifiers real rather
 ; than assumed. Record shape: `[name_len:1][name:8]`, 9 bytes/entry,
 ; compile-time-only (discarded once compilation finishes — never touches
 ; the VM's own runtime symbol table, `rom/exrom_v2_vm_core.asm`'s
 ; `SYMTAB_BASE`, which stores only `[tag][value_lo][value_hi]`, no name at
-; all, per `docs/v2/REWRITE_RAM_BUDGET.md`'s compiled-index design).
+; all, per `docs/REWRITE_RAM_BUDGET.md`'s compiled-index design).
 ;
 ; STATUS: NOT wired into the shipping EXROM build or the editor/RUN path.
 ; Exercised only by the standalone smoke ROM
@@ -36,8 +36,8 @@
 ; bytecode and then executes that bytecode on R1's real VM core — the
 ; "compile-then-execute round-trip" R2's own success gate requires.
 ;
-; Design reference: docs/v2/REWRITE_VM_DESIGN.md, docs/v2/
-; STATEMENT_COMPILER_SPIKE.md, docs/v2/ARCHITECTURE_B_IMPLEMENTATION_PLAN.md
+; Design reference: docs/REWRITE_VM_DESIGN.md, docs/
+; STATEMENT_COMPILER_SPIKE.md, docs/ARCHITECTURE_B_IMPLEMENTATION_PLAN.md
 ; (R2).
 ;
 ; ============================================================================
@@ -48,7 +48,7 @@
 ;
 ; This is not a style preference — it is the single most-repeated real bug
 ; class in this entire rewrite, found via actual ZEsarUX execution FIVE
-; separate times across R2/R3/R5/R6 (see docs/v2/
+; separate times across R2/R3/R5/R6 (see docs/
 ; ARCHITECTURE_B_IMPLEMENTATION_PLAN.md's R2/R3/R5/R6 sections for the full
 ; account of each: R2's assignment-target-in-C, R2's load-opcode-clobbering-
 ; the-index, R3's RESOLVE_ALL_FIXUPS counter, R3's COMPILE_NEXT offset, R5's
@@ -262,7 +262,7 @@ FOR_LOOP_TOP_OFFSET: equ $BA1C  ; COMPILE_FOR/COMPILE_NEXT scratch (2 bytes):
                                   ; nesting up to FOR_NEST_MAX deep is now
                                   ; supported (was a KNOWN, DOCUMENTED single-
                                   ; active-loop limitation before this
-                                  ; milestone; see docs/v2/
+                                  ; milestone; see docs/
                                   ; V2_SEMANTIC_CAPABILITY_AUDIT.md S9).
 FOR_LOOP_VAR_INDEX: equ $BA1E    ; COMPILE_FOR/COMPILE_NEXT scratch (1 byte):
                                   ; same "innermost loop's own cached copy"
@@ -496,7 +496,7 @@ COMPILE_ARR_ASSIGN_IS_STR: equ $BDE0 ; COMPILE_ARR_ASSIGN_COMMON/COMPILE_
 
 ; every one of the scratch cells above is real RAM (not a register
 ; held across a call, not inline ROM data) — the two bug classes this
-; module has already found and fixed once each (docs/v2/
+; module has already found and fixed once each (docs/
 ; ARCHITECTURE_B_IMPLEMENTATION_PLAN.md's R2 section) are treated as a
 ; standing discipline for every routine added in R3, not just the ones
 ; that already broke
@@ -553,7 +553,7 @@ TOK_KW_RANDOMISE:   equ 37    ; this ROM 2026-09-19 (ROM budget), DRAW/OUT
                                ; own R7 planning text, written before
                                ; this investigation, named the wrong set)
 TOK_KW_PRINT:       equ 38   ; R8.5 additions below: the text I/O
-TOK_KW_LPRINT:      equ 39    ; system, plus END/STOP/REM (see docs/v2/
+TOK_KW_LPRINT:      equ 39    ; system, plus END/STOP/REM (see docs/
 TOK_KW_END:         equ 40     ; ARCHITECTURE_B_IMPLEMENTATION_PLAN.md's
 TOK_KW_STOP:        equ 41      ; own R8.5 section for the real capability
 TOK_KW_REM:         equ 42       ; audit this covers)
@@ -583,7 +583,7 @@ TOK_KW_EXIT:        equ 55   ; R8.5 Group 5 -- EXIT FOR (V1's own real
 ; resident statement keywords (product decision, same principle as the
 ; earlier SPRITE-to-loadable-module move). Token value 58 stays
 ; unassigned; 56-57 are reused below by DEF FN reintegration (post-R9,
-; docs/v2/deffn_design/README.md) -- confirmed free by this same removal.
+; docs/deffn_design/README.md) -- confirmed free by this same removal.
 TOK_KW_DEF:         equ 56   ; DEF FN name(param) = expr
 TOK_KW_FN:          equ 57   ; FN name(arg), as an expression factor
 TOK_KW_FLASH:       equ 58   ; R10.7 attribute setters (R10.25 class B)
@@ -1233,7 +1233,7 @@ LEX_SCAN_STRING:
 
 ; ============================================================================
 ; CHUNK_APPEND_ONE_RECORD -- R10.7 source-staging-architecture change
-; (docs/v2/R10_7_SOURCE_STAGING_ARCHITECTURE_AUDIT.md). Appends exactly one
+; (docs/R10_7_SOURCE_STAGING_ARCHITECTURE_AUDIT.md). Appends exactly one
 ; authoritative line-store record (CHUNK_NEXT_REC) to the chunk buffer at
 ; CHUNK_FILL_PTR: strips the record's 2-byte length header, copies content
 ; up to its own trailing $0D, then applies the SAME colon-continuation
@@ -1607,7 +1607,7 @@ EMIT_OP_HALT:              xor a   : jr EMIT_BYTE
                                              ; nested FOR/NEXT (52-54 stay
                                              ; reserved for DEF FN)
                                              ; PROC/DEF FN recursion safety
-; DEF FN reintegration (post-R9, docs/v2/deffn_design/README.md):
+; DEF FN reintegration (post-R9, docs/deffn_design/README.md):
 ; opcodes 52/53/54 are runtime-IDENTICAL to JMP/CALL/RET (literally the
 ; same VM_OP_TABLE handler at those slots) -- purely a compile-time/
 ; decompile-time disambiguation, the same precedent OP_JMP_ELSE (47)
@@ -1629,7 +1629,7 @@ EMIT_OP_HALT:              xor a   : jr EMIT_BYTE
 ; nine call sites (label/fixup patching, IF/FOR/PROC skip-jump targets).
 ; Output: HL = EMIT_PTR - VM_CODE_BASE. Flags are the raw sbc result;
 ; no caller here branches on them, only uses HL/DE afterward. Behavior
-; unchanged; see docs/v2/R10_5_SHRINK.md.
+; unchanged; see docs/R10_5_SHRINK.md.
 COMPILE_RELATIVE_OFFSET:
         ld hl,(EMIT_PTR)
         ld de,VM_CODE_BASE
@@ -1932,7 +1932,7 @@ COMPILE_FACTOR:
 .dimn_cmp:
         ld a,(de)
         call FOLD_UPPER           ; case-insensitivity fix (R10.7 dormant-
-                                  ; ROM audit, docs/v2/R10_7_DORMANT_ROM_
+                                  ; ROM audit, docs/R10_7_DORMANT_ROM_
                                   ; CONSOLIDATION_AUDIT.md): this hand-
                                   ; rolled compare was missed when every
                                   ; other name-compare site in this file
@@ -2124,7 +2124,7 @@ COMPILE_FACTOR:
         ret                      ; RC shrink: tail call through the RST (was jp EMIT_BYTE)
 
 ; .udf_call — FN name(arg), as an expression factor (post-R9 DEF FN
-; reintegration, docs/v2/deffn_design/README.md). Resolved via the SAME
+; reintegration, docs/deffn_design/README.md). Resolved via the SAME
 ; LABEL_LOOKUP/FIXUP_RECORD forward-reference machinery GOTO/CALL
 ; already use (not a new mechanism) -- mirrors COMPILE_CALL_STMT's own
 ; resolve/fixup logic almost verbatim, differing only in what opcode it
@@ -2152,7 +2152,7 @@ COMPILE_FACTOR:
         ; ARGCOUNT/REMAINING/ARGTYPE fix (.fn_call above) and COMPILE_
         ; FACTOR.arr_read's CARR_INDEX/SIZE fix already taught this
         ; project, applied here proactively before any bug manifested
-        ; (docs/v2/deffn_design/README.md's own documented precaution
+        ; (docs/deffn_design/README.md's own documented precaution
         ; from the original experiment).
         ;
         ; R10.7 source-staging-architecture change: STMT_IDENT_NAME_PTR
@@ -2425,7 +2425,7 @@ BUILTIN_FN_TABLE:
 ; calls into that V1 file, which has real basic.asm-resident
 ; dependencies (INKEY$'s own KTAB_IO_READ_KEY_NONBLOCK gateway) already
 ; confirmed NOT reusable post-R9 by this milestone's own INPUT work
-; (see docs/v2/ARCHITECTURE_B_IMPLEMENTATION_PLAN.md's Group 2 status
+; (see docs/ARCHITECTURE_B_IMPLEMENTATION_PLAN.md's Group 2 status
 ; note) -- INKEY$ instead reaches kernel/io/io.asm's own real, already-
 ; kernel-resident IO_READ_KEY_NONBLOCK directly, matching INPUT's own
 ; precedent exactly.
@@ -2774,7 +2774,7 @@ COMPILE_DIM:
 ; COMPILE_DIM_STR -- DIM A$(n[,w]). Mirrors COMPILE_DIM exactly, plus an
 ; optional comma-width argument -- real, stock Sinclair BASIC syntax
 ; (DIM A$(n,w) declares n strings of w characters each on a real
-; Spectrum, see docs/v2/R10_7_ARRAY_ARCHITECTURE_AUDIT.md Part 2 item 2
+; Spectrum, see docs/R10_7_ARRAY_ARCHITECTURE_AUDIT.md Part 2 item 2
 ; for why this syntax was chosen over inventing a new one). No width
 ; given defaults to STRARR_DEFAULT_WIDTH. Entry: TOK_TYPE is TOK_STR_
 ; IDENT (the array name, not yet consumed).
@@ -3283,7 +3283,7 @@ COMPILE_STR_FACTOR:
                                    ; STRARRSYM_LOOKUP (destroys BC) so the
                                    ; fallback path below doesn't need to
                                    ; recompute it (HOME-budget shrink pass,
-                                   ; D7, docs/v2/R10_7_DORMANT_ROM_
+                                   ; D7, docs/R10_7_DORMANT_ROM_
                                    ; CONSOLIDATION_AUDIT.md) -- only HL
                                    ; needs reloading, a genuine second
                                    ; input to STRSYM_FIND_OR_CREATE
@@ -3406,7 +3406,7 @@ COMPILE_BRANCH_TARGET:
 ; PLATFORM INTEGRATION (R7 addition) — graphics/system command family.
 ; Each compiles "KEYWORD <expr>[,<expr>]" into: <expr bytecode>... then one
 ; native-call opcode, exactly the "parse N numeric args, emit one native-
-; call opcode" shape docs/v2/STATEMENT_COMPILER_SPIKE.md's own sizing
+; call opcode" shape docs/STATEMENT_COMPILER_SPIKE.md's own sizing
 ; already assumed for this family. No new expression grammar needed —
 ; COMPILE_EXPR (already real since R2) handles every argument.
 ; ===========================================================================
@@ -3976,7 +3976,7 @@ COMPILE_IF_BLOCK:
 ; ===========================================================================
 ; LOOP STATEMENT COMPILERS (R3 addition: FOR/NEXT)
 ;
-; Post-R9 nested-FOR/NEXT correction (docs/v2/V2_SEMANTIC_CAPABILITY_AUDIT.md
+; Post-R9 nested-FOR/NEXT correction (docs/V2_SEMANTIC_CAPABILITY_AUDIT.md
 ; S9): real nesting up to FOR_NEST_MAX deep, via the FOR_STACK frame table
 ; declared above. Each open loop's own body-offset/var-index/EXITFOR state
 ; is pushed on COMPILE_FOR and popped on its matching COMPILE_NEXT, so an
@@ -4128,7 +4128,7 @@ COMPILE_NEXT:
         call CSYM_FIND_OR_CREATE   ; A = this NEXT's own referenced var index
         ld (NEXT_VAR_INDEX_TMP),a
         ; post-R9: verify this NEXT's variable matches the innermost open
-        ; FOR (docs/v2/V2_SEMANTIC_CAPABILITY_AUDIT.md S9 -- previously
+        ; FOR (docs/V2_SEMANTIC_CAPABILITY_AUDIT.md S9 -- previously
         ; unchecked entirely: "this R3 scope does not verify the name
         ; matches the innermost open FOR").
         call CSTK_TOP                ; HL = innermost open frame
@@ -4678,7 +4678,7 @@ COMPILE_PROC:
         ld b,a
         call LABEL_DEFINE
         call CHK_ERR           ; RC shrink: return if a compile error is pending
-        ; post-R9 PROC/DEF-FN recursion-safety correction (docs/v2/
+        ; post-R9 PROC/DEF-FN recursion-safety correction (docs/
         ; V2_SEMANTIC_CAPABILITY_AUDIT.md S11): OP_PARAM_BIND replaces
         ; the plain OP_STORE_VAR that used to bind the parameter here --
         ; it also saves the parameter's OLD value so a recursive call
@@ -4791,7 +4791,7 @@ COMPILE_CALL_STMT:
 
 ; ===========================================================================
 ; COMPILE_DEF_FN — DEF FN name(param) = expr (post-R9 reintegration,
-; docs/v2/deffn_design/README.md). Reuses PROC's own compile-once
+; docs/deffn_design/README.md). Reuses PROC's own compile-once
 ; JMP-skip + LABEL_DEFINE-at-the-real-entry-position + PARAM_BIND/
 ; PARAM_UNBIND shape almost verbatim (PROC_SKIP_PATCH_TMP/PROC_PARAM_
 ; INDEX_TMP scratch, same reentrant parameter mechanism -- see rom/

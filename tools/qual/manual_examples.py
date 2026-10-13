@@ -1,6 +1,6 @@
 """Documentation-example suite for the V2 user manual (separate from the release baseline).
 
-The examples ARE the manual: every fenced block in docs/v2/manual/*.md that carries an `ex=<id>`
+The examples ARE the manual: every fenced block in docs/manual/*.md that carries an `ex=<id>`
 attribute is a test case.  Nothing here touches tools/qual/corpus.py (the 667-case language corpus),
 `make test` (1010 cases) or `make qual`; this suite has its own runner (manual_run.py), make target
 (`make doc-examples`) and results directory (build/doc-examples/).
@@ -64,7 +64,7 @@ import shlex
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
-MANUAL_DIR = os.path.join(ROOT, "docs", "v2", "manual")
+MANUAL_DIR = os.path.join(ROOT, "docs", "manual")
 IMAGE_DIR = os.path.join(MANUAL_DIR, "images")
 
 SPECIAL_KEYS = {"ENTER": 0x0D, "LEFT": 0x01, "DOWN": 0x02, "UP": 0x03, "RIGHT": 0x04, "DEL": 0x08,

@@ -5,7 +5,7 @@
 ; rom/, basic/, kernel/, include/.
 ;
 ; Purpose: resolve the single largest unmeasured number flagged in
-; docs/v2/REWRITE_VM_DESIGN.md's confidence statement -- the statement
+; docs/REWRITE_VM_DESIGN.md's confidence statement -- the statement
 ; compiler -- by building and assembling a REAL, representative slice
 ; covering assignment, IF, GOTO, FOR/NEXT, and a procedure CALL/RETURN,
 ; sharing a real lexer, statement dispatcher, symbol table, bytecode

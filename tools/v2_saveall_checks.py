@@ -6,7 +6,7 @@ the tape transport (STORAGE_SEND_BLOCK); the LOAD boots a fresh machine with tho
 EAR signal and runs the real V2_LOAD; the restored session is then questioned with immediate
 statements. Corruption cases edit the captured block (recomputing the tape parity, and the
 block CRC where the point is to get past it) to prove each LOAD check refuses what it should.
-Format: docs/v2/V2_SAVE_ALL_FORMAT.md.
+Format: docs/V2_SAVE_ALL_FORMAT.md.
 
 Run:  TS2068_DEBUG_STATE_DIR=<dir> TS2068_V2_PORT=<port> python3 tools/v2_saveall_checks.py [case ...]
 """
@@ -244,7 +244,7 @@ def sa_package_same():
 def sa_no_room():
     # ~2.4K of bytecode and ~6.8K of source, a(1000) fills what is left of the main pool, b(1000) goes
     # to segment 2: bytecode + segment 2 > V2_CODE_LIMIT - VM_CODE_BASE - the tail.  (RAM efficiency:
-    # the pool is 814 bytes larger, so a(600) no longer filled it -- docs/v2/RAM_EFFICIENCY_RESULTS.md.)
+    # the pool is 814 bytes larger, so a(600) no longer filled it -- docs/RAM_EFFICIENCY_RESULTS.md.)
     prog = ["POKE 16384,%d" % (i % 200) for i in range(400)] + ["DIM a(1000)", "DIM b(1000)"]
     P.boot()
     P.put_store(prog)

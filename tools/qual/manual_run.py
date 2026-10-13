@@ -4,7 +4,7 @@
   python3 tools/qual/manual_run.py [--out build/doc-examples] [--filter substr,...] [--workers 3]
                                    [--show] [--write-shots] [--list]
 
-Every example in docs/v2/manual/*.md (see manual_examples.py) is run on the release image in a
+Every example in docs/manual/*.md (see manual_examples.py) is run on the release image in a
 headless ZEsarUX; the result of each is PASS or FAIL.  This is NOT part of the 1010-case release
 baseline: `make test` / `make qual` neither run nor count these cases, and this runner reports its
 own totals.  Exit status is 1 if any example fails.

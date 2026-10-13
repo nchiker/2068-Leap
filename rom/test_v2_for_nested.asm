@@ -1,6 +1,6 @@
 ; ============================================================================
 ; rom/test_v2_for_nested.asm — post-R9 semantic-completion milestone: real
-; nested FOR/NEXT (docs/v2/V2_SEMANTIC_CAPABILITY_AUDIT.md S9).
+; nested FOR/NEXT (docs/V2_SEMANTIC_CAPABILITY_AUDIT.md S9).
 ;
 ; Standalone ROM image exercising rom/exrom_v2_compiler.asm's new
 ; compile-stack-based COMPILE_FOR/COMPILE_NEXT/COMPILE_EXIT_FOR and rom/
@@ -9,7 +9,7 @@
 ; build. Built on the shared production-shaped test harness (rom/
 ; test_v2_harness_home_head.inc/_tail.inc + rom/test_v2_harness_exrom.
 ; asm) -- see that harness's own header for why (post-semantic-milestone
-; test-infrastructure fix, docs/v2/POST_R9_TEST_INFRASTRUCTURE.md).
+; test-infrastructure fix, docs/POST_R9_TEST_INFRASTRUCTURE.md).
 ;
 ; Part 1 — real 2-level nesting, arithmetic correctness:
 ;
@@ -95,7 +95,7 @@ TEST_CUSTOM_MAIN:
     ; ------------------------------------------------------------------
     ; Negative check 1: NEXT variable that doesn't match the innermost
     ; open FOR must now be a real compile-time error (56), not silently
-    ; accepted (docs/v2/V2_SEMANTIC_CAPABILITY_AUDIT.md S9's own finding:
+    ; accepted (docs/V2_SEMANTIC_CAPABILITY_AUDIT.md S9's own finding:
     ; "this R3 scope does not verify the name matches the innermost open
     ; FOR"). Fresh compile, same session -- exercises COMPILER_INIT's own
     ; CFOR_STACK_DEPTH reset too.

@@ -6,7 +6,7 @@
 ; Purpose: produce a REAL assembled-byte-count for a representative slice of
 ; a compact bytecode VM (dispatch loop + ~20 representative opcode handlers +
 ; symbol-table access + mixed int/float dispatch + control flow), so
-; docs/v2/REWRITE_VM_DESIGN.md and REWRITE_ROM_BUDGET.md can cite measured
+; docs/REWRITE_VM_DESIGN.md and REWRITE_ROM_BUDGET.md can cite measured
 ; numbers instead of guesses for "the VM's own new code", extrapolated to a
 ; full ~40-opcode set.
 ;

@@ -6,7 +6,7 @@
 ; identifiers) together with R1's real rom/exrom_v2_vm_core.asm's new
 ; string opcodes (PUSH_STR_LIT/STORE_STR_VAR/STR_CONCAT/STR_CMP_LT/
 ; STR_CMP_EQ) — real strings, compiled and executed for real, per
-; docs/v2/ARCHITECTURE_B_IMPLEMENTATION_PLAN.md's R5 success gate. NOT
+; docs/ARCHITECTURE_B_IMPLEMENTATION_PLAN.md's R5 success gate. NOT
 ; wired into the production BASIC dispatch or the shipping EXROM build.
 ;
 ; Source program compiled and executed:

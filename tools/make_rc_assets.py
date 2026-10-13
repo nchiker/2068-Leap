@@ -15,7 +15,7 @@ script labels it; v2.0.0-emu.1 and v2.0.1-emu.1 were built that way). Anything e
 UNQUALIFIED DEVELOPMENT BUILD and is labelled so in its name, BUILD_INFO.txt and README.txt.
 
 The bundle also carries the Word 97 (.doc) edition of the manual when it is committed
-(docs/v2/2068_Leap_V2_Users_Manual.doc, `make manual-v2`), the emulator guide, the emulator patches
+(docs/2068_Leap_V2_Users_Manual.doc, `make manual-v2`), the emulator guide, the emulator patches
 and the EightyOne cartridge image (roms/leap_v2_exrom.dck)."""
 import hashlib
 import os
@@ -87,19 +87,19 @@ def main():
     for n in PACKAGES:
         shutil.copy("build/v2_package_%s.bin" % n, os.path.join(OUT, "packages"))
         shutil.copy("build/extensions/v2_%s.tzx" % n, os.path.join(OUT, "packages"))
-    for f in sorted(os.listdir("docs/v2")):
+    for f in sorted(os.listdir("docs")):
         if f.startswith("V2_") and f.endswith(".md") or f in ("PACKAGE_ABI.md", "AUTHORITATIVE_SOURCE.md"):
-            shutil.copy(os.path.join("docs/v2", f), os.path.join(OUT, "docs"))
-    shutil.copy("docs/v2/2068_Leap_V2_Users_Manual.docx", os.path.join(OUT, "docs"))
-    has_doc = os.path.isfile("docs/v2/2068_Leap_V2_Users_Manual.doc")
+            shutil.copy(os.path.join("docs", f), os.path.join(OUT, "docs"))
+    shutil.copy("docs/2068_Leap_V2_Users_Manual.docx", os.path.join(OUT, "docs"))
+    has_doc = os.path.isfile("docs/2068_Leap_V2_Users_Manual.doc")
     if has_doc:
-        shutil.copy("docs/v2/2068_Leap_V2_Users_Manual.doc", os.path.join(OUT, "docs"))
-    shutil.copy("docs/v2/EMULATOR_SETUP.md", os.path.join(OUT, "docs"))
+        shutil.copy("docs/2068_Leap_V2_Users_Manual.doc", os.path.join(OUT, "docs"))
+    shutil.copy("docs/EMULATOR_SETUP.md", os.path.join(OUT, "docs"))
     for f in ("0001-zesarux-mirror-ts2068-exrom.patch", "0001-Add-ULAplus-support-for-Timex-machines.patch",
               "COPYING", "README.md"):
         shutil.copy(os.path.join("patches", f), os.path.join(OUT, "patches"))
-    for f in sorted(os.listdir("docs/v2/manual")):
-        src = os.path.join("docs/v2/manual", f)
+    for f in sorted(os.listdir("docs/manual")):
+        src = os.path.join("docs/manual", f)
         if os.path.isdir(src):
             shutil.copytree(src, os.path.join(OUT, "docs/manual", f))
         else:
@@ -115,7 +115,7 @@ def main():
         RELEASE,
         "version:     %s" % VERSION,
         "status:      %s" % STATUS,
-        "hardware:    NOT TESTED — PHYSICAL HARDWARE UNAVAILABLE (docs/v2/V2_HARDWARE_CHECKLIST.md)",
+        "hardware:    NOT TESTED — PHYSICAL HARDWARE UNAVAILABLE (docs/V2_HARDWARE_CHECKLIST.md)",
         "commit:      %s (%s)" % (sh("git", "rev-parse", "HEAD"), sh("git", "rev-parse", "--abbrev-ref", "HEAD")),
         "describe:    %s" % sh("git", "describe", "--always", "--dirty"),
         "built:       %s" % sh("date", "-u", "+%Y-%m-%dT%H:%M:%SZ"),

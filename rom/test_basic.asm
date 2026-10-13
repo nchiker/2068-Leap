@@ -135,7 +135,7 @@
 ; required after the match) — this now applies at EXECUTION time too,
 ; not just display: a label named "goto" would previously have been
 ; caught by the GOTO dispatch itself, a real gap fixed alongside adding
-; GOTO (see docs/programmers_reference.md).
+; GOTO (see docs/v1/programmers_reference.md).
 ;
 ; This is the ongoing test exercising the FULL pipeline together:
 ; kernel/editor (typing and navigation, via basic/'s
@@ -174,7 +174,7 @@
 ; never contained the feature being tested, and MEM_LINE_NEXT destroys
 ; DE per its own documented contract, but a loop restored its index
 ; counter from the stack before calling it rather than after, silently
-; corrupting the count (see docs/programmers_reference.md for the full
+; corrupting the count (see docs/v1/programmers_reference.md for the full
 ; account of all of these, including a purpose-built scope checker now
 ; used to catch the first class of mistake going forward).
 ;
@@ -197,7 +197,7 @@
 ; before it ever reached the assembler — but real testing still found
 ; two genuine gaps that verification alone had missed, underscoring why
 ; this project treats actual runs, not just careful design, as
-; necessary (see docs/programmers_reference.md for the full account).
+; necessary (see docs/v1/programmers_reference.md for the full account).
 ;
 ; IF/ELSEIF/ELSE/END IF now exist too — block form (nestable, with
 ; ELSEIF chains), a single-line short form (IF <cond> THEN <stmt>, no
@@ -209,11 +209,11 @@
 ; error is reported at RUN time for an unterminated block — the static
 ; checker validates each IF/ELSEIF/ELSE/END IF line's own syntax but
 ; doesn't verify whole-program block balance (see
-; docs/programmers_reference.md's "IF/ELSEIF/ELSE/END IF" section for
+; docs/v1/programmers_reference.md's "IF/ELSEIF/ELSE/END IF" section for
 ; why, and for the full execution-mechanism writeup).
 ;
 ; CLS, REM, BORDER <n>, and NEW now exist too — the first batch pulled
-; directly from docs/basic_language_reference.md's remaining gap list.
+; directly from docs/v1/basic_language_reference.md's remaining gap list.
 ; CLS clears the screen and resets where PRINT writes next back to row
 ; 0. REM is a comment — everything after the keyword is ignored,
 ; whatever it says (matches bare "REM" only; the full "REMark" spelling
@@ -228,7 +228,7 @@
 ; INK <n>, PAPER <n>, FLASH <n>, INVERSE <n>, and OVER <n> now exist
 ; too, same shape as BORDER <n> but for text rather than the screen
 ; edge. Unlike BORDER, INK/PAPER/FLASH/INVERSE actually change what
-; PRINT draws - see docs/programmers_reference.md's "INK / PAPER /
+; PRINT draws - see docs/v1/programmers_reference.md's "INK / PAPER /
 ; FLASH / INVERSE / OVER" section for how the attribute byte is
 ; computed. OVER is stored/validated and XOR-plots text and graphics
 ; (documented gap). NEW/cold boot now reset all five back to defaults
@@ -240,7 +240,7 @@
 ; value was accidentally a ROM-resident DB byte rather than a RAM
 ; sysvar, so PRINT's attribute write was silently a no-op every time,
 ; landing on the DB's compile-time 0 regardless of what INK/PAPER
-; actually said) - see docs/programmers_reference.md's own section
+; actually said) - see docs/v1/programmers_reference.md's own section
 ; for the full writeup, including how a raw memory dump (not static
 ; analysis) is what actually found it.
 ;
@@ -249,7 +249,7 @@
 ; column only. Positioning lasts for exactly one PRINT: the following
 ; line automatically resets back to column 0, matching classic
 ; Sinclair BASIC's own AT/TAB behavior. See
-; docs/programmers_reference.md's "AT / TAB" section for the full
+; docs/v1/programmers_reference.md's "AT / TAB" section for the full
 ; write-up, including the documented negative-row clamp limitation.
 ; Shares BASIC_STMT_PRINT's output path with the now-fixed INK/PAPER
 ; work above, but not yet specifically retested by the user itself.
@@ -324,10 +324,10 @@
 ; left completely untouched). Scope limit stated directly: only
 ; triggers on explicit navigation, not on typing further lines or
 ; pressing RUN without navigating first. See
-; docs/programmers_reference.md's "LIST / EDIT / DELETE" section for
+; docs/v1/programmers_reference.md's "LIST / EDIT / DELETE" section for
 ; the full write-up. MERGE was deliberately NOT built — LOAD now
 ; exists (kernel/storage/storage.asm, built in a separate, parallel
-; conversation — see docs/programmers_reference.md's own kernel/
+; conversation — see docs/v1/programmers_reference.md's own kernel/
 ; storage section) but replaces the current program outright rather
 ; than merging into it; MERGE itself remains a genuinely separate,
 ; unbuilt command.
@@ -344,13 +344,13 @@
 ; deliberate, keeps this feature's risk to GOTO/labels at zero by
 ; construction (the label-recognition code path is untouched, not
 ; just tested), not an oversight. See
-; docs/programmers_reference.md's own "Statement separator" section
+; docs/v1/programmers_reference.md's own "Statement separator" section
 ; for the full write-up, including the Python verification done
 ; before any Z80 was written.
 ;
 ; THIS FILE IS A MERGE of two separate, parallel conversations — one
 ; building the statement separator above, the other rebuilding SAVE/
-; LOAD from scratch (see docs/programmers_reference.md's kernel/
+; LOAD from scratch (see docs/v1/programmers_reference.md's kernel/
 ; storage section for that work's own history, including its own
 ; separately-confirmed test results). Both conversations branched from
 ; the same starting point and independently added new sysvars in the

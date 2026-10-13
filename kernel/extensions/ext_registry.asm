@@ -6,7 +6,7 @@
 ; into a RAM-loaded package" — deliberately NOT a port of V1's own
 ; BASIC_EXTENSION_REGISTER/EXT_SERVICE_* mechanism (register-passed
 ; arguments, per-run text rematching, basic.asm-resident registration
-; logic). See docs/v2/ARCHITECTURE_B_IMPLEMENTATION_PLAN.md's R7.5
+; logic). See docs/ARCHITECTURE_B_IMPLEMENTATION_PLAN.md's R7.5
 ; section for the full quantitative comparison this design was chosen
 ; from (compile-time-resolved slot id + runtime generation check, versus
 ; a V1-shaped runtime name-rescan) and why.
@@ -35,7 +35,7 @@
 ; in call order, before the extension's own exec routine is invoked. A
 ; result may be written to EXT_CALL_RESULT (currently unused by
 ; statement extensions; reserved for a later function-extension design,
-; explicitly out of THIS milestone's scope per docs/v2/
+; explicitly out of THIS milestone's scope per docs/
 ; ARCHITECTURE_B_IMPLEMENTATION_PLAN.md's own R7.5 write-up).
 ;
 ; STANDING CONVENTION (see rom/exrom_v2_vm_core.asm's own header for the
@@ -61,7 +61,7 @@
 ; SAME class of placement mistake in exrom_v2_decompiler.asm's own
 ; workspace (see that file's own header for the full account: include/
 ; sysvars.inc's real DEFS-allocated sysvars run continuously from $8000
-; through $8454 with zero gaps; docs/v2/REWRITE_RAM_BUDGET.md's own
+; through $8454 with zero gaps; docs/REWRITE_RAM_BUDGET.md's own
 ; "$8455-$BFFF usable pool" figure is the real boundary, not any single
 ; rom/exrom_v2_*.asm file's own local `equ`s). Unlike the decompiler's
 ; own workspace, this table must NOT reuse compile-time/decompile-time
@@ -208,7 +208,7 @@ EXT2_NAME_LEN:
 ; A=slot id on success. Destroys: AF, BC, DE, HL.
 ;
 ; Cap raised 4->5 (2068-Leap's own post-R8.5 sprite-module reconciliation
-; -- see docs/v2/ARCHITECTURE_B_IMPLEMENTATION_PLAN.md's own SPRITE
+; -- see docs/ARCHITECTURE_B_IMPLEMENTATION_PLAN.md's own SPRITE
 ; section): GRAB needs 5 args (slot,row,col,w,h). Same-size instruction
 ; change (`cp 5`->`cp 6`), zero net resident cost. COMPILE_EXT_CALL/
 ; OP_CALL_EXT's own arg-loops were already argcount-generic (no
@@ -362,7 +362,7 @@ EXT2_LOOKUP_NAME:     equ $BEEC   ; (2 bytes)
 EXT2_LOOKUP_LEN:      equ $BEEE   ; (1 byte)
 EXT2_LOOKUP_SLOT:     equ $BEEF   ; (1 byte)
 
-; EXT2_FOLD_UPPER removed (R10.7 dormant-ROM audit, docs/v2/R10_7_
+; EXT2_FOLD_UPPER removed (R10.7 dormant-ROM audit, docs/R10_7_
 ; DORMANT_ROM_CONSOLIDATION_AUDIT.md): it was a byte-for-byte duplicate of
 ; rom/exrom_v2_compiler.asm's own FOLD_UPPER, kept separate only because
 ; this file is sometimes included WITHOUT exrom_v2_compiler.asm (rom/

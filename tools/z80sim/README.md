@@ -42,7 +42,7 @@ commit of this repository it carries and how to update it. Change the simulator 
 2068-Leap; do not edit the vendored copy. Paths in the rest of this document are relative to this
 directory (`tools/z80sim/` inside 2068-Leap).
 
-License: MIT, see [LICENSE](LICENSE).
+License: MIT, see [LICENSE](../../LICENSE).
 
 ---
 

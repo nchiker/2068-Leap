@@ -52,7 +52,7 @@
 ; VALIDATION STATUS: assembled by sjasmplus as part of the production
 ; HOME/EXROM build and exercised by tools/z80sim/test_calc_dispatcher.py,
 ; the dedicated calculator smoke ROMs, and the integrated BASIC suite.
-; See docs/calculator_review.md for the current coverage and the explicit
+; See docs/v1/calculator_review.md for the current coverage and the explicit
 ; robustness limits that remain before this can be treated as a general-
 ; purpose replacement for the original ROM calculator.
 ;
@@ -896,7 +896,7 @@ CALC_PUSH_PI:
     jr   CALC_PUSH_FP_RAW
 
 ; pi = 3.14159265..., encoded by hand via this project's own documented
-; pack algorithm (docs/programmers_reference.md's calculator section)
+; pack algorithm (docs/v1/programmers_reference.md's calculator section)
 ; and cross-checked in Python before trusting it here: byte0=$82 ->
 ; unbiased exponent 2 (value = mantissa * 4, mantissa in [0.5,1)); the
 ; decoded round-trip value differs from math.pi by ~4e-9, negligible

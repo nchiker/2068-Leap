@@ -1,6 +1,6 @@
 ; ============================================================================
 ; rom/test_v2_chunk_boundary_values.asm — R10.7 source-staging-architecture
-; follow-up (docs/v2/R10_7_SOURCE_STAGING_ARCHITECTURE_AUDIT.md §8.5):
+; follow-up (docs/R10_7_SOURCE_STAGING_ARCHITECTURE_AUDIT.md §8.5):
 ; closes the two residual gaps the original rom/test_v2_chunk_refill_
 ; boundary.asm test flagged but didn't directly prove:
 ;

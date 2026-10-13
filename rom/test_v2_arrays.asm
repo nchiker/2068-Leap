@@ -10,7 +10,7 @@
 ; build. Built on the shared production-shaped test harness (rom/
 ; test_v2_harness_home_head.inc/_tail.inc + rom/test_v2_harness_exrom.
 ; asm) -- see that harness's own header for why (post-semantic-milestone
-; test-infrastructure fix, docs/v2/POST_R9_TEST_INFRASTRUCTURE.md).
+; test-infrastructure fix, docs/POST_R9_TEST_INFRASTRUCTURE.md).
 ;
 ; Source program compiled and executed:
 ;
@@ -46,7 +46,7 @@
 ; ============================================================================
 
 ; R10.7 dynamic-array redesign: decompiler support for OP_DIM/the
-; widened OP_ARR_LOAD/STORE operand is a known, reported gap (docs/v2/
+; widened OP_ARR_LOAD/STORE operand is a known, reported gap (docs/
 ; R10_7_CAPABILITY_RESTORATION.md) -- decompile verification dropped
 ; from this test; TEST_CHECK_RESULT below (updated for the new ARR_
 ; PTR_TABLE-indirected arena layout) still verifies real computed

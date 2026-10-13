@@ -5,7 +5,7 @@
 ; (PROC/ENDP declarations, CALL, by-value parameter binding) together with
 ; R1's real rom/exrom_v2_vm_core.asm's CALL/RET opcodes — real procedures,
 ; compiled and executed for real, per
-; docs/v2/ARCHITECTURE_B_IMPLEMENTATION_PLAN.md's R4 success gate. NOT
+; docs/ARCHITECTURE_B_IMPLEMENTATION_PLAN.md's R4 success gate. NOT
 ; wired into the production BASIC dispatch or the shipping EXROM build.
 ;
 ; Source program compiled and executed:

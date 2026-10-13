@@ -5,7 +5,7 @@
 ; fixed-address, partly tiered tables and ~600 bytes of near-identical scan /
 ; find-or-create code) with ONE append-only table of variable-length records
 ; that lives in the pool's free space (a "compile arena"), not in the dense
-; table bank. Spike: tools/spikes/tagged_symtab_spike.asm (docs/v2/R10_7_
+; table bank. Spike: tools/spikes/tagged_symtab_spike.asm (docs/R10_7_
 ; WORKSPACE_MANAGER_FEASIBILITY.md s15).
 ;
 ;   record = [rec_len:1][kind:1][namelen:1][index:1][name:namelen][extra:n]

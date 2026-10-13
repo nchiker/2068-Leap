@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Static checks of the V2 user manual (docs/v2/manual/*.md); run by `make doc-examples` first.
+"""Static checks of the V2 user manual (docs/manual/*.md); run by `make doc-examples` first.
 
 It needs no emulator.  What it checks, and why:
 
@@ -20,7 +20,7 @@ import re
 import sys
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
-MANUAL = os.path.join(ROOT, "docs", "v2", "manual")
+MANUAL = os.path.join(ROOT, "docs", "manual")
 issues = []
 
 

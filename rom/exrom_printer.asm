@@ -53,7 +53,7 @@
 ;      keyword compression"), so this is a direct walk of MEM_LINE_
 ;      FIRST/MEM_LINE_NEXT with no detokenizing step needed. This
 ;      dialect has no classic line numbers (labels replace them — see
-;      docs/basic_language_reference.md), so none are printed, matching
+;      docs/v1/basic_language_reference.md), so none are printed, matching
 ;      what the on-screen editor already shows.
 ; ============================================================================
 

@@ -6,18 +6,18 @@ are welcome.
 ## Before submitting a change
 
 Work on V2 happens on the `v2-development` branch (V1 on `main` is archived;
-see [`docs/V1_LEGACY.md`](docs/V1_LEGACY.md)).
+see [`docs/v1/README.md`](docs/v1/README.md)).
 
 1. Build and run the static checks with `make check`.
 2. Confirm ROM capacity with `make budget`.
 3. With the patched ZEsarUX and `ts2068-debug` installed (see
-   [`docs/v2/TESTING.md`](docs/v2/TESTING.md)), run the full headless
+   [`docs/TESTING.md`](docs/TESTING.md)), run the full headless
    regression gate with `make test`, and `make doc-examples` when the manual
    or the behaviour it documents changes.
-4. Update the user manual (`docs/v2/manual/`, then `make manual-v2` for the
+4. Update the user manual (`docs/manual/`, then `make manual-v2` for the
    Word editions) and the technical documentation when behaviour changes.
 5. Add or update a test case for language changes (the qualification corpus
-   in `tools/qual`, see `docs/v2/TESTING.md`).
+   in `tools/qual`, see `docs/TESTING.md`).
 
 Home ROM and EXROM capacity are hard architectural limits. Please include the
 before/after output of `make budget` for changes that add ROM code.
@@ -30,8 +30,8 @@ images, emulator screenshots, tape captures, or copyrighted reference ROMs.
 Z80 / sjasmplus, symbolic constants only (`include/`), one module = one
 concern, every public routine documented in its header comment and in the
 Programmer's Reference, correctness before optimization. See
-[`docs/programmers_reference.md`](docs/programmers_reference.md) for the
-long version and [`docs/development_log.md`](docs/development_log.md) for
+[`docs/v1/programmers_reference.md`](docs/v1/programmers_reference.md) for the
+long version and [`docs/v1/development_log.md`](docs/v1/development_log.md) for
 the module-by-module build/test history.
 
 **Before considering any non-trivial change to a large `.asm` file

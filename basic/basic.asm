@@ -6,8 +6,8 @@
 ; rom/v2_exrom.asm (the real, production V2 BASIC — compiled-to-bytecode,
 ; not this line interpreter) do not INCLUDE this file, directly or
 ; transitively, at all. Confirmed by direct INCLUDE-chain trace; see
-; docs/v2/R10_7_DORMANT_ARCHITECTURE_AUDIT.md §2/§3 for the full
-; disposition and docs/v2/R9_CUTOVER_LEDGER.md for when/why it was
+; docs/R10_7_DORMANT_ARCHITECTURE_AUDIT.md §2/§3 for the full
+; disposition and docs/R9_CUTOVER_LEDGER.md for when/why it was
 ; disconnected (the R9 production cutover).
 ;
 ; It contributes zero bytes to the shipping V2 ROM and must not drive
@@ -55,7 +55,7 @@
 ;     syntax validation would naturally go.
 ;
 ; The current implemented language and remaining limitations are listed in
-; docs/user_manual.md and docs/basic_language_reference.md.
+; docs/v1/user_manual.md and docs/basic_language_reference.md.
 ; ============================================================================
 
     INCLUDE "include/hardware.inc"
@@ -6052,7 +6052,7 @@ BASIC_VAR_FIND_OR_CREATE:
 ; (BASIC_TRY_ARRAY_ASSIGNMENT), which would otherwise duplicate this
 ; exact grammar. (Briefly parsed one-or-two comma-separated indices,
 ; 2026-08-22, for since-archived multi-dimensional array support — see
-; docs/programmers_reference.md's "Multi-dimensional arrays (archived)"
+; docs/v1/programmers_reference.md's "Multi-dimensional arrays (archived)"
 ; section.)
 ; In:  HL = pointer right after the array's own "(" (index expression
 ;      starts here)
@@ -6142,7 +6142,7 @@ BASIC_ARRAY_ELEMENT_ADDR_CORE:
 ;
 ; Multi-dimensional DIM (rows,cols) was built and verified here
 ; 2026-08-22, then archived the same day for Home ROM budget — see
-; docs/programmers_reference.md's "Multi-dimensional arrays (archived)"
+; docs/v1/programmers_reference.md's "Multi-dimensional arrays (archived)"
 ; section for the full design if reviving it is ever worth another
 ; look. This is back to its pre-that-work, 1D-only shape.
 ;
@@ -6802,7 +6802,7 @@ BASIC_STMT_REM:
 ; Parses BORDER <expr> and sets the screen border to the low 3 bits of
 ; the result (kernel/graphics's GFX_SET_BORDER already masks these off,
 ; but the language itself only defines colours 0-7, same as every
-; other colour-taking keyword in docs/basic_language_reference.md's
+; other colour-taking keyword in docs/v1/basic_language_reference.md's
 ; screen-output table).
 ; In:  HL = pointer just past the BORDER keyword
 ; Out: none; carry set on a malformed expression (MSG_SYNTAX_ERROR
@@ -7211,7 +7211,7 @@ BASIC_STMT_POKE:
 ; BASIC_STMT_PAUSE
 ; Parses PAUSE <n-expr>. n=0 waits indefinitely for a keypress; n>0
 ; waits exactly n display-frame ticks (kernel/interrupt's FRAMES,
-; INT_GET_FRAMES — see docs/basic_language_reference.md's "Program
+; INT_GET_FRAMES — see docs/v1/basic_language_reference.md's "Program
 ; control" section for the exact contract, carried over unchanged from
 ; classic Sinclair BASIC). The n>0 wait loop keeps its target in DE
 ; across every INT_GET_FRAMES call rather than a sysvar, since that
@@ -8758,7 +8758,7 @@ BASIC_STMT_NEXT:
 ; ============================================================================
 ; BASIC_STMT_EXIT
 ; EXIT FOR — breaks out of the innermost open FOR loop early, without
-; leaving the enclosing program (see docs/basic_language_reference.md's
+; leaving the enclosing program (see docs/v1/basic_language_reference.md's
 ; "RETurn vs. EXIT" — RETurn is a completely separate mechanism for
 ; GOSUB/procedures, not built yet, don't conflate the two).
 ;
@@ -8998,7 +8998,7 @@ BASIC_CHECK_STATEMENT_EXROM:
 ; instructions before this file's own explicit `ei` at each call site
 ; runs. Confirmed harmless, not just assumed: EI is idempotent, no
 ; sysvar either wrapper touches lives in chunk 6, and KBD_ISR_TICK
-; never touches chunk 6 either (see docs/memory_map.md) — so it does
+; never touches chunk 6 either (see docs/v1/memory_map.md) — so it does
 ; not matter that interrupts come back on a few instructions earlier
 ; than the original single-image code turned them on. The call sites'
 ; own explicit `ei` is kept anyway, as a defensive, self-documenting
@@ -11568,7 +11568,7 @@ FUNCTION_TABLE:
     ; KW_FN_INKEY/FUNC_ID_INKEY removed (2026-08-22) — INKEY$ upgraded
     ; to return a real string, moved to STRING_FUNCTION_TABLE below
     ; (STRFUNC_ID_INKEY) now that string scalars/comparison exist to
-    ; make that worthwhile. See docs/basic_language_reference.md's own
+    ; make that worthwhile. See docs/v1/basic_language_reference.md's own
     ; INKEY$ section for the full history.
     DW KW_FN_STICK, BASIC_EVAL_PRIMARY.call_stick
     DB 1
@@ -11702,7 +11702,7 @@ KW_STEP:    DB "STEP", 0          ; connector keyword within FOR's own
 ; routines now walk this ONE table instead of each keeping their own
 ; hardcoded copy — previously two separate hardcoded lists that had to
 ; be kept in sync by hand, which is exactly how IF/ELSEIF/ELSE shipped
-; without bolding (see docs/programmers_reference.md's basic/ section
+; without bolding (see docs/v1/programmers_reference.md's basic/ section
 ; for the full story). Adding a keyword to bold/uppercase highlighting
 ; now means adding ONE row here; both consumers pick it up
 ; automatically. Each entry is a pointer to a KW_ reference string,

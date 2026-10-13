@@ -1,7 +1,7 @@
 ; ============================================================================
 ; rom/exrom_v2_arrstore.asm -- R10.9 Phase 2C: the persistent Array Store
 ; (architecture C: an EXROM-owned service with eager bind; see
-; docs/v2/R10_9_PHASE2B_REPORT.md and docs/v2/R10_9_PHASE2C_REPORT.md).
+; docs/R10_9_PHASE2B_REPORT.md and docs/R10_9_PHASE2C_REPORT.md).
 ;
 ; Store (segment 2, ARR2_BASE .. PAS_END):
 ;   entry = [len:2][kind:1 (2 numeric | 3 string)][namelen:1][name][descriptor]

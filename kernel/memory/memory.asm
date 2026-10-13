@@ -2,7 +2,7 @@
 ; kernel/memory/memory.asm — line storage, program iterator, label table
 ;
     DEFINE KERNEL_MEMORY_PRESENT
-    ; ^ R10.7 source-staging-architecture change (docs/v2/R10_7_SOURCE_
+    ; ^ R10.7 source-staging-architecture change (docs/R10_7_SOURCE_
     ; STAGING_ARCHITECTURE_AUDIT.md): lets rom/exrom_v2_compiler.asm's
     ; CHUNK_APPEND_ONE_RECORD guard its one same-bank call to MEM_LINE_
     ; NEXT behind IFDEF -- several rom/test_v2_*.asm standalone harnesses
@@ -18,14 +18,14 @@
 ;
 ; Owns:
 ;   - The BASIC program area's on-disk/in-RAM format (line storage, no
-;     line numbers — see docs/basic_language_reference.md).
+;     line numbers — see docs/v1/basic_language_reference.md).
 ;   - The program iterator (walk the program one statement at a time).
 ;   - Generic memory-shift primitives, reused by line storage, the
 ;     editor's insert/delete, and the label table's own insert/remove —
 ;     one implementation, several callers, per this project's "kernel
 ;     modules stay reusable" rule.
 ;   - The label table (name -> program position), which is what replaced
-;     EDITOR_RENUMBER (see docs/basic_language_reference.md, "Label
+;     EDITOR_RENUMBER (see docs/v1/basic_language_reference.md, "Label
 ;     table"). Top-level scope only for now — per-procedure scopes need
 ;     DEFine PROCedure/DEFine FuNction storage, which basic/ hasn't
 ;     designed yet.
@@ -41,7 +41,7 @@
     INCLUDE "include/hardware.inc"
     INCLUDE "include/sysvars.inc"
 
-; ---- line storage format (see docs/basic_language_reference.md) ----
+; ---- line storage format (see docs/v1/basic_language_reference.md) ----
 ; Each statement in the program area is stored as:
 ;   [length: 2 bytes, little-endian, counts the tokens+terminator below]
 ;   [tokenised statement text]
@@ -54,7 +54,7 @@
 LINE_LEN_SIZE       EQU 2
 LINE_TERMINATOR     EQU $0D
 
-; ---- label table format (see docs/basic_language_reference.md) ----
+; ---- label table format (see docs/v1/basic_language_reference.md) ----
 ; Table header:
 ;   [count: 2 bytes] — number of entries currently in this scope's table
 ; Each entry, contiguous, unsorted (tables are small — linear scan is
@@ -168,7 +168,7 @@ EXT_SERVICE_TABLE_TEMPLATE_END:
     ENDIF
     ENDIF
 
-; MEM_LABEL_TABLE_CLEAR removed (R10.7 dormant-ROM audit, docs/v2/R10_7_
+; MEM_LABEL_TABLE_CLEAR removed (R10.7 dormant-ROM audit, docs/R10_7_
 ; DORMANT_ROM_CONSOLIDATION_AUDIT.md): it reset LABEL_TABLE_TOP/USED, state
 ; that only MEM_LABEL_FIND/LOOKUP/ADD/REMOVE (also removed, see below) ever
 ; read — V1's own runtime label table, superseded for V2 by the compile-
@@ -338,7 +338,7 @@ MEM_LINE_NEXT:
     ret
 
 ; MEM_LABEL_FIND/MEM_LABEL_LOOKUP/MEM_LABEL_ADD/MEM_LABEL_REMOVE removed
-; (R10.7 dormant-ROM audit, docs/v2/R10_7_DORMANT_ROM_CONSOLIDATION_AUDIT.
+; (R10.7 dormant-ROM audit, docs/R10_7_DORMANT_ROM_CONSOLIDATION_AUDIT.
 ; md): V1's own runtime label table (editor-level "label replaces line
 ; number" rewriting at a program-text POSITION), confirmed zero callers in
 ; the real V2 build (rom/v2_home.asm/rom/v2_exrom.asm's own INCLUDE

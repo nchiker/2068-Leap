@@ -11,7 +11,7 @@ HOME + EXROM exactly as shipped) under ZEsarUX through ts2068-debug:
 * direct calls into production routines (`V2_RUN_STORED`, `V2_DISPATCH`, ...)
   with state written to RAM, where typing or tape timing would add nothing.
 
-What is NOT real here (documented in docs/v2/R10_9_PHASE1_REPORT.md): the
+What is NOT real here (documented in docs/R10_9_PHASE1_REPORT.md): the
 analogue cassette path, physical keyboard matrix timing, display contention,
 real EXROM/Dock hardware, real AY / ULAplus / printer hardware.
 

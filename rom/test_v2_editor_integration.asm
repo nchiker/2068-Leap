@@ -5,7 +5,7 @@
 ; Real end-to-end round trip through the ACTUAL, unmodified, production
 ; full-screen editor engine (rom/exrom_editor.asm's EDITOR_INIT/
 ; EDITOR_ENTER -- confirmed KEEP, zero interpreter-internals dependency
-; per docs/v2/V2_ARCHITECTURE.md) together with V2's real compiler, VM,
+; per docs/V2_ARCHITECTURE.md) together with V2's real compiler, VM,
 ; and decompiler:
 ;
 ;   EDITOR_ENTER -> EDIT_LINE_BUF (raw, null-terminated ASCII text,

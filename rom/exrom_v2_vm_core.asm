@@ -1,12 +1,12 @@
 ; ============================================================================
 ; rom/exrom_v2_vm_core.asm — Architecture B, R1: production VM core
 ; (integer execution — Milestone 01's original 7 opcodes, extended to the
-; full integer-domain opcode set per docs/v2/ARCHITECTURE_B_IMPLEMENTATION_
+; full integer-domain opcode set per docs/ARCHITECTURE_B_IMPLEMENTATION_
 ; PLAN.md's R1 scope: HALT, PUSH_I8, PUSH_I16, LOAD_VAR, STORE_VAR, ADD, SUB,
 ; MUL, DIV, CMP_LT, CMP_EQ, JMP, JMPZ, FOR_INIT, FOR_NEXT, CALL, RET.)
 ;
 ; 2068-Leap V2 rewrite. Milestone 01 (the original 7-opcode slice) is real-
-; hardware-validated — see docs/v2/ARCHITECTURE_B_MILESTONE_01.md's RESULTS
+; hardware-validated — see docs/ARCHITECTURE_B_MILESTONE_01.md's RESULTS
 ; section. This revision extends that validated foundation with the rest of
 ; R1's integer-domain opcodes, per the plan's own explicit staging: floating
 ; point (R6), strings (R5), and platform-call trampolines (R7) are
@@ -24,9 +24,9 @@
 ; rom/test_v2_vm_milestone01.asm. Zero effect on the production V1
 ; interpreter or shipping ROM size.
 ;
-; Design reference: docs/v2/REWRITE_VM_DESIGN.md, docs/v2/
-; STATEMENT_COMPILER_SPIKE.md, docs/v2/ARCHITECTURE_B_MILESTONE_01.md,
-; docs/v2/ARCHITECTURE_B_IMPLEMENTATION_PLAN.md (R1).
+; Design reference: docs/REWRITE_VM_DESIGN.md, docs/
+; STATEMENT_COMPILER_SPIKE.md, docs/ARCHITECTURE_B_MILESTONE_01.md,
+; docs/ARCHITECTURE_B_IMPLEMENTATION_PLAN.md (R1).
 ;
 ; ============================================================================
 ; *** STANDING CONVENTION — READ THIS BEFORE ADDING OR EDITING ANY CODE ***
@@ -39,7 +39,7 @@
 ; separate times across R2/R3/R5/R6 (register-clobber bug count: R2's
 ; assignment-target-in-C, R2's load-opcode-clobbering-the-index, R3's
 ; RESOLVE_ALL_FIXUPS counter, R3's COMPILE_NEXT offset, R5's FOUR string-op
-; instances, R6's THREE float instances — see docs/v2/
+; instances, R6's THREE float instances — see docs/
 ; ARCHITECTURE_B_IMPLEMENTATION_PLAN.md's R2/R3/R5/R6 sections for the full
 ; account of each). Every single instance had the same shape: a routine
 ; that "looks safe" to call — no hint from its name or its call site alone
@@ -60,7 +60,7 @@
 ; costs a silent, hard-to-find correctness bug that a test program may or
 ; may not happen to exercise — several of the five bugs above were caught
 ; only because a specific test program happened to hit that exact path;
-; see the R6 retrospective audit (docs/v2/ARCHITECTURE_B_IMPLEMENTATION_
+; see the R6 retrospective audit (docs/ARCHITECTURE_B_IMPLEMENTATION_
 ; PLAN.md, R6 section) for what an UNexercised instance of this looks like
 ; before it's found.
 ; ============================================================================
@@ -264,8 +264,8 @@ VM_CALL_PUSH_TMP:   equ $B7A6  ; VM_CALL_PUSH scratch (2 bytes)
 
 SYM_REC_LEN:        equ 3       ; 3 bytes/record (tag + 2-byte value; no name
                                 ; field at runtime at all — REWRITE_RAM_BUDGET.md's
-; R10.7 item 7 (re-attempted — see docs/v2/R10_7_CAPABILITY_RESTORATION.md
-; and docs/v2/R10_7_CAPACITY_ARCHITECTURE_AUDIT.md): numeric scalars widen
+; R10.7 item 7 (re-attempted — see docs/R10_7_CAPABILITY_RESTORATION.md
+; and docs/R10_7_CAPACITY_ARCHITECTURE_AUDIT.md): numeric scalars widen
 ; 16->32. The extra 16 slots (48B) are NOT placed by growing this table in
 ; place (that cascaded into every table above it last time, which is how
 ; the real-but-unrelated VM_ARR_VALUE_TMP/VM_INPUT_COUNT collision got
@@ -280,7 +280,7 @@ SYM_REC_LEN:        equ 3       ; 3 bytes/record (tag + 2-byte value; no name
 ; and do not assume their contents survive past the next RUN.
 
 ; ---------------------------------------------------------------------------
-; Post-R9 PROC/DEF-FN recursion-safety correction (docs/v2/
+; Post-R9 PROC/DEF-FN recursion-safety correction (docs/
 ; V2_SEMANTIC_CAPABILITY_AUDIT.md S11): PROC's parameter was bound through
 ; a plain STORE_VAR into the SAME shared SYMTAB slot every other use of
 ; that name resolves to -- only the return address was saved/restored
@@ -332,7 +332,7 @@ TAG_STR:            equ 2   ; QUAL (Q-02): a string TEMP index on the operand st
 ; a 31-byte-cap string cannot fit in a 2-byte operand-stack slot, so string
 ; "values" on the operand stack are always a 2-byte STRTAB INDEX, pushed
 ; via the ordinary PUSH_I16 opcode reused for this purpose — see
-; docs/v2/ARCHITECTURE_B_IMPLEMENTATION_PLAN.md's R5 section for why no
+; docs/ARCHITECTURE_B_IMPLEMENTATION_PLAN.md's R5 section for why no
 ; new "push a string index" opcode was needed) ---
 ; R8.5 Group 4 -- fixed-stride runtime array pool. Integer-only (TAG_INT),
 ; statically sized (compile-time-constant DIM), flat 2-bytes/element
@@ -343,7 +343,7 @@ TAG_STR:            equ 2   ; QUAL (Q-02): a string TEMP index on the operand st
 ; removed. Arrays now live in a sequential arena growing from ARRAYS_
 ; END up to VARS_START (include/sysvars.inc) -- real, already-existing,
 ; already-correctly-reset-by-NEW/CLEAR/cold-boot sysvars that nothing
-; previously advanced past PROG_END. See docs/v2/R10_7_ARRAY_
+; previously advanced past PROG_END. See docs/R10_7_ARRAY_
 ; ARCHITECTURE_AUDIT.md Part 2 for the full design.
 ;
 ; ARR_PTR_TABLE: one 2-byte runtime arena-address slot per possible
@@ -610,7 +610,7 @@ VM_FOR_STEP:         equ $B6E2  ; R8.5 Group 5 -- FOR...STEP. Remembered
                                    ; nesting up to VM_FOR_NEST_MAX deep is now
                                    ; supported (was a KNOWN, DOCUMENTED
                                    ; single-active-loop limitation before
-                                   ; this milestone; docs/v2/
+                                   ; this milestone; docs/
                                    ; V2_SEMANTIC_CAPABILITY_AUDIT.md S9).
 
 ; ---------------------------------------------------------------------------
@@ -651,7 +651,7 @@ BFN_ABS_IDX_TMP:      equ $B6CE    ; (2 bytes): R8.5 Group 1 -- BUILTIN_
 ; every one of these is real RAM, not a register held across a call or a
 ; loop that itself calls something else — the standing discipline
 ; established after four real register-clobber bugs found via ZEsarUX
-; execution in R2/R3 (see docs/v2/ARCHITECTURE_B_IMPLEMENTATION_PLAN.md).
+; execution in R2/R3 (see docs/ARCHITECTURE_B_IMPLEMENTATION_PLAN.md).
 
 ; ---------------------------------------------------------------------------
 ; VM_INIT — call once before VM_RUN. Resets both stacks, error/halt flags.
@@ -906,7 +906,7 @@ VM_RUN:
                                  ; 52-54 (formerly MODE/ULAPLUS/PALETTE,
                                  ; removed to a loadable extension package)
                                  ; are now JMP_DEFFN/CALL_UDF/RET_DEFFN
-                                 ; (post-R9 DEF FN reintegration, docs/v2/
+                                 ; (post-R9 DEF FN reintegration, docs/
                                  ; deffn_design/README.md) -- runtime-
                                  ; IDENTICAL aliases of JMP/CALL/RET, a
                                  ; compile-time/decompile-time
@@ -1126,7 +1126,7 @@ VM_PUSH:                       ; input: HL = value, A = tag
 ; PUSH_INT_CONTINUE -- shared opcode-handler tail: push HL as a plain
 ; TAG_INT value and continue the VM dispatch loop. Identical 3-
 ; instruction, 7-byte sequence previously duplicated 21 times across
-; this file's own opcode handlers (R10.7 dormant-ROM audit, docs/v2/
+; this file's own opcode handlers (R10.7 dormant-ROM audit, docs/
 ; R10_7_DORMANT_ROM_CONSOLIDATION_AUDIT.md). A pure tail-jump (never a
 ; `call`) into VM_RUN.loop, which itself never returns here -- no stack
 ; surgery of any kind, so every call site just becomes `jp
@@ -1163,7 +1163,7 @@ VM_POP:                        ; output: HL = value, A = tag
 ; tail used by OP_ARR_LOAD/STORE and OP_STRARR_LOAD/STORE's own array-
 ; index/value operand fetches (identical `call VM_POP / cp TAG_INT / jp
 ; nz,VM_ERR_ARRAY_TYPE` sequence previously duplicated 6 times; R10.7
-; dormant-ROM audit, docs/v2/R10_7_DORMANT_ROM_CONSOLIDATION_AUDIT.md).
+; dormant-ROM audit, docs/R10_7_DORMANT_ROM_CONSOLIDATION_AUDIT.md).
 ; Out: HL = value, A = TAG_INT (on success); jumps to VM_ERR_ARRAY_TYPE
 ; directly otherwise, same as the inlined version did. Destroys: AF.
 VM_POP_CHECK_INT:
@@ -1448,7 +1448,7 @@ VM_STORE_VAR_BY_INDEX:
 
 ; ---------------------------------------------------------------------------
 ; OP_PARAM_BIND / OP_PARAM_UNBIND (opcodes 56/57) -- post-R9 PROC/DEF-FN
-; recursion-safety correction (docs/v2/V2_SEMANTIC_CAPABILITY_AUDIT.md
+; recursion-safety correction (docs/V2_SEMANTIC_CAPABILITY_AUDIT.md
 ; S11). COMPILE_PROC emits OP_PARAM_BIND where it used to emit a plain
 ; OP_STORE_VAR at a procedure's own entry (right after its skip-JMP), and
 ; OP_PARAM_UNBIND right before OP_RET at its own exit. Both share the
@@ -1506,7 +1506,7 @@ OP_PARAM_UNBIND:
 ; still travels WITH every access for the bounds check (now 16-bit, no
 ; longer capped at 255), but the array's own DATA now lives in the
 ; arena (ARRAYS_END..VARS_START), reached via one extra indirection
-; through ARR_PTR_TABLE[array_index] -- see docs/v2/R10_7_
+; through ARR_PTR_TABLE[array_index] -- see docs/R10_7_
 ; ARRAY_ARCHITECTURE_AUDIT.md Part 2 for the full design.
 ; ---------------------------------------------------------------------------
 
@@ -1678,7 +1678,7 @@ ARENA_ALLOC_NUMERIC:
 
 ; ---------------------------------------------------------------------------
 ; R10.7 Dynamic Data Phase 2 -- string arrays, DIM A$(n[,w]). Same arena/
-; pointer-table/OP_DIM machinery as the numeric arrays above (docs/v2/
+; pointer-table/OP_DIM machinery as the numeric arrays above (docs/
 ; R10_7_ARRAY_ARCHITECTURE_AUDIT.md Part 2 item 2), reusing STRARR_PTR_
 ; TABLE/STRARRAY_MAX_COUNT already reserved there. A string array element
 ; is a fixed-width, length-prefixed [len:1][content:width-1] record --
@@ -2102,7 +2102,7 @@ OP_INPUT_STR:
 ; VM_PREPARE_BINARY_OPERANDS and VM_FLOAT_BINARY_COMMON below; the latter
 ; reaches its op-specific CALC_*_STUB indirectly through HL via the
 ; existing VM_CALL_USR_TRAMPOLINE `jp (hl)` idiom. Behavior unchanged
-; (same flags/ops/order); see docs/v2/R10_5_SHRINK.md.
+; (same flags/ops/order); see docs/R10_5_SHRINK.md.
 VM_PREPARE_BINARY_OPERANDS:
         rst $10                 ; HL = b, A = tag_b
         ld (VM_FLOAT_B_TAG),a
@@ -2684,7 +2684,7 @@ OP_RET:
 ; EXISTING VM_PUSH/OP_PUSH_I16 mechanism — no new operand-stack tag was
 ; needed, since the compiler alone (not the VM) tracks which values are
 ; "really" string indices, per this milestone's own scoped design (see
-; docs/v2/ARCHITECTURE_B_IMPLEMENTATION_PLAN.md's R5 section).
+; docs/ARCHITECTURE_B_IMPLEMENTATION_PLAN.md's R5 section).
 ; ===========================================================================
 
 OP_PUSH_STR_LIT:
@@ -3051,7 +3051,7 @@ VM_CALC_CHECK:
 ; FLOAT, divide via the calculator, store result" tail. Entry: caller has
 ; already set VM_FLOAT_A_VAL/VM_FLOAT_B_VAL (as plain INT16s). Terminal —
 ; falls straight through to VM_RUN.loop like its call sites always did.
-; Behavior unchanged; see docs/v2/R10_5_SHRINK.md.
+; Behavior unchanged; see docs/R10_5_SHRINK.md.
 VM_DIV_VIA_FLOAT:
         xor a
         ld (CALC_SP),a
@@ -3159,7 +3159,7 @@ VM_CALC_CLASSIFY:                 ; QUAL (float FOR): A = $FF / 0 / 1 for CALC_S
 
 ; ---------------------------------------------------------------------------
 ; VM_POP_COERCE_INT -- shared FLOAT/INT type-boundary mechanism (post-R9
-; semantic-completion milestone, docs/v2/V2_SEMANTIC_CAPABILITY_AUDIT.md
+; semantic-completion milestone, docs/V2_SEMANTIC_CAPABILITY_AUDIT.md
 ; S4/S13). Pops one operand exactly like VM_POP, but if it is FLOAT-
 ; tagged (a FLOATTAB index, NOT the number, if used raw), truncates it
 ; to a plain 16-bit int via the real calculator -- the SAME technique
@@ -3403,7 +3403,7 @@ VM_PUSH_U16:
 ; ===========================================================================
 ; PLATFORM INTEGRATION (R7 addition) — native-call opcodes reaching real,
 ; UNMODIFIED kernel/graphics primitives (GFX_CLS/GFX_PAINT_ATTR/
-; GFX_SET_BORDER/GFX_WRITE_PIXEL), per docs/v2/
+; GFX_SET_BORDER/GFX_WRITE_PIXEL), per docs/
 ; ARCHITECTURE_B_IMPLEMENTATION_PLAN.md's R7 scope ("calling convention
 ; into existing platform modules, no changes to those modules
 ; themselves"). Deliberately NOT calling into basic/basic.asm's own
@@ -3808,8 +3808,8 @@ OP_RANDOMISE:
 ; R7.5 — V2-native loadable-extension dispatch. See kernel/extensions/
 ; ext_registry.asm's own header for the full design (compile-time-
 ; resolved slot id + a runtime generation check, chosen over a V1-shaped
-; runtime name-rescan — the quantitative comparison lives in docs/v2/
-; ARCHITECTURE_B_IMPLEMENTATION_PLAN.md's R7.5 section) and docs/v2/
+; runtime name-rescan — the quantitative comparison lives in docs/
+; ARCHITECTURE_B_IMPLEMENTATION_PLAN.md's R7.5 section) and docs/
 ; REWRITE_VM_DESIGN.md's own cross-link.
 ; ===========================================================================
 
@@ -4470,7 +4470,7 @@ BUILTIN_FN_ATTR:
 ; own INT()): a FLOAT argument must genuinely truncate toward zero and
 ; come back INT-tagged. VM_POP_COERCE_INT is exactly the INT() operation
 ; already, so this is now literally that shared routine plus a fresh
-; INT tag -- closing the "INT(3.7) still yields 3.7" bug (docs/v2/
+; INT tag -- closing the "INT(3.7) still yields 3.7" bug (docs/
 ; V2_SEMANTIC_CAPABILITY_AUDIT.md S4).
 
 ; PEEK(addr) -- confirmed via basic.asm's own .call_peek: reads raw

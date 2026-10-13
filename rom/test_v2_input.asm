@@ -11,7 +11,7 @@
 ; Built on the shared production-shaped test harness (rom/
 ; test_v2_harness_home_head.inc/_tail.inc + rom/test_v2_harness_exrom.
 ; asm) -- see that harness's own header for why (post-semantic-milestone
-; test-infrastructure fix, docs/v2/POST_R9_TEST_INFRASTRUCTURE.md).
+; test-infrastructure fix, docs/POST_R9_TEST_INFRASTRUCTURE.md).
 ;
 ; Source program compiled and executed:
 ;

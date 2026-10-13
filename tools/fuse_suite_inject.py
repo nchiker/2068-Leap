@@ -7,7 +7,7 @@ preload_gen.py's --autorun approach of baking the encoded program into
 the ROM image as a PRELOAD_DATA block.
 
 WHY (2026-08-23): after the Phase 4 dynamic-scalar-pool migration (see
-docs/programmers_reference.md), individual test_suite_*.asm builds ran
+docs/v1/programmers_reference.md), individual test_suite_*.asm builds ran
 83-113 bytes over Home ROM's 16K budget even though basic.asm itself
 still fits rom/test_basic.asm exactly — the PRELOAD_DATA payload itself
 (the raw encoded test program, sitting INSIDE the same ROM image as all

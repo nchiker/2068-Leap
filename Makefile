@@ -43,7 +43,7 @@ check: build
 	cd tools/z80sim && python3 -m unittest test_flags test_snapshot
 	tools/build_smoke_roms.sh
 	# Assemble-only guard for the non-production legacy/component-test
-	# fixture (basic/basic.asm + rom/exrom_build.asm, see docs/v2/
+	# fixture (basic/basic.asm + rom/exrom_build.asm, see docs/
 	# R10_7_DORMANT_ARCHITECTURE_AUDIT.md sec3/sec6.4): this chain shares
 	# kernel/memory.asm and kernel/io.asm with the real V2 production
 	# build, so a future production dead-code pass can silently break it
@@ -69,7 +69,7 @@ smoke-build:
 #                     are NOT part of `make test`.
 #   make test-all     Both suites.
 # `make check` is unchanged (assemble/lint only; it launches no emulator).
-# `make -n test | grep -i fuse` must print nothing (see docs/v2/TESTING.md).
+# `make -n test | grep -i fuse` must print nothing (see docs/TESTING.md).
 # ---------------------------------------------------------------------------
 test: all v2-packages smoke-build
 	tools/run_smoke_rom_tests.sh
@@ -80,7 +80,7 @@ test: all v2-packages smoke-build
 	$(MAKE) qual
 	$(MAKE) qual-maint
 
-# RC: the qualification suites on the in-tree build (docs/v2/V2_REGRESSION_REPORT.md): the language
+# RC: the qualification suites on the in-tree build (docs/V2_REGRESSION_REPORT.md): the language
 # corpus with the release-candidate expectations (strict PASS/FAIL/XFAIL/XPASS accounting: any FAIL,
 # XPASS or BLOCKED fails the target) and the variable-session lifecycle.
 qual: build v2-packages
@@ -92,7 +92,7 @@ qual: build v2-packages
 qual-maint: build v2-packages
 	tools/maint/run_maint_qual.sh
 
-# The V2 user manual's examples (docs/v2/manual/*.md): a SEPARATE suite, with its own runner and its own
+# The V2 user manual's examples (docs/manual/*.md): a SEPARATE suite, with its own runner and its own
 # totals; it is not part of `make test` / `make qual` and does not change the 1010-case release baseline.
 # Checks the manual's links/figures first (tools/check_manual.py), then runs every example on the in-tree
 # image (tools/qual/manual_run.py -> build/doc-examples/results.jsonl).
@@ -225,14 +225,14 @@ release-assets: build v2-packages manual
 	mkdir -p build/release/roms build/release/extensions build/release/docs build/release/demos build/release/patches
 	cp build/test_basic.bin build/exrom.bin build/exrom.dck build/ts2068rom_zesarux.bin build/release/roms/
 	cp build/extensions/v2_mode.tzx build/extensions/v2_sprite.tzx build/extensions/v2_printer.tzx build/extensions/v2_shapes.tzx build/release/extensions/
-	cp README.md RELEASE_NOTES.md ANNOUNCEMENT_RELEASE_1_BETA.md LICENSE build/release/
-	cp docs/emulator_setup.md docs/whats_new_release_1_beta.md docs/2068-Leap_Whats_New_Release_1_Beta.docx docs/user_manual.md docs/2068_Leap_Users_Manual.docx build/release/docs/
+	cp README.md docs/v1/RELEASE_NOTES.md docs/v1/ANNOUNCEMENT_RELEASE_1_BETA.md LICENSE build/release/
+	cp docs/EMULATOR_SETUP.md docs/v1/whats_new_release_1_beta.md docs/v1/2068-Leap_Whats_New_Release_1_Beta.docx docs/v1/user_manual.md docs/v1/2068_Leap_Users_Manual.docx build/release/docs/
 	cp demos/showcase.txt demos/smoketest.txt build/release/demos/
 	cp patches/0001-Add-ULAplus-support-for-Timex-machines.patch patches/0001-zesarux-mirror-ts2068-exrom.patch build/release/patches/
 	cd build/release && sha256sum roms/* extensions/* > SHA256SUMS.txt
 	cd build/release && zip -qrFS ../2068-Leap-Release-1-Beta.zip .
 # RC: the V2 release-candidate artifacts (ROM images, packages, V2 docs, SHA256SUMS, BUILD_INFO) in
-# build/release-v2-rc/ -- see docs/v2/V2_HARDWARE_CHECKLIST.md.
+# build/release-v2-rc/ -- see docs/V2_HARDWARE_CHECKLIST.md.
 rc-assets: build v2-packages
 	python3 tools/make_rc_assets.py
 

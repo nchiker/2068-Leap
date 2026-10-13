@@ -2,7 +2,7 @@
 ; rom/test_v2_r10_numeric.asm — R10 correctness-fix regression test.
 ;
 ; Standalone ROM image exercising three R10 corrections to
-; rom/exrom_v2_vm_core.asm (docs/v2/V2_SEMANTIC_CAPABILITY_AUDIT.md
+; rom/exrom_v2_vm_core.asm (docs/V2_SEMANTIC_CAPABILITY_AUDIT.md
 ; matrix rows 6-8, all previously documented-and-deferred, not fixed
 ; before R10):
 ;

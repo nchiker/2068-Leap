@@ -10,7 +10,7 @@
 ; CORRECTED: an earlier draft of this file left cursor keys undefined,
 ; on the wrong assumption that the TS2068 has dedicated cursor keys with
 ; an unconfirmed matrix position. It doesn't — the TS2068 keyboard is
-; laid out the same as the original Spectrum (see docs/hardware_notes.md),
+; laid out the same as the original Spectrum (see docs/v1/hardware_notes.md),
 ; so the standard CAPS SHIFT+5/6/7/8/0 combo scheme applies directly and
 ; these ARE confirmed. Values chosen from the low control-code range
 ; (below $20), clear of every printable ASCII value used in
@@ -66,7 +66,7 @@ KEY_DELETE_LINE   EQU $0F   ; CAPS SHIFT + 1 — deletes the whole
 KEY_BREAK         EQU $10   ; CAPS SHIFT + SPACE (row 7, bit 0) —
                             ; this is the standard, confirmed Spectrum-
                             ; family BREAK combo (see
-                            ; docs/hardware_notes.md), NOT a project-
+                            ; docs/v1/hardware_notes.md), NOT a project-
                             ; specific one. Deliberately scoped this
                             ; way: whether the TS2068's added physical
                             ; BREAK keycap is a genuinely separate

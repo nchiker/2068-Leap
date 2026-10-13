@@ -4,7 +4,7 @@
 ;; https://bumbershootsoft.wordpress.com/2026/07/18/starting-the-zx-spectrum-shooting-gallery-in-earnest/
 ;; -- a blaster truck, independently-moving targets, and 16x16-ish
 ;; sprite blitting over colored screen regions. Built from this
-;; project's own real primitives, verified against docs/user_manual.md:
+;; project's own real primitives, verified against docs/v1/user_manual.md:
 ;; the SPRITE GRAB/SHOW/MOVE/HIDE system, INKEY$() for polling, PAUSE
 ;; for real frame-accurate pacing (no busy-wait loops needed), and
 ;; BEEP for sound effects.

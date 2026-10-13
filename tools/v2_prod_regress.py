@@ -71,7 +71,7 @@ def tape_load_ok():
 
 
 # ------------------------------------------- tape failure semantics (R10.9 Phase 2A, D1/D2)
-# Policy under test (docs/v2/R10_9_PHASE2A_REPORT.md s3):
+# Policy under test (docs/R10_9_PHASE2A_REPORT.md s3):
 #   * a failed receive is NEVER reported as LOADED / VERIFIED;
 #   * failure BEFORE any destination byte was stored  -> program intact;
 #   * failure AFTER the first destination byte         -> known-safe empty program (as NEW);
@@ -593,7 +593,7 @@ def abi_pkg_roundtrip():
 
 # ----------------------------------------------------- strict compilation (R10.9 2D)
 # D3: anything that is not a valid program is a compile error, never a silent stop.  Compile error
-# codes: 64 unexpected token, 65 FOR without NEXT, 66 missing ')' (docs/v2/R10_9_PHASE2D_REPORT.md).
+# codes: 64 unexpected token, 65 FOR without NEXT, 66 missing ')' (docs/R10_9_PHASE2D_REPORT.md).
 D3_FAMILIES = {
     "stray-ENDIF": (["x = 1", "ENDIF", "y = 2"], 64),
     "stray-ELSE": (["x = 1", "ELSE", "y = 2"], 64),

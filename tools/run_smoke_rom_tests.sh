@@ -32,7 +32,7 @@ trap cleanup EXIT
 # V2_KTAB_* table and a V2_KTAB_MAGIC guard these images never satisfy;
 # pairing them with it was tried during the post-R9 test-infrastructure
 # audit and confirmed to trap harmlessly in EXROM's own V2_VERIFY_KTAB
-# guard, not a false pass -- see docs/v2/POST_R9_TEST_INFRASTRUCTURE.md).
+# guard, not a false pass -- see docs/POST_R9_TEST_INFRASTRUCTURE.md).
 # test_memory/test_math/test_editor_ops never touch EXROM at all (pure
 # Home-side kernel unit tests); any EXROM image just pads them out to
 # ZEsarUX's expected combined size.

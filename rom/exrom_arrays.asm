@@ -6,7 +6,7 @@
 ; well over Home ROM's own budget — same "cold statement, move it
 ; whole" pattern SAVE/LOAD/HELP/the editor/SPRITE/SOUND already used.
 ; That 2D support (DIM, read, write) was itself archived the same day
-; — see docs/programmers_reference.md's "Multi-dimensional arrays
+; — see docs/v1/programmers_reference.md's "Multi-dimensional arrays
 ; (archived)" section — once actually measuring Home/EXROM's real
 ; deficits (rather than estimating) showed the win wasn't worth its
 ; own budget cost. DIMN alone survived the archival: still genuinely

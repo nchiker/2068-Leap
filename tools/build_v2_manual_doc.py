@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build the Word 97-2003 (.doc) edition of the V2 user manual from the Word edition (make manual-v2).
 
-docs/v2/2068_Leap_V2_Users_Manual.docx -> docs/v2/2068_Leap_V2_Users_Manual.doc, converted by LibreOffice
+docs/2068_Leap_V2_Users_Manual.docx -> docs/2068_Leap_V2_Users_Manual.doc, converted by LibreOffice
 (`soffice --convert-to "doc:MS Word 97"`), a real binary Word file, not a renamed .docx. The result is
 checked before it replaces the committed file:
   * it is an OLE2 compound file (magic D0 CF 11 E0 A1 B1 1A E1) with a WordDocument stream;
@@ -18,8 +18,8 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-DOCX = ROOT / "docs/v2/2068_Leap_V2_Users_Manual.docx"
-DOC = ROOT / "docs/v2/2068_Leap_V2_Users_Manual.doc"
+DOCX = ROOT / "docs/2068_Leap_V2_Users_Manual.docx"
+DOC = ROOT / "docs/2068_Leap_V2_Users_Manual.doc"
 OLE2 = bytes.fromhex("D0CF11E0A1B11AE1")
 
 

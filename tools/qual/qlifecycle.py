@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Variable-session lifecycle test (owner decision 2, final semantics -- docs/v2/V2_SESSION_VARIABLES.md).
+"""Variable-session lifecycle test (owner decision 2, final semantics -- docs/V2_SESSION_VARIABLES.md).
 Unlike qrun/qprobe, the machine is NOT restored between the steps of one scenario.
 
   python3 tools/qual/qlifecycle.py <cfg> [--port N] [--root DIR] [--verbose]

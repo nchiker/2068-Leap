@@ -21,7 +21,7 @@
 ; expansion (STRING/MATH topics, a topic-list screen) was built, then
 ; deliberately reverted the same day — HELP now always shows the one
 ; EDITOR screen below, regardless of what (if anything) follows the
-; word HELP. See docs/programmers_reference.md's "HELP reverted to a
+; word HELP. See docs/v1/programmers_reference.md's "HELP reverted to a
 ; single EDITOR screen" section for why.
 ;
 ; HOW THIS CALLS BACK INTO HOME: every call this file makes to a

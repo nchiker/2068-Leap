@@ -1,6 +1,6 @@
 ; ============================================================================
 ; rom/test_v2_deffn.asm — post-R9 semantic-completion milestone: DEF FN
-; reintegration (docs/v2/deffn_design/README.md, docs/v2/
+; reintegration (docs/deffn_design/README.md, docs/
 ; V2_SEMANTIC_CAPABILITY_AUDIT.md S11/S21).
 ;
 ; Standalone ROM image exercising rom/exrom_v2_compiler.asm's new
@@ -195,7 +195,7 @@ KTAB_CALC_EXIT_TRAMPOLINE:
 ; COMPILE_PROGRAM unconditionally writes DECOMP_END_ADDR (a decompiler-
 ; owned label) even when the decompiler itself isn't linked in -- same
 ; mechanical requirement every pre-decompiler-inclusion v2 test file
-; already had (docs/v2/V2_SEMANTIC_CAPABILITY_AUDIT.md S2's own root-
+; already had (docs/V2_SEMANTIC_CAPABILITY_AUDIT.md S2's own root-
 ; cause note on this exact "Label not found" failure). This test never
 ; calls DECOMPILE_PROGRAM, so the address just needs to resolve, not do
 ; anything real.

@@ -4,9 +4,9 @@
 ;
 ; 2068-Leap V2 rewrite. Walks compiled V2 bytecode (rom/exrom_v2_vm_core.asm's
 ; own opcode encoding) and reconstructs valid, re-compilable BASIC-like
-; source text — the piece docs/v2/V2_ARCHITECTURE.md's own diagram calls
+; source text — the piece docs/V2_ARCHITECTURE.md's own diagram calls
 ; out as "LIST/EDIT reconstructing text via a small decompiler" and
-; docs/v2/ARCHITECTURE_B_IMPLEMENTATION_PLAN.md's R8 section flags as
+; docs/ARCHITECTURE_B_IMPLEMENTATION_PLAN.md's R8 section flags as
 ; "not yet built in any spike."
 ;
 ; STANDING CONVENTION (see rom/exrom_v2_vm_core.asm's own header for the
@@ -27,7 +27,7 @@
 ;
 ; DESIGN: variable NAMES are never preserved in bytecode by design
 ; (rom/exrom_v2_vm_core.asm's own SYMTAB stores [tag][value] only, per
-; docs/v2/REWRITE_RAM_BUDGET.md's compiled-index design) -- this
+; docs/REWRITE_RAM_BUDGET.md's compiled-index design) -- this
 ; decompiler does not try to recover the user's original spelling. It
 ; SYNTHESIZES names from the symbol index (V0, V1, V2, ...) instead. This
 ; is a real, deliberate, documented compatibility break: decompiled text
@@ -76,7 +76,7 @@
 ; Found via a real ts2068-debug run (not single-stepping, which never
 ; happened to execute far enough past the corrupting call to reveal
 ; it) plus a deterministic tools/z80sim replay for independent
-; confirmation. docs/v2/REWRITE_RAM_BUDGET.md's own "$8455-$BFFF usable
+; confirmation. docs/REWRITE_RAM_BUDGET.md's own "$8455-$BFFF usable
 ; pool" figure is the real boundary -- $8000-$8454 is 100% sysvars, not
 ; scratch space, regardless of what any single rom/exrom_v2_*.asm file's
 ; own `equ`s do or don't mention. This file's own workspace now reuses
@@ -200,7 +200,7 @@ DECOMP_LINE_LEN:      equ $BDAE  ; (1 byte) length of the line just
                                     ; written to DECOMP_OUT_BUF, valid
                                     ; only during the callback above
 DECOMP_ARR_SIZE:      equ $BDAF  ; post-R9 DIM/decompiler correction
-                                    ; (docs/v2/V2_SEMANTIC_CAPABILITY_
+                                    ; (docs/V2_SEMANTIC_CAPABILITY_
                                     ; AUDIT.md S14): ARRAY_MAX_COUNT (4)
                                     ; bytes, one per array index, 0 =
                                     ; never referenced by any OP_ARR_
@@ -969,7 +969,7 @@ DECOMP_SKIP_OPERAND:
         jr z,.w2
         cp 6                      ; JMP -- fixes a real bug found while
         jr z,.w2                    ; building the production-shaped
-                                      ; test harness (docs/v2/
+                                      ; test harness (docs/
                                       ; POST_R9_TEST_INFRASTRUCTURE.md):
                                       ; DECOMP_COLLECT_ARRAY_SIZES (post-R9
                                       ; DIM/decompiler correction) calls
@@ -1148,7 +1148,7 @@ DECOMP_COLLECT_LABELS:
         jr .loop
 
 ; ===========================================================================
-; DECOMP_COLLECT_ARRAY_SIZES — post-R9 DIM/decompiler correction (docs/v2/
+; DECOMP_COLLECT_ARRAY_SIZES — post-R9 DIM/decompiler correction (docs/
 ; V2_SEMANTIC_CAPABILITY_AUDIT.md S14/S7). DIM itself emits zero bytecode
 ; (resolved entirely at compile time into the compiler's own ARRSYMTAB),
 ; but every OP_ARR_LOAD/OP_ARR_STORE instruction already bakes in its own
@@ -1972,7 +1972,7 @@ DECOMPILE_PROGRAM:
 ; here), OR COMPILE_PROC's own skip-jump (R4 addition): PROC compiles to
 ; "JMP skip / PARAM_BIND paramidx / <body> / PARAM_UNBIND / RET / skip:"
 ; (post-R9: PARAM_BIND/UNBIND replace the plain STORE_VAR/bare-RET this
-; shape used before the recursion-safety correction -- docs/v2/
+; shape used before the recursion-safety correction -- docs/
 ; V2_SEMANTIC_CAPABILITY_AUDIT.md S11) -- the skip-JMP immediately
 ; followed by a PARAM_BIND is that shape's own unambiguous signature
 ; (PARAM_BIND never otherwise directly follows a JMP's operand in this
@@ -2045,7 +2045,7 @@ DECOMPILE_PROGRAM:
         call DECOMP_EMIT_NEWLINE
         jp DECOMPILE_PROGRAM.loop
 
-; JMP_DEFFN (opcode 52) -- post-R9 DEF FN reintegration (docs/v2/
+; JMP_DEFFN (opcode 52) -- post-R9 DEF FN reintegration (docs/
 ; deffn_design/README.md). Unlike plain JMP's own PROC-header peek
 ; above, this opcode UNAMBIGUOUSLY means "DEF FN's own skip-jump" --
 ; no peeking needed. The header line is left OPEN (no trailing newline):

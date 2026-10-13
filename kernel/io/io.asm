@@ -24,7 +24,7 @@
 ; Spectrum-family combo, IS now implemented below (IO_DECODE_KEY,
 ; KEY_BREAK). Still genuinely unconfirmed: whether the TS2068's added
 ; physical BREAK keycap is a distinct matrix position rather than this
-; same combo under a different keycap — see docs/hardware_notes.md's
+; same combo under a different keycap — see docs/v1/hardware_notes.md's
 ; "Still open" list and keys.inc's KEY_BREAK comment. A genuinely
 ; separate matrix position, if one exists, is not implemented.
 ;
@@ -157,7 +157,7 @@ IO_KEY_SCAN_ALL:
     ld   hl, IO_SCAN_TABLE
     ret
 
-; IO_ANY_KEY_DOWN removed (R10.7 dormant-ROM audit, docs/v2/R10_7_DORMANT_
+; IO_ANY_KEY_DOWN removed (R10.7 dormant-ROM audit, docs/R10_7_DORMANT_
 ; ROM_CONSOLIDATION_AUDIT.md): its own header said it existed only "for
 ; the interactive test in rom/test_io.asm" -- confirmed that was its one
 ; real consumer; inlined there as TEST_ANY_KEY_DOWN instead of kept here.
@@ -526,7 +526,7 @@ IO_READ_KEY_NONBLOCK:
     ret  z                              ; nothing latched — A already 0
     jr   IO_LATCH_AND_CLEAR
 
-; STICK_READ removed (R10.7 dormant-ROM audit, docs/v2/R10_7_DORMANT_ROM_
+; STICK_READ removed (R10.7 dormant-ROM audit, docs/R10_7_DORMANT_ROM_
 ; CONSOLIDATION_AUDIT.md): read a joystick's state via the AY-3-8912's I/O
 ; port A. V2 never grew a STICK/joystick BASIC feature -- confirmed zero
 ; callers in the real V2 build (rom/v2_home.asm/rom/v2_exrom.asm's own
@@ -649,7 +649,7 @@ KEY_ASCII_TABLE_SYMBOL:
     ; B='*' confirmed (needed for basic/'s multiplication operator)
     DB   0, 0, ".", ",", "*"
 
-; IO_CHECK_BREAK removed (R10.7 dormant-ROM audit, docs/v2/R10_7_DORMANT_
+; IO_CHECK_BREAK removed (R10.7 dormant-ROM audit, docs/R10_7_DORMANT_
 ; ROM_CONSOLIDATION_AUDIT.md): non-blocking BREAK-combo check meant to be
 ; polled from inside a running program's own execution loop -- V1's basic/
 ; basic.asm (unbuilt) was its only real caller; confirmed zero callers in

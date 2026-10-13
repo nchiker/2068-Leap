@@ -4,7 +4,7 @@
 ; Owns: BEEP's underlying hardware mechanism (SOUND_BEEP). Real TS2068/
 ; Spectrum-family hardware produces sound entirely by alternating bit 4
 ; ($10) of port $FE (PORT_ULA) — confirmed from the real ROM
-; disassembly's BEEPER/PARP routine (see docs/programmers_reference.md
+; disassembly's BEEPER/PARP routine (see docs/v1/programmers_reference.md
 ; for the full derivation). Border colour lives in bits 0-2 of the same
 ; port and must survive untouched; MIC output (bit 3) is forced off for
 ; the duration of the beep, same as real BEEPER — this project already

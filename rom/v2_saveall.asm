@@ -1,7 +1,7 @@
 ; ============================================================================
 ; rom/v2_saveall.asm -- RC (owner decision 2): SAVE "name" ALL, and the LOAD of such a tape.
 ; HOME-resident; the shell (rom/exrom_v2_shell.asm) drives it. Format, checks and lifecycle:
-; docs/v2/V2_SAVE_ALL_FORMAT.md.
+; docs/V2_SAVE_ALL_FORMAT.md.
 ;
 ; A SAVE ... ALL tape is ONE ordinary program block (header type 0) whose header PROGLEN (the
 ; Spectrum "program part" length) is shorter than its data length. After the program comes the

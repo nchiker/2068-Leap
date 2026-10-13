@@ -11,7 +11,7 @@
 ; NOT exercise rom/exrom_v2_shell.asm's own V2_SAVE_ARRAY/V2_LOAD_ARRAY/
 ; V2_SCAN_ARRAY_NAME (EXROM-resident shell dispatch, thin glue around
 ; this same core, validated separately via a real ZEsarUX production-
-; ROM command-line check per docs/v2/R10_7_CAPABILITY_RESTORATION.md).
+; ROM command-line check per docs/R10_7_CAPABILITY_RESTORATION.md).
 ;
 ; Round trip validated:
 ;   DIM A(5), A(0..4)=10,20,30,40,50 (real OP_DIM, real program compile)

@@ -2,7 +2,7 @@
 """R10.9 Phase 1 -- known-defect suite (strict expected failures, production ROM).
 
 Each case asserts the CORRECT behaviour.  Cases marked `xfail=` demonstrate a defect
-recorded in docs/v2/R10_8_GAP_ANALYSIS.md and are EXPECTED to fail until the fix lands;
+recorded in docs/R10_8_GAP_ANALYSIS.md and are EXPECTED to fail until the fix lands;
 they report XFAIL.  If one starts passing it reports XPASS and the run fails, so a fix
 cannot silently change this suite -- the marker must be removed in the same change and
 the case then becomes a normal gate test.  Cases WITHOUT `xfail=` are positive controls
@@ -75,7 +75,7 @@ def d5():
 # lifecycle), D12 (DIM zero-fill), D13 (array tape header type), D14 (array names > 8 characters),
 # D15 (descriptor validation) and D16 (array tape BAD TAPE VERSION) are now gate cases in
 # tools/v2_prod_arrays.py.  The two D15 declared-size cases (`count-short`, `count-long`) were
-# retargeted, as approved in Phase 2B (docs/v2/R10_9_PHASE2B_REPORT.md s8.1), from the LOAD to the
+# retargeted, as approved in Phase 2B (docs/R10_9_PHASE2B_REPORT.md s8.1), from the LOAD to the
 # start of RUN.
 
 # ------------------------------------------------------------------------ D9

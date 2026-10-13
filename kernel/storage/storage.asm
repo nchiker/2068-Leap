@@ -667,7 +667,7 @@ STORAGE_SAVE:
     ld   (STORAGE_HEADER_BUF + STORAGE_HEADER_LENGTH_OFF), hl
     IFDEF STORAGE_VERSIONED
     ; R10.9: every V2 header carries a version word in the autostart field
-    ; (docs/v2/PACKAGE_ABI.md s6) -- program/array format or package ABI.
+    ; (docs/PACKAGE_ABI.md s6) -- program/array format or package ABI.
     call STORAGE_VERSION_WORD             ; DE = word for STORAGE_REQUEST_TYPE
     ELSE
     ld   a, (STORAGE_REQUEST_TYPE)

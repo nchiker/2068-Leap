@@ -29,7 +29,7 @@
 ; involvement) when the division IS exact (W=6/2 => 3, tag TAG_INT) —
 ; together, one program that exercises every R6 mechanism, not just each
 ; in isolation. V/Q/U/T were added during this milestone's own
-; retrospective register-clobber audit (docs/v2/
+; retrospective register-clobber audit (docs/
 ; ARCHITECTURE_B_IMPLEMENTATION_PLAN.md's R6 section) specifically to
 ; cover three paths X/Y/Z/W never touched: OP_SUB's float_path (V=A-0.5,
 ; int-float), OP_MUL's float_path (T=X*2, float-int), and OP_DIV's OTHER
@@ -126,7 +126,7 @@ FAIL:
 ;                             3=Z(2.5,FLOAT)  4=W(3,INT)   5=V(2.5,FLOAT)
 ;                             6=Q(8.0,FLOAT)  7=U(4.0,FLOAT) 8=T(21.0,FLOAT)
 ;
-;   V/Q/U/T (retrospective-audit addition, see docs/v2/
+;   V/Q/U/T (retrospective-audit addition, see docs/
 ;   ARCHITECTURE_B_IMPLEMENTATION_PLAN.md's R6 section): X/Y/Z/W above
 ;   only ever exercised OP_ADD's and OP_DIV's fast-path/inexact-fallback
 ;   float branches. OP_SUB's and OP_MUL's own float_path branches, and

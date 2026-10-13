@@ -58,7 +58,7 @@ staleness problems, found together:
    now, so any of these would page into garbage the moment RUN (or
    any checker-invoking action) runs, even if the storage.asm issue
    above were fixed. Each already served its purpose and is
-   referenced in `docs/programmers_reference.md` as history for the
+   referenced in `docs/v1/programmers_reference.md` as history for the
    bug it helped find/confirm — kept here for that record, not for
    reassembly.
 

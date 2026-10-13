@@ -26,7 +26,7 @@ V2_RST_38:
     ASSERT $ <= V2_KTAB_MAGIC_ADDR
     DS V2_KTAB_MAGIC_ADDR - $, $FF
     DB V2_KTAB_MAGIC
-; R10.9 Phase 1: versioned package service table (docs/v2/PACKAGE_ABI.md), in what used
+; R10.9 Phase 1: versioned package service table (docs/PACKAGE_ABI.md), in what used
 ; to be unused $FF padding -- zero HOME-budget cost.  Header, 16 `jp` slots, room for 14
 ; more slots (append-only), then the one slot that needs a few bytes of code of its own.
     ASSERT $ == PKG_SVC_HEADER

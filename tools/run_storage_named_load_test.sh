@@ -8,7 +8,7 @@
 # STORAGE_LOAD transport (a shared, still-used primitive -- V2's own
 # rom/test_v2_save_load.asm reuses this same transport), but its PASS
 # does NOT prove rom/v2_home.asm/rom/v2_exrom.asm (the real V2
-# production ROM) boots or works -- see docs/v2/
+# production ROM) boots or works -- see docs/
 # POST_R9_TEST_INFRASTRUCTURE.md for the full test-target
 # classification.
 set -euo pipefail

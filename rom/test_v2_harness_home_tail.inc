@@ -11,7 +11,7 @@
 ; own DECOMP_COMPUTE_DIGITS needs real MATH_DIVIDE16/MULTIPLY16 for any
 ; multi-digit label/offset it renders, and a stub silently infinite-
 ; loops it instead of failing loudly -- found and documented during the
-; semantic-completion milestone, see docs/v2/POST_R9_SEMANTIC_
+; semantic-completion milestone, see docs/POST_R9_SEMANTIC_
 ; MILESTONE.md's own test-harness-capacity section) are both small
 ; enough to include for real unconditionally now that this harness has
 ; the full production-shaped 16K to work with, rather than re-litigate

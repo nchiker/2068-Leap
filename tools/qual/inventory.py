@@ -13,8 +13,8 @@ Classification codes (as requested):
   ID  implemented and documented        IU  implemented but undocumented (in current docs)
   DM  documented but missing            PI  partially implemented
   NS  intentionally unsupported         HW  requires physical hardware to qualify
-`doc` names the document that describes it (manual = docs/user_manual.md, a V1-era text with a V2
-transition note; spec = docs/v2/V2_LANGUAGE_SPEC.md; R10.8 = docs/v2/R10_8_FEATURE_MATRIX.md).
+`doc` names the document that describes it (manual = docs/v1/user_manual.md, a V1-era text with a V2
+transition note; spec = docs/V2_LANGUAGE_SPEC.md; R10.8 = docs/R10_8_FEATURE_MATRIX.md).
 `tests` lists corpus feature keys (tools/qual/corpus.py `feature`) and existing gate suites.
 """
 

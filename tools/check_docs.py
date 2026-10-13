@@ -19,21 +19,21 @@ Checks performed, and which real staleness bug each guards against:
 
 1. Font glyph count — kernel/graphics/graphics.asm's FONT_TABLE is
    counted directly (one DB line per glyph) and compared against every
-   "N glyphs" mention in docs/programmers_reference.md. This exact
+   "N glyphs" mention in docs/v1/programmers_reference.md. This exact
    count (83 -> 85) went stale in two docs after the '/' and '*'
    additions, and again would have after < and > if not re-checked by
    hand each time.
 
 2. Punctuation character count — PUNCT_CHAR_COUNT (graphics.asm) is
    compared against every "N punctuation characters" mention in
-   docs/programmers_reference.md. Same drift risk as #1, same root
+   docs/v1/programmers_reference.md. Same drift risk as #1, same root
    cause (a doc restates a count that lives in source).
 
 3. HELP topic coverage — if rom/exrom_help.asm ever grows a
    HELP_TOPIC_TABLE again (HELP is currently a single, permanent
    EDITOR-only screen with no such table — see that file's own
    header), every topic name in it gets checked for a mention in both
-   docs/programmers_reference.md and README.md, so a new HELP topic
+   docs/v1/programmers_reference.md and README.md, so a new HELP topic
    silently unmentioned in the docs gets flagged rather than
    discovered later. A no-op today.
 
@@ -53,7 +53,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 GRAPHICS_ASM = ROOT / "kernel" / "graphics" / "graphics.asm"
 BASIC_ASM = ROOT / "basic" / "basic.asm"
-PROG_REF = ROOT / "docs" / "programmers_reference.md"
+PROG_REF = ROOT / "docs" / "v1" / "programmers_reference.md"
 README = ROOT / "README.md"
 SYSVARS = ROOT / "include" / "sysvars.inc"
 
