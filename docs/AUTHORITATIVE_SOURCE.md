@@ -70,7 +70,10 @@ identity CRC `$5E95` in `BUILD_INFO.txt`.
 
 Comparing builds (exports of commits into the ignored `build/qual-builds/`):
 `tools/qual/build_configs.sh "" name=<ref> ...`, then `tools/qual/qbytecode.py`, `qbench.py`,
-`qrun.py --cfg`, `tools/qual/run_study_battery.sh build/qual-builds/<name> <port> <outdir>`.
+`qrun.py --cfg`, `tools/qual/run_study_battery.sh build/qual-builds/<name> <port> <outdir>`. For a
+compiler change meant to be output-neutral, also `tools/qual/qdiff.py` (full-RAM differential with
+generated and error-path programs) and `tools/qual/qcov_changed.py` (did that corpus execute every
+changed instruction): `docs/TESTING.md`, "Proving a compiler change leaves its output unchanged".
 
 **Verified independent of the study directories** (2026-10-11): a fresh clone of `v2-development`
 (`f4cabad`) builds byte-identical release images, passes `make check`, `make rc-assets`

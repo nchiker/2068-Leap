@@ -117,6 +117,47 @@ record) were strict expected failures in Phase 1 and are **repaired in Phase 2D*
 * `rom/test_v2_chunk_refill_boundary.asm` (standalone) TEST3/TEST4 were rewritten for the new mechanism (`LEX_LINE` instead of `CHUNK_CUR_REC_PTR`).
 
 
+## Proving a compiler change leaves its output unchanged (shrinks and refactors)
+
+A HOME-budget shrink or refactor of the compiler must not change what the compiler produces. The VM is
+untouched by such a change, so identical compiler output means identical run behaviour, and that can be
+checked mechanically on thousands of programs, including broken ones, rather than inferred from the
+behavioural suites alone. None of this is part of `make test`; run it for any compiler change that is
+meant to be output-neutral, in addition to `make test`.
+
+| Tool | What it proves |
+|---|---|
+| `tools/qual/qbytecode.py A B` | the 667 qualification programs compile to the same bytecode and error code on both builds (~9 min) |
+| `tools/qual/qdiff.py` | the same, but comparing **all RAM** after each compile (symbol tables, error line, every side effect), the stop point, SP and HL (an unbalanced push/pop on an error path shows here), over the 667 programs plus generated programs aimed at the compiler (expressions, both array kinds nested in each other, built-in and extension calls, FOR/NEXT, IF/ELSE, INPUT, DIM), a mutated copy of each (error paths), long programs that cross the 264-byte source-chunk refills, and a handwritten error list (~2,700 cases, ~30 min with 3 workers); also records which instructions build B executed |
+| `tools/qual/qcov_changed.py A B coverage_b.json` | that corpus executed every instruction the change touched, and took every conditional branch in or next to the change both ways; prints any gap, so you can write a program for it and rerun |
+| `tools/qual/scan_scratch_cells.py` | finds the candidates: RAM cells used inside one routine only, or passed from one routine to one other (values a register could carry across `rst $08`/`rst $20`, which preserve BC/DE and A/BC/DE) |
+
+```sh
+tools/qual/build_configs.sh /tmp/qd before=<ref> after=<ref>     # git archive + make build v2-packages
+python3 tools/qual/qbytecode.py before after --root /tmp/qd --port 10900
+python3 tools/qual/qdiff.py --root /tmp/qd --a before --b after --auto-exclude --out /tmp/qd/out
+python3 tools/qual/qcov_changed.py /tmp/qd/before /tmp/qd/after /tmp/qd/out/coverage_b.json
+```
+
+For an uncommitted candidate, copy the tree into the root instead (`rsync -a --exclude .git --exclude build`)
+and build it there; the harness writes its snapshots into each configuration's `build/`, so never point it
+at the working tree. Reading `qdiff.py`'s result:
+
+* `--auto-exclude` skips the cells B's code no longer references (B leaves them as they were); it prints
+  them, so check the list is exactly the cells the change retired.
+* Two cells differ legitimately and are reported as **benign**, not as failures (`--strict` counts them):
+  `FRAMES` (a faster or slower compile sees one interrupt more or less; B should never be *ahead* if it
+  only removed work) and `EXT2_LOOKUP_NAME` (it holds the ROM address of the `"LPRINT"` name string, which
+  moves when HOME code does; only programs that use `LPRINT` show it).
+* Anything else is a real difference: the `DIFF` lines name the case (`corpus:`, `gen:`, `mut:`, `long:`,
+  `hand:`) and the first differing addresses; look them up in `build/*.sym`.
+* ZEsarUX's code coverage is switched off by every snapshot load; `qdiff.py` re-enables it per case.
+
+Used for the 2026-10-13 register port (`7a79d68` -> `1d65947`, 224 bytes): 2,701 cases, identical apart
+from the two benign cells (`FRAMES` 185, `EXT2_LOOKUP_NAME` 54); 82 of 82 changed instructions executed,
+11 of 11 nearby branches taken both ways; `qbytecode.py` 667/667.
+
+
 ## Emulators for release preparation (ZEsarUX qualifies; EightyOne and Fuse are courtesy)
 
 **ZEsarUX is the only qualification emulator.** A release is accepted on ZEsarUX results (the suites
