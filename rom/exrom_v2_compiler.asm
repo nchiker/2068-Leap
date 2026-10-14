@@ -409,18 +409,6 @@ IF_ELSE_SKIP_PATCH_TMP: equ $BA45  ; COMPILE_IF_BLOCK scratch (2 bytes):
 ARR_SIZE_TMP:        equ $BDD0   ; COMPILE_DIM's own validated size /
                                     ; ARRSYM_LOOKUP's found-array size
                                     ; output (2 bytes)
-CARR_INDEX:          equ $BA4C   ; COMPILE_ARRAY_ASSIGN/COMPILE_FACTOR's
-CARR_SIZE:           equ $BDD2    ; R10.7 -- widened to 2 bytes (was 1),
-                                    ; relocated next to ARR_SIZE_TMP above
-                                    ; for the same reason. own array-read scratch:
-                                    ; the matched array's runtime index and
-                                    ; declared size, saved to memory BEFORE
-                                    ; compiling the index/value sub-
-                                    ; expressions (which themselves call
-                                    ; ARRSYM_LOOKUP/CSYM_FIND_OR_CREATE and
-                                    ; would otherwise clobber ARR_SIZE_TMP/
-                                    ; ARRSYM_FIND_NAME_PTR — same bug class
-                                    ; as ASSIGN_TARGET_INDEX's own header)
 CINPUT_INDEX_TMP:     equ $BA4E   ; COMPILE_INPUT scratch (1 byte): the
                                     ; resolved target's index, saved to
                                     ; memory before EMIT_BYTE -- a fresh
@@ -2207,8 +2195,8 @@ COMPILE_FACTOR:
 ; identical fix here: park this read's own index (B) and count (DE)
 ; across the recursive COMPILE_EXPR call.
 COMPILE_ARR_READ_COMMON:
-        ld (CARR_INDEX),a
-        ld (CARR_SIZE),hl
+        ld b,a
+        ex de,hl
         rst $08                     ; consume the array name, fetch next
         ld a,(TOK_TYPE)
         cp TOK_LPAREN
@@ -2217,9 +2205,6 @@ COMPILE_ARR_READ_COMMON:
         rst $30
 .have_lparen:
         rst $08                      ; consume '('
-        ld a,(CARR_INDEX)
-        ld b,a
-        ld de,(CARR_SIZE)
         push bc
         push de
         call COMPILE_EXPR
