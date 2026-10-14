@@ -478,17 +478,14 @@ STRARR_WIDTH_TMP:        equ $BDDC  ; COMPILE_DIM_STR's own validated
 ; shared with the numeric path, same discipline as VM_ARR_ELEM_TMP's own
 ; cross-kind reuse on the VM side; see COMPILE_ARR_READ_COMMON/COMPILE_
 ; ARR_ASSIGN_COMMON below.)
-COMPILE_ARR_ASSIGN_IS_STR: equ $BDE0 ; COMPILE_ARR_ASSIGN_COMMON/COMPILE_
-                                       ; ARR_READ_COMMON's own selector
-                                       ; (1 byte): 0 = numeric (COMPILE_
-                                       ; EXPR/EMIT_OP_ARR_STORE/LOAD),
+COMPILE_ARR_ASSIGN_IS_STR: equ $BDE0 ; COMPILE_ARR_ASSIGN_COMMON's own
+                                       ; selector (1 byte): 0 = numeric
+                                       ; (COMPILE_EXPR/EMIT_OP_ARR_STORE),
                                        ; nonzero = string (COMPILE_STR_
-                                       ; EXPR/EMIT_OP_STRARR_STORE/LOAD) --
+                                       ; EXPR/EMIT_OP_STRARR_STORE) --
                                        ; shared tail factored out of
                                        ; COMPILE_ARRAY_ASSIGN/COMPILE_
-                                       ; STRARR_ASSIGN and COMPILE_FACTOR.
-                                       ; arr_read/COMPILE_STR_FACTOR.
-                                       ; strarr_read during the Dynamic
+                                       ; STRARR_ASSIGN during the Dynamic
                                        ; Data Phase 2 HOME-budget shrink
                                        ; pass (identical skeletons, only
                                        ; the value-expression compiler and
@@ -1995,10 +1992,6 @@ COMPILE_FACTOR:
         rst $08
         ret                      ; RC shrink: tail call through the RST (was jp LEX_NEXT_TOKEN)
 .arr_read:
-        push af                    ; A = array index, preserve across the
-        xor a                        ; flag-set below
-        ld (COMPILE_ARR_ASSIGN_IS_STR),a
-        pop af
         ld hl,(ARR_SIZE_TMP)
         jp COMPILE_ARR_READ_COMMON
 .fn_call:
@@ -2199,10 +2192,10 @@ COMPILE_FACTOR:
 ; COMPILE_FACTOR's own .arr_read branch and COMPILE_STR_FACTOR's
 ; .strarr_read branch during the Dynamic Data Phase 2 HOME-budget
 ; shrink pass (identical skeleton, differing only in which opcode gets
-; emitted -- selected via COMPILE_ARR_ASSIGN_IS_STR, set by the caller,
-; the same flag cell COMPILE_ARR_ASSIGN_COMMON already uses). Input:
-; A = array index, HL = declared element count; the array NAME token is
-; still the CURRENT token (not yet consumed).
+; emitted -- selected via C, set by the caller). Input: A = array index,
+; HL = declared element count, C = 1 for a string array, anything else
+; numeric (.arr_read arrives with C = SYM_K_ARR from ARRSYM_LOOKUP); the
+; array NAME token is still the CURRENT token (not yet consumed).
 ;
 ; BUG FOUND (real hardware, R8.5 Group 4): the index sub-expression
 ; compiled next can itself contain a NESTED array read (e.g.
@@ -2240,9 +2233,8 @@ COMPILE_ARR_READ_COMMON:
         rst $30
 .have_rparen:
         rst $08                       ; consume ')'
-        ld a,(COMPILE_ARR_ASSIGN_IS_STR)
-        or a
-        jr nz,.emit_str
+        dec c
+        jr z,.emit_str
         ld a,48        ; QUAL shrink: inlined EMIT_OP_ARR_LOAD
         rst $20
         jr EMIT_ARR_OPERAND
@@ -3304,11 +3296,8 @@ COMPILE_STR_FACTOR:
         ret                      ; RC shrink: tail call through the RST (was jp LEX_NEXT_TOKEN)
 .strarr_read:
         ; thin wrapper around the shared COMPILE_ARR_READ_COMMON skeleton
-        ; (see its own header) -- flag set to select the string opcode.
-        push af                    ; A = array index, preserve across the
-        ld a,1                       ; flag-set below
-        ld (COMPILE_ARR_ASSIGN_IS_STR),a
-        pop af
+        ; (see its own header) -- C = 1 selects the string opcode.
+        ld c,1
         ld hl,(STRARR_SIZE_TMP)
         jp COMPILE_ARR_READ_COMMON
 

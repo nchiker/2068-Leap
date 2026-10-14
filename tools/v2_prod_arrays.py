@@ -510,6 +510,19 @@ def d12_str_dirty():
     return P.read(P.sym("COMPILE_ERROR_CODE"), 1)[0] == 0 and n == 0, "LEN(s$(1))=%d" % n
 
 
+@case("arr-nested-kind", "an array access whose subscript or value reads an array of the other kind keeps its own kind")
+def arr_nested_kind():
+    ce, ve, msg = P.run_program([
+        "DIM names$(3)", "DIM pick(3)", 'names$(2) = "ccc"', "pick(0) = 2",
+        "a = LEN(names$(pick(0)))",
+        'names$(pick(0)) = "dddd"', "b = LEN(names$(2))",
+        "pick(1) = LEN(names$(pick(0)))", "c = pick(1)",
+        "pick(LEN(names$(0)) + 2) = 9", "d = pick(2)",
+        "names$(1) = names$(pick(0))", "e = LEN(names$(1))"])
+    v = vals(5) if ce == 0 and ve == 0 else None
+    return v == [3, 4, 4, 9, 4], "compile_err=%d vm_err=%d msg=%s a..e=%s" % (ce, ve, msg, v)
+
+
 @case("D12-dim-zero-overflow-segment", "an array placed in segment 2 is zero-filled too (dirty RAM at the segment base)")
 def d12_overflow():
     for pn in (3850, 3900, 3950):
