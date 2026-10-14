@@ -240,7 +240,7 @@ STRSYM_FIND_OR_CREATE:
         jr SYM_FOC
 
 ; ARRSYM_FIND_OR_CREATE -- a DIM: HL = name, B = length, ARR_SIZE_TMP = size.
-; Redeclaring is error 38; table full 39. Out: A = the new array's index.
+; Redeclaring is error 38; table full 39. Out: A = the new array's index, DE = its size.
 ARRSYM_FIND_OR_CREATE:
         ld c,SYM_K_ARR
         call SYM_FIND
@@ -258,7 +258,7 @@ ARRSYM_FIND_OR_CREATE:
         ret
 
 ; ARRSYM_LOOKUP -- HL = name, B = length. Not found: carry set. Found:
-; carry clear, A = index, ARR_SIZE_TMP = its size.
+; carry clear, A = index, DE = ARR_SIZE_TMP = its size, C = SYM_K_ARR.
 ARRSYM_LOOKUP:
         ld c,SYM_K_ARR
         call SYM_FIND
@@ -277,6 +277,8 @@ ARRSYM_LOOKUP:
         or a
         ret
 
+; STRARRSYM_FIND_OR_CREATE -- as ARRSYM_FIND_OR_CREATE for a string array (STRARR_SIZE_TMP =
+; size, STRARR_WIDTH_TMP = width). Out: A = the new array's index, DE = its size.
 STRARRSYM_FIND_OR_CREATE:
         ld c,SYM_K_SARR
         call SYM_FIND
@@ -298,6 +300,8 @@ STRARRSYM_FIND_OR_CREATE:
         pop af
         ret
 
+; STRARRSYM_LOOKUP -- as ARRSYM_LOOKUP for a string array. Found: carry clear, A = index,
+; DE = STRARR_SIZE_TMP = its size, STRARR_WIDTH_TMP = its width.
 STRARRSYM_LOOKUP:
         ld c,SYM_K_SARR
         call SYM_FIND
@@ -509,7 +513,8 @@ CSTK_PUSH:
         or a
         ret
 
-; CSTK_TOP -- Out: Z set if no frame is open, else NZ and HL = innermost frame.
+; CSTK_TOP -- Out: Z set if no frame is open, else NZ and HL = innermost frame. Destroys DE;
+; preserves A and BC.
 CSTK_TOP:
         ld hl,(SYM_LIMIT_V)
         ld de,(CSTK_BASE)       ; RC (session): not always V2_SOURCE_END

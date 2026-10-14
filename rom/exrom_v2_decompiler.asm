@@ -3884,7 +3884,7 @@ STR_MID_FN_LEN: equ $-STR_MID_FN
 ; re-render in the right order -- see that routine's own header.
 ; 5 bytes/row: [text_ptr:2][len:1][argcount:1][argtype:1]. argtype
 ; generalized (this pass, alongside rom/exrom_v2_compiler.asm's own
-; identical BFN_FOUND_ARGTYPE generalization): bits 0-1 = per-position
+; identical BUILTIN_FN_TABLE argtype generalization): bits 0-1 = per-position
 ; argument type (bit N set = argument N needs DECOMP_STR_OPERAND's own
 ; reinterpretation -- see .op_call_fn's own header), bit 7 unused here
 ; (a decompiled call always renders its own real opcode/argcount

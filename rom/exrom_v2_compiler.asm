@@ -187,41 +187,6 @@ TOK_NAME:           equ $BA07   ; current token identifier text pointer (2B)
 TOK_LEN:            equ $BA09   ; current token identifier length (1 byte)
 COMPILE_ERROR_CODE: equ $BA0A   ; 0 = no error; see header for nonzero codes
 
-IDENT_LOAD_INDEX:   equ $BA10   ; COMPILE_IDENT_LOAD scratch (1 byte) — same
-                                ; bug class as ASSIGN_TARGET_INDEX below:
-                                ; CSYM_FIND_OR_CREATE's returned index (in A)
-                                ; must be saved to memory before calling
-                                ; EMIT_BYTE_OP_LOAD_VAR, which does `ld a,3`
-                                ; to load the opcode value and clobbers A
-                                ; before the real index would otherwise be
-                                ; emitted as the operand. An earlier version
-                                ; called EMIT_BYTE_OP_LOAD_VAR directly after
-                                ; CSYM_FIND_OR_CREATE with no save at all —
-                                ; every LOAD_VAR silently emitted the opcode
-                                ; number (3) as its own operand instead of
-                                ; the real symbol index, caught by a real
-                                ; ZEsarUX run (SCORE inside an expression
-                                ; always resolved to whatever index 3
-                                ; happened to be, not SCORE's real index).
-ASSIGN_TARGET_INDEX: equ $BA0F  ; COMPILE_ASSIGN scratch (1 byte) — MUST be
-                                ; memory, not a register: an earlier version
-                                ; saved this in C across the call to
-                                ; COMPILE_EXPR, but COMPILE_EXPR calls
-                                ; CSYM_FIND_OR_CREATE for any identifier
-                                ; inside the expression (e.g. the SCORE in
-                                ; `TOTAL=SCORE+10`), and that routine uses C
-                                ; as its own scan-index scratch register —
-                                ; clobbering the saved target before
-                                ; STORE_VAR could use it. Caught by a real
-                                ; ZEsarUX run (STORE_VAR targeted the wrong
-                                ; symbol slot; wrong final values), not by
-                                ; inspection.
-                                ; must be real RAM, not inline ROM data (an
-                                ; earlier version of this file declared this
-                                ; as `dw 0` in the code stream, which would
-                                ; have been a silent no-op write to ROM once
-                                ; assembled into a real ROM image — caught
-                                ; before assembling, not at runtime)
                                   ; 0-15 (unchanged address/size from R2)
 ; R10.7 item 7 overflow tiers: 144 contiguous extra bytes (16 more entries
 ; * 9B) do not fit in any single genuinely-free gap in this densely-packed
@@ -270,7 +235,6 @@ FOR_LOOP_VAR_INDEX: equ $BA1E    ; COMPILE_FOR/COMPILE_NEXT scratch (1 byte):
 FOR_FRAME_ADDR_TMP:   equ $B9E9  ; COMPILE_FOR/COMPILE_NEXT scratch (2 bytes): a frame
                                    ; address parked across a call that would clobber it
     ASSERT V2_ZONE_BASE + V2_ZONE_SIZE <= FOR_FRAME_ADDR_TMP   ; the compile zone sits below
-NEXT_VAR_INDEX_TMP:   equ $B9EB  ; COMPILE_NEXT scratch (1 byte): this NEXT's own variable index
 BRANCH_PATCH_TMP:   equ $BA1F   ; COMPILE_BRANCH_TARGET scratch (2 bytes)
 RESOLVE_PATCH_TMP:  equ $BA26   ; RESOLVE_ALL_FIXUPS scratch (2 bytes)
 STMT_IDENT_NAME_PTR: equ $BA28  ; COMPILE_PROGRAM scratch (2 bytes): the
@@ -281,8 +245,6 @@ STMT_IDENT_NAME_PTR: equ $BA28  ; COMPILE_PROGRAM scratch (2 bytes): the
 STMT_IDENT_NAME_LEN: equ $BA2A   ; (1 byte)
                                   ; see that routine's own comment for why
                                   ; this must be memory, not just C
-FOR_NEXT_HIGH_TMP:   equ $BA2C   ; COMPILE_NEXT scratch (1 byte) — see that
-                                   ; routine's own comment for why
 IF_SKIP_PATCH_TMP:   equ $BA2D   ; COMPILE_IF scratch (2 bytes): the
                                    ; false-branch's own patch address,
                                    ; distinct from BRANCH_PATCH_TMP (the
@@ -298,14 +260,6 @@ PROC_PARAM_INDEX_TMP: equ $BA31  ; COMPILE_PROC scratch (1 byte): the
 ; identifiers with independent index spaces, matching the runtime VM's
 ; own separate SYMTAB/STRTAB split (rom/exrom_v2_vm_core.asm). ---
                                   ; entries 0-3 (unchanged address/size)
-CSTR_LIT_LEN_TMP:    equ $BA36  ; COMPILE_STR_FACTOR scratch (1 byte): a
-                                  ; string literal's clamped length, saved
-                                  ; across the EMIT_BYTE_OP_PUSH_STR_LIT
-                                  ; call that would otherwise clobber A
-CSTR_IDENT_INDEX_TMP: equ $BA37 ; COMPILE_STR_FACTOR scratch (1 byte): a
-                                  ; string variable's resolved index, saved
-                                  ; across the EMIT_BYTE_OP_PUSH_I16 call
-CSTR_ASSIGN_TARGET_TMP: equ $BA38 ; COMPILE_STR_ASSIGN scratch (1 byte)
 
 ; --- R6 addition: decimal literals ---
 CNUM_DIVISOR_TMP:   equ $BA39   ; LEX_SCAN_NUMBER scratch (2 bytes): running
@@ -313,78 +267,8 @@ CNUM_DIVISOR_TMP:   equ $BA39   ; LEX_SCAN_NUMBER scratch (2 bytes): running
 TOK_FLOAT_DIVISOR:  equ $BA3B   ; token field (2 bytes): companion to
                                   ; TOK_VAL for a TOK_FLOAT_NUMBER token
 CEXT_SLOT:          equ $BA3D   ; R7.5 (COMPILE_EXT_CALL) scratch, 1
-CEXT_GEN:           equ $BA3E   ; byte each unless noted: the matched
-CEXT_ARGCOUNT:      equ $BA3F   ; extension's own slot id/generation/
-CEXT_REMAINING:     equ $BA40   ; argcount, and a countdown while
-                                  ; compiling that many comma-separated
-                                  ; argument expressions
-
-; R8.5 Group 1 -- built-in (resident) function-call grammar. Same
-; "resolve a name to a small compile-time index" idea R7.5's own
-; extension registry uses, but simpler: no runtime generation check --
-; resident functions are compiled in, never unloaded/reloaded.
-BFN_FOUND_ARGCOUNT: equ $BA41   ; BUILTIN_FN_FIND's own output: the
-                                  ; matched function's declared argcount
-CFN_INDEX:          equ $BA42   ; COMPILE_FACTOR.fn_call scratch, 1 byte
-CFN_ARGCOUNT:       equ $BA43   ; each: the matched function's own
-CFN_REMAINING:      equ $BA44   ; index/argcount, and a countdown while
-                                  ; compiling that many comma-separated
-                                  ; argument expressions (same shape as
-                                  ; CEXT_SLOT/CEXT_GEN/CEXT_ARGCOUNT/
-                                  ; CEXT_REMAINING above, deliberately)
-BFN_FOUND_ARGTYPE:  equ $BA58   ; R8.5 Group 6 -- BUILTIN_FN_FIND's own
-                                  ; output: bits 0-1 = per-argument-
-                                  ; position type (bit N set = argument N
-                                  ; is a string expression, tested via
-                                  ; the shared VM_TEST_ARGTYPE_BIT -- LEN/
-                                  ; CODE/VAL originally used this as a
-                                  ; flat 0/1 boolean, still correct for
-                                  ; their own single argument); bit 7 =
-                                  ; SET means this function's RESULT is a
-                                  ; string (CHR$/STR$/UPPER$/LOWER$/
-                                  ; LEFT$/RIGHT$/INKEY$), clear means
-                                  ; numeric (every function through Group
-                                  ; 6's original LEN/CODE/VAL). Placed in
-                                  ; the free gap
-                                  ; between EXITFOR_PATCH_TABLE ($BA50 +
-                                  ; 4*2=8 bytes = $BA58) and STRSYMTAB_
-                                  ; BASE ($BA60) -- every byte from $BA41
-                                  ; through $BA57 is already spoken for.
-CFN_ARGTYPE:        equ $BA59   ; COMPILE_FACTOR.fn_call's own copy of
-                                  ; the above, same shape as CFN_INDEX/
-                                  ; CFN_ARGCOUNT/CFN_REMAINING
-CEXT_ARGTYPES:      equ $BA5A   ; R8.5 (generic typed extension args,
-                                  ; printer-package ROM reconciliation)
-                                  ; -- COMPILE_EXT_CALL's own copy of the
-                                  ; matched extension's argtypes bitmask
-                                  ; (one bit per argument position, bit
-                                  ; N set = argument N is a STRING
-                                  ; expression; same "0=numeric,1=string"
-                                  ; convention BFN_FOUND_ARGTYPE/
-                                  ; CFN_ARGTYPE already established for
-                                  ; BUILTIN_FN, generalized here to
-                                  ; multiple argument positions since an
-                                  ; extension can have several arguments
-                                  ; of different types, unlike a single-
-                                  ; argument built-in function)
-; R10.7: widened to 2 bytes (was 1); relocated next to ARR_SIZE_TMP/
-; CARR_SIZE above -- the old $BA5B would now collide with rom/exrom_v2_
-; vm_core.asm's own VM_EXT_EXEC_PTR at $BA5C.
-DIMN_SIZE_TMP:      equ $BDD4   ; R8.5 Group 6 (DIMN) -- COMPILE_DIMN's
-                                  ; own copy of ARR_SIZE_TMP (ARRSYM_
-                                  ; LOOKUP's own output), parked here
-                                  ; before LEX_NEXT_TOKEN gets a chance
-                                  ; to run (same "copy a shared scratch
-                                  ; cell immediately, don't trust it to
-                                  ; survive a call" discipline this
-                                  ; whole rewrite keeps needing).
-
-; R8.5 Group 3 -- block IF/ELSE/ENDIF.
-IF_ELSE_SKIP_PATCH_TMP: equ $BA45  ; COMPILE_IF_BLOCK scratch (2 bytes):
-                                     ; the "skip the ELSE body" JMP's own
-                                     ; patch address, same role as
-                                     ; PROC_SKIP_PATCH_TMP above but for
-                                     ; the THEN-body's own trailing jump
+CEXT_GEN:           equ $BA3E   ; byte each: the matched extension's own
+CEXT_ARGCOUNT:      equ $BA3F   ; slot id/generation/argcount (read by .emit)
 
 ; R8.5 Group 4 -- DIM/array grammar. Arrays are a SEPARATE compile-time
 ; name table from CSYMTAB/STRSYMTAB (own lexical namespace, like strings
@@ -409,17 +293,6 @@ IF_ELSE_SKIP_PATCH_TMP: equ $BA45  ; COMPILE_IF_BLOCK scratch (2 bytes):
 ARR_SIZE_TMP:        equ $BDD0   ; COMPILE_DIM's own validated size /
                                     ; ARRSYM_LOOKUP's found-array size
                                     ; output (2 bytes)
-CINPUT_INDEX_TMP:     equ $BA4E   ; COMPILE_INPUT scratch (1 byte): the
-                                    ; resolved target's index, saved to
-                                    ; memory before EMIT_BYTE -- a fresh
-                                    ; dedicated cell rather than reusing
-                                    ; IDENT_LOAD_INDEX/CSTR_IDENT_INDEX_TMP,
-                                    ; after two real memory-cell-aliasing
-                                    ; bugs already found this session (see
-                                    ; the decompiler's own DECOMP_TMP_LEN/
-                                    ; DECOMP_EMIT_CHAR bug this same
-                                    ; milestone) — not worth the risk to
-                                    ; save one equ.
                                     ; EXIT FOR patch addresses for the
                                     ; loop CURRENTLY being compiled. Post-
                                     ; R9 nested-FOR/NEXT correction: this
@@ -461,11 +334,9 @@ STRARR_SIZE_TMP:         equ $BDDA  ; COMPILE_DIM_STR's own validated
 STRARR_WIDTH_TMP:        equ $BDDC  ; COMPILE_DIM_STR's own validated
                                        ; width / STRARRSYM_LOOKUP's found
                                        ; width output (1 byte)
-; ($BDDD-$BDDF deliberately left unused here -- the string-array read/
-; assign index+count scratch now reuses CARR_INDEX/CARR_SIZE directly,
-; shared with the numeric path, same discipline as VM_ARR_ELEM_TMP's own
-; cross-kind reuse on the VM side; see COMPILE_ARR_READ_COMMON/COMPILE_
-; ARR_ASSIGN_COMMON below.)
+; ($BDDD-$BDDF deliberately left unused here -- string-array reads and
+; assignments keep their index+count in B/DE, exactly as the numeric
+; path does; see COMPILE_ARR_READ_COMMON/COMPILE_ARR_ASSIGN_COMMON below.)
 COMPILE_ARR_ASSIGN_IS_STR: equ $BDE0 ; COMPILE_ARR_ASSIGN_COMMON's own
                                        ; selector (1 byte): 0 = numeric
                                        ; (COMPILE_EXPR/EMIT_OP_ARR_STORE),
@@ -1559,6 +1430,8 @@ CHK_ERR:
         inc sp                  ; drop our own return address (A and the flags survive)
         ret
 
+; EMIT_BYTE (rst $20) -- In: A = the byte. Preserves A, BC and DE (destroys HL, F); the
+; compiler keeps indexes and counts in B/C/D/E across emits on the strength of this.
 EMIT_BYTE:
         IFDEF V2_PRODUCTION
         ; Stop at the first byte beyond the reserved bytecode region.
@@ -1944,23 +1817,13 @@ COMPILE_FACTOR:
         ; with a plain NUMERIC variable of the same name (TOK_IDENT
         ; "CHR" and TOK_STR_IDENT "CHR$" are distinct, never-colliding
         ; tokens per LEX_SCAN_IDENT's own hard '$'-suffix split -- see
-        ; its header). BFN_FOUND_ARGTYPE's bit 7 (set = this function's
+        ; its header). The argtype's bit 7 (E; set = this function's
         ; RESULT is a string) disambiguates: only a bit-7-clear (numeric-
         ; result) match is a real call here; a bit-7-set match just means
         ; a same-named ordinary numeric identifier was typed, and falls
         ; through to the plain-identifier path below like any other name.
-        push af                  ; A = fn_index, preserved across the
-                                    ; result-type check (BFN_FOUND_ARGTYPE
-                                    ; read below doesn't touch it, but the
-                                    ; bit test clobbers A itself)
-        ld a,(BFN_FOUND_ARGTYPE)
-        bit 7,a
-        jr z,.is_num_result
-        pop af
-        jr .not_builtin_fn
-.is_num_result:
-        pop af
-        jr .fn_call
+        bit 7,e
+        jr z,.fn_call
 .not_builtin_fn:
         ld hl,(SRC_PTR)          ; RC (N-4): an array name is read as the array only when '(' follows;
 .peek:                           ; otherwise it is the scalar of the same name (separate namespaces)
@@ -1974,21 +1837,17 @@ COMPILE_FACTOR:
         ld a,(TOK_LEN)
         ld b,a
         call ARRSYM_LOOKUP
-        jr nc,.arr_read
+        jp nc,COMPILE_ARR_READ_COMMON
 .scalar:
         call COMPILE_IDENT_LOAD
         rst $08
         ret                      ; RC shrink: tail call through the RST (was jp LEX_NEXT_TOKEN)
-.arr_read:
-        ld hl,(ARR_SIZE_TMP)
-        jp COMPILE_ARR_READ_COMMON
 .fn_call:
-        ld (CFN_INDEX),a
-        ld a,(BFN_FOUND_ARGCOUNT)
-        ld (CFN_ARGCOUNT),a
-        ld (CFN_REMAINING),a
-        ld a,(BFN_FOUND_ARGTYPE)
-        ld (CFN_ARGTYPE),a
+        ; the call's whole state lives in registers (BUILTIN_FN_FIND's
+        ; outputs): B = argcount, C = arguments remaining, D = fn_index,
+        ; E = argtype. rst $08/$20 preserve BC/DE.
+        ld d,a
+        ld c,b
         rst $08                   ; consume the function name
         ld a,(TOK_TYPE)
         cp TOK_LPAREN
@@ -1997,66 +1856,36 @@ COMPILE_FACTOR:
         rst $30
 .fn_have_lparen:
         rst $08                     ; consume '('
-        ld a,(CFN_INDEX)
+        ld a,d
         cp 25                        ; FREE: "FREE()" or "FREE(n)" (P5.5)
         jr nz,.fn_not_free
         ld a,(TOK_TYPE)
         cp TOK_RPAREN
         jr z,.fn_not_free
-        ld a,29
-        ld (CFN_INDEX),a
-        ld a,1
-        ld (CFN_ARGCOUNT),a
-        ld (CFN_REMAINING),a
+        ld d,29
+        ld bc,$0101                  ; FREE(n): one argument
 .fn_not_free:
-        ld a,(CFN_REMAINING)
-        or a
-        jr z,.fn_rparen              ; 0-arg function (none exist yet,
-                                       ; kept general for group 6)
+        inc c
+        dec c
+        jr z,.fn_rparen              ; 0-arg function (PI(), INKEY$(), FREE())
 .fn_arg_loop:
+        ; R8.5 Group 6 -- a function call used AS an argument to another
+        ; ("LEN(UPPER$(A$))") recurses back into this routine through the
+        ; argument compile below, so this call's own state is pushed across
+        ; it. (Real bug when the state lived in shared cells: the outer
+        ; LEN's remaining count came back as the inner call's 0, error 30.)
+        push bc
+        push de
         ; this argument's own 0-based index = argcount - remaining (same
-        ; technique COMPILE_EXT_CALL's own arg_loop already established
-        ; for the identical need -- generalized here from LEN/CODE/VAL's
-        ; original single flat flag, now that LEFT$/RIGHT$ (Group 6)
-        ; need two ARGUMENTS of DIFFERENT types in the same call: a flat
-        ; boolean can't express "arg 0 is a string, arg 1 is numeric")
-        ld a,(CFN_ARGCOUNT)
-        ld b,a
-        ld a,(CFN_REMAINING)
-        ld c,a
+        ; technique COMPILE_EXT_CALL's own arg_loop uses) -- LEFT$/RIGHT$/
+        ; MID$ mix string and numeric ARGUMENTS in one call
         ld a,b
         sub c
         ld b,a                      ; B = rotate count for the bit test
-        ld a,(CFN_ARGTYPE)
+        ld a,e
         call VM_TEST_ARGTYPE_BIT    ; Z = numeric, NZ = string (shared
                                        ; with COMPILE_EXT_CALL/the
                                        ; decompiler's identical need)
-        ; R8.5 Group 6 -- a function call used AS an argument to
-        ; another function call (e.g. "LEN(UPPER$(A$))") recurses back
-        ; into THIS SAME routine through the COMPILE_EXPR/COMPILE_STR_
-        ; EXPR call below, which overwrites CFN_INDEX/CFN_ARGCOUNT/
-        ; CFN_REMAINING/CFN_ARGTYPE with the INNER call's own values --
-        ; this scratch is shared, not reentrant. Real bug, found via a
-        ; real ZEsarUX run: "LEN(UPPER$(A$))" raised compile error 30
-        ; ("expected ',' between arguments") because the outer LEN's
-        ; own CFN_REMAINING had been clobbered to the inner UPPER$
-        ; call's own final value (0) by the time control returned here,
-        ; so decrementing it produced -1 instead of the outer's real
-        ; remaining count. Fixed the same way COMPILE_FACTOR.arr_read's
-        ; own CARR_INDEX/CARR_SIZE fix already established for the
-        ; identical nested-array-read problem: park this iteration's
-        ; own state on the hardware stack across the recursive call,
-        ; not in the shared memory cells a nested call will reuse.
-        ld a,(CFN_INDEX)
-        ld d,a
-        ld a,(CFN_ARGCOUNT)
-        ld e,a
-        push de
-        ld a,(CFN_REMAINING)
-        ld d,a
-        ld a,(CFN_ARGTYPE)
-        ld e,a
-        push de
         jr z,.fn_arg_num
         call COMPILE_STR_EXPR         ; LEN/CODE/VAL/UPPER$/LOWER$/LEFT$/
                                         ; RIGHT$ (Group 6): this argument
@@ -2066,21 +1895,9 @@ COMPILE_FACTOR:
         call COMPILE_EXPR
 .fn_arg_restore:
         pop de
-        ld a,e
-        ld (CFN_ARGTYPE),a
-        ld a,d
-        ld (CFN_REMAINING),a
-        pop de
-        ld a,e
-        ld (CFN_ARGCOUNT),a
-        ld a,d
-        ld (CFN_INDEX),a
-.fn_arg_done:
+        pop bc
         call CHK_ERR           ; RC shrink: return if a compile error is pending
-        ld a,(CFN_REMAINING)
-        dec a
-        ld (CFN_REMAINING),a
-        or a
+        dec c
         jr z,.fn_rparen
         ld a,(TOK_TYPE)
         cp TOK_COMMA
@@ -2100,7 +1917,7 @@ COMPILE_FACTOR:
         rst $08                        ; consume ')'
         ld a,39        ; QUAL shrink: inlined EMIT_OP_CALL_FN
         rst $20
-        ld a,(CFN_INDEX)
+        ld a,d
         rst $20
         ret                      ; RC shrink: tail call through the RST (was jp EMIT_BYTE)
 
@@ -2129,9 +1946,8 @@ COMPILE_FACTOR:
         ; recursively compile a NESTED "FN othername(...)" call using the
         ; SAME shared STMT_IDENT_NAME_PTR/LEN scratch cells, park this
         ; call's own name on the hardware stack first -- the exact
-        ; nested-call scratch-clobber lesson Group 6's CFN_INDEX/
-        ; ARGCOUNT/REMAINING/ARGTYPE fix (.fn_call above) and COMPILE_
-        ; FACTOR.arr_read's CARR_INDEX/SIZE fix already taught this
+        ; nested-call scratch-clobber lesson the built-in call (.fn_call
+        ; above, Group 6) and the array reads had already taught this
         ; project, applied here proactively before any bug manifested
         ; (docs/deffn_design/README.md's own documented precaution
         ; from the original experiment).
@@ -2169,26 +1985,26 @@ COMPILE_FACTOR:
 ; against a SEPARATE table (a function name is never a statement
 ; keyword or vice versa in this dialect, so no ambiguity). Entry layout
 ; matches KEYWORD_TABLE's own shape: [len:1][text:8, zero-padded]
-; [argcount:1][fn_index:1][argtype:1] = 12 bytes/row. argtype (added
-; for LEN/CODE/VAL): 0 = this function's arguments are numeric
-; (COMPILE_EXPR), 1 = string (COMPILE_STR_EXPR) -- the function's own
-; RESULT is always numeric either way (OP_CALL_FN always pushes back
-; through the same TAG_INT/TAG_FLOAT path), only the ARGUMENT grammar
-; differs.
+; [argcount:1][fn_index:1][argtype:1] = 12 bytes/row. argtype: bit N
+; set = argument N is a string expression (COMPILE_STR_EXPR, tested via
+; the shared VM_TEST_ARGTYPE_BIT), clear = numeric (COMPILE_EXPR); bit 7
+; set = the function's RESULT is a string (CHR$/STR$/UPPER$/LOWER$/
+; LEFT$/RIGHT$/MID$/INKEY$), clear = numeric.
 ; COMPILE_ARR_READ_COMMON — shared array-read skeleton for both numeric
 ; (A(expr)) and string (A$(expr)) array reads, factored out of
 ; COMPILE_FACTOR's own .arr_read branch and COMPILE_STR_FACTOR's
 ; .strarr_read branch during the Dynamic Data Phase 2 HOME-budget
 ; shrink pass (identical skeleton, differing only in which opcode gets
 ; emitted -- selected via C, set by the caller). Input: A = array index,
-; HL = declared element count, C = 1 for a string array, anything else
-; numeric (.arr_read arrives with C = SYM_K_ARR from ARRSYM_LOOKUP); the
-; array NAME token is still the CURRENT token (not yet consumed).
+; DE = declared element count (as ARRSYM_LOOKUP/STRARRSYM_LOOKUP leave
+; it), C = 1 for a string array, anything else numeric (COMPILE_FACTOR
+; arrives with C = SYM_K_ARR from ARRSYM_LOOKUP); the array NAME token is
+; still the CURRENT token (not yet consumed).
 ;
 ; BUG FOUND (real hardware, R8.5 Group 4): the index sub-expression
 ; compiled next can itself contain a NESTED array read (e.g.
-; "A(B(0))") -- this same CARR_INDEX/CARR_SIZE pair would otherwise be
-; overwritten by that inner read before this outer read's own EMIT
+; "A(B(0))") -- the shared cells this read's index/count then lived in
+; were overwritten by that inner read before this outer read's own EMIT
 ; below gets to use it. Same "shared scratch clobbered by a nested
 ; compile call" bug class COMPILE_IF_BLOCK already hit and fixed with
 ; hardware-stack push/pop (see its own header) -- applying the
@@ -2196,7 +2012,6 @@ COMPILE_FACTOR:
 ; across the recursive COMPILE_EXPR call.
 COMPILE_ARR_READ_COMMON:
         ld b,a
-        ex de,hl
         rst $08                     ; consume the array name, fetch next
         ld a,(TOK_TYPE)
         cp TOK_LPAREN
@@ -2250,14 +2065,11 @@ EMIT_ARR_OPERAND:
 ; measured via a direct before/after size comparison.
 BUILTIN_FN_FIND:               ; input: TOK_NAME/TOK_LEN (current, not
                                  ; yet consumed, identifier token).
-                                 ; Output: carry set + A = fn_index +
-                                 ; BFN_FOUND_ARGCOUNT/BFN_FOUND_ARGTYPE
-                                 ; = the matched function's own
-                                 ; argcount/argtype, if found; carry
-                                 ; clear (A/BFN_FOUND_ARGCOUNT/
-                                 ; BFN_FOUND_ARGTYPE unchanged) if this
-                                 ; identifier does not name a built-in
-                                 ; function.
+                                 ; Output: carry set + A = fn_index,
+                                 ; B = argcount, E = argtype (see
+                                 ; BUILTIN_FN_TABLE's header), if found;
+                                 ; carry clear if this identifier does
+                                 ; not name a built-in function.
                                  ; Destroys: AF, BC, DE, HL.
         ld hl,BUILTIN_FN_TABLE
         ld b,BUILTIN_FN_TABLE_COUNT
@@ -2297,16 +2109,11 @@ BUILTIN_FN_FIND:               ; input: TOK_NAME/TOK_LEN (current, not
         ; HL is now exactly at argcount (text-start + the row's own
         ; real length) -- no fixed offset to add, unlike the old
         ; padded-to-8 layout.
-        ld a,(hl)
-        ld (BFN_FOUND_ARGCOUNT),a
+        ld b,(hl)                 ; argcount
         inc hl
-        ld c,(hl)                 ; fn_index, parked in C (B is this
-                                     ; loop's own counter, no longer
-                                     ; needed once matched)
+        ld a,(hl)                 ; fn_index
         inc hl
-        ld a,(hl)
-        ld (BFN_FOUND_ARGTYPE),a
-        ld a,c
+        ld e,(hl)                 ; argtype
         scf
         ret
 .skip:
@@ -2536,10 +2343,10 @@ COMPILE_IDENT_LOAD:
 .len_ok:
         ld b,a
         call CSYM_FIND_OR_CREATE
-        ld (IDENT_LOAD_INDEX),a
+        ld c,a
         ld a,3        ; QUAL shrink: inlined EMIT_BYTE_OP_LOAD_VAR
         rst $20
-        ld a,(IDENT_LOAD_INDEX)
+        ld a,c
         rst $20
         ret                      ; RC shrink: tail call through the RST (was jp EMIT_BYTE)
 
@@ -2629,18 +2436,19 @@ COMPILE_ASSIGN_CONTINUED:
 .len_ok:
         ld b,a
         call CSYM_FIND_OR_CREATE
-        ld (ASSIGN_TARGET_INDEX),a   ; memory, not a register — see the
-                                       ; equ's own comment for why
+        ld c,a
         ld a,(TOK_TYPE)
         cp TOK_ASSIGN
         jr z,.have_assign
         jp ERR_EXPECTED_ASSIGN
 .have_assign:
         rst $08                 ; consume '='
-        call COMPILE_EXPR
+        push bc                 ; C = the target's index -- the expression's own
+        call COMPILE_EXPR       ; symbol lookups use C, so it rides the stack
+        pop bc
         ld a,4        ; QUAL shrink: inlined EMIT_BYTE_OP_STORE_VAR
         rst $20
-        ld a,(ASSIGN_TARGET_INDEX)
+        ld a,c
         rst $20
         ret                      ; RC shrink: tail call through the RST (was jp EMIT_BYTE)
 
@@ -2724,28 +2532,19 @@ COMPILE_DIM:
         ; R10.7: DIM now emits real bytecode (OP_DIM), unlike the old
         ; fixed-pool design where DIM did zero runtime work. A holds
         ; the new array's own index (ARRSYM_FIND_OR_CREATE's own
-        ; return contract, updated above) -- parked on the stack BEFORE
-        ; reading COMPILE_ERROR_CODE below (real bug caught here: an
+        ; return contract, updated above) -- parked in C BEFORE the
+        ; COMPILE_ERROR_CODE check below (real bug caught here: an
         ; earlier version read COMPILE_ERROR_CODE into A first, silently
         ; clobbering the real index with 0 before it was ever saved --
         ; every array after the first one then compiled with index 0).
-        push af
-        ld a,(COMPILE_ERROR_CODE)
-        or a
-        jr z,.dim_emit
-        pop af                    ; balance the stack on every exit path
-        ret                        ; already DIM'd / table full -- no
-                                     ; bytecode to emit
-.dim_emit:
+        ; DE = the size, also from ARRSYM_FIND_OR_CREATE (DE, not HL --
+        ; EMIT_BYTE destroys HL: an earlier version used HL and emitted
+        ; EMIT_PTR's own just-advanced high byte instead of the size's).
+        ld c,a
+        call CHK_ERR              ; already DIM'd / table full -- no bytecode
         ld a,63        ; QUAL shrink: inlined EMIT_OP_DIM
         rst $20
-        pop af
-        ld de,(ARR_SIZE_TMP)      ; DE, not HL -- EMIT_BYTE destroys HL
-                                     ; (real bug caught here: an earlier
-                                     ; version used HL and had the high
-                                     ; byte's own `ld a,h` read EMIT_
-                                     ; PTR's own just-advanced value
-                                     ; instead of the real size)
+        ld a,c
         jp EMIT_IDX_COUNT         ; array index + count, low/high byte
 
 ; COMPILE_DIM_STR -- DIM A$(n[,w]). Mirrors COMPILE_DIM exactly, plus an
@@ -2827,20 +2626,14 @@ COMPILE_DIM_STR:
         ld a,(STMT_IDENT_NAME_LEN)    ; own top-of-routine comment)
         ld b,a
         call STRARRSYM_FIND_OR_CREATE
-        ; A holds the new array's own index (same "park it on the stack
-        ; before reading COMPILE_ERROR_CODE" fix COMPILE_DIM's own header
-        ; already documents the real bug for)
-        push af
-        ld a,(COMPILE_ERROR_CODE)
-        or a
-        jr z,.dim_emit
-        pop af
-        ret
-.dim_emit:
+        ; A holds the new array's own index, DE its size (same "park the
+        ; index in C before the COMPILE_ERROR_CODE check" fix COMPILE_DIM
+        ; documents the real bug for)
+        ld c,a
+        call CHK_ERR
         ld a,64        ; QUAL shrink: inlined EMIT_OP_DIM_STR
         rst $20
-        pop af
-        ld de,(STRARR_SIZE_TMP)   ; DE, not HL -- EMIT_BYTE destroys HL
+        ld a,c
         call EMIT_IDX_COUNT       ; array index + count, low/high byte
         ld a,(STRARR_WIDTH_TMP)
         rst $20          ; width
@@ -2882,8 +2675,7 @@ COMPILE_ARRAY_ASSIGN:
         ld a,42
         rst $30
 .found:
-        ld b,a
-        ld de,(ARR_SIZE_TMP)      ; R10.7 -- widened to 2 bytes (was in C)
+        ld b,a                    ; B = index; DE = count (ARRSYM_LOOKUP)
         xor a
         ld (COMPILE_ARR_ASSIGN_IS_STR),a
         jr COMPILE_ARR_ASSIGN_COMMON
@@ -2899,8 +2691,8 @@ COMPILE_ARRAY_ASSIGN:
 ;
 ; BUG FOUND (real hardware, R8.5 Group 4), TWO layers deep: (1) both
 ; sub-expressions compiled below can contain their OWN array reads
-; (e.g. "B(0)=A(1)+A(0)") -- COMPILE_FACTOR's own .arr_read branch
-; reuses this SAME CARR_INDEX/CARR_SIZE pair, silently overwriting this
+; (e.g. "B(0)=A(1)+A(0)") -- COMPILE_FACTOR's own array read then
+; reused the SAME shared index/size cells, silently overwriting this
 ; outer assignment's own target before EMIT_OP_ARR_STORE below got to
 ; use it. (2) A first attempt fixed that by parking the target in BC
 ; across EACH COMPILE_EXPR call separately (push immediately before,
@@ -3008,9 +2800,7 @@ COMPILE_DIMN:
         jr nc,.have_size
         ld a,47                     ; not a DIM'd array (same code --
         rst $30                      ; same real failure either way)
-.have_size:
-        ld hl,(ARR_SIZE_TMP)      ; R10.7 -- widened to 2 bytes (was 1)
-        ld (DIMN_SIZE_TMP),hl
+.have_size:                         ; DE = the size (ARRSYM_LOOKUP), kept
         rst $08                     ; consume the array name
         ld a,(TOK_TYPE)
         cp TOK_RPAREN
@@ -3027,7 +2817,6 @@ COMPILE_DIMN:
         ; numeric-literal path already applies for values 128-255.
         ld a,2        ; QUAL shrink: inlined EMIT_BYTE_OP_PUSH_I16
         rst $20
-        ld de,(DIMN_SIZE_TMP)     ; DE, not HL -- EMIT_BYTE destroys HL
         ld a,e
         rst $20
         ld a,d
@@ -3075,11 +2864,11 @@ COMPILE_INPUT:
 .num_len_ok:
         ld b,a
         call CSYM_FIND_OR_CREATE
-        ld (CINPUT_INDEX_TMP),a
+        ld c,a
         rst $08                    ; consume the target identifier
         ld a,50        ; QUAL shrink: inlined EMIT_OP_INPUT_NUM
         rst $20
-        ld a,(CINPUT_INDEX_TMP)
+        ld a,c
         rst $20
         ret                      ; RC shrink: tail call through the RST (was jp EMIT_BYTE)
 .string:
@@ -3088,11 +2877,11 @@ COMPILE_INPUT:
 .str_len_ok:
         ld b,a
         call STRSYM_FIND_OR_CREATE
-        ld (CINPUT_INDEX_TMP),a
+        ld c,a
         rst $08                    ; consume the target identifier
         ld a,51        ; QUAL shrink: inlined EMIT_OP_INPUT_STR
         rst $20
-        ld a,(CINPUT_INDEX_TMP)
+        ld a,c
         rst $20
         ret                      ; RC shrink: tail call through the RST (was jp EMIT_BYTE)
 
@@ -3184,10 +2973,10 @@ COMPILE_STR_FACTOR:
                                    ; this invariant already holds, per its
                                    ; own header note
 .lit_len_ok:
-        ld (CSTR_LIT_LEN_TMP),a
+        ld b,a
         ld a,17        ; QUAL shrink: inlined EMIT_BYTE_OP_PUSH_STR_LIT
         rst $20
-        ld a,(CSTR_LIT_LEN_TMP)
+        ld a,b
         rst $20                   ; the length byte
         ld de,(TOK_NAME)          ; DE, not HL — EMIT_BYTE uses HL
                                     ; internally as the EMIT_PTR pointer,
@@ -3205,10 +2994,8 @@ COMPILE_STR_FACTOR:
                                     ; for the exact same reason, already
                                     ; correct since R2 — this routine just
                                     ; didn't follow that existing example)
-        ld a,(CSTR_LIT_LEN_TMP)
-        or a
+        or a                      ; A = the length still (EMIT_BYTE preserves A)
         jr z,.lit_no_content
-        ld b,a
 .lit_copy_loop:
         ld a,(de)
         rst $20
@@ -3223,19 +3010,14 @@ COMPILE_STR_FACTOR:
         ; full reasoning): BUILTIN_FN_FIND matches by name text alone,
         ; TOK_NAME/TOK_LEN already excludes this TOK_STR_IDENT's own
         ; trailing '$' (LEX_SCAN_IDENT's contract), so a match here is
-        ; only a REAL string-function call if BFN_FOUND_ARGTYPE's bit 7
+        ; only a REAL string-function call if the argtype's bit 7 (E)
         ; is SET (result is a string) -- a bit-7-clear match means a
         ; same-named ordinary STRING VARIABLE was typed (e.g. "ABS$"),
         ; which falls through to the plain-string-identifier path below.
         call BUILTIN_FN_FIND
         jr nc,.plain_str_ident
-        push af                  ; A = fn_index, preserved across the
-                                    ; result-type check below
-        ld a,(BFN_FOUND_ARGTYPE)
-        bit 7,a
-        jr z,.not_str_result
-        pop af
-        jp COMPILE_FACTOR.fn_call   ; same grammar/emit COMPILE_FACTOR's
+        bit 7,e
+        jp nz,COMPILE_FACTOR.fn_call   ; same grammar/emit COMPILE_FACTOR's
                                        ; own numeric-context call uses --
                                        ; OP_CALL_FN's result is always
                                        ; pushed as a plain TAG_INT value
@@ -3244,8 +3026,6 @@ COMPILE_STR_FACTOR:
                                        ; VM's own established convention),
                                        ; so no separate string-context
                                        ; emit path is needed
-.not_str_result:
-        pop af
 .plain_str_ident:
         ; Dynamic Data Phase 2 -- a string-array NAME used as a value is
         ; a string-array read, "STR_IDENT(expr)". Checked by NAME lookup
@@ -3270,10 +3050,10 @@ COMPILE_STR_FACTOR:
         ld hl,(TOK_NAME)
 .len_ok:
         call STRSYM_FIND_OR_CREATE
-        ld (CSTR_IDENT_INDEX_TMP),a
+        ld c,a
         ld a,2        ; QUAL shrink: inlined EMIT_BYTE_OP_PUSH_I16
         rst $20
-        ld a,(CSTR_IDENT_INDEX_TMP)
+        ld a,c
         rst $20
         xor a
         rst $20                   ; high byte: always 0, indices are small
@@ -3283,7 +3063,6 @@ COMPILE_STR_FACTOR:
         ; thin wrapper around the shared COMPILE_ARR_READ_COMMON skeleton
         ; (see its own header) -- C = 1 selects the string opcode.
         ld c,1
-        ld hl,(STRARR_SIZE_TMP)
         jp COMPILE_ARR_READ_COMMON
 
 ; COMPILE_STR_IDENT_STMT — entry: TOK_TYPE is TOK_STR_IDENT (the
@@ -3316,17 +3095,19 @@ COMPILE_STR_ASSIGN_CONTINUED:
         ld a,(STMT_IDENT_NAME_LEN)
         ld b,a
         call STRSYM_FIND_OR_CREATE
-        ld (CSTR_ASSIGN_TARGET_TMP),a
+        ld c,a
         ld a,(TOK_TYPE)
         cp TOK_ASSIGN
         jr z,.have_assign
         jp ERR_EXPECTED_ASSIGN
 .have_assign:
         rst $08                   ; consume '='
-        call COMPILE_STR_EXPR
+        push bc                   ; C = the target's index, across the
+        call COMPILE_STR_EXPR     ; expression (as COMPILE_ASSIGN_CONTINUED)
+        pop bc
         ld a,18        ; QUAL shrink: inlined EMIT_OP_STORE_STR_VAR
         rst $20
-        ld a,(CSTR_ASSIGN_TARGET_TMP)
+        ld a,c
         rst $20
         ret                      ; RC shrink: tail call through the RST (was jp EMIT_BYTE)
 
@@ -3345,8 +3126,7 @@ COMPILE_STRARR_ASSIGN:
         ld a,42
         rst $30
 .found:
-        ld b,a
-        ld de,(STRARR_SIZE_TMP)
+        ld b,a                    ; B = index; DE = count (STRARRSYM_LOOKUP)
         ld a,1
         ld (COMPILE_ARR_ASSIGN_IS_STR),a
         jp COMPILE_ARR_ASSIGN_COMMON
@@ -3854,10 +3634,10 @@ COMPILE_IF:
 ; grammar already shows elsewhere (see e.g. COMPILE_FACTOR's own unary-
 ; minus reusing OP_SUB instead of a dedicated opcode).
 ; ===========================================================================
-; NESTING SAFETY: IF_SKIP_PATCH_TMP/IF_ELSE_SKIP_PATCH_TMP are single
-; shared memory cells, but COMPILE_IF_BLOCK is genuinely recursive (an
-; IF nested inside another IF's own THEN/ELSE body, via COMPILE_
-; STATEMENT_LIST's own reentrant reuse) -- a naive read of either cell
+; NESTING SAFETY: IF_SKIP_PATCH_TMP is a single shared memory cell, but
+; COMPILE_IF_BLOCK is genuinely recursive (an IF nested inside another
+; IF's own THEN/ELSE body, via COMPILE_STATEMENT_LIST's own reentrant
+; reuse) -- a naive read of that cell
 ; AFTER the recursive COMPILE_STATEMENT_LIST call returns would get the
 ; INNER call's own value, not this invocation's, silently leaving the
 ; outer IF's own placeholder forever unpatched (stuck at 0 -- a real
@@ -3896,22 +3676,18 @@ COMPILE_IF_BLOCK:
         ld a,47        ; QUAL shrink: inlined EMIT_OP_JMP_ELSE
         rst $20
         call EMIT_PLACEHOLDER_16
-        ld (IF_ELSE_SKIP_PATCH_TMP),hl  ; not yet at risk -- the ELSE-body's
-                                          ; own recursive call hasn't
-                                          ; happened yet
+        ex (sp),hl                        ; the else-skip placeholder takes
+                                            ; the entry push's stack slot (it
+                                            ; must survive the ELSE-body's own
+                                            ; recursive call); HL = our own
+                                            ; saved THEN-body patch address
+        push hl
         call COMPILE_RELATIVE_OFFSET
         ex de,hl                          ; DE = relative offset
-        pop hl                              ; HL = our own saved THEN-body
-                                              ; patch address (balances the
-                                              ; entry push)
+        pop hl                              ; HL = the THEN-body patch address
         ld (hl),e
         inc hl
         ld (hl),d
-        ld hl,(IF_ELSE_SKIP_PATCH_TMP)
-        push hl                            ; save THIS invocation's own
-                                             ; else-skip patch address
-                                             ; across the ELSE-body's own
-                                             ; recursive call
         rst $08                        ; consume ELSE
         call COMPILE_STATEMENT_LIST     ; compiles the ELSE-body
         ld a,(COMPILE_ERROR_CODE)
@@ -4092,15 +3868,14 @@ COMPILE_NEXT:
         jr z,.have_var
         call CSTK_TOP            ; RC (L-NEXT): a bare NEXT closes the innermost open FOR
         jr z,.mismatch
-        ld a,(hl)
-        ld (NEXT_VAR_INDEX_TMP),a
-        jr .bare
+        ld c,(hl)                ; C = the loop's var_index (CSTK_TOP and the
+        jr .bare                 ; token fetch/emits below preserve BC)
 .have_var:
         ld hl,(TOK_NAME)
         ld a,(TOK_LEN)
         ld b,a
         call CSYM_FIND_OR_CREATE   ; A = this NEXT's own referenced var index
-        ld (NEXT_VAR_INDEX_TMP),a
+        ld c,a
         ; post-R9: verify this NEXT's variable matches the innermost open
         ; FOR (docs/V2_SEMANTIC_CAPABILITY_AUDIT.md S9 -- previously
         ; unchecked entirely: "this R3 scope does not verify the name
@@ -4108,9 +3883,7 @@ COMPILE_NEXT:
         call CSTK_TOP                ; HL = innermost open frame
         jr z,.mismatch               ; NEXT with no FOR open at all
         ld a,(hl)                   ; A = that loop's own var_index
-        ld b,a
-        ld a,(NEXT_VAR_INDEX_TMP)
-        cp b
+        cp c
         jr nz,.mismatch
         jr .verified
 .mismatch:
@@ -4120,15 +3893,13 @@ COMPILE_NEXT:
 .verified:
         rst $08                 ; consume the identifier
 .bare:
-        ld a,(NEXT_VAR_INDEX_TMP)
+        ld a,c
         ld (FOR_LOOP_VAR_INDEX),a
         ld a,14        ; QUAL shrink: inlined EMIT_OP_FOR_NEXT
         rst $20
-        ld a,(FOR_LOOP_VAR_INDEX)
+        ld a,c
         rst $20
-        ld hl,(FOR_LOOP_TOP_OFFSET)
-        ld a,h
-        ld (FOR_NEXT_HIGH_TMP),a  ; EMIT_BYTE itself uses HL internally (as
+        ld de,(FOR_LOOP_TOP_OFFSET)  ; EMIT_BYTE itself uses HL internally (as
                                     ; the EMIT_PTR pointer) — an earlier
                                     ; version kept this offset's high byte
                                     ; in H across the low byte's EMIT_BYTE
@@ -4143,12 +3914,12 @@ COMPILE_NEXT:
                                     ; opcode) shortly after. Same bug class
                                     ; as COMPILE_ASSIGN's and
                                     ; COMPILE_IDENT_LOAD's earlier fixes —
-                                    ; save to memory before any call that
-                                    ; can clobber the register you still
-                                    ; need.
-        ld a,l
+                                    ; keep a value only in memory or a
+                                    ; register the calls in between
+                                    ; preserve (DE, for EMIT_BYTE).
+        ld a,e
         rst $20
-        ld a,(FOR_NEXT_HIGH_TMP)
+        ld a,d
         rst $20
         ; R8.5 Group 5 -- resolve every pending EXIT FOR from this loop's
         ; own body now: the loop's real exit point is exactly here, the
@@ -4890,32 +4661,27 @@ COMPILE_EXT_CALL:
         call EXT2_SLOT_ADDR      ; HL -> registry record
         ld a,(hl)                  ; generation
         ld (CEXT_GEN),a
-        push hl
         ld de,12
         add hl,de
         ld a,(hl)                   ; argcount
         ld (CEXT_ARGCOUNT),a
-        inc hl
-        ld a,(hl)                   ; argtypes bitmask
-        ld (CEXT_ARGTYPES),a
-        pop hl
-        ld a,(CEXT_ARGCOUNT)
-        ld (CEXT_REMAINING),a
+        ld b,a                      ; B = argcount, C = arguments remaining,
+        ld c,a                      ; E = argtypes: pushed across each
+        inc hl                      ; argument compile below
+        ld e,(hl)                   ; argtypes bitmask
         rst $08                     ; consume the extension keyword
-        ld a,(CEXT_REMAINING)
-        or a
+        inc c
+        dec c
         jr z,.emit                  ; 0-argument extension — nothing to
                                     ; compile, straight to the opcode
 .arg_loop:
+        push bc
+        push de
         ; this argument's own 0-based index = argcount - remaining
-        ld a,(CEXT_ARGCOUNT)
-        ld b,a
-        ld a,(CEXT_REMAINING)
-        ld c,a
         ld a,b
         sub c
         ld b,a                      ; B = rotate count for the bit test
-        ld a,(CEXT_ARGTYPES)
+        ld a,e
         call VM_TEST_ARGTYPE_BIT  ; Z = numeric, NZ = string (bounded
                                     ; ROM consolidation pass -- shared
                                     ; with the decompiler's identical
@@ -4927,11 +4693,10 @@ COMPILE_EXT_CALL:
 .arg_numeric:
         call COMPILE_EXPR
 .arg_checked:
+        pop de
+        pop bc
         call CHK_ERR           ; RC shrink: return if a compile error is pending
-        ld a,(CEXT_REMAINING)
-        dec a
-        ld (CEXT_REMAINING),a
-        or a
+        dec c
         jr z,.emit
         ld a,(TOK_TYPE)
         cp TOK_COMMA
