@@ -189,7 +189,7 @@ def main():
     document.add_paragraph("\n")
     ed = document.add_paragraph()
     ed.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    ed.add_run("V2 Enhanced -- development edition (v2-development, after release v2.0.1-emu.1) • %s"
+    ed.add_run("V2 Enhanced -- edition for release v2.0.2-emu.1 (maintained on v2-development) • %s"
                % date.today().isoformat()).italic = True
     document.add_page_break()
     document.add_heading("Contents", level=1)

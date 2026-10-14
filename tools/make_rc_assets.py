@@ -10,7 +10,7 @@ The CI workflow publishes that archive for a release tag (.github/workflows/chec
 RELEASE_VERSION to the tag (or a dev string), which overrides VERSION below.
 
 RELEASE / VERSION name what this tree builds. A numbered release is a v* tag (its own copy of this
-script labels it; v2.0.0-emu.1 and v2.0.1-emu.1 were built that way). Anything else -- the rolling
+script labels it; v2.0.0-emu.1, v2.0.1-emu.1 and v2.0.2-emu.1 were built that way). Anything else -- the rolling
 "latest" build of v2-development, a workflow artifact, a local `make rc-assets` off a tag -- is an
 UNQUALIFIED DEVELOPMENT BUILD and is labelled so in its name, BUILD_INFO.txt and README.txt.
 
@@ -27,7 +27,12 @@ import sys
 
 OUT = "build/release-v2-rc"
 PACKAGES = ("mode", "sprite", "printer", "shapes", "graphics", "cbeep")
-LATEST_QUALIFIED = "v2.0.1-emu.1"
+LATEST_QUALIFIED = "v2.0.2-emu.1"
+# numbered releases: designation and release record (docs/)
+RELEASES = {
+    "v2.0.1-emu.1": ("Sound Maintenance Release", "V2_MAINT_RELEASE_STATUS.md"),
+    "v2.0.2-emu.1": ("Compiler Maintenance Release", "V2_COMPILER_MAINT_RELEASE_STATUS.md"),
+}
 RELEASE_TAG = re.compile(r"v\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?")   # what the CI publishes as a numbered release
 
 
@@ -62,11 +67,13 @@ def main():
     global VERSION, RELEASE, STATUS
     VERSION = version()
     if RELEASE_TAG.fullmatch(VERSION):
-        if VERSION == "v2.0.1-emu.1":
-            RELEASE = "2068-Leap V2 Enhanced %s — Sound Maintenance Release (emulator-qualified, not hardware-qualified)" % VERSION
+        if VERSION in RELEASES:
+            name, record = RELEASES[VERSION]
+            RELEASE = "2068-Leap V2 Enhanced %s — %s (emulator-qualified, not hardware-qualified)" % (VERSION, name)
+            STATUS = "emulator-qualified, NOT hardware-qualified (docs/%s)" % record
         else:
             RELEASE = "2068-Leap V2 Enhanced %s (numbered release; see its release record for the qualification status)" % VERSION
-        STATUS = "emulator-qualified, NOT hardware-qualified (docs/V2_MAINT_RELEASE_STATUS.md)"
+            STATUS = "numbered release; see its release record in docs/ for the qualification status"
     else:
         RELEASE = ("2068-Leap V2 development build %s — UNQUALIFIED (not a release; the latest qualified release is %s)"
                    % (VERSION, LATEST_QUALIFIED))

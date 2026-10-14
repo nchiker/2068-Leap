@@ -400,7 +400,7 @@ One package at a time; `NEW` unloads it; a statement of a package that is not lo
 
 ## Appendix G: Hardware notes
 
-Everything in this manual was verified in the **ZEsarUX emulator**: on the accepted release ROMs (tag `v2.0.0-emu.1`), and, for the maintenance release's sound changes (`BEEP`, `SOUND`, `PAUSE`, the cbeep package), on its candidate ROMs; the memory figures of this development edition on the development ROM of the `v2-development` branch. **Nothing was tried on a physical TS2068**, a real cassette recorder, a ZX Printer, a joystick, ULAplus hardware or a Dock/EXROM cartridge. In particular:
+Everything in this manual was verified in the **ZEsarUX emulator**: on the accepted release ROMs (tag `v2.0.0-emu.1`), and, for the maintenance release's sound changes (`BEEP`, `SOUND`, `PAUSE`, the cbeep package), on its candidate ROMs; the memory figures on the `v2-development` ROM of the RAM-efficiency change, whose memory layout `v2.0.2-emu.1` has unchanged. **Nothing was tried on a physical TS2068**, a real cassette recorder, a ZX Printer, a joystick, ULAplus hardware or a Dock/EXROM cartridge. In particular:
 
 * the sound (`BEEP`, `SOUND`, `CBEEP`) was measured by reading the sound chip's registers back, counting instructions and port writes, and from the emulator's recorded audio; it was never listened to on a TS2068 (the startup chime included);
 * `BEEP` and `PAUSE` count display frames: 1/60 second on a TS2068 is the design figure, the emulator interrupts 50 times a second (not measured on hardware);

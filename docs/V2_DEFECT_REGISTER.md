@@ -17,7 +17,7 @@ case ids (`tools/qual/corpus.py`) or suite case names. Source of the Q-/D-/L-/N-
 | RC-O2 | LIMIT | `SAVE ... ALL` refuses (`OUT OF MEMORY`) when bytecode + segment 2 + 53 bytes exceed the bytecode area plus free memory | the in-place layout must end at `V2_CODE_LIMIT` | `sa-no-room` |
 | RC-O3 | LIMIT | A `SAVE ... ALL` tape restores its variables only on the exact ROM build, with the same package registration, that wrote it (otherwise: program only, `NO VARIABLES`) | by design: the image includes bytecode, layout and package references | `sa-other-rom`, `sa-package-mismatch` |
 | RC-O4 | LIMIT | Numeric array elements are 16-bit integers: storing a float or a value outside -32768..32767 is runtime error 11 | V2 array format | `arr.float_value` (OkOrErr) |
-| RC-O5 | RESERVE | ROM reserve 54 (HOME) / 25 (EXROM) bytes free, below the provisional 200 / 150 targets | **accepted by the owner (2026-10-11)**; the provisional targets are dropped and the ROM is not to be changed to recover them; `V2_ROM_RAM_BUDGET.md` keeps the options for reference | `make budget` |
+| RC-O5 | RESERVE | ROM reserve 54 (HOME) / 25 (EXROM) bytes free in the release, below the provisional 200 / 150 targets (`v2.0.1-emu.1`: 19 / 26; `v2.0.2-emu.1`: 275 / 26) | **accepted by the owner (2026-10-11)**; the provisional targets are dropped and the ROM is not to be changed to recover them; `V2_ROM_RAM_BUDGET.md` keeps the options for reference | `make budget` |
 | RC-O6 | PERF | A bare `FOR`/`NEXT` iteration costs ~1190 T-states, ~45 % more than in production `7ae0599` (817 T); loops with real bodies differ by 0.3-1.5 % | measured cause (bisected with `qbench`): the qualification FOR-frame redesign that fixes Q-07/Q-19/Q-20 (NEXT works through its own control-stack frame) +36 %, D11 overflow-checked add +2 %, float FOR variant D +5 %. A correctness cost, kept; a faster INT-only NEXT path would need ROM space; **accepted as a correctness trade-off** (owner, 2026-10-11) | `V2_REGRESSION_REPORT.md` s6 |
 | RC-O7 | SPACE | `EDITOR_BLOCK_DELETE` (3 bytes, EXROM `$D0CE`, a `jp` to the line-range delete) is unreachable in the production EXROM: its only caller, `rom/exrom_checker.asm`, is not in the image | found at the closeout by `production_reachability.py`; not changed (no ROM changes after acceptance) | the tool's report on the release listings |
 | T-3 | TEST | 15 legacy component-test sources (`call_fn`, the `compiler_r2` to `compiler_r7` series, `decompiler_phase2`, `editor_integration`, `ext_concurrent`, `graphics_module_ram`, `graphics_pixel`, `print`, `sprite_module`, `sqr`) are in no runner | test debt, unchanged from the study | `tools/run_v2_standalone_tests.sh` |
@@ -88,9 +88,9 @@ case ids (`tools/qual/corpus.py`) or suite case names. Source of the Q-/D-/L-/N-
 | RC-11 | TEST | the study battery ran the integer oracles without `ORACLE_PROMOTE=1` on the RC (its promotion marker `FLOAT_BIG_TO_STRING` was replaced by the exact float formatter), so every overflow pair was reported as a mismatch, and the oracle's mismatch printout crashed | Fixed in `run_study_battery.sh` (VM-source marker as well) and `study_vm_oracle.py`. With promotion checked, 0 mismatches. ROM unchanged | `970dc30` |
 | RC-12 | TEST | (found reading the fresh-clone `make test` log) the component-test image `vm_milestone01` had its DIM opcode slots 128 bytes off (`$31CF`/`$31FD`, handlers at `$324F`/`$327D`): `rom/test_v2_local_dim.inc` bound the slot names with an `EQU` before the handlers, a forward reference that lags one assembler pass (sjasmplus "Label has different value in pass 3"). The test passed only because it runs no DIM. Present since R10.9 Phase 2C; production images never include the file | Fixed: the names are bound after the handlers; no warning, slots correct; production images unchanged | `c57e968` |
 
-## Maintenance candidate (branch `study/classicbeep`, not yet released)
+## Sound maintenance release `v2.0.1-emu.1`
 
-Found or changed after the release, in the BEEP/SOUND maintenance work (`V2_AY_BEEP_STUDY.md`, `V2_CLASSICBEEP_STUDY.md`). The release itself is unchanged; these entries describe the candidate.
+Found or changed after `v2.0.0-emu.1`, in the BEEP/SOUND maintenance work (`V2_AY_BEEP_STUDY.md`, `V2_CLASSICBEEP_STUDY.md`), and released in `v2.0.1-emu.1` (`V2_MAINT_RELEASE_STATUS.md`); "the candidate" below is that release.
 
 | Id | Sev | Defect | Status | Evidence |
 |---|---|---|---|---|
@@ -99,6 +99,14 @@ Found or changed after the release, in the BEEP/SOUND maintenance work (`V2_AY_B
 | M-2 | LOW | `SOUND` refused register 0 (the stock ROM accepts 0 to 16) | Fixed in the candidate | `ay_beep_tests.py` (`SOUND 0,123` ... `SOUND 20,1`) |
 | M-3 | LIMIT | With the frame interrupt off (port `$FF` bit 6, or machine code that leaves interrupts off), `PAUSE n` and `PAUSE 0` never end and BREAK cannot stop them; `BEEP` never ends if the frame interrupt is inhibited at port `$FF` | Documented (manual: `PAUSE`, `BEEP`); the same as the release for `PAUSE` | `tools/maint/di_wait_tests.py` |
 | T-4 | TEST | `make test-legacy`: 5 of its 13 V1 storage cases (`extension_roundtrip`, `autorun_*`) cannot be built: the legacy test EXROM (`rom/exrom_build.asm` with `STORAGE_TEST_FAKE_SEND`) overflows by 42 / 17 bytes, so `sjasmplus_strict.sh` refuses it. Identical on the release tag; the production images do not use this build | test debt, open; the other 8 cases pass | `V2_CLASSICBEEP_STUDY.md` s10 |
+
+## Compiler maintenance release `v2.0.2-emu.1`
+
+Found after `v2.0.1-emu.1` and fixed in `v2.0.2-emu.1` (`V2_COMPILER_MAINT_RELEASE_STATUS.md`).
+
+| Id | Sev | Defect | Status | Evidence |
+|---|---|---|---|---|
+| M-4 | MEDIUM | **An array access whose subscript or assigned value reads an array of the other kind was compiled as the wrong kind.** The two array-read paths and the array assignment shared one "string?" flag cell, and a nested read of the other kind overwrote it: `PRINT names$(pick(0))` read the *numeric* array table (a wrong value, no error), `pick(1) = LEN(w$(0))` stored with the string opcode (a wrong value), and `names$(pick(0)) = "x"` or `pick(LEN(w$(0))) = 1` were rejected as `SYNTAX`. Plain subscripts (`names$(k)`) and same-kind nesting (`a(b(0))`) were correct. Present in `v2.0.0-emu.1` and `v2.0.1-emu.1` | Fixed in `v2.0.2-emu.1` (`f40ffed`): the read kind travels in a register across the subscript compile; only the (statement-level) assignment uses the flag | `arr-nested-kind` (`tools/v2_prod_arrays.py`) |
 
 ## Hardware
 

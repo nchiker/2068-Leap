@@ -3,13 +3,13 @@
 **A replacement ROM for the Timex Sinclair 2068**: a full-screen editor, a structured BASIC without line numbers, a whole-program compiler and bytecode VM, floating-point numbers, strings and arrays, AY sound, graphics, sprites and tape storage. It fits in the machine's own 16 KB HOME ROM and 8 KB extension ROM (EXROM) and runs on a stock 48 KB TS2068, instant-on.
 
 [![Source checks](https://github.com/nchiker/2068-Leap/actions/workflows/check.yml/badge.svg?branch=v2-development)](https://github.com/nchiker/2068-Leap/actions/workflows/check.yml?query=branch%3Av2-development)
-[![Release](https://img.shields.io/badge/release-v2.0.1--emu.1-blue)](https://github.com/nchiker/2068-Leap/releases/tag/v2.0.1-emu.1)
+[![Release](https://img.shields.io/badge/release-v2.0.2--emu.1-blue)](https://github.com/nchiker/2068-Leap/releases/tag/v2.0.2-emu.1)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-| ▶ [**Try V2 in your browser**](https://nchiker.github.io/TSRun/?rom=leap) | ⬇ [**Download V2**](https://github.com/nchiker/2068-Leap/releases/download/v2.0.1-emu.1/2068-Leap-V2-v2.0.1-emu.1.zip) | 📖 [**Read the V2 User Manual**](docs/manual/01_introduction.md) | 🖥 [**Emulator Setup**](docs/EMULATOR_SETUP.md) | 🗄 [**V1 Legacy Version**](#2068-leap-v1--legacy--archived-version) |
+| ▶ [**Try V2 in your browser**](https://nchiker.github.io/TSRun/?rom=leap) | ⬇ [**Download V2**](https://github.com/nchiker/2068-Leap/releases/download/v2.0.2-emu.1/2068-Leap-V2-v2.0.2-emu.1.zip) | 📖 [**Read the V2 User Manual**](docs/manual/01_introduction.md) | 🖥 [**Emulator Setup**](docs/EMULATOR_SETUP.md) | 🗄 [**V1 Legacy Version**](#2068-leap-v1--legacy--archived-version) |
 |:---:|:---:|:---:|:---:|:---:|
 
-> **Current release: [v2.0.1-emu.1](https://github.com/nchiker/2068-Leap/releases/tag/v2.0.1-emu.1)** (2068-Leap V2 Enhanced, Sound Maintenance Release) — **emulator-qualified** on ZEsarUX, **not hardware-qualified**: nothing has been tried on a physical TS2068 yet. Development continues on this branch, `v2-development`.
+> **Current release: [v2.0.2-emu.1](https://github.com/nchiker/2068-Leap/releases/tag/v2.0.2-emu.1)** (2068-Leap V2 Enhanced, Compiler Maintenance Release) — **emulator-qualified** on ZEsarUX, **not hardware-qualified**: nothing has been tried on a physical TS2068 yet. Development continues on this branch, `v2-development`.
 
 2068-Leap is an alternate-history ROM: what the TS2068's own BASIC could have been, built from documented kernel modules instead of the tangled monolith of the original, and designed around the machine's real limits — 24 KB of ROM in two banks and 48 KB of RAM shared with the screen. It is an independent community project, open source under the [MIT License](LICENSE), and is not affiliated with Timex, Sinclair, Amstrad, Fuse, ZEsarUX or the ULAplus project. See also the sibling project [**2068-Leap-Forth**](https://github.com/nchiker/2068-Leap-Forth), a from-scratch Forth on the same hardware kernel.
 
@@ -47,7 +47,7 @@ V2 is not a compatibility clone of Sinclair BASIC: the differences are listed in
 
 ## Try it
 
-**In your browser, no install: [nchiker.github.io/TSRun/?rom=leap](https://nchiker.github.io/TSRun/?rom=leap)** runs the qualified `v2.0.1-emu.1` ROMs in the [TSRun](https://github.com/josef-jelinek/TSRun) browser emulator (our fork: [nchiker/TSRun](https://github.com/nchiker/TSRun)). Startup, typing, running programs and AY sound were checked there on 2026-10-12; click the page once so the browser allows sound. *Known limitation:* the package tapes do not load in TSRun yet (`LOAD FAILED`, a TSRun tape-detection issue; reported with a tested fix as [TSRun issue #3](https://github.com/josef-jelinek/TSRun/issues/3)), so the package examples need a desktop emulator for now.
+**In your browser, no install: [nchiker.github.io/TSRun/?rom=leap](https://nchiker.github.io/TSRun/?rom=leap)** runs the previous release's `v2.0.1-emu.1` ROMs (the same language; it lacks this release's M-4 fix and larger memory pool) in the [TSRun](https://github.com/josef-jelinek/TSRun) browser emulator (our fork: [nchiker/TSRun](https://github.com/nchiker/TSRun)). Startup, typing, running programs and AY sound were checked there on 2026-10-12; click the page once so the browser allows sound. *Known limitation:* the package tapes do not load in TSRun yet (`LOAD FAILED`, a TSRun tape-detection issue; reported with a tested fix as [TSRun issue #3](https://github.com/josef-jelinek/TSRun/issues/3)), so the package examples need a desktop emulator for now.
 
 The machine starts in the editor. Type each line and press ENTER after it, then type `RUN` on the empty line that follows:
 
@@ -72,20 +72,21 @@ The [beginner's guide](docs/manual/02_beginners_guide.md) (Part 2 of the manual)
 
 ## Download
 
-**Recommended: [`2068-Leap-V2-v2.0.1-emu.1.zip`](https://github.com/nchiker/2068-Leap/releases/download/v2.0.1-emu.1/2068-Leap-V2-v2.0.1-emu.1.zip)** from the [v2.0.1-emu.1 release](https://github.com/nchiker/2068-Leap/releases/tag/v2.0.1-emu.1) — the complete V2 distribution. Check it with `sha256sum -c 2068-Leap-V2-v2.0.1-emu.1.zip.sha256` (published beside it), then `sha256sum -c SHA256SUMS` inside.
+**Recommended: [`2068-Leap-V2-v2.0.2-emu.1.zip`](https://github.com/nchiker/2068-Leap/releases/download/v2.0.2-emu.1/2068-Leap-V2-v2.0.2-emu.1.zip)** from the [v2.0.2-emu.1 release](https://github.com/nchiker/2068-Leap/releases/tag/v2.0.2-emu.1) — the complete V2 distribution. Check it with `sha256sum -c 2068-Leap-V2-v2.0.2-emu.1.zip.sha256` (published beside it), then `sha256sum -c SHA256SUMS` inside.
 
 | In the archive | What it is |
 |---|---|
-| `roms/leap_v2_home.bin` | 16 KB HOME ROM — SHA-256 `3f13ec2cc4ef02c1b9694ccd3d40c02658ff4ddef100e16f50230d3002306f1c` |
-| `roms/leap_v2_exrom.bin` | 8 KB EXROM — SHA-256 `24b1ebb0b1377aad8e2e6caee443a9c5611cfad2f0eab495311e07df43b22b7e` |
+| `roms/leap_v2_home.bin` | 16 KB HOME ROM — SHA-256 `1fe5798f79f31e760780a7c3d1d24657a9aadf12edfa5aef5f82c94040a4f5cc` |
+| `roms/leap_v2_exrom.bin` | 8 KB EXROM — SHA-256 `e6b507a49cef4d6cdd62ae09f8664f20ee84c7931a42bf67e1cf0862322641a0` |
 | `roms/leap_v2_zesarux.bin` | HOME + EXROM in one file, for ZEsarUX `--romfile` |
+| `roms/leap_v2_exrom.dck` | the EXROM as a Timex ROM cartridge, for EightyOne |
 | `packages/` | the six packages, as `.tzx` tapes and binaries |
-| `docs/manual/`, `docs/2068_Leap_V2_Users_Manual.docx` | the user manual as released (Markdown with pictures, and Word) |
-| `docs/` | the release record, language reference, defect register, hardware checklist, package ABI |
+| `docs/manual/`, `docs/2068_Leap_V2_Users_Manual.docx`, `.doc` | the user manual as released (Markdown with pictures, Word and Word 97) |
+| `docs/` | the release record, language reference, defect register, hardware checklist, package ABI, the emulator guide (and `patches/`, the ZEsarUX patch it needs) |
 
-The same release page also carries `2068-Leap-v2.0.1-emu.1.zip`, an older-style archive kept for reference (same ROMs, V1-era documents, four packages); use the V2 archive above. The first V2 release was [v2.0.0-emu.1](https://github.com/nchiker/2068-Leap/releases/tag/v2.0.0-emu.1); all releases are on the [releases page](https://github.com/nchiker/2068-Leap/releases).
+Earlier releases: [v2.0.1-emu.1](https://github.com/nchiker/2068-Leap/releases/tag/v2.0.1-emu.1) (sound maintenance) and the first V2 release, [v2.0.0-emu.1](https://github.com/nchiker/2068-Leap/releases/tag/v2.0.0-emu.1); all releases are on the [releases page](https://github.com/nchiker/2068-Leap/releases).
 
-**Development builds (unqualified).** Every push to `v2-development` is built automatically and published as the rolling pre-release [**latest**](https://github.com/nchiker/2068-Leap/releases/tag/latest) ([`2068-Leap-latest.zip`](https://github.com/nchiker/2068-Leap/releases/download/latest/2068-Leap-latest.zip)), and every push and pull request leaves a build artifact on the [Actions](https://github.com/nchiker/2068-Leap/actions) tab. These are **not releases**: they have not been through qualification, and their ROMs differ from the qualified images (the development ROM already has the larger memory pool described below). From the next release on, the archive also contains the Word 97 manual, the emulator guide and patches, and the EightyOne cartridge image; development builds have them now.
+**Development builds (unqualified).** Every push to `v2-development` is built automatically and published as the rolling pre-release [**latest**](https://github.com/nchiker/2068-Leap/releases/tag/latest) ([`2068-Leap-latest.zip`](https://github.com/nchiker/2068-Leap/releases/download/latest/2068-Leap-latest.zip)), and every push and pull request leaves a build artifact on the [Actions](https://github.com/nchiker/2068-Leap/actions) tab. These are **not releases**: they have not been through qualification, and their ROMs can differ from the qualified images.
 
 ## User manual
 
@@ -99,7 +100,7 @@ The **2068-Leap V2 User Manual and Language Reference** has seven parts — intr
 
 The Word files open in Word or LibreOffice; to fill in the Contents page, update the table of contents (in LibreOffice: Tools → Update → Update All). The compact [**language reference**](docs/V2_LANGUAGE_REFERENCE.md) is the same language without the teaching.
 
-**Which edition?** The manual in this branch is the maintained **development edition**: it describes release v2.0.1-emu.1 plus the development ROM's larger memory pool (9211 bytes, `FREE()` = 8967 on an empty machine, where the v2.0.1-emu.1 ROM — also the one in the browser demo — has 8397 and 8153). Everything else applies to both. The manual exactly as released is inside the release archive (`docs/manual/` and the `.docx`). The Word editions are generated from the Markdown with `make manual-v2` (the `.doc` by LibreOffice, checked against the `.docx`).
+**Which edition?** The manual in this branch describes release v2.0.2-emu.1 (pool 9211 bytes, `FREE()` = 8967 on an empty machine; the v2.0.1-emu.1 ROM — also the one in the browser demo — has 8397 and 8153). It is maintained with the development branch; the manual exactly as released is inside the release archive (`docs/manual/`, the `.docx` and the `.doc`). The Word editions are generated from the Markdown with `make manual-v2` (the `.doc` by LibreOffice, checked against the `.docx`).
 
 ## Running it in an emulator
 
@@ -191,17 +192,16 @@ Details: manual [Part 5](docs/manual/05_packages.md). Writing a package: [PACKAG
 
 - The program is kept as **plain source text**; `RUN` compiles it into a separate 4011-byte bytecode area that is rebuilt each time. `LIST`, `SAVE` and the editor always work on the text you typed.
 - The HOME ROM holds the compiler, the VM and the hardware kernel; the EXROM holds the editor, the tape routines, the calculator and other code that is not on the hot path, reached through cross-bank calls.
-- Both ROMs are essentially full: the release has 19 bytes free in HOME and 26 in the EXROM. Features that do not fit are packages, loaded from tape into a 1 KB RAM window.
+- Both ROMs are nearly full: the release has 275 bytes free in HOME and 26 in the EXROM. Features that do not fit are packages, loaded from tape into a 1 KB RAM window.
 - Memory map and limits: manual [Appendix E](docs/manual/07_appendices.md#appendix-e-memory-map) and [Appendix D](docs/manual/07_appendices.md#appendix-d-limits); design: [V2_ARCHITECTURE.md](docs/V2_ARCHITECTURE.md), [RAM_EFFICIENCY_RESULTS.md](docs/RAM_EFFICIENCY_RESULTS.md).
 
 ## Status, qualification and limitations
 
 | | |
 |---|---|
-| **Release** | [v2.0.1-emu.1](https://github.com/nchiker/2068-Leap/releases/tag/v2.0.1-emu.1), 2026-10-12 — Sound Maintenance Release: AY `BEEP` in seconds and semitones, `SOUND` register 0, a `PAUSE` rollover fix, the `cbeep` package. Record: [V2_MAINT_RELEASE_STATUS.md](docs/V2_MAINT_RELEASE_STATUS.md). First V2 release: [v2.0.0-emu.1](https://github.com/nchiker/2068-Leap/releases/tag/v2.0.0-emu.1) ([V2_RC_STATUS.md](docs/V2_RC_STATUS.md)). |
-| **Qualification** | **Emulator-qualified on ZEsarUX**: a 667-case language corpus, the editor, tape and package suites and the full `make test` gate (over 1,000 automated cases), plus the 325 manual examples. |
+| **Release** | [v2.0.2-emu.1](https://github.com/nchiker/2068-Leap/releases/tag/v2.0.2-emu.1), 2026-10-13 — Compiler Maintenance Release: array accesses nested in an array of the other kind compile correctly (M-4), +814 bytes of program memory (pool 8397 → 9211, `FREE()` 8153 → 8967), HOME ROM reserve 19 → 275 bytes. Record: [V2_COMPILER_MAINT_RELEASE_STATUS.md](docs/V2_COMPILER_MAINT_RELEASE_STATUS.md). Earlier: [v2.0.1-emu.1](https://github.com/nchiker/2068-Leap/releases/tag/v2.0.1-emu.1) (sound maintenance, [V2_MAINT_RELEASE_STATUS.md](docs/V2_MAINT_RELEASE_STATUS.md)), [v2.0.0-emu.1](https://github.com/nchiker/2068-Leap/releases/tag/v2.0.0-emu.1) ([V2_RC_STATUS.md](docs/V2_RC_STATUS.md)). |
+| **Qualification** | **Emulator-qualified on ZEsarUX**: a 667-case language corpus, the editor, tape and package suites and the full `make test` gate (over 1,000 automated cases), plus a differential compile of ~2,700 programs proving this release's compiler changes output-neutral; the 325 manual examples were last run on v2.0.1-emu.1. |
 | **Hardware** | **Not tested on a physical TS2068**, cassette recorder, printer, joystick or ULAplus hardware: see the [hardware checklist](docs/V2_HARDWARE_CHECKLIST.md). Keep backups of programs saved on tape. |
-| **In development** (`v2-development`, unqualified) | +814 bytes of program memory (pool 8397 → 9211 bytes, `FREE()` 8153 → 8967) with no change to the language, the package ABI or the tape formats ([RAM_EFFICIENCY_RESULTS.md](docs/RAM_EFFICIENCY_RESULTS.md)); upgraded developer tooling. Not yet a release. |
 | **Accepted limitations** | strings up to 31 characters; numeric array elements are 16-bit integers; one package at a time; `SAVE ... ALL` variables restore only on the same ROM build; nine ASCII symbols (brackets, braces, backslash, caret, backquote, bar, tilde) print as blanks; a bare `FOR` loop is slower than in early V2 builds. All are in the [defect register](docs/V2_DEFECT_REGISTER.md) and the manual's [limits](docs/manual/07_appendices.md#appendix-d-limits). |
 | **Not in V2** | line numbers, `GOSUB` (use `PROC`/`CALL`), V1 tapes (refused with `BAD TAPE VERSION`), V1's `AYREG` extension (use `SOUND`). |
 
@@ -220,7 +220,7 @@ make doc-examples   # every example of the user manual, run on the ROM
 make manual-v2      # regenerate the Word editions (.docx, and .doc via LibreOffice)
 ```
 
-A local build of this branch is a development build and is labelled as one in its archive. The qualified images are reproducible from the release tag (`git checkout v2.0.1-emu.1 && make build`). Generated ROMs are not committed. Testing, the tools and the emulator used by the suites: [docs/TESTING.md](docs/TESTING.md); runtime debugging uses [ts2068-debug](https://github.com/nchiker/2068-Debug) and the source-level simulator [z80sim](https://github.com/nchiker/z80sim).
+A local build of this branch is a development build and is labelled as one in its archive. The qualified images are reproducible from the release tag (`git checkout v2.0.2-emu.1 && make build`). Generated ROMs are not committed. Testing, the tools and the emulator used by the suites: [docs/TESTING.md](docs/TESTING.md); runtime debugging uses [ts2068-debug](https://github.com/nchiker/2068-Debug) and the source-level simulator [z80sim](https://github.com/nchiker/z80sim).
 
 **Continuous integration** ([.github/workflows/check.yml](.github/workflows/check.yml)): every push and pull request runs `make check` and `make budget` and builds the archive as a workflow artifact; pushes to `v2-development` update the unqualified [latest](https://github.com/nchiker/2068-Leap/releases/tag/latest) pre-release; a release tag `vX.Y.Z[-suffix]` publishes a numbered release, never replacing assets already on one.
 
@@ -242,7 +242,7 @@ basic/     retained V1 interpreter source; not linked into V2
 
 - [User manual](docs/manual/01_introduction.md) (download [.docx](https://github.com/nchiker/2068-Leap/raw/v2-development/docs/2068_Leap_V2_Users_Manual.docx), [.doc](https://github.com/nchiker/2068-Leap/raw/v2-development/docs/2068_Leap_V2_Users_Manual.doc)) and [language reference](docs/V2_LANGUAGE_REFERENCE.md)
 - [Emulator setup](docs/EMULATOR_SETUP.md) — ZEsarUX, EightyOne, Fuse, TSRun
-- [Release record v2.0.1-emu.1](docs/V2_MAINT_RELEASE_STATUS.md), [defect register](docs/V2_DEFECT_REGISTER.md), [hardware checklist](docs/V2_HARDWARE_CHECKLIST.md), [feature matrix](docs/V2_FEATURE_MATRIX.md)
+- [Release record v2.0.2-emu.1](docs/V2_COMPILER_MAINT_RELEASE_STATUS.md) (earlier: [v2.0.1-emu.1](docs/V2_MAINT_RELEASE_STATUS.md), [v2.0.0-emu.1](docs/V2_RC_STATUS.md)), [defect register](docs/V2_DEFECT_REGISTER.md), [hardware checklist](docs/V2_HARDWARE_CHECKLIST.md), [feature matrix](docs/V2_FEATURE_MATRIX.md)
 
 **Technical**
 

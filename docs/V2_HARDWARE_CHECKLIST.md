@@ -82,6 +82,15 @@ For the `v2.0.1-emu.1` images (HOME `3f13ec2c...`, EXROM `24b1ebb0...`, identity
 | 5.10 | relative loudness of `BEEP` (AY, level 15) and `CBEEP` (loudspeaker) through the TV / monitor audio | both audible and comfortable; note the levels | NOT TESTED — PHYSICAL HARDWARE UNAVAILABLE |
 | 5.11 | `PRINT STICK(1)` after the chime and after a `BEEP` | joystick still read (the mixer's I/O-port bits are kept) | NOT TESTED — PHYSICAL HARDWARE UNAVAILABLE |
 
+## 6. Compiler maintenance release v2.0.2-emu.1
+
+For the `v2.0.2-emu.1` images (HOME `1fe5798f...`, EXROM `e6b507a4...`, identity CRC `$F9E9`; `V2_COMPILER_MAINT_RELEASE_STATUS.md`). The changes are in the compiler and the RAM layout, with nothing timing- or hardware-specific: sections 1-5 apply as they stand; record results against these images. Two quick checks of this release's own changes:
+
+| # | Step | Expected | Result |
+|---|---|---|---|
+| 6.1 | `NEW`, the one-line program `PRINT FREE()`, `RUN` | 8967 (pool 9211 bytes) | NOT TESTED — PHYSICAL HARDWARE UNAVAILABLE |
+| 6.2 | the program `DIM n$(3)`, `DIM p(3)`, `n$(2) = "abc"`, `p(0) = 2`, `PRINT n$(p(0))`, `n$(p(0)) = "xy"`, `PRINT LEN(n$(2))` (one statement per line), `RUN` | `abc`, then `2` (M-4; checked in ZEsarUX) | NOT TESTED — PHYSICAL HARDWARE UNAVAILABLE |
+
 ## 4. Machine-specific risks to look for
 
 * EXROM paging (chunk 6) with the real MMU; FILL's use of the RAM under the EXROM while a package
