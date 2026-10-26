@@ -1,12 +1,32 @@
 """Shared helpers for headless production-ROM checks (ts2068-debug / ZEsarUX)."""
-import json, os, struct, subprocess, sys
+import contextlib, io, json, os, struct, subprocess, sys
+
+try:
+    from ts2068_debug.cli import main as _cli_main
+except ImportError:
+    _cli_main = None
+
+# Each D() used to start a `ts2068-debug` process (~77 ms each, before connecting). The CLI's own
+# main() is called in-process instead: the same commands, state directory and JSON, without the
+# process start. V2_HEADLESS_SUBPROCESS=1 (or a missing package) goes back to one process a call.
+_SUBPROCESS = _cli_main is None or os.environ.get("V2_HEADLESS_SUBPROCESS") == "1"
 
 def D(*a, t=300):
-    r = subprocess.run(["ts2068-debug", "--json", *a], capture_output=True, text=True, timeout=t)
+    if _SUBPROCESS:
+        r = subprocess.run(["ts2068-debug", "--json", *a], capture_output=True, text=True, timeout=t)
+        out = r.stdout
+    else:
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(io.StringIO()):
+            try:
+                _cli_main(["--json", *a])
+            except SystemExit:
+                pass
+        out = buf.getvalue()
     try:
-        return json.loads(r.stdout)
+        return json.loads(out)
     except Exception:
-        return r.stdout
+        return out
 
 def syms(path):
     out = {}

@@ -1,4 +1,4 @@
-.PHONY: all build check smoke-build test qual qual-maint doc-examples manual-v2 rc-assets test-prod test-legacy test-all budget audit-basic manual clean cplot-extension block-extension frame-extension invert-extension ayreg-extension out-extension sprite-extension shapes-extension v2-packages v2-standalone-test release-assets
+.PHONY: all build check repro smoke-build test qual qual-maint doc-examples manual-v2 rc-assets test-prod test-legacy test-all budget audit-basic manual clean cplot-extension block-extension frame-extension invert-extension ayreg-extension out-extension sprite-extension shapes-extension v2-packages v2-standalone-test release-assets
 
 all: check build
 
@@ -19,8 +19,16 @@ build:
 	tools/make_eightyone_dck.sh build/exrom.bin build/exrom.dck
 	tools/sjasmplus_strict.sh rom/zesarux_combined.asm
 
+# ROM reserves kept for bug fixes (docs/V2_LEAPC_BACKPORT_PLAN.md section 0). EXROM is a ratchet at
+# today's free space until the back-port's phase 1 frees room; then it becomes the 32-byte reserve.
+HOME_RESERVE ?= 64
+EXROM_RESERVE ?= 26
+
 check: build
+	python3 tools/report_budget.py --check $(HOME_RESERVE) $(EXROM_RESERVE) build/test_basic.lst build/exrom.lst build/test_basic.sym
 	python3 tools/check_asm.py
+	python3 tools/check_provenance.py > build/provenance.log; rc=$$?; tail -1 build/provenance.log; \
+	  if [ $$rc = 2 ]; then echo "provenance check skipped: no stock ROMs"; elif [ $$rc != 0 ]; then grep 'NOT ACCOUNTED' build/provenance.log; exit 1; fi
 	python3 tools/check_docs.py
 	python3 tools/check_ram_aliases.py build/test_basic.sym
 	python3 tools/check_ram_layout.py build/test_basic.lst build/exrom.lst build/test_basic.sym build/exrom.sym
@@ -242,6 +250,10 @@ audit-basic: build
 manual:
 	python3 tools/build_user_manual_docx.py
 	python3 tools/build_whats_new_docx.py
+
+# Two fresh copies of the tree built at different paths must give identical images (tools/check_repro.sh).
+repro:
+	tools/check_repro.sh
 
 clean:
 	rm -rf build
