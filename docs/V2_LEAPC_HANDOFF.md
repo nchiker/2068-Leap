@@ -17,7 +17,7 @@ only where things stand and how to pick up.
 - Standard test runs (`make test`, `make qual`, the prod suites) go to a cheaper subagent
   (haiku/sonnet) that reports PASS/FAIL counts and failing text; the main session judges them.
 - Run long suites on an rsync copy in the scratchpad, never `make` in the real tree while a suite runs
-  there. `make test` is ~50 min; the prod suites use ports 10241-10246.
+  there. `make test` is ~32 min (fast emulation); the prod suites use ports 10241-10246.
 - Never run `make test-legacy` / `test-all` (Fuse) unprompted. Fuse was approved only for probe 0.8.
 - Commit only on `backport/leapc`; don't push.
 - Each item: measure bytes with `make budget`, record them in the plan's ledger and item outcome.
@@ -56,4 +56,4 @@ items (redraw from the cursor line, `SH_VIEW`) against phase 5 by benefit per by
   by a separated clean-room author; `NOTICE.md` says so. Owner decision 2026-10-26: that counts as
   clean-room enough.
 - Plan item 0.10: owner decision 2026-10-26, fast emulation (`TS2068_DEBUG_ZESARUX_FAST=1`) is the
-  default for the suites (set by the Makefile, after the phase-3 commit, validated by a `make test`).
+  default (in ts2068-debug; `=0` for real speed). Done: `make test` 1,940 s, all PASS.
