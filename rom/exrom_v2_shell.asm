@@ -1886,7 +1886,18 @@ V2_REDRAW:
     jr nz,.nav
     call V2_REDRAW_ACTIVE
     ret nc                       ; done, carry clear
-    jr .full
+    ; Plan item (Class B): the active line changed height. Same index, so the same view: the rows above
+    ; it stay; redraw from its first row down through the main loop. Row 22 is also the default for an
+    ; active line the full redraw never reached, so it takes the full redraw.
+    ld a,(V2_ACTIVE_ROW)
+    cp 22
+    jr nc,.full
+    ld (V2_DRAW_ROW),a
+    ld c,23                      ; to the bottom (V2_RD_CLEAR_ROWS stops at row 23)
+    call V2_RD_CLEAR_ROWS
+    ld de,(CUR_EDIT_INDEX)
+    call V2_FIND_INDEX           ; HL = the active record, 0 = the append line (the loop's sentinel)
+    jr .record
 .nav:
     call V2_REDRAW_NAV
     ret nc

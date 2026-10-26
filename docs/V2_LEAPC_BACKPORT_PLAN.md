@@ -42,6 +42,7 @@ Further rules:
 | phase 2 (bug fixes)          | **358** | **123** | [M]: phase total HOME −15, EXROM −15 (items 2.1-2.3; v2.0.3)                                  |
 | phase 3 (licensing)          | **358** | **199** | [M]: 3.1 tape block I/O EXROM +19; 3.2 calculator dispatcher EXROM +57                        |
 | phase 4 (display quick wins) | **354** | **208** | [M]: 4.1 HOME +4; 4.2, 4.3 0; 4.4 EXROM +16, status-bar attribute fill EXROM −25              |
+| redraw from the cursor line  | **354** | **186** | [M]: EXROM +22                                                                                |
 | phase 5 (speed)              | ≥ 64    | ≥ 32    | Class B: each item sized and weighed before it is started; 5.0 first if the room is not there |
 
 Every [E] is replaced by `make budget`'s figure as each item lands.
@@ -150,6 +151,17 @@ changes (~25-35 B EXROM [E]; replaces a full redraw of up to 949 kT); keep the c
 screen (`SH_VIEW`, fixes open defect ED4/R9, ~94 B EXROM [L]). Both fit in the room phase 1 frees and
 are ranked against phase 5 and 6 by benefit per byte. Cursor at the error's column: Class C for V2's
 short lines (needs a compiler-side column count and full qualification): deferred.
+
+Outcome, redraw from the cursor's line (2026-10-26, [M]): EXROM 208 → 186 B (+22). When typing or
+DELETE changes the active line's height, `V2_REDRAW` clears from the line's first row down and re-enters
+its main loop at the active record (`V2_FIND_INDEX`), instead of CLS and every line from the view top.
+An active line cached at row 22 still takes the full redraw: 22 is also the default for a line the full
+redraw never reached (ED4). Differential against the phase-4 build: 7 scenarios, 1,941 keys typed (first,
+middle and append lines, near the bottom, a scrolled view, wrapped lines above, navigation mixed in), the
+screen identical after every key. Per height-changing key: a line on row 20 under 20 lines 796k → 115k T;
+a scrolled view 834k → 140k T; long lines above 435k → 212k T; a line near the top gains little (the rows
+below are cleared either way). Not done: clearing only down to the last drawn row (~11 B and a RAM cell,
+for short programs only). `SH_VIEW` waits for 5.1's size.
 
 ## Phase 5: speed inside the bytecode model → release v2.1
 
