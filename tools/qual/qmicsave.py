@@ -44,7 +44,7 @@ class StdoutProcess(qharness.ZEsarUXProcess):
         args = ["stdbuf", "-oL", "./" + self.binary, "--noconfigfile", "--machine", self.machine,
                 "--enable-remoteprotocol", "--remoteprotocol-port", str(self.port), "--vo", "null", "--ao", "null",
                 "--romfile", str(Path(self.romfile).resolve())]
-        if os.environ.get("TS2068_DEBUG_ZESARUX_FAST") == "1":
+        if os.environ.get("TS2068_DEBUG_ZESARUX_FAST", "1") != "0":     # as ts2068-debug: fast unless =0
             args += ["--emulatorspeed", "1000", "--frameskip", "49"]
         with open(self.out_path, "w") as out:
             self._proc = subprocess.Popen(args, cwd=self.install_dir, stdout=out, stderr=subprocess.DEVNULL)

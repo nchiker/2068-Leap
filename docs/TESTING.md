@@ -9,6 +9,11 @@
 | `make test-legacy` | the V1 tests that drive a real Fuse window under X11: `run_editor_auto_test.sh` (wrap, insert) and the `run_storage_named_load_test.sh` family | **Yes** |
 | `make test-all` | `test` then `test-legacy` | Yes |
 
+**Emulation speed.** ZEsarUX runs fast by default (ts2068-debug adds `--emulatorspeed 1000
+--frameskip 49`; owner decision 2026-10-26, plan item 0.10). The emulated machine is unchanged (T-states
+per frame, interrupts), so cycle-counted results are the same; set `TS2068_DEBUG_ZESARUX_FAST=0` to run
+at real speed, e.g. for a test that waits on the host clock.
+
 **Why this exists.** `make test` used to run the V1 editor_auto and storage tests, which
 open a real Fuse window. Every session that ran `make test` for V2 work therefore launched
 Fuse. The fix is structural: those tests moved, unchanged, to `test-legacy`, and
