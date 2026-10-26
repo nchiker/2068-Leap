@@ -250,8 +250,9 @@ Only after phases 1-6, and only with the owner's go-ahead. Everything here break
 ## Review item R1: the calculator does not round (found in 5.1, 2026-10-26)
 
 Defect `Q-34` (`tools/qual/defects.py`), HIGH: wrong results in ordinary programs. Not caused by 5.1
-(the old build is identical) and not a stock-ROM trait. For the owner to classify (A: a correctness
-bug, always done; or B) and schedule.
+(the old build is identical) and not a stock-ROM trait. Owner decision F9 (2026-10-26): the next item,
+before `SH_VIEW` (a correctness fix that may also free EXROM for the remaining items); prototype on a
+branch first, integrate after the owner sees size, speed and rounding.
 
 **What [M].** `tools/qual/qcalcround.py` runs the ROM's four operations on 4,000 operand pairs and
 scores each 5-byte result against the exact result rounded to nearest:
@@ -287,9 +288,11 @@ rounds to nearest (ties away from zero). Its float suite checks the ROM against 
    Leap-C's unpack/pack/normalise/add/multiply/divide is 522 B; V2's equivalent is 1,331 B
    (`CALC_UNPACK` 125, `CALC_PACK` 44, `CALC_ADDSUB_ENGINE` 399, add/sub 90, multiply 260, divide 347,
    helpers 66). Estimate [E]: EXROM **+500 to +700 B free** after the glue, and correct rounding.
-   To check first: the other users of `CALC_UNP_A/B` and `CALC_UNPACK`/`CALC_PACK` (conversions,
-   functions, `CALC_FP_TO_INT`); speed (Leap-C loops where V2 unrolls: measure T per operation and
-   `qbench`'s float programs); `NOTICE.md` (MIT).
+   Scope [M]: the internals (`CALC_UNP_A/B`, `CALC_UNPACK`/`CALC_PACK`, the division and
+   multiplication cells, `CALC_OP1/OP2_PTR`) are used only in `rom/exrom_calc.asm`; besides the four
+   operations only `CALC_FP_TO_INT` reads the unpacked layout; `CALC_TABLE` has 8 literals (exchange,
+   delete, subtract, multiply, divide, add, duplicate, end-calc). To check: speed (Leap-C loops where
+   V2 unrolls: measure T per operation and `qbench`'s float programs); `NOTICE.md` (MIT).
 2. Guard bits and rounding in V2's own routines: EXROM −60 to −90 B [E], no size win.
 
 **Qualification.** `qcalcround.py` (100% correctly rounded, or every exception explained),
@@ -324,7 +327,7 @@ All decided by the owner on 2026-10-25.
 | F6  | Calculator rewrite (3.2)                 | Counts as clean-room (2026-10-26)                         |
 | F7  | Fast emulation (0.10)                    | Default for the suites (2026-10-26)                       |
 | F8  | 5.1 decimal literals                     | Integrated, `5.` stays an INT (2026-10-26)                |
-| F9  | Calculator rounding (`Q-34`)             | Open: review item R1 (2026-10-26)                         |
+| F9  | Calculator rounding (`Q-34`)             | R1 is the next item, before `SH_VIEW`: prototype first (2026-10-26) |
 
 ## Also worth doing
 

@@ -12,8 +12,8 @@ Written 2026-10-26 at the end of phase 3; updated at the end of phase 4 and afte
 - No stock-ROM-derived code left in the images: `tools/check_provenance.py` (in `make check`) has an
   empty allow-list. Keep it that way; anything taken from Leap-C is MIT and goes in `NOTICE.md`.
 - Last full `make test`: all PASS on 5.1 (2,444 s, loaded host; counts in the plan's 5.1 outcome).
-- Open for the owner: review item R1 (the calculator does not round, `Q-34`; plan section "Review
-  item R1"). Not started.
+- Next: review item R1 (the calculator does not round, `Q-34`; owner decision F9: before `SH_VIEW`,
+  prototype first). Then `SH_VIEW`.
 
 ## Working rules (owner)
 
@@ -46,7 +46,58 @@ Written 2026-10-26 at the end of phase 3; updated at the end of phase 4 and afte
 Probe pattern (all of the `q*` tools above): a loop assembled at `$F400` (the package window), a
 table at `$8300` below the `$B6xx` cells, the booted snapshot restored per batch (`qharness.Machine`).
 
-## Next: `SH_VIEW` (keep the cursor's line whole on screen, fixes ED4/R9)
+## Next: R1, the calculator rounds (Leap-C's float arithmetic behind V2's interface)
+
+**Goal of this step.** A prototype on a branch off `backport/leapc` (e.g. `proto/r1-calc-round`):
+V2's arithmetic replaced by Leap-C's 40-bit core, with its measured size, speed and rounding; the
+owner then decides whether to integrate (owner decision F9). Measurements, root causes and Leap-C's
+side are in the plan, section "Review item R1"; defect `Q-34`.
+
+**Why first.** A correctness fix (`INT(3.1*10)` = 30 today), and if it lands near Leap-C's size it frees
+EXROM for `SH_VIEW` and the later items (V2's arithmetic 1,331 B, Leap-C's 522 B).
+
+**V2 today** (`rom/exrom_calc.asm`, EXROM): `CALC_UNPACK` (~l.333, also reads the small-integer
+form), `CALC_PACK` (~l.469, no rounding), `CALC_FP_TO_INT` (~l.580: the only other reader of the
+unpacked layout), `CALC_ADDSUB_ENGINE` (~l.794), `CALC_OP_ADD`/`SUB` (~l.1034), `CALC_OP_MUL`
+(~l.1093), `CALC_OP_DIV` (~l.1309), helpers `CALC_ADD8`..`CALC_SUB4` (~l.1497), `CALC_TABLE` (~l.1612,
+8 literals). Nothing outside this file touches the internals. Cells (`include/sysvars.inc`
+~l.2234-2320): `CALC_OP1/OP2_PTR`, `CALC_UNP_A/B` (6 B each), `CALC_SHIFT_COUNT`, `CALC_MUL_ACC`,
+`CALC_MUL_CAND` (8 B each), `CALC_DIV_REM`, `CALC_DIV_QUOT` (4 B each): 37 B.
+
+**Leap-C** (`~/2068-Leap-C/src/runtime/fpcore.asm`, MIT): `FUNPK`, `FPACK` (rounds half away from
+zero on the guard byte), `FNORM`, `FADD`, `FSWAP`, `FMUL`, `FDIV`, `FDONE`, `FSIGN`, helpers `FSHL`,
+`FSHR`, `FADDN`, `FSUBN`, `FZERO`; unpacked layout `[sign][exponent][m0..m3][guard]` (7 B). Its
+`XF_BIN` dispatcher and `XF_*` entry points are not needed (V2 keeps its `RST $28` literal stream).
+`tools/fpmodel.py` is a bit-exact model of every operation.
+
+**Adapting it.**
+
+- Working cells: FX, FY (7 B each) and FQ (5 B) in V2's 37 B calculator cells, not at `CALC_STACK`
+  as in Leap-C (V2's operand slots live there). The cells left over may be freed (RAM census).
+- Inputs: V2 operands may be in the small-integer form (`CALC_INT_TO_FP`'s output; byte 0 = 0 is
+  not zero there): `FUNPK` must read it, as `CALC_UNPACK` does. Outputs: the general form; zero as
+  five zero bytes (the bytes V2 already uses for zero).
+- Errors: V2's codes and paths (`CALC_ABORT_NUMERIC_OVERFLOW`, `CALC_ERR_DIVISION_BY_ZERO`,
+  `CALC_ABORT_STREAM`), not Leap-C's `F_ERR`. Underflow gives 0 in both.
+- `CALC_FP_TO_INT`: port to the new layout, its results unchanged (differential over many values).
+- Keep `CALC_TABLE`'s literals and operand counts (`tools/z80sim/test_calc_dispatcher.py`).
+
+**Measurements.**
+
+- Size: `make budget` (EXROM; HOME should not change). Estimate [E] EXROM +500 to +700 B free.
+- Rounding: `tools/qual/qcalcround.py --leapc ~/2068-Leap-C`: 100% correctly rounded, or each
+  exception explained; the results equal Leap-C's model bit for bit.
+- Speed: T per operation before/after (time the four stubs, as `qcalcround.py` calls them) and
+  `qbench` (`float_loop`, `float_add_lit`, `for_float_step`, `builtins`): Leap-C loops where V2
+  unrolls, so a slowdown is possible; report it and weigh it against the bytes.
+- Values change in the last bit by design: `qdecimals.py` stays self-consistent (same build on both
+  sides); for `qliterals.py` / `qnumparse.py` against the old build, check the new values against
+  the model instead of expecting identity. The visible cases (`INT(3.1*10)` etc., plan R1) become right.
+- `make check`, `make doc-examples` (examples that print decimals may change: explain each),
+  corpus expectations (`tools/qual/corpus.py` may have float cases that flip), `make test` via a
+  subagent on an rsync copy. `NOTICE.md`: the Leap-C origin of the arithmetic.
+
+## After R1: `SH_VIEW` (keep the cursor's line whole on screen, fixes ED4/R9)
 
 **Goal.** The plan's weighed Class B item (phase 4, "Weighed items"): the active line always whole on
 rows 0-22, so its cursor is always visible. Measure, qualify, commit on `backport/leapc` (or prototype
@@ -91,8 +142,8 @@ when the view stays).
    table at all (measure again while trimming: slower, full redraws only).
 
 **Size [E].** EXROM +70 to +110 B (`SH_VIEW` 94 B in Leap-C, minus helpers V2 already has, plus the
-two redraw paths). EXROM 186 B free → about 80-115 B, above the 32 B reserve. R1 option 1 (Leap-C's
-float core) would free several hundred EXROM bytes later; option 2 would not fit next to `SH_VIEW`.
+two redraw paths). With EXROM 186 B free (before R1) → about 80-115 B, above the 32 B reserve; R1, if
+integrated, adds its savings first.
 
 **Qualification.**
 
@@ -107,7 +158,7 @@ float core) would free several hundred EXROM bytes later; option 2 would not fit
 - `make check` (now also assembles the standalone images), `make doc-examples` (screenshots: any
   changed cell must be explained), `make test` via a subagent on an rsync copy.
 
-**After `SH_VIEW`.** The owner's call on R1, then 5.2 (BREAK poll at back-edges, HOME).
+**After `SH_VIEW`.** 5.2 (BREAK poll at back-edges, HOME).
 
 ## Pitfalls met in 5.1
 
