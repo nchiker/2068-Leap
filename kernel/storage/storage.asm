@@ -243,11 +243,9 @@ STORAGE_LEADER_PILOT EQU $9C    ; LD-LEADER M0126 — initial timing
 ;
 ; In:  A = STORAGE_TYPE_HEADER or STORAGE_TYPE_DATA
 ;      IX = data pointer, DE = data length
-; Out: none meaningful — this project's own caller (STORAGE_SAVE) has
-;      no way to detect a mid-SAVE SPACE-abort differently from success
-;      today; kept simple to match. (The real ROM's own carry-out here
-;      is "genuine timeout/abort", relayed but currently unused by our
-;      caller.)
+; Out: carry set = the whole block was sent; carry clear = SPACE was
+;      held (abort). STORAGE_SAVE stops on a clear carry (back-port plan
+;      item 2.1).
 ; Destroys: AF, AF', BC, DE, HL, IX
 ; ============================================================================
 STORAGE_SEND_BLOCK:
@@ -611,8 +609,10 @@ STORAGE_VERSION_WORD:
 ; STORAGE_SAVE
 ; In:  HL = filename pointer, B = filename length, IX = data pointer,
 ;      DE = data length
-; Out: carry always clear (this project's own caller ignores it anyway
-;      — see rom/exrom_storage.asm's own header)
+; Out: carry clear = saved; carry set = SPACE aborted it (the header or the
+;      data block was cut short; after an aborted header the data block is
+;      not sent at all). Back-port plan item 2.1, after 2068-Leap-C: before
+;      it, the data block was sent after an aborted header and SAVED shown.
 ; Destroys: AF, BC, DE, HL, IX
 ; ============================================================================
 STORAGE_SAVE:
@@ -705,6 +705,7 @@ STORAGE_SAVE:
     ELSE
     call STORAGE_SEND_BLOCK
     ENDIF
+    jr   nc, .aborted_header              ; SPACE during the header: no data block
 
     ld   a, 10
     ld   (STORAGE_PROGRESS_PCT), a
@@ -719,6 +720,7 @@ STORAGE_SAVE:
     ELSE
     call STORAGE_SEND_BLOCK               ; stock format: one data block
     ENDIF
+    jr   nc, .aborted
 
     ld   a, 2
     ld   (STORAGE_OP_STATE), a            ; SAVED
@@ -732,6 +734,15 @@ STORAGE_SAVE:
                                          ; never actually reach the
                                          ; screen
     or   a
+    ret
+
+.aborted_header:
+    pop  de                               ; the caller's length and pointer,
+    pop  ix                               ; unused: no data block is sent
+.aborted:
+    xor  a
+    ld   (STORAGE_OP_STATE), a            ; idle (not SAVED)
+    scf
     ret
 
 ; ============================================================================

@@ -315,6 +315,7 @@ def capture_save(cmdline, maxi=60_000_000):
                 sp = r["SP"]
                 ret = read(sp, 2)
                 D("set-register", "SP", hex(sp + 2))
+                D("set-register", "AF", hex(r["AF"] | 1))  # the real sender's success: carry set (STORAGE_SAVE stops on carry clear)
                 D("set-register", "PC", hex(ret[0] | ret[1] << 8))
             elif p == show:
                 msg = msg_name(regs()["HL"])

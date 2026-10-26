@@ -5587,9 +5587,22 @@ VM_ERR_COMMON:
         ld a,1
         ld (VM_HALTED),a
         ld sp,(VM_RUN_SP)       ; QUAL (Q-03/Q-18): unwind. An error used to return into whatever
-        ret                     ; called the raising routine, which then carried on (array stores wrote
+                                ; called the raising routine, which then carried on (array stores wrote
                                 ; out of bounds after VM_ARR_VALIDATE_INDEX failed; OP_AND/OP_OR
                                 ; returned through a pushed operand -> jp $0001 = cold start)
+    IFDEF V2_PRODUCTION
+        ; Back-port plan item 2.3 (after 2068-Leap-C's CC_ERROR / RT_RUN): the VM runs at paging
+        ; depth 1 with the EXROM in (the shell called it from there), whatever depth the error was
+        ; raised at. Every path is balanced today (qcanary --banking, 667 cases), but nothing
+        ; enforced it: an unwind from depth 0 (package code) or 2 would return into the shell with
+        ; the wrong page or count. Depth 0, then a real page-in: depth 1, EXROM in. VM_RUN's caller
+        ; reads the error from VM_ERROR_CODE, not A.
+        xor a
+        ld (BANK_EXROM_DEPTH),a
+        jp BANK_PAGE_EXROM_IN
+    ELSE
+        ret
+    ENDIF
 
 ; VM_TEST_ARGTYPE_BIT -- bounded ROM consolidation pass: rom/exrom_v2_
 ; compiler.asm's own COMPILE_TEST_ARGTYPE_BIT and rom/exrom_v2_

@@ -271,6 +271,7 @@ def save_header():
         sp = r["SP"]
         ret = P.read(sp, 2)
         D("set-register", "SP", hex(sp + 2))
+        D("set-register", "AF", hex(r["AF"] | 1))  # the real sender's success: carry set (STORAGE_SAVE stops on carry clear)
         D("set-register", "PC", hex(ret[0] | ret[1] << 8))
     msg = P.to_prompt()
     hdr = blocks[0][1]
@@ -280,6 +281,47 @@ def save_header():
           and int.from_bytes(hdr[13:15], "little") == ABI.fmt_word
           and blocks[1][1] == src and msg == "SAVED")
     return ok, "msg=%s header=%s word=%04X" % (msg, hdr.hex(), int.from_bytes(hdr[13:15], "little"))
+
+
+def _save_with_space(blocks_before):
+    """A real SAVE through the dispatcher and the real sender; SPACE goes down in the emulated
+    keyboard matrix once `blocks_before` + 1 blocks have started. Returns (message, a later block
+    started)."""
+    P.boot()
+    P.put_store(PROG)
+    P.poke(P.sym("EDIT_LINE_BUF"), b'save "PROG"\0')
+    D("mem-write", "0xFF00", struct.pack("<H", RET).hex())
+    D("set-register", "SP", "0xFF00")
+    D("set-register", "PC", hex(P.sym("V2_DISPATCH")))
+    send = P.sym("STORAGE_SEND_BLOCK")
+    for _ in range(blocks_before + 1):
+        assert P.run_to(send, 40_000_000), "STORAGE_SEND_BLOCK not reached"
+        D("step")
+    P.zr("send-keys-event 128 1")                   # SPACE down
+    try:
+        D("break", "V2_SHOW_MESSAGE", "--index", "2")
+        D("break", hex(send), "--index", "3")
+        D("run", "--until", hex(IOK), "--max-instructions", "200000000", t=1800)
+        D("pause")
+        at = P.pc()
+        msg = P.msg_name(P.regs()["HL"]) if at == P.sym("V2_SHOW_MESSAGE") else None
+    finally:
+        P.zr("send-keys-event 128 0")
+        D("clear-break", "--index", "2")
+        D("clear-break", "--index", "3")
+    return msg, at == send
+
+
+@case("save-space-abort-header", "SPACE during SAVE's header -> ABORTED, the data block is never sent")
+def save_space_header():
+    msg, later = _save_with_space(0)
+    return msg == "ABORTED" and not later, "msg=%s data block started=%s" % (msg, later)
+
+
+@case("save-space-abort-data", "SPACE during SAVE's data block -> ABORTED, not SAVED")
+def save_space_data():
+    msg, later = _save_with_space(1)
+    return msg == "ABORTED" and not later, "msg=%s another block started=%s" % (msg, later)
 
 
 # ----------------------------------------------------------------- packages
@@ -410,6 +452,7 @@ def _capture_save(command, prepare):
         sp = r["SP"]
         ret = P.read(sp, 2)
         D("set-register", "SP", hex(sp + 2))
+        D("set-register", "AF", hex(r["AF"] | 1))  # the real sender's success: carry set (STORAGE_SAVE stops on carry clear)
         D("set-register", "PC", hex(ret[0] | ret[1] << 8))
     return blocks, P.to_prompt()
 

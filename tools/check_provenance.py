@@ -30,7 +30,7 @@ IMAGES = (("test_basic.bin", "test_basic.sym", 0x0000),
 # entry is reported as no longer found and is deleted here.
 _TAPE = "stock SA-BYTES / LD-BYTES port (kernel/storage/storage.asm header): replaced in plan item 3.1"
 ALLOWED = {
-    ("exrom.bin", "STORAGE_SEND_BLOCK", 33): _TAPE,
+    ("exrom.bin", "STORAGE_SEND_BLOCK", 33): _TAPE,     # (NOTICE.md records these)
     ("exrom.bin", "STORAGE_SEND_BLOCK", 19): _TAPE,
     ("exrom.bin", "STORAGE_SEND_BLOCK", 22): _TAPE,
     ("exrom.bin", "STORAGE_SEND_BLOCK", 13): _TAPE,

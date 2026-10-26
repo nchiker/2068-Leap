@@ -1211,8 +1211,11 @@ V2_SAVE:
     ld b,a
     ld hl,(V2_NAME_PTR)
     call STORAGE_SAVE
+.saved_or_aborted:              ; carry set: SPACE stopped the SAVE (plan item 2.1)
     ei
     ld hl,V2_MSG_SAVED
+    jp nc,V2_SHOW_MESSAGE
+    ld hl,V2_MSG_ABORTED
     jp V2_SHOW_MESSAGE
 .missing_package:
     ld hl,V2_MSG_NO_PACKAGE
@@ -1314,9 +1317,7 @@ V2_SAVE_ARRAY:
     ld a,STORAGE_ARRAY_TYPE
     ld (STORAGE_REQUEST_TYPE),a   ; D13
     call STORAGE_SAVE
-    ei
-    ld hl,V2_MSG_SAVED
-    jp V2_SHOW_MESSAGE
+    jp V2_SAVE.saved_or_aborted
 .not_dimd:
     jp ARR_SAVE_STORE
 

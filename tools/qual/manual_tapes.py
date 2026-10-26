@@ -64,6 +64,7 @@ def capture_save(m, command, maxi=60_000_000):
             sp = r["SP"]
             back = m.w16(sp)
             m.setreg("SP", sp + 2)
+            m.setreg("AF", r["AF"] | 1)  # the real sender's success: carry set (STORAGE_SAVE stops on carry clear)
             m.setreg("PC", back)
         elif p == show:
             msg = MSG.get(m.msgs.get(r["HL"], ""), None)
