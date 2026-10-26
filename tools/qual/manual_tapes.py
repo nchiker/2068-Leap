@@ -29,7 +29,7 @@ def message_texts():
     for ln in open(os.path.join(ROOT, "rom", "exrom_v2_shell.asm")):
         m = re.match(r'V2_MSG_(\w+):\s+DB\s+"([^"]*)"', ln)
         if m:
-            out[m.group(1)] = m.group(2)
+            out[m.group(1)] = m.group(2).rstrip()   # "SYNTAX ERROR " ends in the space before its code
     return out
 
 
@@ -161,7 +161,7 @@ def run_tape_case(m0, c, port):
                 else:
                     m.write(m.sym("EDIT_LINE_BUF"), cmd.encode("latin-1") + b"\0")
                     r = m.call_routine("V2_DISPATCH", maxi=900_000_000)
-                msg = MSG.get(r.msg) if r.msg else None
+                msg = MSG.get(r.msg, r.msg) if r.msg else None   # a composed text ("SYNTAX ERROR 2") as read
                 text = "\n".join(r.rows[:23]).rstrip("\n")
             transcript.append((cmd, msg, text))
             if isinstance(want, tuple) and want[0] == "msg":

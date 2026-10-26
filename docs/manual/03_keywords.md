@@ -2290,7 +2290,7 @@ PRINT 1 +
 PRINT 2
 RUN
 ...
-SYNTAX ERROR
+SYNTAX ERROR 3
 ```
 
 **See also** LIST, NEW, CLEAR, STOP, the concept [Sessions](04_concepts.md#sessions).

@@ -1204,22 +1204,29 @@ GFX_CLEAR_ROW:
 ; inverted state for the moment in between, which showed up as a
 ; smaller, but still-present, flash even after GFX_CLEAR_ROW's own
 ; earlier fix for the worse, fully-toggling version of this bug.
-; In:  B = row (0-23)
+; Zeroes the row's 8 scanlines directly (the space glyph is all zeros):
+; ~6.6 kT per row instead of ~23 kT through 32 GFX_PUTCHAR calls
+; (plan item 4.1, after Leap-C's SH_CLEAR_ROW).
+; In:  B = row (0-23, caller's responsibility — no bounds check)
 ; Out: none
 ; Destroys: AF, BC, DE, HL
 ; ============================================================================
 GFX_CLEAR_ROW_TEXT:
-    ld   c, 0
-.loop:
-    push bc
-    ld   a, " "
-    call GFX_PUTCHAR
-    pop  bc
-
-    inc  c
-    ld   a, c
-    cp   GFX_COLS
-    jr   c, .loop
+    ld   a, b
+    call GFX_ROW_BASE_ADDR          ; HL = scanline 0, column 0
+    ld   e, l                       ; row bases are $xx00-$xxE0: L
+    xor  a                          ; never wraps within 32 columns
+    ld   c, 8                       ; 8 scanlines
+.scanline:
+    ld   b, GFX_COLS
+.byte:
+    ld   (hl), a
+    inc  l
+    djnz .byte
+    ld   l, e                       ; back to column 0,
+    inc  h                          ; next scanline (+256)
+    dec  c
+    jr   nz, .scanline
     ret
 
 ; ============================================================================
@@ -1622,29 +1629,32 @@ BIT_MASK_TABLE:
 ; delimiters instead — mirrors the convention already proven working
 ; for the standalone quote check this replaced. ----
 PUNCT_CHAR_TABLE:
+    ; In order of use (plan item 4.2): the scan is linear and runs for every
+    ; punctuation character drawn. Frequencies from the qualification corpus
+    ; plus the manual's BASIC examples; font indices unchanged.
     DB   '"', 63
-    DB   "!", 64
-    DB   "@", 65
-    DB   "#", 66
-    DB   "$", 67
-    DB   "%", 68
-    DB   "&", 69
-    DB   "'", 70
+    DB   "=", 77
     DB   "(", 71
     DB   ")", 72
-    DB   "_", 73
-    DB   ":", 74
-    DB   ".", 75
     DB   ",", 76
-    DB   "=", 77
     DB   "+", 78
+    DB   ".", 75
+    DB   "$", 67
+    DB   "#", 66
     DB   "-", 79
-    DB   ";", 80
-    DB   "/", 81
     DB   "*", 82
-    DB   "<", 83
+    DB   ":", 74
+    DB   ";", 80
     DB   ">", 84
+    DB   "/", 81
+    DB   "<", 83
+    DB   "!", 64
     DB   "?", 85
+    DB   "'", 70
+    DB   "_", 73
+    DB   "@", 65
+    DB   "%", 68
+    DB   "&", 69
 PUNCT_CHAR_COUNT EQU 23
 
 ; Block-graphics (128-143) and UDG (144-164) character-code ranges —
@@ -1668,8 +1678,8 @@ FONT_TABLE:
     DB   $00, $00, $00, $00, $00, $00, $00, $00
     ; '0'
     DB   $70, $88, $98, $A8, $C8, $88, $70, $00
-    ; '1'
-    DB   $20, $60, $20, $20, $20, $20, $70, $00
+    ; '1'  (plan item 4.3, Leap-C delta D13: a flag and a full base, unlike 'l')
+    DB   $20, $60, $A0, $20, $20, $20, $F8, $00
     ; '2'
     DB   $70, $88, $08, $10, $20, $40, $F8, $00
     ; '3'
@@ -1762,8 +1772,8 @@ FONT_TABLE:
     DB   $10, $00, $30, $10, $10, $10, $90, $60
     ; 'k'
     DB   $80, $80, $90, $A0, $C0, $A0, $90, $00
-    ; 'l'
-    DB   $60, $20, $20, $20, $20, $20, $70, $00
+    ; 'l'  (plan item 4.3, Leap-C delta D13: a tail to the right, no base, unlike '1')
+    DB   $60, $20, $20, $20, $20, $20, $18, $00
     ; 'm'
     DB   $00, $00, $D0, $A8, $A8, $88, $88, $00
     ; 'n'

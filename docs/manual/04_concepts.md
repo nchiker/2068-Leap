@@ -196,7 +196,7 @@ PRINT 2 +
 PRINT "three"
 RUN
 ...
-SYNTAX ERROR
+SYNTAX ERROR 3
 ```
 
 **Run-time errors** happen while the program is running: dividing by zero, an array index out of range, a number too big, a bad argument. The program stops, the screen shows the message on the status line, and the program's variables are kept.
@@ -210,13 +210,13 @@ PRINT "after"
 before
 ```
 
-The screen shows only the **message** (`RUNTIME ERROR`), not a number. The numbers used inside the system are listed in [Appendix B](07_appendices.md#appendix-b-error-codes) for the curious.
+The screen shows only the **message** (`RUNTIME ERROR`), not a number; of the compile errors, only `SYNTAX ERROR` adds its number, because many different mistakes share that message. The numbers are listed in [Appendix B](07_appendices.md#appendix-b-error-codes) for the curious.
 
 The messages you can meet are in [Appendix A](07_appendices.md#appendix-a-messages). The commonest:
 
 | Message | Usual cause |
 |---|---|
-| `SYNTAX ERROR` | a statement is not written correctly, or uses a name that does not exist (a package statement without its package) |
+| `SYNTAX ERROR n` | a statement is not written correctly, or uses a name that does not exist (a package statement without its package); `n` is the error code |
 | `UNEXPECTED TOKEN` | something that cannot go there: a stray `ENDIF`, a missing `:`, an unterminated string |
 | `NAME TOO LONG` | a name of more than 31 characters |
 | `NESTING TOO DEEP` | too many brackets, `IF`s or loops inside each other |
@@ -1023,7 +1023,7 @@ PRINT 2 +
 PRINT 3
 RUN
 ...
-SYNTAX ERROR
+SYNTAX ERROR 3
 ```
 
 Any change to the program -- storing a line, deleting a line, `LOAD`, `NEW` -- **ends the variable session** (see [Sessions](#sessions)).

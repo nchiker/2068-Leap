@@ -110,7 +110,7 @@ Functions are always written with brackets, even without an argument.
 
 ## 8. Errors
 
-The screen shows a **message**, never a number. Compile errors stop before anything runs; run-time errors stop the program (its variables are kept). The messages: `SYNTAX ERROR`, `UNEXPECTED TOKEN`, `NAME TOO LONG`, `NESTING TOO DEEP`, `TOO MANY VARIABLES`, `OUT OF MEMORY`, `STACK OVERFLOW`, `RUNTIME ERROR`, `ARRAY SIZE MISMATCH`, `BREAK`, `PROGRAM FULL`, and the tape messages `SAVED`, `LOADED`, `VERIFIED`, `VERIFY FAILED`, `LOAD FAILED`, `NO VARIABLES`, `BAD TAPE VERSION`, `ABORTED`, `NO PACKAGE`, `ARRAY NOT DIMD`, `ARRAY STORE FULL`, `BAD ARRAY TAPE`. Appendix A of the manual explains each.
+The screen shows a **message**; only `SYNTAX ERROR` adds its compile code (`SYNTAX ERROR 3`). Compile errors stop before anything runs; run-time errors stop the program (its variables are kept). The messages: `SYNTAX ERROR`, `UNEXPECTED TOKEN`, `NAME TOO LONG`, `NESTING TOO DEEP`, `TOO MANY VARIABLES`, `OUT OF MEMORY`, `STACK OVERFLOW`, `RUNTIME ERROR`, `ARRAY SIZE MISMATCH`, `BREAK`, `PROGRAM FULL`, and the tape messages `SAVED`, `LOADED`, `VERIFIED`, `VERIFY FAILED`, `LOAD FAILED`, `NO VARIABLES`, `BAD TAPE VERSION`, `ABORTED`, `NO PACKAGE`, `ARRAY NOT DIMD`, `ARRAY STORE FULL`, `BAD ARRAY TAPE`. Appendix A of the manual explains each.
 
 Internal codes (as used by the tests and the source). **Compile errors**, each with a program that causes it in Appendix B of the manual (`app.cerr.*`, run by `make doc-examples`):
 

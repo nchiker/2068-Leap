@@ -41,7 +41,7 @@ Further rules:
 | phase 1 (space)              | **373** | **138** | [M]: 1.1 EXROM −112; 1.2 HOME −36; 1.3 HOME −12; 1.4 HOME −2; 1.5 HOME −48                    |
 | phase 2 (bug fixes)          | **358** | **123** | [M]: phase total HOME −15, EXROM −15 (items 2.1-2.3; v2.0.3)                                  |
 | phase 3 (licensing)          | **358** | **199** | [M]: 3.1 tape block I/O EXROM +19; 3.2 calculator dispatcher EXROM +57                        |
-| phase 4 (display quick wins) | ~350    | ~199    | [E]                                                                                           |
+| phase 4 (display quick wins) | **354** | **208** | [M]: 4.1 HOME +4; 4.2, 4.3 0; 4.4 EXROM +16, status-bar attribute fill EXROM −25              |
 | phase 5 (speed)              | ≥ 64    | ≥ 32    | Class B: each item sized and weighed before it is started; 5.0 first if the room is not there |
 
 Every [E] is replaced by `make budget`'s figure as each item lands.
@@ -125,6 +125,25 @@ Outcome (2026-10-26, all [M]):
 | 4.2 | **Punctuation table in order of use** (derive the order from V2's corpus)                                                              | 0         | 0        | Scanned linearly per character drawn; font indices and package slot 2's results unchanged |
 | 4.3 | **Distinct `1` and `l` glyphs** (Leap-C D13, font data only)                                                                           | 0         | 0        | `LET l=1` is ambiguous today. Refresh any screen oracles                                  |
 | 4.4 | Error code number in compile messages (`SYNTAX ERROR 23`)                                                                              | 0         | ~+10 [E] | Cheap step towards audit U4                                                               |
+
+Outcome (2026-10-26, all [M]):
+
+- **4.1** HOME 358 → 354 B (+4, a `djnz` fill rather than Leap-C's 8×`ldir`, which is +8 B for ~0.6 kT
+  less). 24,786 → 6,498 T per row; typing `10 print a` from the boot screen 38.1 → 19.1 kT per key
+  (one status-row clear per key). Differential: every row 0-23 cleared over a random-filled screen gives
+  the old build's screen byte for byte (bitmap and attributes).
+- **4.2** 0 B. Order from the corpus (1,860 lines) plus the manual's BASIC examples (1,440 lines): `" = ( ) ,
+  + . $ # - * : ; > / < ! ? ' _ @ % &`. Mean scan length per punctuation character 10.4 → 4.9 entries
+  (~240 T saved each). All codes 32-196 render byte-identically to the old build.
+- **4.3** 0 B. Leap-C D13's glyphs. Ten manual screenshots refreshed; every changed cell is a `1` or `l`
+  (checked cell by cell). `NOTICE.md` lists the row clear and the glyphs.
+- **4.4** `SYNTAX ERROR n` (the compile code; the manual's Appendix B maps it). EXROM +16 B: built in
+  `V2_STATUS_BUF` through a `V2_STATUS_NUM` helper that `V2_DRAW_STATUS` now shares; the message string
+  carries the separating space, so the two non-compile `SYNTAX ERROR` sites look unchanged. Paid for by
+  `V2_STATUS_SET_BAR_ATTR` writing row 23's attributes directly instead of 32 `GFX_SET_ATTR` calls
+  (−25 B; `syntax_error.png` differs only in the new digit). Manual, language reference and
+  `manual_tapes.py` / `manual_examples.py` (messages composed in RAM, digits in `[...]`) updated.
+- `make doc-examples` 325/325; `make test` all PASS (1,753 s); `qbytecode` 667/667 programs identical.
 
 **Weighed items (Class B, larger EXROM cost):** redraw from the cursor's line down when its height
 changes (~25-35 B EXROM [E]; replaces a full redraw of up to 949 kT); keep the cursor's line whole on

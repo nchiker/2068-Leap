@@ -1,16 +1,16 @@
-# Leap-C back-port: handoff for phase 4
+# Leap-C back-port: handoff after phase 4
 
-Written 2026-10-26 at the end of phase 3. The plan is `docs/V2_LEAPC_BACKPORT_PLAN.md`; this file is
+Written 2026-10-26 at the end of phase 3; updated at the end of phase 4. The plan is `docs/V2_LEAPC_BACKPORT_PLAN.md`; this file is
 only where things stand and how to pick up.
 
 ## State
 
-- Branch `backport/leapc` (off `v2-development`), not pushed. Phases 0-3 committed.
-- Free ROM: HOME 358 B, EXROM 199 B (`make budget`). Emergency reserve HOME 64 / EXROM 32
+- Branch `backport/leapc` (off `v2-development`), not pushed. Phases 0-4 committed.
+- Free ROM: HOME 354 B, EXROM 208 B (`make budget`). Emergency reserve HOME 64 / EXROM 32
   (`make check` fails below it). Spending is weighted by benefit per byte, not floored.
 - No stock-ROM-derived code left in the images: `tools/check_provenance.py` (in `make check`) has an
   empty allow-list. Keep it that way; anything taken from Leap-C is MIT and goes in `NOTICE.md`.
-- Last full `make test` result: see the phase-3 commit message.
+- Last full `make test` result: see the phase-4 commit message.
 
 ## Working rules (owner)
 
@@ -34,19 +34,16 @@ only where things stand and how to pick up.
 | `tools/qual/qmicsave.py` | real SAVE captured at MIC, decoded, played back (in the prod suites) |
 | `tools/check_repro.sh` (`make repro`) | the build is reproducible |
 
-## Phase 4: where to start
+## Next: the Class B editor items, then phase 5
 
-| Item | V2 site | Leap-C source |
-| --- | --- | --- |
-| 4.1 faster `GFX_CLEAR_ROW_TEXT` (keep the routine: V2 calls it) | `kernel/graphics/graphics.asm:1211` | `~/2068-Leap-C/platform/deltas/`, `platform/kernel/graphics/graphics.asm` |
-| 4.2 punctuation table in order of use | `kernel/graphics/graphics.asm` (FONT_TABLE header ~l.27, scan ~l.372) | order from V2's corpus (`tools/qual` cases) |
-| 4.3 distinct `1` / `l` glyphs (font data only) | FONT_TABLE | Leap-C delta D13, `docs/milestones/M9.md` §3.1 |
-| 4.4 error number in compile messages | `rom/exrom_v2_shell.asm` (`V2_MSG_SYNTAX` sites l.854, 957, 1494) | — |
+Phase 4 is done (outcome in the plan). Open decision for the owner: the two weighed editor items
+(redraw from the cursor's line down, ~25-35 B EXROM; `SH_VIEW`, ~94 B EXROM, fixes ED4/R9) against
+phase 5, whose VM work also spends EXROM. Suggested: the redraw item now, `SH_VIEW` after 5.1 is sized.
 
-Checks for phase 4: glyph changes break screen oracles (refresh them; `docs/manual/images` too, as
-phase 1 did for RND), and the manual examples (`make doc-examples`). 4.1 should be measured in kT per
-row and per key typed (Leap-C: 23 → 6 kT per row; 47 vs 72 kT per key). Then weigh the Class B editor
-items (redraw from the cursor line, `SH_VIEW`) against phase 5 by benefit per byte.
+Phase 4 tools worth reusing: a differential probe pattern (old build in a `git worktree`, a small
+sjasmplus harness at `$F400`, `reset/get-tstates-partial`, compare RAM) and a PNG cell-diff that
+classifies changed 8x8 cells of manual screenshots. Both were scratch scripts; rebuild from the plan's
+4.1-4.3 outcome notes if needed.
 
 ## Open points from phase 3
 

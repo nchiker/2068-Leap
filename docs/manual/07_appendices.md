@@ -8,7 +8,7 @@ What the status line (the bottom row of the screen) can say. The program or comm
 
 | Message | Meaning |
 |---|---|
-| `SYNTAX ERROR` | the statement is not written correctly: something is missing, in the wrong place, or is not a known statement (including a package statement whose package is not loaded). When you press a key the cursor goes to the line. Most compile errors show this message; [Appendix B](#appendix-b-error-codes) distinguishes them |
+| `SYNTAX ERROR n` | the statement is not written correctly: something is missing, in the wrong place, or is not a known statement (including a package statement whose package is not loaded). When you press a key the cursor goes to the line. Most compile errors show this message; the number `n` is the error code, which [Appendix B](#appendix-b-error-codes) explains |
 | `UNEXPECTED TOKEN` | something that cannot go here: a stray `ELSE`, `ENDIF`, `ENDP`, `THEN`, `TO`, a closing bracket; two values side by side; an unterminated string; a character that is not part of the language (`'`, `?`, `_`); a number literal beyond about 1.7 x 10^38 |
 | `NAME TOO LONG` | a name of more than 31 characters |
 | `NESTING TOO DEEP` | brackets, `IF` blocks or loops nested too deeply |
@@ -48,7 +48,7 @@ The `PROGRAM FULL` message is covered by the release qualification (defect RC-2)
 
 ## Appendix B: Error codes
 
-The status line shows messages, not numbers. Inside the system every error has a number, which appears in the test suites, in the defect register and in the source. They are listed here, with a program that causes each; every program below is run by `make doc-examples` and must stop with exactly that code.
+The status line shows messages; only `SYNTAX ERROR` adds its number (`SYNTAX ERROR 3`). Inside the system every error has a number, which appears in the test suites, in the defect register and in the source. They are listed here, with a program that causes each; every program below is run by `make doc-examples` and must stop with exactly that code.
 
 ### Compile errors
 

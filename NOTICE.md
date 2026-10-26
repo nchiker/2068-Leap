@@ -44,7 +44,8 @@ Earlier releases and the git history still contain the derived versions.
 (c) 2026 Charlie Day) is built on this project's platform; code it wrote has
 been brought back here: the tape block I/O (`kernel/storage/tapeblock.asm`),
 the block-graphics glyph builder, the xorshift used by
-`RND`, the register-only `MATH_UMUL16` / `MATH_UDIV16`, `tools/fuse/fuseshim.c`
+`RND`, the register-only `MATH_UMUL16` / `MATH_UDIV16`, the row clear in
+`GFX_CLEAR_ROW_TEXT`, the `1` and `l` glyphs, `tools/fuse/fuseshim.c`
 (loaded into Fuse at test time; it contains no Fuse source), and tools adapted
 from Leap-C's (`tools/check_provenance.py`, `tools/check_repro.sh`,
 `tools/qual/qpoweron.py`, the banking checks of `tools/qual/qcanary.py`, the tape

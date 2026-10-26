@@ -851,7 +851,15 @@ V2_COMPILE_MSG:
     cpir
     ld hl,V2_MSG_NOMEM
     ret z
+    ld l,a                       ; plan item 4.4: "SYNTAX ERROR n", n = the code (manual appendix B)
+    ld h,0
+    push hl
     ld hl,V2_MSG_SYNTAX
+    ld de,V2_STATUS_BUF
+    call V2_STATUS_APPEND        ; "SYNTAX ERROR " (the string's own trailing space)
+    pop hl
+    call V2_STATUS_NUM
+    ld hl,V2_STATUS_BUF
     ret
 V2_MEMCODES: DB 5,6,45,55,62
 V2_MEMCODES_END:
@@ -2172,24 +2180,14 @@ V2_DRAW_STATUS:
     ld hl,V2_STATUS_PREFIX
     ld de,V2_STATUS_BUF
     call V2_STATUS_APPEND
-    push de
     ld hl,(CUR_EDIT_INDEX)
     inc hl                    ; n = CUR_EDIT_INDEX + 1 (1-based)
-    ex de,hl
-    call BASIC_NUM_TO_STRING_EXROM  ; HL -> formatted n text
-    pop de
-    call V2_STATUS_APPEND
+    call V2_STATUS_NUM
     ld a,'/'
     ld (de),a
     inc de
-    push de
     ld hl,(V2_LINE_COUNT)
-    ex de,hl
-    call BASIC_NUM_TO_STRING_EXROM  ; HL -> formatted m text
-    pop de
-    call V2_STATUS_APPEND
-    xor a
-    ld (de),a
+    call V2_STATUS_NUM        ; m
     ld b,23
     call KTAB_GFX_CLEAR_ROW_TEXT    ; R10.7: bitmap-only clear -- leaves
                                       ; the status-bar attribute (set by
@@ -2215,6 +2213,17 @@ V2_STATUS_APPEND:
     inc hl
     inc de
     jr V2_STATUS_APPEND
+
+; V2_STATUS_NUM: HL = number -> its decimal text at (de), null-terminated; DE ends on the null.
+V2_STATUS_NUM:
+    push de
+    ex de,hl
+    call BASIC_NUM_TO_STRING_EXROM  ; HL -> formatted text
+    pop de
+    call V2_STATUS_APPEND
+    xor a
+    ld (de),a
+    ret
 
 V2_STATUS_PREFIX: DB "LINE ",0
 
@@ -2255,35 +2264,23 @@ V2_ATTR_SWATCH_BLUE  EQU $08   ; PAPER 1 (blue),  INK 0
 ; first, same anti-flicker ordering V1's own BASIC_PRINT_STATUS_TEXT
 ; used. Idempotent and cheap enough to call unconditionally every time
 ; rather than tracking whether it's already set.
-; In: none  Out: none  Destroys: AF, BC
+; Writes row 23's attribute bytes directly (GFX_SET_ATTR is a plain
+; ATTR_ADDR + row*32 + col store; 32 calls through the KTAB cost 25 B more).
+; In: none  Out: none  Destroys: B, HL
 ; ============================================================================
 V2_STATUS_SET_BAR_ATTR:
-    ld   c, 0
+    ld   hl, ATTR_ADDR + 23*32
+    ld   b, 29
 .bar_loop:
-    push bc
-    ld   a, V2_ATTR_STATUS_BAR
-    ld   b, 23
-    call KTAB_GFX_SET_ATTR
-    pop  bc
-    inc  c
-    ld   a, c
-    cp   29
-    jr   c, .bar_loop
-    push bc
-    ld   a, V2_ATTR_SWATCH_RED
-    ld   b, 23
-    call KTAB_GFX_SET_ATTR
-    pop  bc
-    inc  c
-    push bc
-    ld   a, V2_ATTR_SWATCH_GREEN
-    ld   b, 23
-    call KTAB_GFX_SET_ATTR
-    pop  bc
-    inc  c
-    ld   a, V2_ATTR_SWATCH_BLUE
-    ld   b, 23
-    jp   KTAB_GFX_SET_ATTR
+    ld   (hl), V2_ATTR_STATUS_BAR
+    inc  l
+    djnz .bar_loop
+    ld   (hl), V2_ATTR_SWATCH_RED
+    inc  l
+    ld   (hl), V2_ATTR_SWATCH_GREEN
+    inc  l
+    ld   (hl), V2_ATTR_SWATCH_BLUE
+    ret
 
 ; R10 correction: previously cleared the WHOLE screen before showing an
 ; error/status message, hiding the program view (compile-time errors)
@@ -2327,7 +2324,7 @@ V2_KW_VERIFY: DB "VERIFY",0
 V2_KW_EXT: DB "EXT",0
 V2_KW_ARRAY: DB "ARRAY",0
 V2_KW_ALL: DB "ALL",0
-V2_MSG_SYNTAX: DB "SYNTAX ERROR",0
+V2_MSG_SYNTAX: DB "SYNTAX ERROR ",0    ; trailing space: V2_COMPILE_MSG appends the code after it
 V2_MSG_RUNTIME: DB "RUNTIME ERROR",0
 V2_MSG_BREAK: DB "BREAK",0
 V2_MSG_FULL: DB "PROGRAM FULL",0

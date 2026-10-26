@@ -161,12 +161,12 @@ PRINT 3 +
 PRINT "BYE"
 RUN
 ...
-SYNTAX ERROR
+SYNTAX ERROR 3
 ```
 
 ![A syntax error](images/syntax_error.png)
 
-`RUN` first looks at the *whole* program. It found something it could not understand -- `3 +` with nothing to add -- so **nothing ran at all** (not even the first `PRINT`), and the status line says `SYNTAX ERROR`. Press a key and the cursor goes to the line with the mistake (line 2):
+`RUN` first looks at the *whole* program. It found something it could not understand -- `3 +` with nothing to add -- so **nothing ran at all** (not even the first `PRINT`), and the status line says `SYNTAX ERROR 3` (the number says which mistake it was: [Appendix B](07_appendices.md#appendix-b-error-codes) lists them). Press a key and the cursor goes to the line with the mistake (line 2):
 
 ```keys ex=guide.fix.3
 PRINT "HELLO"
