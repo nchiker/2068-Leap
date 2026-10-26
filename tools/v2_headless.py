@@ -6,10 +6,11 @@ try:
 except ImportError:
     _cli_main = None
 
-# Each D() used to start a `ts2068-debug` process (~77 ms each, before connecting). The CLI's own
-# main() is called in-process instead: the same commands, state directory and JSON, without the
-# process start. V2_HEADLESS_SUBPROCESS=1 (or a missing package) goes back to one process a call.
-_SUBPROCESS = _cli_main is None or os.environ.get("V2_HEADLESS_SUBPROCESS") == "1"
+# Each D() starts a `ts2068-debug` process (~77 ms each, before connecting). V2_HEADLESS_INPROC=1
+# calls the CLI's own main() in-process instead (the same commands, state directory and JSON).
+# Opt-in only: measured on the production suites (2026-10-25) it saved no wall-clock time, which
+# the tape cases' emulated waits dominate, and one 4 s case once took 477 s in-process.
+_SUBPROCESS = _cli_main is None or os.environ.get("V2_HEADLESS_INPROC") != "1"
 
 def D(*a, t=300):
     if _SUBPROCESS:
