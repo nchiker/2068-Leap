@@ -2188,7 +2188,7 @@ PRINT a
 ```
 ```output ex=kw.randomise.1
 1
-2
+668
 ```
 
 **See also** RND.
@@ -2248,9 +2248,9 @@ PRINT RND(1)
 PRINT RND(0)
 ```
 ```output ex=kw.rnd.1
+4
 3
 1
-0
 0
 0
 ```

@@ -31,15 +31,14 @@ Further rules:
 
 1. **Removals and smaller replacements come first**: they are free value and make room for A and B.
 2. Each item records its measured bytes and its benefit in the ledger below, so the weighting is visible.
-3. `make check` fails below the emergency reserve (phase 0, item 0.4). Until phase 1 lands, the EXROM check
-   is a ratchet at today's 26 B.
+3. `make check` fails below the emergency reserve (phase 0, item 0.4).
 
 ### Running ledger (free bytes after each phase)
 
 | After | HOME | EXROM | Basis |
 |---|---:|---:|---|
 | today | 275 | 26 | [M] |
-| phase 1 (space) | ~340 | **138** | EXROM [M] (editor deletions built in a scratch copy); HOME [E] |
+| phase 1 (space) | **373** | **138** | [M]: 1.1 EXROM −112; 1.2 HOME −36; 1.3 HOME −12; 1.4 HOME −2; 1.5 HOME −48 |
 | phase 2 (bug fixes) | ~325 | ~126 | [E] |
 | phase 3 (licensing) | ~325 | ~141 | [E]; tape block I/O −15 B [L] |
 | phase 4 (display quick wins) | ~317 | ~141 | [E] |

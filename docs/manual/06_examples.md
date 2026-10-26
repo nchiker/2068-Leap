@@ -248,9 +248,9 @@ KHOOR ZRUOG
 
 ## 8. Guess the number
 
-The computer thinks of a number from 1 to 100 and you guess. (`RANDOMISE 7` makes the number the same every time so that this page shows the same game; remove that line to play a different game each time -- or give `RANDOMISE` a number that changes.) The guesses typed here are 50, 25, 5, 3 and 4.
+The computer thinks of a number from 1 to 100 and you guess. (`RANDOMISE 7` makes the number the same every time so that this page shows the same game; remove that line to play a different game each time -- or give `RANDOMISE` a number that changes.) The guesses typed here are 50, 25, 12, 18 and 15.
 
-```basic ex=prog.guess.1 keys="50\n25\n5\n3\n4\n"
+```basic ex=prog.guess.1 keys="50\n25\n12\n18\n15\n"
 RANDOMISE 7
 secret = RND(100) + 1
 tries = 0
@@ -272,11 +272,11 @@ Guess? 50
 Too high
 Guess? 25
 Too high
-Guess? 5
-Too high
-Guess? 3
+Guess? 12
 Too low
-Guess? 4
+Guess? 18
+Too high
+Guess? 15
 Got it in 5 tries
 ```
 

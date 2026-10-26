@@ -19,10 +19,9 @@ build:
 	tools/make_eightyone_dck.sh build/exrom.bin build/exrom.dck
 	tools/sjasmplus_strict.sh rom/zesarux_combined.asm
 
-# ROM reserves kept for bug fixes (docs/V2_LEAPC_BACKPORT_PLAN.md section 0). EXROM is a ratchet at
-# today's free space until the back-port's phase 1 frees room; then it becomes the 32-byte reserve.
+# ROM reserves kept for bug fixes (docs/V2_LEAPC_BACKPORT_PLAN.md section 0).
 HOME_RESERVE ?= 64
-EXROM_RESERVE ?= 26
+EXROM_RESERVE ?= 32
 
 check: build
 	python3 tools/report_budget.py --check $(HOME_RESERVE) $(EXROM_RESERVE) build/test_basic.lst build/exrom.lst build/test_basic.sym

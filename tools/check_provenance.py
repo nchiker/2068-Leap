@@ -26,13 +26,10 @@ STOCK = ("48.rom", "tc2068-0.rom", "tc2068-1.rom")
 IMAGES = (("test_basic.bin", "test_basic.sym", 0x0000),
           ("exrom.bin", "exrom.sym", 0xC000))
 # (image, routine containing the run's first byte, length) -> reason. These are known stock-derived
-# code that the back-port plan replaces with clean-room code (items 1.3 and 3.1); when it lands, the
+# code that the back-port plan replaces with clean-room code (item 3.1; item 1.3's glyph runs are gone); when it lands, the
 # entry is reported as no longer found and is deleted here.
-_GLYPH = ("stock PO-GR-2 sequence in the block-graphics glyph builder: replaced by the clean-room "
-          "version, plan item 1.3")
 _TAPE = "stock SA-BYTES / LD-BYTES port (kernel/storage/storage.asm header): replaced in plan item 3.1"
 ALLOWED = {
-    ("test_basic.bin", "GFX_CHAR_TO_FONT_OFFSET", 12): _GLYPH,
     ("exrom.bin", "STORAGE_SEND_BLOCK", 33): _TAPE,
     ("exrom.bin", "STORAGE_SEND_BLOCK", 19): _TAPE,
     ("exrom.bin", "STORAGE_SEND_BLOCK", 22): _TAPE,

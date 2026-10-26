@@ -65,7 +65,11 @@
 ; out — is completely unchanged: depth goes 0->1 here (real page-in
 ; happens) and 1->0 in BANK_PAGE_EXROM_OUT (real page-out happens).
 BANK_PAGE_EXROM_IN:
-    di
+    ; (no `di`: back-port plan item 1.4, after 2068-Leap-C delta D14. Held for ~63-120 T it
+    ; outlasted the TS2068's 32 T INT, so frame interrupts were lost in float code: Fuse counted
+    ; 47 of 11,232 frames missing from FRAMES over a float loop, 1 without it
+    ; (tools/qual/fuse_frames_probe.py). The ISR touches neither BANK_EXROM_DEPTH, PORT_FF_SHADOW
+    ; nor the ports, and runs from HOME on a stack outside chunk 6, so where it lands here is moot.)
     ld   a, (BANK_EXROM_DEPTH)
     inc  a
     ld   (BANK_EXROM_DEPTH), a
@@ -106,7 +110,11 @@ BANK_PAGE_EXROM_IN:
 ; Destroys: AF
 ; ============================================================================
 BANK_PAGE_EXROM_OUT:
-    di
+    ; (no `di`: back-port plan item 1.4, after 2068-Leap-C delta D14. Held for ~63-120 T it
+    ; outlasted the TS2068's 32 T INT, so frame interrupts were lost in float code: Fuse counted
+    ; 47 of 11,232 frames missing from FRAMES over a float loop, 1 without it
+    ; (tools/qual/fuse_frames_probe.py). The ISR touches neither BANK_EXROM_DEPTH, PORT_FF_SHADOW
+    ; nor the ports, and runs from HOME on a stack outside chunk 6, so where it lands here is moot.)
     ld   a, (BANK_EXROM_DEPTH)
     or   a
     jr   z, .depth_already_zero       ; defensive: an unbalanced OUT
