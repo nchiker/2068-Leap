@@ -43,7 +43,7 @@ Further rules:
 | phase 3 (licensing)          | **358** | **199** | [M]: 3.1 tape block I/O EXROM +19; 3.2 calculator dispatcher EXROM +57                        |
 | phase 4 (display quick wins) | **354** | **208** | [M]: 4.1 HOME +4; 4.2, 4.3 0; 4.4 EXROM +16, status-bar attribute fill EXROM −25              |
 | redraw from the cursor line  | **354** | **186** | [M]: EXROM +22                                                                                |
-| 5.1 prototype (not merged)   | **441** | **186** | [M]: HOME −139 value/divisor path removed, +41 16-bit digits in `NUM_PARSE_CALC`, +11 `5.` stays an INT (branch `proto/5.1-float5`) |
+| 5.1 decimal literals         | **441** | **186** | [M]: HOME −139 value/divisor path removed, +41 16-bit digits in `NUM_PARSE_CALC`, +11 `5.` stays an INT |
 | phase 5 (speed)              | ≥ 64    | ≥ 32    | Class B: each item sized and weighed before it is started; 5.0 first if the room is not there |
 
 Every [E] is replaced by `make budget`'s figure as each item lands.
@@ -162,7 +162,7 @@ middle and append lines, near the bottom, a scrolled view, wrapped lines above, 
 screen identical after every key. Per height-changing key: a line on row 20 under 20 lines 796k → 115k T;
 a scrolled view 834k → 140k T; long lines above 435k → 212k T; a line near the top gains little (the rows
 below are cleared either way). Not done: clearing only down to the last drawn row (~11 B and a RAM cell,
-for short programs only). `SH_VIEW` waits for 5.1's size.
+for short programs only). `SH_VIEW` waits for 5.1's size (5.1 merged: EXROM unchanged, `SH_VIEW` is next).
 
 ## Phase 5: speed inside the bytecode model → release v2.1
 
@@ -183,7 +183,7 @@ Each item: `qbench` before/after, `qbytecode` reviewed (intended changes only), 
 against the floors. Combined estimate for 5.2-5.5: 1.5-2.5× on integer code [E]; 5.1 and 5.3 add more on
 float literals and loops.
 
-Outcome, 5.1 prototype (2026-10-26, branch `proto/5.1-float5` off `backport/leapc`, not merged; all [M]):
+Outcome, 5.1 (2026-10-26, prototyped on `proto/5.1-float5`, merged into `backport/leapc` as `1bb5e65`; all [M]):
 
 - **Change.** In `LEX_SCAN_NUMBER`, a `.` followed by a digit sends the literal to `LEX_NUMBER_TOO_BIG`
   (`NUM_PARSE_CALC` at compile time, `PUSH_FLOAT5`, opcode 70). Removed: the fraction loop and divisor,
@@ -220,8 +220,8 @@ Outcome, 5.1 prototype (2026-10-26, branch `proto/5.1-float5` off `backport/leap
   the baseline (42; the 14 never-run sources of T-3 fail on both).
 - **Not changed.** The test-only decompiler still decodes opcode 22, not 70 (the decimal programs it is
   given are in the never-run sources).
-- **Owner decision:** integrate into `backport/leapc`? Option: drop the `5.` rule (−11 B; `5.` would then
-  be a float: `PRINT 5.` shows `5.0000`, `b(2.)` is run-time error 11).
+- **Owner decision (F8, 2026-10-26):** integrated; the `5.` rule kept (without it `5.` would be a float:
+  `PRINT 5.` shows `5.0000`, `b(2.)` is run-time error 11).
 
 ## Phase 6: package ABI 2.1 (minor version: old packages keep working)
 
@@ -247,6 +247,61 @@ Only after phases 1-6, and only with the owner's go-ahead. Everything here break
 | 7.5 | ABI 3.0 bundle: register arguments (HL/DE/BC) instead of `EXT_CALL_ARGn`; drop the historical sysvar package scratch |                                                  | Only alongside 7.1                                                                                                                                   |
 | 7.6 | **Native-code spike** (not a commitment): native BASIC loops with tag checks vs the phase-5 VM                       | Decides whether a native back end is worth it    | Native code is 2-5× larger than bytecode [E]; only viable with 7.1-7.4's RAM. Leap-C's templates and fixup chains would be the starting point        |
 
+## Review item R1: the calculator does not round (found in 5.1, 2026-10-26)
+
+Defect `Q-34` (`tools/qual/defects.py`), HIGH: wrong results in ordinary programs. Not caused by 5.1
+(the old build is identical) and not a stock-ROM trait. For the owner to classify (A: a correctness
+bug, always done; or B) and schedule.
+
+**What [M].** `tools/qual/qcalcround.py` runs the ROM's four operations on 4,000 operand pairs and
+scores each 5-byte result against the exact result rounded to nearest:
+
+| Operation | V2 correctly rounded | V2 worst error | V2 errors lean        | Leap-C (its model) |
+| --------- | --------------------:| --------------:| --------------------- | ------------------ |
+| add       | 72%                  | 2.00 ulp       | both ways             | 100%, ≤ 0.5 ulp     |
+| subtract  | 72%                  | 2.00 ulp       | both ways             | 99.9%, ≤ 0.5 ulp    |
+| multiply  | 64%                  | 1.00 ulp       | toward zero (always)  | 100%, ≤ 0.5 ulp     |
+| divide    | 41%                  | 1.95 ulp       | toward zero (always)  | 100%, ≤ 0.5 ulp     |
+| m / 10^k  | 51%                  | 1.00 ulp       | toward zero (always)  | 100%, ≤ 0.5 ulp     |
+
+Visible in BASIC [M]: `INT(3.1*10)` = 30, `INT(0.3*10)` = 2, `INT(0.7*10)` = 6, `INT(2.2*10)` = 21,
+`INT(8.2*10)` = 81, `INT(1.15*100)` = 114, `INT(4.35*100)` = 434, `INT(19.99*100)` = 1998,
+`INT(1/3*3)` = 0, `1/10*10=1` false. With correct rounding (Leap-C's model) all ten give the expected
+value (31, 3, 7, 22, 82, 115, 435, 1999, 1, true). Summing 0.001 a thousand times stays below 1 with
+either: that one is binary floating point, not this defect. PRINT's four decimals hide the error
+otherwise.
+
+**Why.** `CALC_OP_DIV` keeps 32 quotient bits (no guard bit) and drops the dividend's lowest bit
+when it pre-shifts; `CALC_OP_MUL` truncates the 64-bit product; `CALC_ADDSUB_ENGINE` shifts the
+smaller operand right without guard bits; `CALC_PACK` never rounds.
+
+**Leap-C [L].** Not affected: its float core (`src/runtime/fpcore.asm`, MIT) unpacks to a 40-bit
+mantissa (32 bits and a guard byte), divides to 40 bits, keeps the dividend's 33rd bit, and `FPACK`
+rounds to nearest (ties away from zero). Its float suite checks the ROM against the bit-exact model
+`tools/fpmodel.py` (5,451 checks in its `make test`).
+
+**Options.**
+
+1. **Port Leap-C's arithmetic behind V2's calculator interface** (keep the 5-byte format, the
+   `RST $28` literal stream and its operand slots, small-integer-form inputs, the error paths).
+   Leap-C's unpack/pack/normalise/add/multiply/divide is 522 B; V2's equivalent is 1,331 B
+   (`CALC_UNPACK` 125, `CALC_PACK` 44, `CALC_ADDSUB_ENGINE` 399, add/sub 90, multiply 260, divide 347,
+   helpers 66). Estimate [E]: EXROM **+500 to +700 B free** after the glue, and correct rounding.
+   To check first: the other users of `CALC_UNP_A/B` and `CALC_UNPACK`/`CALC_PACK` (conversions,
+   functions, `CALC_FP_TO_INT`); speed (Leap-C loops where V2 unrolls: measure T per operation and
+   `qbench`'s float programs); `NOTICE.md` (MIT).
+2. Guard bits and rounding in V2's own routines: EXROM −60 to −90 B [E], no size win.
+
+**Qualification.** `qcalcround.py` (100% correctly rounded, or every exception explained),
+Leap-C's `fpmodel.py` as a bit-exact reference (`--leapc`), `qdecimals.py` / `qliterals.py` /
+`qnumparse.py` (literal values change by design: decide the expected values from the model, not
+from the old build), `make doc-examples` (examples printing decimals may change in the last digit),
+`make test`.
+
+**Interaction with `SH_VIEW`.** Both are EXROM. Option 1 would free far more than `SH_VIEW` uses
+(~94 B); option 2 and `SH_VIEW` together would leave about 186 − 94 − 75 ≈ 17 B, below the 32 B
+reserve.
+
 ## Not recommended
 
 - D4 (Leap-C's BREAK model), D7 (C key map; V2 earmarks SS+A/S for page-down/bottom), D9/D11/D12 (Leap-C's
@@ -268,6 +323,8 @@ All decided by the owner on 2026-10-25.
 | F5  | Start phase 7 (V3)                       | Decide after v2.1, with 7.6's spike numbers               |
 | F6  | Calculator rewrite (3.2)                 | Counts as clean-room (2026-10-26)                         |
 | F7  | Fast emulation (0.10)                    | Default for the suites (2026-10-26)                       |
+| F8  | 5.1 decimal literals                     | Integrated, `5.` stays an INT (2026-10-26)                |
+| F9  | Calculator rounding (`Q-34`)             | Open: review item R1 (2026-10-26)                         |
 
 ## Also worth doing
 

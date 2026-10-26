@@ -49,6 +49,7 @@ check: build
 	# z80sim flag semantics + snapshot/replay (run in-directory: they import sim/snapshot as siblings)
 	cd tools/z80sim && python3 -m unittest test_flags test_snapshot
 	tools/build_smoke_roms.sh
+	tools/run_v2_standalone_tests.sh --build-only
 	# Assemble-only guard for the non-production legacy/component-test
 	# fixture (basic/basic.asm + rom/exrom_build.asm, see docs/
 	# R10_7_DORMANT_ARCHITECTURE_AUDIT.md sec3/sec6.4): this chain shares

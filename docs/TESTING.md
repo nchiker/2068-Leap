@@ -2,7 +2,7 @@
 
 | Command | What it runs | Launches Fuse / X11? |
 |---|---|---|
-| `make check` | assemble/lint of every build, doc and fixture checks, `tools/check_test_targets.sh` | **No** |
+| `make check` | assemble/lint of every build (including the 40 V2 standalone test images: `tools/run_v2_standalone_tests.sh --build-only`), doc and fixture checks, `tools/check_test_targets.sh` | **No** |
 | `make test` | **default, fully headless** (ts2068-debug/ZEsarUX, no display): kernel smoke ROMs, V2 standalone component tests (`tools/run_v2_standalone_tests.sh`), production-ROM checks (`tools/v2_production_checks.py`), FILL checks, (R10.9) the production-ROM regression gate + strict known-defect suite (`tools/run_v2_prod_tests.sh`), `make qual`, and the maintenance suites (`make qual-maint`) | **No** |
 | `make qual-maint` | the maintenance-release suites (`tools/maint/run_maint_qual.sh`): AY `BEEP`, `SOUND` 0..16, the shared frame wait (BREAK during `BEEP`/`PAUSE`, the `PAUSE` rollover), the cbeep package (pitch/length model, timing, border, errors, real tape LOAD) and `PAUSE`/`BEEP`/`CBEEP` with the frame interrupt unavailable; also the last step of `make test` | **No** |
 | `make test-prod` | only the last item above (production gate, Array Store gate and known-defect suite, concurrently) | **No** |

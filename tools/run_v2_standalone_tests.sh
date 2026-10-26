@@ -111,6 +111,13 @@ done
 
 names=("${migrated_names[@]}" "${calc_migrated_names[@]}" "${legacy_names[@]}")
 
+# `--build-only` (make check): every image above is assembled, none is run. A routine shared by
+# the VM core and the compiler once assembled in every build but test_v2_vm_milestone01's (5.1).
+if [ "${1-}" = "--build-only" ]; then
+    echo "V2 standalone: ${#names[@]} images assembled (not run)"
+    exit 0
+fi
+
 state_dir="$(mktemp -d)"
 export TS2068_DEBUG_STATE_DIR="$state_dir"
 port="${TS2068_V2_TEST_PORT:-10220}"
