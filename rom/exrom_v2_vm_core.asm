@@ -123,11 +123,9 @@
 ;   20 = STR_CMP_LT   (R5; pops b-index, pops a-index; pushes 1 if a<b
 ;                      else 0 — lexicographic content comparison)
 ;   21 = STR_CMP_EQ   (R5; same, equality)
-;   22 = PUSH_FLOAT_LIT (R6 addition; operand: 2-byte int value + 2-byte
-;                      divisor, computed by the compiler from a decimal
-;                      literal's digits; pushes value/divisor as a real
-;                      float, via the actual calculator, into a fresh
-;                      FLOATTAB temp slot)
+;   22 = (retired: PUSH_FLOAT_LIT, value/divisor divided at run time;
+;                      5.1: a decimal literal is PUSH_FLOAT5, opcode 70,
+;                      its 5-byte value computed by the compiler)
 ;
 ; R6 also changes ADD/SUB/MUL/DIV's own behavior: each now checks BOTH
 ; operand tags and, if either is FLOAT, promotes/converts via the real
@@ -955,7 +953,7 @@ VM_OP_TABLE:
         dw OP_STR_CONCAT
         dw OP_STR_CMP_LT
         dw OP_STR_CMP_EQ
-        dw OP_PUSH_FLOAT_LIT
+        dw VM_ERR_ILLEGAL_OPCODE ; 22 (was PUSH_FLOAT_LIT; 5.1: decimal literals are PUSH_FLOAT5, 70)
         dw OP_CLS               ; 23 (R7)
         dw OP_BORDER             ; 24
         dw OP_INK                ; 25
@@ -3226,12 +3224,41 @@ VM_POP_ADDR:
 .range:
         jp BUILTIN_FN_CHR.chr_range_err
 
+; STUDY (D11, literal policy L-A): DE = DE*10 + A (A = digit 0-9).  Carry set = the value would exceed 65535
+; (the literal no longer fits the 16-bit TOK_VAL: before, it wrapped modulo 65536 without a word).
+; 32768..65535 stay accepted as 16-bit address patterns (POKE 65000,... / USR(61440) keep working).
+; Destroys AF BC HL. 5.1: here (not in the compiler) because NUM_PARSE_CALC shares it, and some
+; test images include the VM core without the compiler.
+LEX_ACCUM_DIGIT:
+        ld c,a
+        ld hl,6554
+        or a
+        sbc hl,de               ; DE >= 6554 -> x10 cannot fit
+        jr c,.ovf
+        jr z,.ovf
+        ld h,d
+        ld l,e
+        add hl,hl
+        add hl,hl
+        add hl,de
+        add hl,hl               ; HL = DE*10 (<= 65530)
+        ld b,0
+        add hl,bc
+        jr c,.ovf
+        ex de,hl
+        or a
+        ret
+.ovf:
+        scf
+        ret
 ; ---------------------------------------------------------------------------
-; RC: the shared number parser (literals beyond the 16-bit/value-divisor forms, VAL, INPUT).
+; RC: the shared number parser (literals beyond the 16-bit forms, every decimal literal, VAL, INPUT).
 ; NUM_PARSE_CALC -- HL -> text, B = its length (or 255). Reads [spaces][-|+]digits[.digits] and stops
-; at the first other character; no digits = 0. Digits accumulate exactly in the calculator (x*10+d,
-; exact up to 2^32); up to 9 fraction digits are kept and divided out once by 10^k (exact, so one
-; rounding). Out: CALC_STACK[0] = the value (CALC_SP = 1), HL -> the first character not used,
+; at the first other character; no digits = 0. Digits accumulate exactly (x*10+d, exact up to 2^32):
+; 5.1: in DE while x < 3276 before the digit, then in the calculator (D = $FF marks that); up to 9
+; fraction digits are kept and divided out once by 10^k (exact, so one rounding; 10^k built in 16
+; bits up to 10^4). A short decimal is int->fp(m) / int->fp(10^k), the old run-time literal's sequence.
+; Out: CALC_STACK[0] = the value (CALC_SP = 1), HL -> the first character not used,
 ; NP_FRAC = the number of fraction digits. Destroys AF, BC, DE.
 NP_FRAC:        equ VM_INPUT_COUNT
 NP_FLAGS:       equ VM_INPUT_NEG_TMP     ; bit 0 '-', bit 1 '.' seen
@@ -3240,13 +3267,8 @@ NUM_PARSE_CALC:
         ld (NP_FLAGS),a
         ld (NP_FRAC),a
         ld (CALC_SP),a
-        push hl
-        push bc
-        ld l,a
-        ld h,a
-        call CALC_INT_TO_FP      ; [0]
-        pop bc
-        pop hl
+        ld d,a
+        ld e,a                   ; DE = x
         inc b
 .skip:
         dec b
@@ -3296,6 +3318,15 @@ NUM_PARSE_CALC:
 .acc:
         push hl
         push bc
+        ld a,d
+        inc a
+        jr z,.calc               ; D = $FF: x is in the calculator
+        ld hl,-3276
+        add hl,de
+        jr nc,.fast              ; x < 3276: x*10+d <= 32759 (CALC_INT_TO_FP is signed)
+        ex de,hl
+        call CALC_INT_TO_FP      ; [x]
+.calc:
         ld hl,10
         call CALC_INT_TO_FP
         call VM_CALC_MUL_STUB
@@ -3305,6 +3336,12 @@ NUM_PARSE_CALC:
         ld h,0
         call CALC_INT_TO_FP
         call VM_CALC_ADD_STUB    ; [x*10 + d]
+        ld d,$FF
+        jr .acc_done
+.fast:
+        ld a,c
+        call LEX_ACCUM_DIGIT     ; DE = x*10 + d
+.acc_done:
         pop bc
         pop hl
 .next:
@@ -3312,19 +3349,42 @@ NUM_PARSE_CALC:
         jr .loop
 .end:
         push hl
+        ld a,d
+        inc a
+        jr z,.frac
+        ex de,hl
+        call CALC_INT_TO_FP      ; [x]
+.frac:
         ld a,(NP_FRAC)
         or a
         jr z,.signed
-        push af
+        ld b,a
         ld hl,1
-        call CALC_INT_TO_FP      ; [x, 1] (destroys BC)
-        pop bc                   ; B = the fraction digit count
+.p16:
+        ld d,h
+        ld e,l
+        add hl,hl
+        add hl,hl
+        add hl,de
+        add hl,hl                ; HL = 10^(k-B+1)
+        dec b
+        jr z,.p_fp
+        ld a,h
+        cp $27
+        jr c,.p16                ; stop at 10000 ($2710)
+.p_fp:
+        push bc
+        call CALC_INT_TO_FP      ; [x, 10^min(k,4)] (destroys BC)
+        pop bc
+        inc b
+        jr .p10_next
 .p10:
         push bc
         ld hl,10
         call CALC_INT_TO_FP
         call VM_CALC_MUL_STUB
         pop bc
+.p10_next:
         djnz .p10                ; [x, 10^k]
         call VM_CALC_DIV_STUB
 .signed:
@@ -3361,26 +3421,6 @@ OP_PUSH_FLOAT5:
         ld (VM_IP),hl
         call VM_FLOAT_STORE_RESULT
         jp (iy)
-
-; OP_PUSH_FLOAT_LIT — operand: 2-byte int value (the literal's digits,
-; decimal point removed) + 2-byte divisor (10^number-of-fractional-
-; digits, computed by the compiler). Computes value/divisor as a real
-; float via the calculator, stores it in a fresh FLOATTAB temp slot,
-; pushes that slot's index, TAG_FLOAT.
-OP_PUSH_FLOAT_LIT:
-        ld hl,(VM_IP)
-        ld e,(hl)
-        inc hl
-        ld d,(hl)               ; DE = value
-        inc hl
-        ld (VM_FLOAT_A_VAL),de
-        ld e,(hl)
-        inc hl
-        ld d,(hl)               ; DE = divisor
-        inc hl
-        ld (VM_IP),hl
-        ld (VM_FLOAT_B_VAL),de
-        jp VM_DIV_VIA_FLOAT
 
 ; QUAL (L-C): VM_PUSH_U16 -- HL = 32768..65535, pushed as that FLOAT. Its calculator form is
 ; exactly [$90][H AND $7F][L][0][0] (exponent 16, the mantissa's top bit is the sign).

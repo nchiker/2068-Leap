@@ -261,11 +261,8 @@ PROC_PARAM_INDEX_TMP: equ $BA31  ; COMPILE_PROC scratch (1 byte): the
 ; own separate SYMTAB/STRTAB split (rom/exrom_v2_vm_core.asm). ---
                                   ; entries 0-3 (unchanged address/size)
 
-; --- R6 addition: decimal literals ---
-CNUM_DIVISOR_TMP:   equ $BA39   ; LEX_SCAN_NUMBER scratch (2 bytes): running
-                                  ; 10^(fractional digits) accumulator
-TOK_FLOAT_DIVISOR:  equ $BA3B   ; token field (2 bytes): companion to
-                                  ; TOK_VAL for a TOK_FLOAT_NUMBER token
+; --- R6 addition: decimal literals ($BA39-$BA3A free since 5.1: the divisor scratch) ---
+LEX_NUM_START:      equ $BA3B   ; LEX_SCAN_NUMBER: the literal's first character (2 bytes)
 CEXT_SLOT:          equ $BA3D   ; R7.5 (COMPILE_EXT_CALL) scratch, 1
 CEXT_GEN:           equ $BA3E   ; byte each: the matched extension's own
 CEXT_ARGCOUNT:      equ $BA3F   ; slot id/generation/argcount (read by .emit)
@@ -388,7 +385,7 @@ TOK_KW_ENDP:        equ 21
 TOK_KW_CALL:        equ 22
 TOK_STRING:         equ 23   ; a "quoted" string literal (R5 addition)
 TOK_STR_IDENT:      equ 24   ; a NAME$ string-variable identifier (R5)
-TOK_FLOAT_NUMBER:   equ 25   ; a decimal literal, e.g. "10.5" (R6 addition)
+                             ; 25: was TOK_FLOAT_NUMBER (decimal literals are TOK_FLOAT5 since 5.1)
 TOK_COMMA:          equ 26   ; ',' — argument separator (R7 addition,
                                ; needed for PLOT x,y; nothing before R7
                                ; had a multi-argument statement)
@@ -452,7 +449,6 @@ TOK_KW_CLEAR:       equ 64   ; R10.7
 TOK_KW_OUT:         equ 65   ; STUDY
 TOK_FLOAT5:         equ 67   ; RC: a literal held as a 5-byte value (TOK_FLOAT5_BUF)
 TOK_FLOAT5_BUF:     equ CALC_STACK + 35   ; calculator slot 7 (unused at compile time)
-LEX_NUM_START:      equ TOK_FLOAT_DIVISOR ; LEX_SCAN_NUMBER's start (the field is set only at its end)
 TOK_SEMI:           equ 66   ; STUDY: ';' (PRINT/INPUT separator)
 
 ; ---------------------------------------------------------------------------
@@ -750,119 +746,45 @@ LEX_NEXT_TOKEN_CORE:
         ld (SRC_PTR),hl
         ret
 
-; LEX_SCAN_NUMBER — R6 addition: also recognizes an optional '.' followed
-; by more digits (a decimal literal). The integer and fractional digits
-; accumulate into the SAME running value DE (i.e. "10.5" accumulates as
-; if scanning "105"); a separate CNUM_DIVISOR_TMP tracks 10^(number of
-; fractional digits seen), starting at 1 (meaning "no fractional part").
-; If the divisor is still 1 when digit-scanning ends, this is a plain
-; TOK_NUMBER (unchanged behavior, unchanged token type, for every program
-; that predates R6); otherwise it's TOK_FLOAT_NUMBER, with TOK_VAL holding
-; the digits and TOK_FLOAT_DIVISOR holding the divisor — COMPILE_FACTOR
-; combines them into a real float at runtime via the calculator, not at
-; compile time (this compiler never decodes or encodes the calculator's
-; own float byte format itself).
+; LEX_SCAN_NUMBER -- an integer literal 0..65535 accumulates into TOK_VAL (TOK_NUMBER).
+; 5.1: a '.' and a digit (a decimal literal) or a value above 65535 hands the whole literal, from
+; LEX_NUM_START, to LEX_NUMBER_TOO_BIG, which parses it once at compile time into its 5-byte
+; value (TOK_FLOAT5): a decimal literal costs a 5-byte copy at run time, not a division.
+; A '.' without a digit after it ends the literal: "5." is the INT 5, as before 5.1.
 LEX_SCAN_NUMBER:
         ld hl,(SRC_PTR)
         ld (LEX_NUM_START),hl
         ld de,0
-        ld hl,1
-        ld (CNUM_DIVISOR_TMP),hl
 .int_digit_loop:
         ld hl,(SRC_PTR)
         ld a,(hl)
-        cp '0'
-        jr c,.check_dot
-        cp '9'+1
-        jr nc,.check_dot
-        inc hl
-        ld (SRC_PTR),hl
-        sub '0'
-        call LEX_ACCUM_DIGIT     ; STUDY (D11): shared, range-checked accumulate
-        jr nc,.int_digit_loop
-        jr LEX_NUMBER_TOO_BIG
-.check_dot:
-        ld hl,(SRC_PTR)
-        ld a,(hl)
         cp '.'
-        jr nz,.done
-        inc hl
-        ld (SRC_PTR),hl
-.frac_digit_loop:
-        ld hl,(SRC_PTR)
-        ld a,(hl)
-        cp '0'
-        jr c,.done
-        cp '9'+1
+        jr z,.dot
+        sub '0'
+        cp 10
         jr nc,.done
         inc hl
         ld (SRC_PTR),hl
+        call LEX_ACCUM_DIGIT     ; STUDY (D11): shared, range-checked accumulate
+        jr nc,.int_digit_loop
+        jr LEX_NUMBER_TOO_BIG
+.dot:
+        inc hl
+        ld a,(hl)
         sub '0'
-        call LEX_ACCUM_DIGIT
+        cp 10
         jr c,LEX_NUMBER_TOO_BIG
-        ld hl,(CNUM_DIVISOR_TMP)
-        ld a,h                   ; QUAL (Q-09): the divisor 10^k is 16-bit; a 5th fractional digit
-        cp $27                   ; (divisor already 10000 = $2710) wrapped it (0.00001 -> -3.2183 after
-        jr nc,LEX_NUMBER_TOO_BIG ; *100000): error 64, as for an over-long mantissa (L-A)
-        ld b,h
-        ld c,l
-        add hl,hl
-        add hl,hl
-        add hl,bc
-        add hl,hl               ; divisor *= 10
-        ld (CNUM_DIVISOR_TMP),hl
-        jr .frac_digit_loop
+        ld (SRC_PTR),hl          ; consume the '.'
 .done:
         ld (TOK_VAL),de
-        ld hl,(CNUM_DIVISOR_TMP)
-        ld a,l
-        cp 1
-        jr nz,.is_float
-        ld a,h
-        or a
-        jr nz,.is_float
         ld a,TOK_NUMBER
         ld (TOK_TYPE),a
         ret
-.is_float:
-        bit 7,d                  ; STUDY: a decimal mantissa >= 32768 would become negative
-        jr nz,LEX_NUMBER_TOO_BIG
-        ld (TOK_FLOAT_DIVISOR),hl
-        ld a,TOK_FLOAT_NUMBER
-        ld (TOK_TYPE),a
-        ret
 
-; STUDY (D11, literal policy L-A): DE = DE*10 + A (A = digit 0-9).  Carry set = the value would exceed 65535
-; (the literal no longer fits the 16-bit TOK_VAL: before, it wrapped modulo 65536 without a word).
-; 32768..65535 stay accepted as 16-bit address patterns (POKE 65000,... / USR(61440) keep working);
-; a decimal literal's mantissa is limited to 32767 in LEX_SCAN_NUMBER (it is divided as a SIGNED INT16).
-; Destroys AF BC HL.
-LEX_ACCUM_DIGIT:
-        ld c,a
-        ld hl,6554
-        or a
-        sbc hl,de               ; DE >= 6554 -> x10 cannot fit
-        jr c,.ovf
-        jr z,.ovf
-        ld h,d
-        ld l,e
-        add hl,hl
-        add hl,hl
-        add hl,de
-        add hl,hl               ; HL = DE*10 (<= 65530)
-        ld b,0
-        add hl,bc
-        jr c,.ovf
-        ex de,hl
-        or a
-        ret
-.ovf:
-        scf
-        ret
 ; The oversized literal is reported where it is: an unexpected token, error 64, on its own line.
-; RC (literal rule L-C, completed): a literal outside the 16-bit and value/divisor forms (more than
-; 65535, more than 4 decimals, a mantissa above 32767) is parsed whole by the shared number parser
-; into a 5-byte value (was error 64): 1000.25, 3.14159265, 100000 are literals.
+; RC (literal rule L-C, completed): a literal above 65535 or with a '.' (5.1: every decimal) is
+; parsed whole by the shared number parser into a 5-byte value (was error 64): 0.5, 1000.25,
+; 3.14159265, 100000 are literals.
 LEX_NUMBER_TOO_BIG:
         ld hl,.ovf
         push hl
@@ -1711,8 +1633,6 @@ COMPILE_FACTOR:
         jr z,.paren
         cp TOK_NUMBER
         jr z,.number
-        cp TOK_FLOAT_NUMBER
-        jr z,.float_number
         cp TOK_FLOAT5
         jr z,.float5
         cp TOK_IDENT
@@ -1761,10 +1681,6 @@ COMPILE_FACTOR:
         rst $30
 .number:
         call COMPILE_NUMBER_LITERAL
-        rst $08
-        ret                      ; RC shrink: tail call through the RST (was jp LEX_NEXT_TOKEN)
-.float_number:
-        call COMPILE_FLOAT_LITERAL
         rst $08
         ret                      ; RC shrink: tail call through the RST (was jp LEX_NEXT_TOKEN)
 .float5:
@@ -2311,26 +2227,6 @@ COMPILE_INT_LITERAL:                       ; DE = a signed 16-bit value
 .wide:
         ld a,2        ; QUAL shrink: inlined EMIT_BYTE_OP_PUSH_I16
         rst $20
-        ld a,e
-        rst $20
-        ld a,d
-        rst $20
-        ret                      ; RC shrink: tail call through the RST (was jp EMIT_BYTE)
-
-; COMPILE_FLOAT_LITERAL — emits PUSH_FLOAT_LIT's 4-byte operand: TOK_VAL
-; (the literal's digits) then TOK_FLOAT_DIVISOR (10^fractional-digits),
-; both as plain 2-byte little-endian values. The VM computes value/
-; divisor as a real float at runtime, via the calculator — this compiler
-; never encodes a float itself.
-COMPILE_FLOAT_LITERAL:
-        ld a,22        ; QUAL shrink: inlined EMIT_BYTE_OP_PUSH_FLOAT_LIT
-        rst $20
-        ld de,(TOK_VAL)
-        ld a,e
-        rst $20
-        ld a,d
-        rst $20
-        ld de,(TOK_FLOAT_DIVISOR)
         ld a,e
         rst $20
         ld a,d

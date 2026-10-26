@@ -15,6 +15,12 @@ PROGS = {
     "strings": ['a$ = ""', "FOR i = 1 TO 200", 'a$ = LEFT$(a$ + "x", 20)', "NEXT i"],
     "builtins": ["s = 0", "FOR i = 1 TO 500", "s = s + ABS(-i) + MOD(i,7) + SGN(i)", "NEXT i"],
     "compile_only": ["x%d = %d + %d * (%d - 1)" % (k, k, k, k) for k in range(60)],
+    # 5.1: a decimal literal alone in a loop; 240 literals compiled but never run (IF 0), against
+    # the same lines with integers
+    "loop_200": ["x = 0", "FOR i = 1 TO 200", "NEXT i"],
+    "float_add_lit": ["x = 0", "FOR i = 1 TO 200", "x = x + 0.5", "NEXT i"],
+    "compile_dec": ["IF 0 THEN"] + ["x%d = %d.25 + %d.5 * (0.%d - 1.75)" % (k, k, k, k + 1) for k in range(60)] + ["ENDIF"],
+    "compile_int_if": ["IF 0 THEN"] + ["x%d = %d + %d * (%d - 1)" % (k, k, k, k + 1) for k in range(60)] + ["ENDIF"],
 }
 ap = argparse.ArgumentParser(); ap.add_argument("cfgs", nargs="+"); ap.add_argument("--port", type=int, default=10580)
 ap.add_argument("--root", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "build", "qual-builds"))

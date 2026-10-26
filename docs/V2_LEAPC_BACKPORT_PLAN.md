@@ -43,6 +43,7 @@ Further rules:
 | phase 3 (licensing)          | **358** | **199** | [M]: 3.1 tape block I/O EXROM +19; 3.2 calculator dispatcher EXROM +57                        |
 | phase 4 (display quick wins) | **354** | **208** | [M]: 4.1 HOME +4; 4.2, 4.3 0; 4.4 EXROM +16, status-bar attribute fill EXROM −25              |
 | redraw from the cursor line  | **354** | **186** | [M]: EXROM +22                                                                                |
+| 5.1 prototype (not merged)   | **441** | **186** | [M]: HOME −139 value/divisor path removed, +41 16-bit digits in `NUM_PARSE_CALC`, +11 `5.` stays an INT (branch `proto/5.1-float5`) |
 | phase 5 (speed)              | ≥ 64    | ≥ 32    | Class B: each item sized and weighed before it is started; 5.0 first if the room is not there |
 
 Every [E] is replaced by `make budget`'s figure as each item lands.
@@ -181,6 +182,46 @@ memory-based tagged operand stack is ~45% [E] (push ~234 T, pop ~150 T, variable
 Each item: `qbench` before/after, `qbytecode` reviewed (intended changes only), size from `make budget`
 against the floors. Combined estimate for 5.2-5.5: 1.5-2.5× on integer code [E]; 5.1 and 5.3 add more on
 float literals and loops.
+
+Outcome, 5.1 prototype (2026-10-26, branch `proto/5.1-float5` off `backport/leapc`, not merged; all [M]):
+
+- **Change.** In `LEX_SCAN_NUMBER`, a `.` followed by a digit sends the literal to `LEX_NUMBER_TOO_BIG`
+  (`NUM_PARSE_CALC` at compile time, `PUSH_FLOAT5`, opcode 70). Removed: the fraction loop and divisor,
+  `TOK_FLOAT_NUMBER`, `COMPILE_FLOAT_LITERAL`, `OP_PUSH_FLOAT_LIT`; opcode 22's slot is
+  `VM_ERR_ILLEGAL_OPCODE` (as 44/45); RAM `$BA39-$BA3A` is free. A `.` without a digit after it still ends
+  an INT literal (`5.` = 5, as before; +11 B).
+- **`NUM_PARSE_CALC` fast path (+41 B).** Without it the calculator accumulated every digit (4 calls a
+  digit): `3.1416` cost 262 kT to compile (old: 3 kT, plus 22 kT at every execution) and 240 decimals +32
+  MT. Now digits accumulate in DE while x < 3276 (`LEX_ACCUM_DIGIT`, moved into the VM core), then in the
+  calculator (D = $FF marks it), and 10^k is built in 16 bits up to 10^4: a short decimal is int→fp(m) /
+  int→fp(10^k), the old run-time sequence, once.
+- **Size.** HOME 354 → 441 B free (−87 B). EXROM 186 (unchanged).
+- **Rounding: bit-identical.** Exhaustive (`tools/qual/qdecimals.py`): all 131,072 inputs of the old path
+  (mantissa 0-32767 × 1-4 decimals) through the real `LEX_SCAN_NUMBER` and through the old calculator
+  sequence: all 131,072 identical (one `TOK_FLOAT5` each, every character used). End to end
+  (`qliterals.py`): 1,542 literals (42 edge forms such as `2.0`, `0.0001`, `32767.5`, `3276.7`, `1.`,
+  `65535.5`, `4294967296`, plus 1,500 random) compiled and run on both builds: tag and 5 bytes identical
+  for all. Parser differential (`qnumparse.py`), 20,000 random texts (signs, spaces, 0-12 decimals, a
+  second `.`, trailing text, both length modes) against the calculator-only parser: identical, except
+  2,288 results without fraction digits below 32,760, now in the calculator's small-integer form (same
+  value); VAL and INPUT turn those into INTs (`NUM_PUSH_CALC`), and a literal never gets one. Unchanged:
+  the calculator's divide truncates (3.1 = mantissa `$46666666`, not `…67`).
+- **Speed (`qbench`, T).** `x = x + 0.5`: 31,463 → 9,285 per iteration (3.4×); `float_loop` 16.60 M → 7.71
+  M (−53.5%); integer programs −0.0 to −0.9%; `for_float_step` −0.01%. Compile: each decimal literal is
+  parsed once and costs ~30 kT (`0.5` +31.7 kT, `3.1416` +37.8 kT over an integer literal): 240
+  never-executed decimals 3.66 → 9.49 MT. Break-even is ~1.3 executions; a literal that never runs costs
+  ~8 ms more. VAL (INPUT shares the parser): `"123"` 79.8 → 8.0 kT, `"0.5"` 68.9 → 28.0 kT, `"3.1416"`
+  263.7 → 32.1 kT, `"3.14159265"` 489 → 258 kT.
+- **Bytecode.** 667 corpus programs compiled on both builds: 574 identical; 93 differ, each by exactly +1
+  byte per short decimal (opcode 22 + 4 bytes → 70 + 5); compile errors identical in all 667.
+- **Tests.** `make check`, `make repro` OK; `make doc-examples` 325/325; `make test` all PASS (2,444 s,
+  loaded host: standalone 40/40, prod-regress 116, prod-arrays 101, known-defects 15, saveall 13, qual 663
+  PASS + 2 XFAIL + 2 N/A, lifecycle 23, maint-qual all). Every `rom/test_v2_*.asm` assembles exactly as on
+  the baseline (42; the 14 never-run sources of T-3 fail on both).
+- **Not changed.** The test-only decompiler still decodes opcode 22, not 70 (the decimal programs it is
+  given are in the never-run sources).
+- **Owner decision:** integrate into `backport/leapc`? Option: drop the `5.` rule (−11 B; `5.` would then
+  be a float: `PRINT 5.` shows `5.0000`, `b(2.)` is run-time error 11).
 
 ## Phase 6: package ABI 2.1 (minor version: old packages keep working)
 
