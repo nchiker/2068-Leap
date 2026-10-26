@@ -10,20 +10,15 @@ register mistake in the entry/exit plumbing before it's buried under
 real op code.
 
 Covers:
-  1. The full round trip for a real op (end-calc, literal $38) — the
-     ONLY implemented literal so far. Verifies CALC_GEN_ENT_1/2 pop the
-     right thing, CALC_RE_ENTRY/CALC_SCAN_ENT/CALC_FIRST_3D correctly
-     route a $38 literal down the unary/manipulatory path (not binary),
-     CALC_STK_PNTRS_UNARY doesn't crash, CALC_DISPATCH's table lookup
-     (real CALC_TABLE data, not faked) lands on the real CALC_OP_END_
-     CALC body, and that body computes the correct final resume
-     address.
-  2. The unimplemented-op path, across all three CALC_SCAN_ENT
-     branches (binary $00-$17, unary/manipulatory $18-$3D, multi-
-     purpose $80+) — confirms each produces the correct CALC_TABLE
-     index and, for the multi-purpose branch, the correct extracted
-     parameter, without crashing the pointer-computation calls along
-     the way.
+  1. The full round trip for end-calc (literal $38): CALC_EXROM_ENTRY
+     pops the stream pointer, CALC_RE_ENTRY finds $38 in the real
+     CALC_TABLE layout (literal, operands, handler) and CALC_OP_END_CALC
+     computes the correct final resume address.
+  2. Unknown literals ($06, $20, $C3) take the recoverable
+     CALC_ERR_UNIMPLEMENTED path and still resume after the $38.
+  3. Every implemented op (exchange, delete, duplicate and its overflow,
+     add, subtract, multiply, divide), the converters, and the operand-
+     count check (underflow).
 
 Why the entry/exit trampolines (basic/basic.asm's CALC_ENTRY_
 TRAMPOLINE/CALC_EXIT_TRAMPOLINE) aren't loaded here: they page real
@@ -117,44 +112,25 @@ def build_program():
     return prog
 
 
-def expected_table_index_simple(literal):
-    """literal in $00-$3D: table index = literal * 2 (CALC_DOUBLE_A)."""
-    return (literal * 2) & 0xFF
-
-
-def expected_table_index_multi(literal):
-    """literal >= $80: replicate CALC_SCAN_ENT's multi-purpose-literal
-    arithmetic in Python (AND $60, four SRLs, ADD $7C) so the test's
-    expectation is derived the same way the real code derives it, not
-    hand-computed and liable to a transcription slip."""
-    a = literal & 0x60
-    for _ in range(4):
-        a >>= 1
-    a = (a + 0x7C) & 0xFF
-    return a
-
-
-def expected_param(literal):
-    return literal & 0x1F
-
-
 def populate_calc_table(prog, s):
-    """Writes the production sparse CALC_TABLE into simulated memory."""
-    real_ops = {
-        0x02: 'CALC_OP_EXCHANGE',
-        0x04: 'CALC_OP_DELETE',
-        0x06: 'CALC_OP_SUB',       # literal $03, subtract
-        0x08: 'CALC_OP_MUL',       # literal $04, multiply
-        0x0A: 'CALC_OP_DIV',       # literal $05, division
-        0x1E: 'CALC_OP_ADD',       # literal $0F, addition
-        0x62: 'CALC_OP_DUPLICATE',
-        0x70: 'CALC_OP_END_CALC',
-    }
+    """Writes the production CALC_TABLE into simulated memory: (literal,
+    stack operands, handler) per entry, $FF at the end."""
+    real_ops = [
+        (0x01, 2, 'CALC_OP_EXCHANGE'),
+        (0x02, 2, 'CALC_OP_DELETE'),
+        (0x03, 2, 'CALC_OP_SUB'),
+        (0x04, 2, 'CALC_OP_MUL'),
+        (0x05, 2, 'CALC_OP_DIV'),
+        (0x0F, 2, 'CALC_OP_ADD'),
+        (0x31, 1, 'CALC_OP_DUPLICATE'),
+        (0x38, 0, 'CALC_OP_END_CALC'),
+    ]
     address = CALC_TABLE_ADDR
-    for offset, label in real_ops.items():
-        s.wb(address, offset)
-        s.ww(address + 1, prog.resolve_label(None, label))
-        address += 3
+    for literal, operands, label in real_ops:
+        s.wb(address, literal)
+        s.wb(address + 1, operands)
+        s.ww(address + 2, prog.resolve_label(None, label))
+        address += 4
     s.wb(address, 0xFF)
 
 
@@ -180,7 +156,7 @@ def run_literals(prog, s, literals, b_reg=0, max_steps=2000):
                                     # project's own established z80sim
                                     # test pattern (test_sprite_driver.
                                     # py's run_from)
-    s.push(LITERAL_STREAM_ADDR)    # what CALC_GEN_ENT_2 pops — the
+    s.push(LITERAL_STREAM_ADDR)    # what CALC_EXROM_ENTRY pops — the
                                     # real RST $28 return-address
                                     # contract, a raw integer, not a
                                     # call-tracked RETIDX
@@ -238,9 +214,6 @@ check("test4 multi-unimpl: returned through end-calc",
       halt_msg is not None and 'clean stop' in halt_msg, True)
 check("test4 multi-unimpl: error recorded",
       s.rb(sim.SYSVARS['CALC_ERROR_CODE']), 6)
-check("test4 multi-unimpl: parameter extracted",
-      s.rb(sim.SYSVARS['CALC_LITERAL_PARAM']),
-      expected_param(0xC3))
 
 # ---- test 5: exchange (literal $01) — real byte-level verification --
 CALC_STACK_ADDR = sim.SYSVARS['CALC_STACK']
@@ -434,13 +407,14 @@ interp, halt_msg = run_sub(prog, s, 'CALC_FP_TO_INT')
 got_hl = (s.regs['H'] << 8) | s.regs['L']
 check("test14 chain: (-30+80)*7=350", got_hl, 350)
 
-# ---- test 15: malformed simple literal is bounded -------------------
+# ---- test 15: malformed simple literal is bounded (2026-10-26: every
+# unknown literal is CALC_ERR_UNIMPLEMENTED; INVALID_LITERAL is retired) --
 s = new_sim(prog, calc_sp=2)
 interp, halt_msg = run_literals(prog, s, [0x42, 0x38])
 check("test15 invalid literal: clean error return",
       halt_msg is not None and 'clean stop' in halt_msg, True)
 check("test15 invalid literal: error code",
-      s.rb(sim.SYSVARS['CALC_ERROR_CODE']), 1)
+      s.rb(sim.SYSVARS['CALC_ERROR_CODE']), 6)
 
 # ---- test 16: binary stack underflow cannot escape CALC_STACK -------
 s = new_sim(prog, calc_sp=1)

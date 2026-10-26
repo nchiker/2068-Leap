@@ -247,9 +247,9 @@ def hold_space_for_one_sample():
     """SPACE-abort: at the instruction after the `in a,($FE)` of the receiver's edge
     sampler, make the keyboard read report SPACE held (bit 0 low).  This is exactly
     the value a physical SPACE press produces on that port read."""
-    e1 = local_sym("STORAGE_RECEIVE_BLOCK.edge1")
+    e1 = sym("TR_EDGE")                                  # the receiver's one port read (tapeblock.asm)
     code = read(e1, 32)
-    i = code.find(bytes([0xDB, 0xFE, 0x1F, 0xD0]))      # in a,($FE) / rra / ret nc
+    i = code.find(bytes([0xDB, 0xFE, 0x1F, 0x30]))      # in a,($FE) / rra / jr nc
     assert i >= 0, "edge sampler pattern not found"
     rra = e1 + i + 2
     for _ in range(64):
@@ -283,7 +283,7 @@ def press_space(maxi=400_000_000):
     milliseconds, the failure is reported microseconds later).  Both SPACE reads in
     STORAGE_LOAD's failure path (header-search give-up, abort classification) are
     forced; the keyboard matrix itself is not exercised (see TESTING.md)."""
-    _space_down_at(_in_rra("STORAGE_RECEIVE_BLOCK.edge1", b"\xD0"), maxi)
+    _space_down_at(_in_rra("TR_EDGE", b"\x30"), maxi)       # TR_EDGE: in / rra / jr nc
     held = _in_rra("STORAGE_LOAD.space_held", b"\xC9")
     for _ in range(2):
         if not run_to(held, 40):          # the header-search give-up is followed within ~15

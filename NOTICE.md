@@ -11,39 +11,41 @@ Timex, Sinclair, Fuse, ZEsarUX, and ULAplus are names associated with their
 respective owners and projects. 2068-Leap is an independent community project
 and is not affiliated with or endorsed by them.
 
-## Code derived from the stock ROM
+## Code formerly derived from the stock ROM
 
 The TS2068's ROM is Timex's adaptation of the ZX Spectrum ROM, whose code is
-copyright Amstrad plc (formerly Sinclair Research Ltd). Two parts of 2068-Leap
-are derived from it and are not offered under the MIT License; the ROM images
-that contain them are redistributed under Amstrad's permission to redistribute
-its Spectrum ROM code free of charge:
+copyright Amstrad plc (formerly Sinclair Research Ltd). No part of the current
+2068-Leap ROM images is derived from it. Three parts were, until the
+`backport/leapc` branch replaced them (`docs/V2_LEAPC_BACKPORT_PLAN.md`,
+phase 3):
 
-- `STORAGE_SEND_BLOCK` and `STORAGE_RECEIVE_BLOCK` in
-  `kernel/storage/storage.asm` (the tape block I/O, in the EXROM image): a port
-  of the stock ROM's SA-BYTES and LD-BYTES, as that file's header states.
-- Parts of the calculator engine in `rom/exrom_calc.asm` (EXROM image): its
-  header records that it began as a port of the Spectrum ROM's CALCULATE and
-  that the literal-decode dispatcher and EXCHANGE were ported directly. No run
-  of 12 or more bytes in it equals the stock ROMs.
+- The tape block I/O (`STORAGE_SEND_BLOCK` / `STORAGE_RECEIVE_BLOCK`, a port
+  of SA-BYTES and LD-BYTES): replaced by clean-room code from 2068-Leap-C,
+  `kernel/storage/tapeblock.asm`.
+- The block-graphics glyph builder in `kernel/graphics/graphics.asm` (two
+  12-byte sequences equal to the stock ROM's PO-GR-2): replaced by
+  2068-Leap-C's.
+- The calculator's literal dispatcher and EXCHANGE in `rom/exrom_calc.asm`,
+  whose header recorded them as ported from the Spectrum ROM's CALCULATE and
+  EXCHANGE: rewritten in this project to a different design (a table of
+  literal, operand count and handler). This rewrite was written from the
+  calculator's interface, not by a separated clean-room team: the literal
+  values ($01 exchange ... $38 end-calc) and the 5-byte number format are
+  kept so literal streams mean what they do to the stock calculator.
 
-Both are scheduled for replacement by clean-room code
-(`docs/V2_LEAPC_BACKPORT_PLAN.md`, phase 3); this section will then be removed.
 `tools/check_provenance.py` (part of `make check` when the stock ROMs are
-present) compares the production images with the stock 48K and TS2068 ROMs and
-fails on any common run of 12 bytes or more not recorded here.
-
-The block-graphics glyph builder in `kernel/graphics/graphics.asm`, which
-contained two 12-byte sequences equal to the stock ROM's PO-GR-2, was replaced
-in this branch by clean-room code from 2068-Leap-C (MIT). Earlier releases and
-the git history still contain the derived version.
+present) compares the production images with the stock 48K and TS2068 ROMs
+and fails on any common run of 12 bytes or more; its allow-list is empty.
+Earlier releases and the git history still contain the derived versions.
 
 ## Code from 2068-Leap-C (MIT)
 
 2068-Leap-C (https://github.com/nchiker/2068-Leap-C, MIT License, copyright
 (c) 2026 Charlie Day) is built on this project's platform; code it wrote has
-been brought back here: the block-graphics glyph builder, the xorshift used by
+been brought back here: the tape block I/O (`kernel/storage/tapeblock.asm`),
+the block-graphics glyph builder, the xorshift used by
 `RND`, the register-only `MATH_UMUL16` / `MATH_UDIV16`, `tools/fuse/fuseshim.c`
 (loaded into Fuse at test time; it contains no Fuse source), and tools adapted
 from Leap-C's (`tools/check_provenance.py`, `tools/check_repro.sh`,
-`tools/qual/qpoweron.py`, the banking checks of `tools/qual/qcanary.py`).
+`tools/qual/qpoweron.py`, the banking checks of `tools/qual/qcanary.py`, the tape
+tolerance test `tools/qtapetol.py` and the MIC capture of `tools/qual/qmicsave.py`).

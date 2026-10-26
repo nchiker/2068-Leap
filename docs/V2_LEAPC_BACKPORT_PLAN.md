@@ -39,9 +39,9 @@ Further rules:
 | ---------------------------- | -------:| -------:| --------------------------------------------------------------------------------------------- |
 | today                        | 275     | 26      | [M]                                                                                           |
 | phase 1 (space)              | **373** | **138** | [M]: 1.1 EXROM −112; 1.2 HOME −36; 1.3 HOME −12; 1.4 HOME −2; 1.5 HOME −48                    |
-| phase 2 (bug fixes)          | ~325    | ~126    | [E]                                                                                           |
-| phase 3 (licensing)          | ~325    | ~141    | [E]; tape block I/O −15 B [L]                                                                 |
-| phase 4 (display quick wins) | ~317    | ~141    | [E]                                                                                           |
+| phase 2 (bug fixes)          | **358** | **123** | [M]: phase total HOME −15, EXROM −15 (items 2.1-2.3; v2.0.3)                                  |
+| phase 3 (licensing)          | **358** | **199** | [M]: 3.1 tape block I/O EXROM +19; 3.2 calculator dispatcher EXROM +57                        |
+| phase 4 (display quick wins) | ~350    | ~199    | [E]                                                                                           |
 | phase 5 (speed)              | ≥ 64    | ≥ 32    | Class B: each item sized and weighed before it is started; 5.0 first if the room is not there |
 
 Every [E] is replaced by `make budget`'s figure as each item lands.
@@ -99,6 +99,23 @@ Release v2.0.3 = phases 1 + 2: a maintenance release (no bytecode, ABI or tape-f
 | 3.2 | **Calculator: clean-room rewrite of the parts its header says were ported** (literal-decode dispatcher, EXCHANGE)                 | 0    | ± (size first)                                                 | No ≥12 B match found, but the header says "ported directly". Keep the 5-byte format and semantics                                                                                                                                                                                                                                           |
 | 3.3 | `NOTICE.md` final: all MIT; provenance scan (0.5) has an empty allow-list                                                         |      |                                                                |                                                                                                                                                                                                                                                                                                                                             |
 | 3.4 | Remove the stale `tools/tape_gen.py` (describes the archived protocol, unreferenced)                                              |      |                                                                |                                                                                                                                                                                                                                                                                                                                             |
+
+Outcome (2026-10-26, all [M]):
+
+- **3.1** EXROM 123 → 142 B. `tools/qtapetol.py` (23 distortions, ZEsarUX's 15.6 kHz sampled EAR): the old
+  receiver accepts 16, the new 22. The new one gains speed 0.75, jitter 30%, pilots of 400/1000/2000 and
+  dropouts of 50/200 ms. It loses speed 1.25: a 0 bit stretched 25% plus one sample of jitter lands on
+  `TR_ONE` (34). `TR_ONE` 35 wins that case back but loses speed 0.75 and jitter 30% (21/23), so Leap-C's
+  34 stays; on Fuse (no sampling) Leap-C measured the new receiver accepting every case the old one did.
+  New `tools/qual/qmicsave.py` (in `tools/run_v2_prod_tests.sh`) runs SAVE through the real sender with
+  the MIC line captured: blocks byte-exact with valid checksums, pilots 8063/3222 decoded, every pulse
+  within +16 T of the stock widths, and the captured signal LOADs back.
+- **3.2** EXROM 142 → 199 B. A new dispatcher: `CALC_TABLE` holds (literal, operand count, handler); the
+  multi-purpose literal decode and `CALC_LITERAL_PARAM` (never read) are gone; every unknown literal is
+  `CALC_ERR_UNIMPLEMENTED` (`CALC_ERR_INVALID_LITERAL` retired). EXCHANGE rewritten. Literal values and
+  the 5-byte format unchanged. `tools/z80sim/test_calc_dispatcher.py` updated to the table layout.
+- **3.3** `NOTICE.md`: no stock-derived code in the images; the provenance allow-list is empty.
+- **3.4** `tools/tape_gen.py` removed.
 
 ## Phase 4: display and editor quick wins
 
@@ -177,6 +194,8 @@ All decided by the owner on 2026-10-25.
 | F3  | Keep `EDIR_HOME/END` in production (1.1) | Only if the R10.8 navigation keys are planned             |
 | F4  | Release grouping                         | v2.0.3 = phases 1-2; v2.0.4 = phase 3; v2.1 = phases 4-6  |
 | F5  | Start phase 7 (V3)                       | Decide after v2.1, with 7.6's spike numbers               |
+| F6  | Calculator rewrite (3.2)                 | Counts as clean-room (2026-10-26)                         |
+| F7  | Fast emulation (0.10)                    | Default for the suites (2026-10-26)                       |
 
 ## Also worth doing
 

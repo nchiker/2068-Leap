@@ -9223,8 +9223,8 @@ CALC_PUSH_FP_RAW_HOME:
 ; RST $28's return address (pushed by the RST itself, at rom/main.asm's
 ; RST_28) is not an ordinary return address: it's a pointer into the
 ; byte-coded literal-op stream that follows every RST $28 call site, and
-; the calculator's own entry logic (CALC_GEN_ENT_2, in rom/exrom_calc.
-; asm) grabs it directly off the top of the stack via EX (SP),HL. A
+; the calculator's own entry logic (CALC_EXROM_ENTRY, in rom/exrom_calc.
+; asm) grabs it directly off the top of the stack (a `pop`). A
 ; normal `call` into EXROM would push a SECOND address on top of that
 ; one and corrupt the mechanism; a `call` for the page-out side has the
 ; opposite problem (see CALC_EXIT_TRAMPOLINE below). Both halves here

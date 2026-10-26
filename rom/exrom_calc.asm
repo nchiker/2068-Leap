@@ -1,53 +1,38 @@
 ; ============================================================================
 ; rom/exrom_calc.asm — calculator engine (RST $28), EXROM-resident
 ;
-; REWORKED 2026-08-20 (was a byte-for-byte port until this pass — see
-; this project's own /areas notes for the full before/after). The real
-; Spectrum ROM's CALCULATE (skoolkid.github.io/rom/asm/335B.html — real,
-; fetched, not estimated) leans on EXX/EX (SP),HL register-banking and a
-; push-then-RET computed-dispatch trick, both there purely to save bytes
-; and registers on 1982 hardware under real scarcity. Neither scarcity
-; applies here the same way: [stated] design goal is smallest possible
-; HOME ROM footprint once TRIG functions land — that's an argument for
-; keeping ALL of this in EXROM (already true, see rom/exrom_checker.
-; asm's $C024 stub), not an argument for the register trick, which
-; costs RAM sysvars either way regardless of which ROM bank holds the
-; code. This project already spends RAM sysvars freely elsewhere
-; (CALC_STACK etc.) and already rejected the real ROM's OTHER space-
-; saving trick (dynamic stack) for the same reason this rework rejects
-; this one: incremental/hidden state that ~60 future op routines would
-; each have to get right is a worse bet than a few bytes of RAM holding
-; the truth explicitly. Concretely, this version:
-;   - has NO exx, NO ex (sp),hl, NO primed registers anywhere. The
-;     literal-stream position lives in CALC_LITERAL_PTR (sysvar).
-;   - dispatches via LD HL,(table entry) / JP (HL), not push+ret. This
-;     is NOT a novel trick for this codebase — it's the same mechanism
-;     kernel/storage/storage.asm's STORAGE_PROGRESS_HOOK callback
-;     already uses, so it's proven, testable, and idiomatic here.
-;   - recomputes CALC_OP1_PTR/CALC_OP2_PTR fresh from CALC_SP on EVERY
-;     iteration (include/sysvars.inc's own comment on those has the
-;     full reasoning), rather than trusting a carried-forward pointer
-;     the way the real ROM's HL/DE are maintained.
-;   - RLCA -> ADD A,A and RRCA x4 -> SRL A x4: exact substitutes given
-;     the branch guards already in place (A<$80 confirmed by the `jp p`
-;     test before DOUBLE_A's real RLCA; the AND $60 before the real
-;     RRCA x4 already zeroed the bits a rotate would otherwise wrap
-;     into, so a plain shift is identical to the rotate here) — chosen
-;     because this project's own z80sim (tools/z80sim/sim.py) doesn't
-;     implement RLCA/RRCA/EXX/EX (SP),HL/DW, and re-deriving the same
-;     arithmetic with instructions it DOES support was cheaper and more
-;     legible than extending the simulator for a one-off need.
-;   - invalid literals, stack errors, unavailable operations, division by
-;     zero, and numeric overflow use one recoverable error path rather than
-;     executing outside the table or freezing in diagnostic loops.
+; A small stack calculator over 5-byte floating-point values (CALC_STACK, 8
+; slots, CALC_SP = depth). RST $28 is followed in the caller's code by a
+; stream of one-byte operation codes ("literals") ending in $38; the engine
+; runs each in turn and resumes the caller after the $38.
 ;
-; WHAT'S STILL A FAITHFUL PORT: the overall literal-decode arithmetic
-; (which bits mean what, the $18/$7C/$60/$1F magic numbers, the binary-
-; vs-unary/manipulatory split) is unchanged from the real ROM — only
-; the REGISTER CHOREOGRAPHY around it changed, not the decode logic
-; itself, so CALC_TABLE's literal numbering still matches the real ROM
-; exactly (see that table's own header) and porting a real op body
-; later still needs zero literal-value translation.
+; Provenance: the dispatcher (CALC_EXROM_ENTRY / CALC_RE_ENTRY), the table
+; format and EXCHANGE were rewritten on 2026-10-26
+; (docs/V2_LEAPC_BACKPORT_PLAN.md item 3.2), replacing code whose earlier
+; header recorded it as derived from the Spectrum ROM's CALCULATE and
+; EXCHANGE. What is kept is the interface only: the literal values and the
+; 5-byte number format, so a literal stream means the same as it would to
+; the stock calculator ($01 exchange, $02 delete, $03 subtract, $04 multiply,
+; $05 divide, $0F add, $31 duplicate, $38 end-calc). The arithmetic bodies
+; further down are this project's own (see each op's header).
+;
+; Dispatch: CALC_TABLE lists each implemented literal with the number of
+; stack operands it takes (0, 1 or 2) and its handler. The dispatcher finds
+; the literal, refuses it if CALC_SP is below its operand count, points
+; CALC_OP1_PTR (and CALC_OP2_PTR for two operands: OP1 the lower slot, OP2
+; the top) at the operands, loads B from CALC_BREG and jumps to the handler,
+; which ends with `jp CALC_RE_ENTRY` (END-CALC instead leaves). No primed
+; registers, no EX (SP),HL: the stream position lives in CALC_LITERAL_PTR,
+; and the operand pointers are recomputed from CALC_SP for every literal
+; (tools/z80sim, which runs this file in test_calc_dispatcher.py, implements
+; neither EXX nor EX (SP),HL).
+;
+; Errors: an unknown literal, too few operands, a full stack, division by
+; zero and overflow all take one recoverable path (CALC_ABORT_STREAM): the
+; code goes to CALC_ERROR_CODE, the stack is emptied, the stream is skipped
+; to its $38 and the caller resumes normally. CALC_ERR_INVALID_LITERAL is no
+; longer produced (every unknown literal is CALC_ERR_UNIMPLEMENTED), and an
+; unknown literal is reported as such before any operand-count check.
 ;
 ; VALIDATION STATUS: assembled by sjasmplus as part of the production
 ; HOME/EXROM build and exercised by tools/z80sim/test_calc_dispatcher.py,
@@ -60,125 +45,65 @@
 ; exrom_checker.asm): stack top = pointer to the literal-op byte stream
 ; (RST $28's own return address, untouched by both Home-side trampolines
 ; — see basic/basic.asm's CALC_ENTRY_TRAMPOLINE/CALC_EXIT_TRAMPOLINE
-; headers, unaffected by this rework). B = operation offset/counter,
-; passed through unchanged from the RST $28 call site (0 for an
-; ordinary top-level call — the real ROM's literal $3B single-op
-; shortcut isn't ported yet, same reasoning as the other 65
-; unimplemented ops: nothing calls it yet).
+; headers). B = a parameter for the ops that take one, kept in CALC_BREG
+; and reloaded into B for every handler (0 for an ordinary call).
 ; ============================================================================
 
 CALC_EXROM_ENTRY:
-CALC_GEN_ENT_1:
     xor  a
     ld   (CALC_ERROR_CODE), a
     ld   a, b
     ld   (CALC_BREG), a
-CALC_GEN_ENT_2:
-    ; Grab the literal-byte-code pointer off the real stack (RST $28's
-    ; own return address, or CALC_ENTRY_TRAMPOLINE's tail-jump target —
-    ; either way, untouched) directly into CALC_LITERAL_PTR. No primed
-    ; registers, no placeholder stack slot — the real stack is simply
-    ; one item shorter from here until CALC_OP_END_CALC pushes the
-    ; final return address back.
-    pop  hl
-    ld   (CALC_LITERAL_PTR), hl
+    pop  hl                         ; the literal stream (the real stack is one
+    ld   (CALC_LITERAL_PTR), hl     ; item shorter until END-CALC pushes the resume)
 
-; ----------------------------------------------------------------------
-; CALC_RE_ENTRY / CALC_SCAN_ENT / CALC_FIRST_3D / CALC_ENT_TABLE
-; Fetch-decode-dispatch loop. Decode arithmetic matches 335B.html; the
-; register plumbing around it does not (see file header).
-; ----------------------------------------------------------------------
+; CALC_RE_ENTRY — run the next literal. Every handler but END-CALC returns here.
 CALC_RE_ENTRY:
     ld   hl, (CALC_LITERAL_PTR)
-    ld   a, (hl)              ; fetch next literal
+    ld   c, (hl)                    ; C = the literal
     inc  hl
-    ld   (CALC_LITERAL_PTR), hl  ; persist the advanced pointer
-                                 ; immediately — CALC_OP_END_CALC reads
-                                 ; it straight from here, no separate
-                                 ; "true return address" bookkeeping
-                                 ; needed (see that op's own header)
-CALC_SCAN_ENT:
-    and  a
-    jp   p, CALC_FIRST_3D       ; literal < $80 -> simple/manipulatory
-    ; "Multi-purpose" literal (>=$80): extract category (bits 5-6) and
-    ; parameter (bits 0-4). Real ROM: RRCA x4 then ADD A,$7C. Here:
-    ; SRL A x4 is an exact substitute (AND $60 already zeroed the bits
-    ; a rotate would wrap into — see file header).
-    ld   d, a
-    and  $60
-    srl  a
-    srl  a
-    srl  a
-    srl  a
-    add  a, $7C
-    ld   c, a                  ; C = table index (doubled already, since
-                                ; $7C's low bit pattern accounts for it —
-                                ; matches the real ROM's own L-register
-                                ; use here exactly, just renamed)
-    ld   a, d
-    and  $1F
-    ld   (CALC_LITERAL_PARAM), a  ; not read by any op yet — see
-                                    ; sysvars.inc's own comment on this
-    jr   CALC_DISPATCH
-CALC_FIRST_3D:
-    cp   $42
-    jr   nc, CALC_ABORT_INVALID_LITERAL
-    cp   $38
-    jr   z, CALC_DOUBLE_A             ; END-CALC needs no operand
-    cp   $18
-    jr   nc, CALC_UNARY_OR_MANIP  ; literal >= $18 -> no operand-2
-    ; Binary op ($00-$17): both operand pointers needed.
-    ld   a, (CALC_SP)
-    cp   2
-    jr   c, CALC_ABORT_STACK_UNDERFLOW
-    ld   hl, (CALC_LITERAL_PTR)
-    dec  hl
-    ld   a, (hl)                       ; restore literal after depth test
-    push af                       ; protect the literal value across
-                                   ; the pointer-computation call
-    call CALC_STK_PNTRS_BINARY    ; sets CALC_OP1_PTR + CALC_OP2_PTR
-    pop  af
-    jr   CALC_DOUBLE_A
-CALC_UNARY_OR_MANIP:
-    ld   a, (CALC_SP)
-    or   a
-    jr   z, CALC_ABORT_STACK_UNDERFLOW
-    ld   hl, (CALC_LITERAL_PTR)
-    dec  hl
-    ld   a, (hl)                       ; restore literal after depth test
-    push af
-    call CALC_STK_PNTRS_UNARY      ; sets CALC_OP1_PTR only
-    pop  af
-CALC_DOUBLE_A:
-    add  a, a                       ; x2 (ADD A,A substitutes RLCA here
-                                    ; — safe, A<$80 confirmed by the
-                                    ; `jp p` test above; see file header)
-    ld   c, a
-CALC_DISPATCH:
+    ld   (CALC_LITERAL_PTR), hl     ; past it: END-CALC's resume address
     ld   hl, CALC_TABLE
-.dispatch_lookup:
+.find:
     ld   a, (hl)
-    inc  hl
-    cp   $FF
-    jr   z, .dispatch_unimplemented
     cp   c
-    jr   z, .dispatch_found
+    jr   z, .found
+    inc  a                          ; $FF ends the table
+    jr   z, .unknown
     inc  hl
     inc  hl
-    jr   .dispatch_lookup
-.dispatch_found:
+    inc  hl
+    inc  hl
+    jr   .find
+.found:
+    inc  hl
+    ld   b, (hl)                    ; B = the operands it takes
+    inc  hl
     ld   e, (hl)
     inc  hl
-    ld   d, (hl)
-    ex   de, hl                     ; HL = op routine address
+    ld   d, (hl)                    ; DE = the handler
+    ld   a, (CALC_SP)
+    cp   b
+    jr   c, CALC_ABORT_STACK_UNDERFLOW
+    push de
+    ld   a, b
+    or   a
+    jr   z, .go                     ; none (END-CALC)
+    push af
+    call CALC_SP_TO_TOP_PTR         ; HL = CALC_OP1_PTR = the top slot
+    pop  af
+    dec  a
+    jr   z, .go                     ; one: the top
+    ld   (CALC_OP2_PTR), hl         ; two: the top is the second operand,
+    ld   bc, -5
+    add  hl, bc
+    ld   (CALC_OP1_PTR), hl         ;   the slot below it the first
+.go:
+    pop  hl
     ld   a, (CALC_BREG)
-    ld   b, a                        ; B = BREG, matches the real ROM's
-                                     ; own contract for ops that use it
-    jp   (hl)                        ; -> the op routine. Its own first
-                                     ; instruction(s) reload HL/DE from
-                                     ; CALC_OP1_PTR/CALC_OP2_PTR — see
-                                     ; those sysvars' own comments
-.dispatch_unimplemented:
+    ld   b, a
+    jp   (hl)
+.unknown:
     ld   a, CALC_ERR_UNIMPLEMENTED
     jr   CALC_ABORT_STREAM
 
@@ -186,15 +111,11 @@ CALC_DISPATCH:
 ; in literal $38. Skip the remainder, restore the RST caller's continuation,
 ; and leave through the normal paging-safe exit. A malformed stream with no
 ; terminator still cannot be recovered because the bytecode carries no length.
-CALC_ABORT_INVALID_LITERAL:
-    ld   a, CALC_ERR_INVALID_LITERAL
-    jr   CALC_ABORT_STREAM
 CALC_ABORT_STACK_UNDERFLOW:
     ld   a, CALC_ERR_STACK_UNDERFLOW
     jr   CALC_ABORT_STREAM
 CALC_ABORT_NUMERIC_OVERFLOW:
     ld   a, CALC_ERR_NUMERIC_OVERFLOW
-    jr   CALC_ABORT_STREAM
 CALC_ABORT_STREAM:
     ld   (CALC_ERROR_CODE), a
     xor  a
@@ -207,51 +128,6 @@ CALC_ABORT_STREAM:
     jr   nz, .find_end
     push hl
     jp   KTAB_CALC_EXIT_TRAMPOLINE
-
-; ============================================================================
-; CALC_STK_PNTRS_UNARY / CALC_STK_PNTRS_BINARY
-; This project's replacement for the real ROM's STK_PNTRS (35BF) —
-; computed fresh from CALC_SP against the fixed CALC_STACK array every
-; call, not carried incrementally (see CALC_OP1_PTR's own sysvars.inc
-; comment for why). Split into two entry points rather than one with a
-; branch, since the binary case needs one extra pointer and the real
-; ROM's own text already frames these as conceptually separate steps
-; ("presume a unary operation..." vs. the FIRST_3D binary adjustment).
-; In:  CALC_SP = current stack depth (0 = empty)
-; Out: CALC_OP1_PTR = CALC_STACK + (CALC_SP-1)*5 (top-of-stack operand —
-;      only meaningful if CALC_SP > 0; an op called on an empty stack
-;      is a caller bug this doesn't defend against, same as real ROM)
-;      CALC_OP2_PTR (CALC_STK_PNTRS_BINARY only) = CALC_STACK +
-;      (CALC_SP-1)*5 (top-of-stack — the SECOND operand, matching the
-;      real ROM's own HL=first(lower)/DE=second(top) convention — see
-;      335B.html's FIRST_3D binary branch: DE=original top, HL=top-5)
-; Destroys: AF, BC, DE, HL
-; ============================================================================
-CALC_STK_PNTRS_UNARY:
-    jr CALC_SP_TO_TOP_PTR
-
-CALC_STK_PNTRS_BINARY:
-    ; FIXED 2026-08-20: this used to set CALC_OP1_PTR=top and CALC_
-    ; OP2_PTR=top-5 — backwards from the real ROM's own convention
-    ; (confirmed against 335B.html's FIRST_3D: DE=original top=SECOND
-    ; operand, HL=top-5=FIRST operand). Caught while cross-checking
-    ; real exchange/delete semantics before implementing them — those
-    ; ops' real bodies assume HL=first(lower)/DE=second(top), so
-    ; getting this backwards would have silently swapped their
-    ; behavior. Nothing shipped depended on the old (wrong) mapping —
-    ; CALC_STK_PNTRS_BINARY had no real caller yet — so this was safe
-    ; to fix outright rather than needing a compatibility shim.
-    call CALC_SP_TO_TOP_PTR         ; HL = top; also stored into
-                                    ; CALC_OP1_PTR by this call (that's
-                                    ; the UNARY case's own home for it —
-                                    ; overwritten below for the binary
-                                    ; case, which needs OP2_PTR there
-                                    ; instead)
-    ld   (CALC_OP2_PTR), hl          ; correct home: top = SECOND operand
-    ld   bc, -5
-    add  hl, bc                       ; HL = top - 5 = FIRST operand
-    ld   (CALC_OP1_PTR), hl
-    ret
 
 ; ----------------------------------------------------------------------
 ; CALC_SP_TO_TOP_PTR — shared arithmetic: computes CALC_STACK +
@@ -297,7 +173,7 @@ CALC_SP_TO_NEXT_FREE_PTR:
     ret
 
 ; ============================================================================
-; CALC_OP_END_CALC (literal $38 — CALC_TABLE index $38, matches the
+; CALC_OP_END_CALC (literal $38 — matches the
 ; real ROM's own numbering exactly: "The last literal in the list is
 ; always +38 which leads to an end to the whole operation" — 335B.html)
 ;
@@ -338,44 +214,28 @@ CALC_OP_END_CALC:
                                    ; version never should have shipped
 
 ; ============================================================================
-; CALC_OP_EXCHANGE (literal $01 — CALC_TABLE index $02, confirmed
-; against skoolkid.github.io/rom/asm/343C.html, "THE 'EXCHANGE'
-; SUBROUTINE (offset +01)": swaps the top two 5-byte stack slots byte
-; by byte via a DJNZ loop. Ported directly, unmodified from the real
-; body — this routine never used EXX or any primed-register trick even
-; in the original, so unlike CALCULATE's own dispatch loop, nothing
-; here needed reworking at all.
-;
-; Real ROM's own final `EX DE,HL` (before its RET) exists only to fix
-; up HL for callers that expect it to still hold a meaningful pointer
-; afterward — irrelevant here, since CALC_RE_ENTRY recomputes CALC_
-; OP1_PTR/OP2_PTR fresh from CALC_SP every iteration rather than
-; trusting carried-forward register state (see those sysvars' own
-; comments) — so that fixup step is dropped, not overlooked.
-;
-; In:  CALC_OP1_PTR = first operand (lower slot), CALC_OP2_PTR = second
-;      operand (top slot) — set by CALC_STK_PNTRS_BINARY before dispatch
-; Out: the two slots' contents are swapped; CALC_SP unchanged (same
-;      depth, just reordered)
+; CALC_OP_EXCHANGE (literal $01): swap the top two 5-byte slots.
+; In:  CALC_OP1_PTR = the lower slot, CALC_OP2_PTR = the top (the dispatcher)
+; Out: the two slots' contents swapped; CALC_SP unchanged
 ; Destroys: AF, BC, DE, HL
 ; ============================================================================
 CALC_OP_EXCHANGE:
     ld   hl, (CALC_OP1_PTR)
     ld   de, (CALC_OP2_PTR)
     ld   b, 5
-.swap_byte:
-    ld   a, (de)
+.swap:
     ld   c, (hl)
-    ex   de, hl
+    ld   a, (de)
+    ld   (hl), a
+    ld   a, c
     ld   (de), a
-    ld   (hl), c
     inc  hl
     inc  de
-    djnz .swap_byte
+    djnz .swap
     jp   CALC_RE_ENTRY
 
 ; ============================================================================
-; CALC_OP_DELETE (literal $02 — CALC_TABLE index $04, confirmed against
+; CALC_OP_DELETE (literal $02 — confirmed against
 ; 335B.html: "delete... contains only the single RET instruction... the
 ; first number [is] considered as the resulting 'last value' and the
 ; second number considered as being deleted.")
@@ -384,7 +244,7 @@ CALC_OP_EXCHANGE:
 ; already where the shrunk stack's new top belongs. Same is true here,
 ; for the same reason: CALC_OP1_PTR = CALC_STACK+(CALC_SP-2)*5, which
 ; equals CALC_STACK+(new_CALC_SP-1)*5 the instant CALC_SP decrements —
-; the exact address CALC_STK_PNTRS_UNARY would compute as "top" on the
+; the exact address the dispatcher would compute as "top" on the
 ; very next dispatch. The only thing our fixed-CALC_SP design needs
 ; that the real ROM's raw-pointer model didn't: explicitly decrementing
 ; the depth counter, since nothing else tracks it implicitly here.
@@ -401,7 +261,7 @@ CALC_OP_DELETE:
     jp   CALC_RE_ENTRY
 
 ; ============================================================================
-; CALC_OP_DUPLICATE (literal $31 — CALC_TABLE index $62, confirmed
+; CALC_OP_DUPLICATE (literal $31 — confirmed
 ; against skoolkid.github.io/rom/asm/33C0.html, "THE 'MOVE A FLOATING-
 ; POINT NUMBER' SUBROUTINE (offset +31)": "duplicates the number at the
 ; top of the calculator stack... thereby extending the stack by five
@@ -422,7 +282,7 @@ CALC_OP_DELETE:
 ; input has to come from somewhere the generic dispatch doesn't provide
 ; for every manipulatory op (not all of them grow the stack).
 ;
-; In:  CALC_OP1_PTR = top (source) — set by CALC_STK_PNTRS_UNARY
+; In:  CALC_OP1_PTR = top (source) — set by the dispatcher
 ; Out: CALC_SP incremented by 1; the new top slot is a copy of the old
 ;      one. Overflow records CALC_ERR_STACK_OVERFLOW and returns through
 ;      the stream's normal END-CALC/paging exit.
@@ -1156,8 +1016,8 @@ CALC_ADDSUB_ENGINE:
     ret
 
 ; ============================================================================
-; CALC_OP_ADD (literal $0F — CALC_TABLE index $1E, addition)
-; CALC_OP_SUB (literal $03 — CALC_TABLE index $06, subtract)
+; CALC_OP_ADD (literal $0F — addition)
+; CALC_OP_SUB (literal $03 — subtract)
 ; Both: unpack the two stack operands (CALC_OP1_PTR=first/lower=A,
 ; CALC_OP2_PTR=second/top=B — matches the real ROM's HL=first/DE=second
 ; convention, same as exchange/delete above), combine via the shared
@@ -1167,7 +1027,7 @@ CALC_ADDSUB_ENGINE:
 ; SUB computes A-B by flipping B's unpacked sign before the shared add
 ; engine runs (A + (-B) = A-B) — literal $03's own real-ROM semantics:
 ; first(lower) operand minus second(top) operand.
-; In:  CALC_OP1_PTR/CALC_OP2_PTR set by CALC_STK_PNTRS_BINARY
+; In:  CALC_OP1_PTR/CALC_OP2_PTR set by the dispatcher
 ; Out: CALC_SP decremented by 1; OP1's slot holds the result
 ; Destroys: AF, BC, DE, HL
 ; ============================================================================
@@ -1213,7 +1073,7 @@ CALC_OP_SUB:
     jp   CALC_RE_ENTRY
 
 ; ============================================================================
-; CALC_OP_MUL (literal $04 — CALC_TABLE index $08, multiply)
+; CALC_OP_MUL (literal $04 — multiply)
 ; Real 32x32->64 unsigned multiply via shift-add (CALC_MUL_ACC/
 ; CALC_MUL_CAND, 8 bytes each — no hardware multiply on Z80, same
 ; reasoning as kernel/math's MATH_UMUL16, extended to full 64-bit width
@@ -1226,7 +1086,7 @@ CALC_OP_SUB:
 ; value = mantissaA*mantissaB/2^64 * 2^(expA+expB-256), normalized back
 ; into mantissa/2^32*2^(exp-128) form — see project /areas notes for
 ; the full algebra this was worked out from).
-; In:  CALC_OP1_PTR/CALC_OP2_PTR set by CALC_STK_PNTRS_BINARY
+; In:  CALC_OP1_PTR/CALC_OP2_PTR set by the dispatcher
 ; Out: CALC_SP decremented by 1; OP1's slot holds the result
 ; Destroys: AF, BC, DE, HL
 ; ============================================================================
@@ -1386,7 +1246,7 @@ CALC_OP_MUL:
     jp   CALC_RE_ENTRY
 
 ; ============================================================================
-; CALC_OP_DIV (literal $05 — CALC_TABLE index $0A, division; real ROM's
+; CALC_OP_DIV (literal $05 — division; real ROM's
 ; own numbering — see 335B.html's literal list — division sits right
 ; after multiply, same as here)
 ;
@@ -1441,7 +1301,7 @@ CALC_OP_MUL:
 ; mantissa zero (A is exactly zero, B nonzero) short-circuits straight
 ; to a zero result, same shape as CALC_OP_MUL's own .cm_zero path.
 ;
-; In:  CALC_OP1_PTR/CALC_OP2_PTR set by CALC_STK_PNTRS_BINARY
+; In:  CALC_OP1_PTR/CALC_OP2_PTR set by the dispatcher
 ; Out: CALC_SP decremented by 1; OP1's slot holds the result, or the
 ;      stream aborts recoverably on division by zero/numeric overflow.
 ; Destroys: AF, BC, DE, HL
@@ -1745,28 +1605,25 @@ CALC_SUB4:
     ret
 
 ; ============================================================================
-; Sparse calculator dispatch table. Each implemented entry is the doubled
-; index produced by CALC_SCAN_ENT followed by its handler pointer. `$FF`
-; terminates the table and routes every unavailable literal through the
-; recoverable error path. This replaces the original 132-byte dense table;
-; retaining 58 identical unimplemented pointers had no compatibility value
-; because CALC_TABLE is EXROM-internal, not part of the fixed entry ABI.
+; CALC_TABLE: one 4-byte entry per implemented literal (the literal, the stack
+; operands it takes, its handler), ended by $FF. Any other literal is
+; CALC_ERR_UNIMPLEMENTED. EXROM-internal: not part of the fixed entry ABI.
 ; ============================================================================
 CALC_TABLE:
-    DB $02
+    DB $01, 2
     DW CALC_OP_EXCHANGE
-    DB $04
+    DB $02, 2
     DW CALC_OP_DELETE
-    DB $06
+    DB $03, 2
     DW CALC_OP_SUB
-    DB $08
+    DB $04, 2
     DW CALC_OP_MUL
-    DB $0A
+    DB $05, 2
     DW CALC_OP_DIV
-    DB $1E
+    DB $0F, 2
     DW CALC_OP_ADD
-    DB $62
+    DB $31, 1
     DW CALC_OP_DUPLICATE
-    DB $70
+    DB $38, 0
     DW CALC_OP_END_CALC
     DB $FF
