@@ -32,40 +32,35 @@ SIN_PEEK_POP:
         ldir
         ret
 
-; SIN(degrees) -- int-only argument (matching V1's own real SIN
-; contract), a genuine 5-term (through x^9/9!) Taylor series in
-; radians, real range reduction to a [0,90]-degree reference angle
-; first -- same technique AND divisor table as basic.asm's own
-; BASIC_SIN_FLOAT (that routine's own header has the full derivation
-; of SIN_DIVISOR_TABLE's 6/20/42/72 values from the Taylor series'
-; real per-term ratios). Reuses R6's own already-proven VM_CALC_*_STUB/
-; CALC_INT_TO_FP/CALC_PUSH_PI/CALC_PUSH_FP_RAW/VM_FLOAT_STORE_RESULT
-; infrastructure throughout, plus the REAL SIN_X_RAD/SIN_X2/SIN_POWER/
-; FUNC_RESULT_FLOAT_NEGATIVE sysvars V1's own BASIC_SIN_FLOAT already
-; owns for the identical purpose (include/sysvars.inc) -- real,
-; permanent RAM already budgeted, not new scratch cells.
-;
-; Sign handling deliberately does NOT match V1's own documented
-; simplification (extract the sign before reduction, and never
-; reapply it to the final result -- basic.asm's own RAD/DEG header
-; explains why V1 accepted that gap). V2 already has real signed-float
-; negation (the same "push 0, push value, subtract" technique BUILTIN_
-; FN_ABS's own float path already uses) at essentially no extra cost,
-; so SIN(-x) correctly equals -SIN(x) here -- a real, deliberate
-; improvement over V1, not scope creep (it costs a few extra bytes at
-; the very end, not a new architecture), and required for this
-; milestone's own SIN(-x)~=-SIN(x) symmetry test to pass at all.
-; QUAL (Q-10): SIN/COS/TAN of a FLOAT number of degrees. The integer part k = trunc(x) is reduced
-; exactly as before (16-bit, mod 360, folded to [0,90]); the fraction f = x - k (SIN_POWER, a 5-byte
-; value; 0 for an INT argument) follows the same folds -- negated whenever the fold negates the
-; angle (SIN_FRAC_NEG) -- and is added back before the series: angle = reference +/- f.
-SIN_FRAC_NEG:   equ BFN_ABS_IDX_TMP   ; 1 byte (ABS's scratch; never live together)
+; SIN(degrees), COS(degrees). COS(x) = SIN(x + 90): COS enters SIN with a
+; shift of 90 (SIN_SHIFT), added after k is reduced mod 360 and reduced again
+; (5.10, Q-35: the 90 was added first, in 16 bits, so COS(32687) wrapped and
+; COS of a FLOAT above 32677 was error 15).
+; The reduction is exact: the integer part k = trunc(x) is reduced in 16 bits
+; (mod 360, folded to a reference d in [0,90] by sin(-x) = -sin(x),
+; sin(x+180) = -sin(x), sin(180-x) = sin(x)); the fraction f = x - k
+; (SIN_POWER, 0 for an INT argument) is negated with the angle (its sign bit)
+; and added back: a = d + f, |a| < 91. Signs: FUNC_RESULT_FLOAT_NEGATIVE; a
+; reference of exactly 0 has none (no "-0.0000").
+; The series (5.10): x = a * pi/180 (one multiply), then
+; sin x = x + x^3 (c3 + c5 x^2 + c7 x^4 + c9 x^6 + c11 x^8), the coefficients a
+; minimax fit for |x| <= 91 degrees (relative error 4.8e-11, ~0.2 ulp) rounded
+; to 5 bytes (SIN_COEFFS; tools/qual/qsinfit.py). Eight multiplies and six
+; adds on the calculator stack, no divides (it was 5 terms of the Taylor
+; series, a divide each, ending at x^9/9!: up to 3.6e-6 off near 90 degrees).
+; Results are within ~2 ulp of the exact values (qfndiff --exact).
+SIN_SHIFT:      equ BFN_ABS_IDX_TMP   ; 1 byte: 0 SIN, 90 COS (ABS's scratch; never live together)
+BUILTIN_FN_COS:
+        ld a,90
+        jr BUILTIN_FN_SIN.shift
 BUILTIN_FN_SIN:
+        xor a
+.shift:
+        ld (SIN_SHIFT),a
         rst $10                      ; HL = value, A = tag
         cp TAG_FLOAT
         jr nz,.sin_int_arg
         call VM_FLOAT_PUSH_FIRST     ; [x]
-.sin_calc_arg:                       ; CALC_STACK[0] = x (CALC_SP = 1)
         ld hl,CALC_STACK
         ld de,SIN_POWER
         ld bc,5
@@ -76,7 +71,7 @@ BUILTIN_FN_SIN:
         rst $28
         db $31,$38                   ; [k,k]
         call CALC_FP_TO_INT          ; HL = k, [k]
-        jp c,VM_ERR_RANGE           ; |x| >= 32768 degrees: error 15
+        jp c,VM_ERR_RANGE            ; |x| >= 32768 degrees: error 15
         push hl
         ld hl,SIN_POWER
         call CALC_PUSH_FP_RAW        ; [k,x]
@@ -86,20 +81,22 @@ BUILTIN_FN_SIN:
         ld de,SIN_POWER
         call SIN_PEEK_POP            ; SIN_POWER = f
         pop hl
-        jr .sin_frac_set
+        jr .sin_have_int
 .sin_int_arg:
         push hl
         ld hl,SIN_POWER
         call FP_TRUNC_ZERO           ; f = 0
         pop hl
-.sin_frac_set:
-        xor a
-        ld (SIN_FRAC_NEG),a
 .sin_have_int:
         ; ---- reduce to a reference angle in [0,90], track sign ----
         ld de,360
-        call MATH_MOD16                ; HL = degrees mod 360 (signed,
-                                          ; sign of the dividend)
+        call MATH_MOD16              ; HL = k mod 360 (signed, the sign of k)
+        ld a,(SIN_SHIFT)
+        ld e,a
+        ld d,0
+        add hl,de                    ; COS: + 90, -269..449
+        ld de,360
+        call MATH_MOD16
         xor a
         ld (FUNC_RESULT_FLOAT_NEGATIVE),a
         ld a,h
@@ -107,7 +104,9 @@ BUILTIN_FN_SIN:
         jp p,.sin_nonneg
         ld a,1
         ld (FUNC_RESULT_FLOAT_NEGATIVE),a
-        ld (SIN_FRAC_NEG),a          ; QUAL (Q-10): the fraction is negated with the angle
+        ld a,(SIN_POWER+1)
+        xor $80
+        ld (SIN_POWER+1),a           ; the fraction is negated with the angle
         ld a,h
         cpl
         ld h,a
@@ -140,132 +139,77 @@ BUILTIN_FN_SIN:
         ld de,180
         ex de,hl
         or a
-        sbc hl,de                       ; HL = 180-x (operands swapped
-                                            ; by the ex above)
-        ld a,(SIN_FRAC_NEG)
-        xor 1
-        ld (SIN_FRAC_NEG),a             ; QUAL (Q-10): 180 - (k + f) = (180 - k) - f
+        sbc hl,de                    ; HL = 180-x (operands swapped
+                                     ; by the ex above)
+        ld a,(SIN_POWER+1)
+        xor $80
+        ld (SIN_POWER+1),a           ; 180 - (k + f) = (180 - k) - f
 .sin_ref_done:
-        ; a reference angle of exactly 0 has no sign either way (both
-        ; 0 and 180 fold to a 0 reference) -- force the flag off so a
-        ; fold that flipped it doesn't produce a cosmetic "-0.0000"
         ld a,h
         or l
         jr nz,.sin_ref_nonzero
         ld a,(SIN_POWER)
         or a
-        jr nz,.sin_ref_nonzero        ; QUAL (Q-10): a nonzero fraction keeps its sign
+        jr nz,.sin_ref_nonzero       ; a nonzero fraction keeps its sign
         ld (FUNC_RESULT_FLOAT_NEGATIVE),a
 .sin_ref_nonzero:
-        ; ---- degrees -> radians: x_rad = degrees * pi / 180 ----
         xor a
         ld (CALC_SP),a
-        call CALC_INT_TO_FP           ; push degrees: [d]
+        call CALC_INT_TO_FP          ; [d]
         ld hl,SIN_POWER
-        call CALC_PUSH_FP_RAW         ; [d,f]
-        ld a,(SIN_FRAC_NEG)
-        or a
-        jr nz,.sin_fsub
-        call VM_CALC_ADD_STUB         ; [d + f]
-        jr .sin_fdone
-.sin_fsub:
-        call VM_CALC_SUB_STUB         ; [d - f]
-.sin_fdone:
-        call CALC_PUSH_PI               ; push pi: [d,pi]
-        call VM_CALC_MUL_STUB             ; [d*pi]
-        ld hl,180
-        call CALC_INT_TO_FP               ; push 180: [d*pi,180]
-        call VM_CALC_DIV_STUB               ; [x_rad]
-        ; ---- acc = x_rad (term_0); power = x_rad; x2 = x_rad^2 ----
-        ld de,SIN_POWER
-        call SIN_PEEK                         ; SIN_POWER = x_rad
+        call CALC_PUSH_FP_RAW        ; [d,f] (f negated by its sign bit; a 0 stays 0)
+        call VM_CALC_ADD_STUB        ; [a], degrees
+        ld hl,SIN_COEFFS
+        call CALC_PUSH_FP_RAW        ; [a,pi/180]; HL -> c3
+        push hl
         ld b,0
         rst $28
-        db $31,$31,$04,$38                    ; duplicate twice, multiply:
-                                                 ; [acc,x2] (cannot overflow)
+        db $04,$31,$31,$31,$04,$38   ; multiply, duplicate 3 times, multiply:
+                                     ; [x,x,x^2], x in radians
         ld de,SIN_X2
-        call SIN_PEEK_POP                     ; SIN_X2 = x2; [acc]
-
-        ld hl,SIN_DIVISOR_TABLE
-        ld b,4
-.sin_term_loop:
-        push bc
-        push hl                             ; save divisor-table ptr
-        ld hl,SIN_POWER
-        call CALC_PUSH_FP_RAW                 ; [acc,power]
-        ld hl,SIN_X2
-        call CALC_PUSH_FP_RAW                  ; [acc,power,x2]
-        call VM_CALC_MUL_STUB                    ; [acc,power*x2]
-        pop hl                                  ; HL = divisor-table ptr
-        ld e,(hl)
-        inc hl
-        ld d,(hl)
-        inc hl
-        push hl                                  ; save advanced ptr
-        ex de,hl                                  ; HL = this term's D_k
-        call CALC_INT_TO_FP                        ; push D_k:
-                                                       ; [acc,power*x2,D_k]
-        call VM_CALC_DIV_STUB                         ; [acc,power]
-        ld de,SIN_POWER
-        call SIN_PEEK                                    ; SIN_POWER =
-                                                             ; new power;
-                                                             ; [acc,power]
-        pop hl                                              ; advanced
-                                                               ; table ptr
-        pop bc                                                ; loop
-                                                                 ; counter
-        push hl
-        push bc
-        ld a,b
-        and 1
-        ; B is the DJNZ countdown (4,3,2,1 across passes k=1,2,3,4 --
-        ; djnz decrements at the BOTTOM, so pass k sees B's PRE-
-        ; decrement value), not k itself: B even (4,2) means k odd
-        ; (1,3) -> SUBTRACT; B odd (3,1) means k even (2,4) -> ADD.
-        jr z,.sin_term_sub
-        call VM_CALC_ADD_STUB
-        jr .sin_term_combined
-.sin_term_sub:
-        call VM_CALC_SUB_STUB
-.sin_term_combined:
-        pop bc
+        call SIN_PEEK                ; SIN_X2 = x^2
+        ld b,0
+        rst $28
+        db $04,$38                   ; [x,x^3]
         pop hl
-        djnz .sin_term_loop
-
-        ; stack: [acc] -- the reference angle's own non-negative sine
+        ld b,5
+.sin_coeff:
+        push bc
+        call CALC_PUSH_FP_RAW        ; HL -> the next one
+        pop bc
+        djnz .sin_coeff              ; [x,x^3,c3,c5,c7,c9,c11]
+        ld b,4
+.sin_horner:
+        push bc
+        ld hl,SIN_X2
+        call CALC_PUSH_FP_RAW        ; the 8th slot at most
+        ld b,0
+        rst $28
+        db $04,$0F,$38               ; [..,c,s] -> [..,c + s x^2]
+        pop bc
+        djnz .sin_horner             ; [x,x^3,P]
+        ld b,0
+        rst $28
+        db $04,$0F,$38               ; [x + x^3 P]. Nothing in the series
+                                     ; can overflow (|x| < 1.6)
         ld a,(FUNC_RESULT_FLOAT_NEGATIVE)
         or a
         jr z,.sin_done
-        ld hl,CALC_STACK+1                 ; [-acc]: the sign bit flipped, the bits
-        ld a,(hl)                          ; 0 - acc gives (acc is in the general form
-        xor $80                            ; and not 0 here)
+        ld hl,CALC_STACK+1           ; [-sin]: the sign bit flipped (the
+        ld a,(hl)                    ; result is in the general form and not
+        xor $80                      ; 0 here)
         ld (hl),a
 .sin_done:
         jp VM_FLOAT_STORE_RESULT
 
-SIN_DIVISOR_TABLE: dw 6, 20, 42, 72
-
-; COS(x) -- R10.7, R10.25 class C. COS(x) = SIN(x+90); reuses SIN's own
-; degree-reduction/Taylor-series body entirely (BUILTIN_FN_SIN.sin_have_
-; int, same cross-scope local-label reference this file's own decompiler
-; sibling already establishes as a precedent) -- only the +90 shift
-; before entry is new. Int-only argument (matching RAD/DEG's own
-; contract), but a FLOAT argument is still accepted and truncated first
-; (same tolerance SIN itself already extends), matching R10.25's own
-; audit note.
-BUILTIN_FN_COS:
-        rst $10                      ; HL = value, A = tag
-        cp TAG_FLOAT
-        jr nz,.cos_int
-        call VM_FLOAT_PUSH_FIRST     ; QUAL (Q-10): COS(x) = SIN(x + 90) in FLOAT
-        ld hl,90
-        call CALC_INT_TO_FP
-        call VM_CALC_ADD_STUB
-        jp BUILTIN_FN_SIN.sin_calc_arg
-.cos_int:
-        ld de,90
-        add hl,de
-        jp BUILTIN_FN_SIN.sin_int_arg
+; 5.10: pi/180, then c3 .. c11 (5-byte floats; values to 12 digits).
+SIN_COEFFS:
+        db $7B,$0E,$FA,$35,$13       ;  1.745329252299e-02 = pi/180
+        db $7E,$AA,$AA,$AA,$A5       ; -1.666666663368e-01
+        db $7A,$08,$88,$86,$4C       ;  8.333331250469e-03
+        db $74,$D0,$0B,$EA,$79       ; -1.984086480320e-04
+        db $6E,$38,$B6,$AF,$CD       ;  2.752447426424e-06
+        db $67,$CC,$FD,$BB,$92       ; -2.386410992428e-08
 
 ; TAN(x) -- R10.7, R10.25 class C. TAN(x) = SIN(x)/COS(x) via the
 ; existing calculator division primitive, with a divide-by-zero guard

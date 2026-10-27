@@ -55,6 +55,7 @@ case ids (`tools/qual/corpus.py`) or suite case names. Source of the Q-/D-/L-/N-
 | Q-32 | CRITICAL | addresses above 32767 saturated (POKE wrote the wrong byte) | Fixed | `lit.addr.*`, `hw.*` |
 | Q-33 | HIGH | package float arguments were slot indexes | Fixed | package cases |
 | Q-34 | HIGH | the calculator never rounded (`INT(3.1*10)` = 30, `1/10*10` <> 1) | Fixed (R1, `backport/leapc`: Leap-C's float core, rounds to nearest) | `tools/qual/qcalcround.py` |
+| Q-35 | MEDIUM | `COS(n)` for n = 32678..32767 was wrong (`COS(32687)` = 0.0175, not 0.2924); `COS`/`TAN` of a FLOAT above 32677 were error 15 | Fixed (5.10: the 90 of `COS(x)` = `SIN(x + 90)` added after the reduction mod 360) | `fn.cos.int_big`, `fn.cos.float_big`, `fn.tan.float_big`; `tools/qual/qfndiff.py --exact` |
 | D10 | MEDIUM | float display truncated the 4th decimal | Fixed (exact formatter, rounded) | `arith.f.*`, `print.multi_float` |
 | D11 / D11-EXT / D11-DISP | HIGH..LOW | 16-bit overflow wrapped; edge cases; big-float display | Fixed (promotion, exact display) | `arith.*`, `lit.*` |
 | L-A | DECISION | literal rule | Superseded by **L-C** (owner decision 3): 32768..65535 are positive floats, addresses still work | `lit.int.*` |

@@ -278,6 +278,10 @@ T("fn.mod.zero", "fn.MOD", ["PRINT MOD(5,0)"], RErr(5), note="manual: DIVISION B
 T("fn.div.zero", "fn.DIV", ["PRINT DIV(5,0)"], RErr(5))
 T("fn.sqr.neg", "fn.SQR", ["PRINT SQR(-4)"], AnyErr(), note="square root of a negative number")
 T("fn.tan.90", "fn.TAN", ["PRINT TAN(90)"], RErr(5))
+T("fn.cos.int_big", "fn.COS", ["PRINT COS(32687)"], Num(Fr(29237170, 10 ** 8), "float"),
+  note="cos 287 degrees; 5.10 (Q-35): the 90 of COS(x) = SIN(x + 90) was added before the reduction, in 16 bits")
+T("fn.cos.float_big", "fn.COS", ["PRINT COS(32767.9)"], Num(Fr(99050946, 10 ** 8), "float"), note="cos 7.9 degrees (Q-35)")
+T("fn.tan.float_big", "fn.TAN", ["PRINT TAN(32700.5)"], Num(Fr(-169766312, 10 ** 8), "float"), note="tan 300.5 degrees (Q-35)")
 T("fn.mod.float", "fn.MOD", ["PRINT MOD(7.5,2)"], OkOrErr("1.5000"), decision="MOD/DIV on floats")
 T("fn.rnd.range", "fn.RND", ["RANDOMISE 7", "ok = 1", "FOR i = 1 TO 200", "r = RND(6)", "IF r < 0 OR r > 5 THEN", "ok = 0", "ENDIF", "NEXT i", "PRINT ok"],
   Num(1, "int"))
@@ -842,6 +846,7 @@ KNOWN_Q = {
     "Q-26": ["print.font_brackets"],
     "DD-1": ["arr.str_default_width"],
     "DEC-PLOT": ["gfx.plot_clamp"],
+    "Q-35": ["fn.cos.int_big", "fn.cos.float_big", "fn.tan.float_big"],
 }
 _case = {c.cid: c for c in CASES}
 for qid, ids in KNOWN_Q.items():

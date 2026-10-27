@@ -55,6 +55,7 @@ Further rules:
 | 5.7 `SQR` halving            | **278** | **573** | [M]: HOME +5 free: the exponent decremented instead of pushing 2 and dividing                           |
 | 5.8 row clear                | **286** | **573** | [M]: HOME +8 free: `GFX_CLEAR_ROW` fills the attributes and falls into `GFX_CLEAR_ROW_TEXT`            |
 | 5.9 `SIN`/`COS`/`TAN` to the EXROM | **746** | **142** | [M]: HOME +460 free (`SIN` 340, `TAN` 58, `COS` 27, `SIN_PEEK_POP` 27, the divisor table 8); EXROM −431 (the code 413 after bit-identical compaction, 3 slots 18); `SQR`/`PI`/`RAD`/`DEG` stay (no room) |
+| 5.10 `SIN`/`COS`/`TAN` series | **746** | **171** | [M]: EXROM +29 free: the series 136 → 90 B, its constants 8 → 30 (π/180, five coefficients); `COS` 27 → 4 (enters `SIN` with a shift); the reduction +18 (Q-35: the shift, reduced again; the fraction negated by its sign bit) |
 | phase 5 (speed)              | ≥ 64    | ≥ 32    | Class B: each item sized and weighed before it is started; 5.0 first if the room is not there                 |
 
 Every [E] is replaced by `make budget`'s figure as each item lands.
@@ -658,6 +659,61 @@ one commit per item; all [M]):
   `TAN(x)` of a FLOAT above 32677 stop with error 15 although `SIN` takes up to 32767.
 - **Checks.** `make check`, and the images with the release definitions (`make build EXTRA_DEFS=`: HOME
   781, EXROM 141 free) assemble.
+
+Outcome, 5.10 (2026-10-27; on the same prototype branch, after 5.9; all [M]):
+
+- **The series.** The angle a = d ± f (degrees, |a| < 91) is multiplied once by π/180, then
+  sin x = x + x³·P(x²), P = c3 + c5x² + c7x⁴ + c9x⁶ + c11x⁸: a minimax fit for the relative error on
+  |x| ≤ 91° (4.8e-11, ~0.2 ulp, before rounding), each coefficient rounded to the nearest 5-byte float
+  (`SIN_COEFFS`, after π/180). It runs on the calculator stack: `[a, π/180]` → multiply, duplicate three
+  times, multiply → `[x, x, x²]` (x² kept in `SIN_X2`) → multiply → `[x, x³]`, the five coefficients
+  pushed (`[x, x³, c3 .. c11]`), four Horner steps (push x², multiply, add; the 8th stack slot at most),
+  then multiply, add: eight multiplies and six adds (with `d ± f`), no divide (it was six multiplies,
+  five divides and five adds). `tools/qual/qsinfit.py` (new) re-derives the constants (Remez exchange
+  in 60-digit decimals) and, with `--leapc DIR`, runs SIN/COS/TAN step by step on Leap-C's model of the
+  calculator: its results equal the ROM's for all 5,547 `qfndiff` arguments.
+- **The form, chosen by simulation** (that model, against exact values, `qfndiff`'s arguments; largest
+  error in ulp, SIN/COS/TAN): one multiply by π/180, then x·Q(x²) with c1 stored: 2.49/2.67/2.32;
+  π/180 folded into coefficients in degrees (a·Q(a²), one multiply fewer): 2.92/2.76/2.82; x + x³P(x²)
+  (taken, one constant fewer than the first): 1.81/1.92/1.90.
+- **The reduction.** The fraction f follows the folds by flipping its own sign bit (a 0 stays 0 to
+  FUNPK), so `d ± f` is always one add (`FSUB` is `FADD` with the second sign flipped: the same bits).
+  **Q-35 fixed**: `COS` enters `SIN` with a shift of 90 (`SIN_SHIFT`), added after k is reduced mod 360
+  and reduced again, so `COS(n)` for n up to 32767 and `COS`/`TAN` of any FLOAT that `SIN` takes are
+  right (`COS(32687)` 0.2924, `TAN(32700.5)` −1.6977, `COS(32767.9)` 0.9905; corpus cases
+  `fn.cos.int_big`, `fn.cos.float_big`, `fn.tan.float_big`, Q-35 in `defects.py` and the defect register).
+- **Accuracy** (`qfndiff --exact`, the ROM's results against exact values at the ROM's own argument):
+
+  | function | build | arguments | correctly rounded | within 1 ulp | largest error        | mean        |
+  | -------- | ----- | ---------:| -----------------:| ------------:| -------------------- | -----------:|
+  | `SIN`    | 5.9   | 1,850     | 25.1%             | 768          | 16,713 ulp           | 1,118 ulp   |
+  | `SIN`    | 5.10  | 1,850     | **41.7%**         | **1,523**    | **1.81 ulp**         | **0.61 ulp** |
+  | `COS`    | 5.9   | 1,850     | 17.7%             | 564          | 2.4e9 ulp (`COS(32687)`), else 16,821 | 1.3e6 ulp |
+  | `COS`    | 5.10  | 1,850     | **40.3%**         | **1,410**    | **1.92 ulp**         | **0.62 ulp** |
+  | `TAN`    | 5.9   | 1,823 (24 stop) | 0.8%        | 17           | 15,541 ulp           | 2,519 ulp   |
+  | `TAN`    | 5.10  | 1,847     | **57.4%**         | **1,631**    | **1.90 ulp**         | **0.50 ulp** |
+
+  `qsinfit --leapc` over 1,441 integers and 3,000 FLOAT arguments (simulated): largest 1.90/1.98/2.39 ulp,
+  mean 0.61/0.61/0.49. The remaining error is the roundings of x = a·π/180 (π/180 itself and the
+  product) and of the last add; the old error was the series cut off at x⁹/9! (~3.6e-6 at 90°).
+- **What changes** (`qfndiff`, 5.9 → 5.10). F20 allowed the last bits; where the old series was off,
+  the change is that error: `SIN` 1,454 of 1,850 results differ (447 by ≤ 1 ulp, 93 by ≤ 2, 113 by ≤ 10,
+  185 by ≤ 100, 265 by ≤ 1,000, 351 by more: up to 16,713 ulp, 3.9e-6 relative, near ±90°); `COS` 1,546
+  (322, 77, 128, 208, 282, 529; `COS(32687)` the Q-35 fix); `TAN` 1,832 of 1,847 (6, 6, 78, 376, 559, 783;
+  24 that stopped with error 15 now compute). At `PRINT`'s four decimals: the manual's and the corpus's
+  `SIN`/`COS`/`TAN` values print as before (`fn.*`, `arith.f*`: 147 PASS, 1 N/A with the RC fixes);
+  `TAN(89.99)` 5729.6036 → 5729.5834 (exact at the stored 89.99: 5729.5834).
+- **Speed** (`qprofile --statements`, T a statement adds; 5.9 → 5.10; against `0227797` in brackets):
+  `SIN(i)` 125,590 → **84,835** (1.48×; 1.50×), `COS(i)` 125,562 → 84,938 (1.48×), `TAN(i)` 288,746 →
+  202,056 (1.43×; 1.44×), `SIN(2.5)` 137,531 → 97,858 (1.41×), `COS(2.5)` 142,274 → 95,861 (1.48×). Less
+  than the estimate (~2.3×): the eight multiplies (~6,700 T each) are most of it now.
+- **Size.** EXROM 142 → **171 B** free (+29): 139 above the reserve, 39 above phase 6's 100. HOME 746
+  unchanged.
+- **The rest of 5.9.** `SQR`, `PI`, `RAD`, `DEG` would need 146 B and 24 B of slots in the EXROM, 131 B
+  more than phase 6's room leaves; they stay in HOME, which no longer needs the bytes (746 free: 422 above
+  the reserve and phase 6's 260).
+- **Checks.** `qcanary --banking` (667): 0 hits, 0 violations, stack low-water mark `$FDE8`; the slot
+  probe: every entry at depth 1 (program and immediate); `make check`.
 
 ## Phase 6: package ABI 2.1 (minor version: old packages keep working)
 
