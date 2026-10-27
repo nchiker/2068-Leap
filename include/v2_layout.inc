@@ -146,6 +146,11 @@ ARRSYM_COUNT:   equ SYM_COUNTS + SYM_K_ARR
 STRARRSYM_COUNT: equ SYM_COUNTS + SYM_K_SARR
 
 
+; Editor cells HOME's boot version (rom/v2_version.asm) shares with the EXROM shell (rom/exrom_v2_shell.asm).
+V2_STATUS_BUF   EQU $BEA8     ; R10: the status row's text, 20 bytes
+V2_REDRAW_SCOPE EQU $BEC0     ; STUDY: 1 = only the active line changed (set by EDITOR_LOOP, cleared by V2_REDRAW)
+V2_VER_FLAG     EQU $BEC6     ; VER: redraws left before the status row stops showing the version (2 at power-on)
+
 V2_DECOMP_END_ADDR EQU $BD9F
 V2_MACHINE_STACK_TOP EQU $FF00
 V2_HOME_IMAGE_END EQU $4000

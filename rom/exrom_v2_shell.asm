@@ -60,7 +60,7 @@ KW_SPAN_MAX: equ 8
 ; the keyword-bolding block above (also originally claimed $BE84
 ; independently).
 V2_LINE_COUNT EQU $BEA6
-V2_STATUS_BUF EQU $BEA8
+                              ; V2_STATUS_BUF ($BEA8): include/v2_layout.inc (VER)
 ; ($BEA8 + 20 = $BEBC -- 28 bytes of the original 84-byte gap
 ; ($BE84-$BED7) remain free after all three R10 editor additions)
 
@@ -78,6 +78,8 @@ V2_COMMAND_LOOP:
     call KTAB_GFX_CLS
     call V2_RESET_DISPLAY        ; STUDY (U6): the same reset now also runs on every return to the editor
     call V2_RESET_EDIT
+    call V2_DRAW_STATUS          ; VER: the ROM's version on row 23 (V2_VER_FLAG, armed by V2_COLD_START), up
+                                 ; before the chime's first note and kept to the first key's redraw
     call STARTUP_CHIME          ; R10.7: one-time boot chime -- this is
                                   ; V2_COMMAND_LOOP's own one-time head,
                                   ; reached only from V2_EXROM_ENTRY, NOT
@@ -1907,7 +1909,8 @@ V2_KW_OFFSET_BOLD:
 
 ; The editor hook redraws the authoritative source view.
 V2_REDRAW:
-    ld a,(V2_REDRAW_SCOPE)       ; STUDY (flicker): typing/backspace only changed the active line
+    call V2_VER_SCOPE            ; A = V2_REDRAW_SCOPE (STUDY (flicker): typing/backspace only changed the
+                                 ; active line); VER: 0 when the version leaves the status row
     or a
     jr z,.full
     ld b,a
@@ -2299,6 +2302,8 @@ V2_MEASURE:
 ; V2's own generic line-store state (CUR_EDIT_INDEX/V2_LINE_COUNT), not
 ; restored V1 position-addressed tracking.
 V2_DRAW_STATUS:
+    call V2_VER_STATUS        ; VER: NZ = the version is in V2_STATUS_BUF instead
+    jr nz,.show
     ld hl,V2_STATUS_PREFIX
     ld de,V2_STATUS_BUF
     call V2_STATUS_APPEND
@@ -2310,6 +2315,7 @@ V2_DRAW_STATUS:
     inc de
     ld hl,(V2_LINE_COUNT)
     call V2_STATUS_NUM        ; m
+.show:
     ld b,23
     call KTAB_GFX_CLEAR_ROW_TEXT    ; R10.7: bitmap-only clear -- leaves
                                       ; the status-bar attribute (set by

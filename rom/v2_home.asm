@@ -67,6 +67,8 @@ V2_COLD_START:
     call KBD_ISR_INIT
     im 1
     ei
+    ld a,2
+    ld (V2_VER_FLAG),a               ; VER: the version stays for the boot draw and the editor's first redraw
     call BANK_PAGE_EXROM_IN
     jp V2_EXROM_ENTRY_ADDR           ; EXROM resident production shell
 
@@ -117,6 +119,7 @@ AY_BEEP EQU V2_EXROM_AY_BEEP_ADDR        ; MAINT (AY BEEP)
     INCLUDE "rom/exrom_v2_compiler.asm"
     INCLUDE "rom/v2_saveall.asm"            ; RC: SAVE ... ALL (owner decision 2)
     INCLUDE "rom/v2_session_undo.asm"
+    INCLUDE "rom/v2_version.asm"            ; VER: the ROM's version on the status row at power-on
 ; R10.9: the package ABI pins -- every package-visible sysvar / constant must still live
 ; where include/v2_package_abi.inc says (a mismatch fails the build).
     INCLUDE "rom/v2_lowrom_fill.asm"        ; RC shrink: small routines in the RST-slot padding

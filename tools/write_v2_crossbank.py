@@ -128,6 +128,8 @@ NAMES = (
     "FP_TRUNC",
     "FP_TRUNC_ZERO",
     "MATH_MOD16",
+    "V2_VER_STATUS",        # VER: the version on the status row at power-on (rom/v2_version.asm)
+    "V2_VER_SCOPE",
 )
 # MAINT (AY BEEP): exported only when the HOME build has them (rom/v2_ay_beep.asm placement).
 OPTIONAL = ("AY_BEEP_PERIOD", "AY_BEEP_PLAY", "AY_WAIT_FRAMES")
