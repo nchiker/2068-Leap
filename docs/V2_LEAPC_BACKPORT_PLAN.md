@@ -61,7 +61,7 @@ Further rules:
 | 5.12 `IF v <op> k`           | **542** | **113** | [M], integrated (F29, fast-forward to `45d1bf3`): HOME −48 free (`OP_CMP_VAR_JMPZ` 41, its table entry 2, `COMPILE_IF` passing the condition's start 5); EXROM −50 (`COMPILE_FUSE_CMP` 31 → 81); RAM 0 |
 | 5.13 `PRINT` of a string     | **454** | **113** | [M], integrated (F30): HOME −88 free (`GFX_PRINT_STRING_ATTR` 64 → 168 B, `GFX_PUTCHAR_OVER` 16 removed); EXROM 0; RAM 0 |
 | 5.11 the scroll copy         | **462** | **113** | [M], integrated (F31): HOME +8 free (`GFX_SCROLL_OUTPUT_UP` 32 → 100 B with its LDI block; `GFX_COPY_ROW_BITMAP` 36 and `GFX_SCROLL_TEXT_UP` 40 left to the non-V2 builds); EXROM 0; RAM 0 |
-| 5.14 the glyph lookup (prototype) | **500** | **113** | [M], prototype `proto/5.14-glyph-lookup` (owner request, 2026-10-27): HOME +38 free (`LOW_CHAR_TABLE` 33 B replaces the 46-byte pair table; the lookup's code 25 B shorter); EXROM 0; RAM 0 |
+| 5.14 the glyph lookup        | **500** | **113** | [M], integrated (F32; owner request, 2026-10-27): HOME +38 free (`LOW_CHAR_TABLE` 33 B replaces the 46-byte pair table; the lookup's code 25 B shorter); EXROM 0; RAM 0 |
 | phase 5 (speed)              | ≥ 64    | ≥ 32    | Class B: each item sized and weighed before it is started; 5.0 first if the room is not there                 |
 
 Every [E] is replaced by `make budget`'s figure as each item lands.
@@ -891,7 +891,7 @@ integrated into `backport/leapc` by fast-forward, owner decision F31):
   (ay_beep 59, cbeep 27, di_wait 14, cbeep_tape 3). `make doc-examples` 327/327.
 
 Outcome, 5.14 (2026-10-27; owner request after 5.13: "do the faster glyph lookup for print"; prototyped on
-`proto/5.14-glyph-lookup` off `backport/leapc` `aa1cc31` (5.11 integrated); all [M]):
+`proto/5.14-glyph-lookup` off `backport/leapc` `aa1cc31` (5.11 integrated); all [M]; integrated, F32):
 
 - **What changed.** `GFX_CHAR_TO_FONT_OFFSET` (`kernel/graphics/graphics.asm`: `PRINT`, the editor's
   `GFX_PUTCHAR`, package service slot 2) finds the font index of the 33 codes from space to `@` (space,
@@ -915,6 +915,12 @@ Outcome, 5.14 (2026-10-27; owner request after 5.13: "do the faster glyph lookup
 - **Screens and editor.** `qscrdiff` (5.11 against 5.14): 22 programs, 0 differ. `qeditview --oracle
   --ref` (5.14 against 5.11): 36 scenarios, 3,762 keys, every screen equal to a full redraw's; 0 of 1,899
   screens differ; the editor's T a key −2.4% over all keys (typing in a line −3 to −4%).
+- **Checks.** `make check`; the release definitions (`make build EXTRA_DEFS=`) assemble.
+- **Tests** (on a copy, fast emulation). `make test` all PASS (2,275 s): budget reserve check, smoke 9/9,
+  standalone 40/40, production and fill checks, prod-regress 127, prod-arrays 101, known-defects 15,
+  saveall 13, micsave 3, qual 666 PASS + 2 XFAIL + 2 N/A, lifecycle 23, `qvmedge` 221, maint-qual all
+  (ay_beep 59, cbeep 27, di_wait 14, cbeep_tape 3). `make doc-examples` 327/327.
+- **Owner decision F32 (2026-10-27):** integrated by fast-forward once the tests passed.
 
 ### Item VER: the ROM's version at power-on (owner request F22, 2026-10-27; next after 5.9/5.10)
 
@@ -1294,6 +1300,7 @@ All decided by the owner on 2026-10-25.
 | F29 | 5.12 `IF v <op> k`                       | Integrated (fast-forward to `45d1bf3`, 2026-10-27): HOME 48, EXROM 50; the two-variable form not taken up; next: 5.13 |
 | F30 | 5.13 `PRINT` of a string                | Integrated on a passing `make test` (fast-forward, 2026-10-27): HOME 88, EXROM 0; next: 5.11 |
 | F31 | 5.11 the scroll copy                    | Integrated on a passing `make test` (fast-forward, 2026-10-27): HOME +8, EXROM 0; next (owner): the faster glyph lookup (5.14), a handoff for the v2.1 preparation, push |
+| F32 | 5.14 the glyph lookup                   | Requested and integrated on a passing `make test` (fast-forward, 2026-10-27): HOME +38, EXROM 0; phase 5 finished; `backport/leapc` pushed; next: phase 6's rest and the v2.1 preparation (`docs/V2_LEAPC_HANDOFF.md`) |
 
 ## Also worth doing
 
