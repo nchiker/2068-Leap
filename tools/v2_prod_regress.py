@@ -61,6 +61,79 @@ def editor_delete_line():
     return P.store() == ["a = 1", "c = 3"], "store=%s" % P.store()
 
 
+# ------------------------------------- the cursor's line whole on screen (plan item SH_VIEW, ED4)
+# The view: up to 20 lines above the cursor's line, fewer when they do not fit on rows 0-22 with it.
+# tools/qual/qeditview.py runs the long scenarios (every key, a full-redraw oracle, timings).
+def _rows(text):
+    """Screen rows of a line as EDITOR_WRAP_CALC wraps it (at the last space of 32 characters)."""
+    n = 1
+    while len(text) > 32 and n < 8:
+        sp = text[:32].rfind(" ")
+        text = text[32:] if sp < 0 else text[sp + 1:]
+        n += 1
+    return n
+
+
+def _edit_at(lines, idx):
+    """Boot, store `lines`, enter the editor on line `idx` (the append line when idx = len(lines))."""
+    P.boot()
+    P.put_store(lines)
+    pos = sym("PROG_AREA_START") + sum(len(l) + 3 for l in lines[:idx]) if idx < len(lines) else 0xFFFF
+    P.poke16(sym("CUR_EDIT_INDEX"), idx)
+    P.poke16(sym("CUR_EDIT_POS"), pos)
+    return P.call(RET)
+
+
+def _view(keys=()):
+    """After the entry and after each key: the view rule's top and active row, the line whole, the
+    cursor cell the only inverted attribute on rows 0-22, in the line's rows."""
+    seen = []
+    for k in (None,) + tuple(keys):
+        if k is not None:
+            P.key(k)
+        h = [_rows(l) for l in P.store()]
+        idx, ha = P.cur_index(), _rows(P.edit_line().decode("latin-1"))
+        top = max(0, idx - 20)
+        while sum(h[top:idx]) + ha > 23:
+            top += 1
+        row = sum(h[top:idx])
+        got = (w16(sym("VIEW_TOP_INDEX")), read(sym("BASIC_ACTIVE_ROW"), 1)[0])
+        cur = [i // 32 for i, a in enumerate(read(0x5800, 23 * 32)) if a != 0x38]
+        seen.append("%d:%d@%d%s" % (idx, got[0], got[1], cur))
+        if got != (top, row) or row + ha > 23 or len(cur) != 1 or not row <= cur[0] < row + ha:
+            return False, "line %d: top/row %s (want %d/%d), cursor rows %s; %s" % (idx, got, top, row, cur,
+                                                                                  " ".join(seen))
+    return True, " ".join(seen)
+
+
+SHORT = ["v%d = %d" % (i, i) for i in range(20)]
+WRAP2 = ["PRINT \"line %d is long enough to wrap\"; %d" % (i, i) for i in range(20)]   # 2 rows each
+
+
+@case("ED4-long-line-low", "a 4-row line starting on row 20 scrolls the view to show it whole")
+def ed4_long_line_low():
+    _edit_at(SHORT + ["x" * 100, "y = 1"], 20)
+    return _view([KEY_DOWN] * 4 + [KEY_UP])        # three rows down inside it, then the line below
+
+
+@case("ED4-wrapped-above", "20 two-row lines above: lines are dropped from the top until the cursor's fits")
+def ed4_wrapped_above():
+    _edit_at(WRAP2 + ["y = 1"], 20)
+    return _view([KEY_UP, KEY_UP, KEY_DOWN, KEY_DOWN])
+
+
+@case("ED4-grow-past-22", "typing that makes a line on rows 20-22 a 4th row scrolls; DELETE scrolls it back")
+def ed4_grow_past_22():
+    _edit_at(SHORT + ["x" * 96], 20)
+    return _view([ord("z"), KEY_DELETE])
+
+
+@case("ED4-down-onto-tall", "DOWN onto a 4-row line on row 20 scrolls the view to show it whole")
+def ed4_down_onto_tall():
+    _edit_at(SHORT + ["x" * 100], 19)
+    return _view([KEY_DOWN, KEY_UP])
+
+
 # ------------------------------------------------------------- tape (LOAD/VERIFY)
 @case("tape-load-ok", "a well-formed program tape LOADs through the real receiver")
 def tape_load_ok():

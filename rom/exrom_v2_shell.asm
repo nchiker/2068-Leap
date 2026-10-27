@@ -1886,17 +1886,32 @@ V2_REDRAW:
     jr nz,.nav
     call V2_REDRAW_ACTIVE
     ret nc                       ; done, carry clear
-    ; Plan item (Class B): the active line changed height. Same index, so the same view: the rows above
-    ; it stay; redraw from its first row down through the main loop. Row 22 is also the default for an
-    ; active line the full redraw never reached, so it takes the full redraw.
+    ; Plan item (Class B): the active line changed height (A = its rows, HL = V2_RD_WRAPS: before).
+    ; When the view stays (V2_VIEW), the rows above it stay: redraw from its first row down through the
+    ; main loop. Taller: the view stays if the line still ends above row 23. Shorter: it stays unless
+    ; lines were dropped from the top (VIEW_TOP_INDEX above max(0, index - 20)); then more may fit, and
+    ; the full redraw decides.
+    cp (hl)
+    jr c,.shorter
+    ld hl,V2_ACTIVE_ROW
+    add a,(hl)
+    cp 24
+    jr nc,.full                  ; it would reach the status row: the view moves
+    jr .below
+.shorter:
+    call V2_VIEW_BOUND
+    ld de,(VIEW_TOP_INDEX)
+    or a
+    sbc hl,de
+    jr nz,.full
+.below:
     ld a,(V2_ACTIVE_ROW)
-    cp 22
-    jr nc,.full
     ld (V2_DRAW_ROW),a
     ld c,23                      ; to the bottom (V2_RD_CLEAR_ROWS stops at row 23)
     call V2_RD_CLEAR_ROWS
-    ld de,(CUR_EDIT_INDEX)
-    call V2_FIND_INDEX           ; HL = the active record, 0 = the append line (the loop's sentinel)
+    call V2_POS_IS_APPEND        ; HL = the active record ...
+    jr nz,.record
+    ld hl,0                      ; ... or 0: the append line (the loop's sentinel)
     jr .record
 .nav:
     call V2_REDRAW_NAV
@@ -1904,29 +1919,12 @@ V2_REDRAW:
 .full:
     call KTAB_GFX_CLS
     ld a,22
-    ld (V2_ACTIVE_ROW),a
+    ld (V2_ACTIVE_ROW),a         ; (a guard only: with V2_VIEW the loop always reaches the active line)
     call V2_COUNT_LINES
     ld (V2_LINE_COUNT),de   ; R10: was already computed here and
                               ; discarded every redraw; now cached for
                               ; V2_DRAW_STATUS below, no extra traversal
-    ld hl,(CUR_EDIT_INDEX)
-    ld a,h
-    or a
-    jr nz,.scroll
-    ld a,l
-    cp 20
-    jr c,.top
-.scroll:
-    ld de,20
-    or a
-    sbc hl,de
-    jr .view_ready
-.top:
-    ld hl,0
-.view_ready:
-    ld (VIEW_TOP_INDEX),hl
-    ex de,hl
-    call V2_FIND_INDEX
+    call V2_VIEW                 ; VIEW_TOP_INDEX; HL = its record
     xor a
     ld (V2_DRAW_ROW),a
 .record:
@@ -2079,8 +2077,10 @@ V2_REDRAW_ACTIVE:
     jr V2_RD_DRAW_ACTIVE
 
 ; UP/DOWN.  (a) same record (cursor moved between wrapped rows): the cursor only.  (b) the neighbouring
-; record while both indices are <= 20 (the view top stays 0) and neither line changes height: redraw the
-; old line as a settled (keyword-bold) line, the new one as the active line, the status, the cursor.
+; record while the view stays (V2_VIEW would give VIEW_TOP_INDEX again: UP from a view at line 0; DOWN
+; to a line at most 20 below the view's top that ends above row 23) and the old line's record is as tall
+; as its buffer was: redraw the old line as a settled (keyword-bold) line, the new one as the active
+; line, the status, the cursor.
 V2_REDRAW_NAV:
     ld hl,(CUR_EDIT_INDEX)
     ld de,(V2_RD_INDEX)
@@ -2102,14 +2102,18 @@ V2_REDRAW_NAV:
     jp nz,.full
     inc b
 .dir:
-    ld hl,(CUR_EDIT_INDEX)
-    ld de,21
+    ld de,(VIEW_TOP_INDEX)
+    inc b
+    dec b
+    jr z,.down                   ; UP keeps only a view at line 0 (a view further down could show
+    ld a,d                       ; the line above it now; deciding that would mean measuring it)
+    or e
+    jp nz,.full
+.down:                           ; DOWN keeps any view whose top is at most 20 lines above the new
+    ld hl,(CUR_EDIT_INDEX)       ; line (and the fit test below)
     or a
     sbc hl,de
-    jp nc,.full                  ; new index > 20: the view may scroll
-    ld hl,(V2_RD_INDEX)
     ld de,21
-    or a
     sbc hl,de
     jp nc,.full
     push bc                      ; B = direction
@@ -2138,8 +2142,6 @@ V2_REDRAW_NAV:
     jr z,.up
     ld hl,V2_RD_WRAPS            ; DOWN: new row = old row + old height
     add a,(hl)
-    cp 23
-    jr nc,.full
     jr .rows
 .up:
     ld hl,V2_RD_NEWH             ; UP: new row = old row - new height
@@ -2147,6 +2149,10 @@ V2_REDRAW_NAV:
     jr c,.full
 .rows:
     ld (V2_RD_NEWROW),a
+    ld hl,V2_RD_NEWH
+    add a,(hl)
+    cp 24
+    jr nc,.full                  ; the new line would reach the status row: the view moves
     ld a,(V2_ACTIVE_ROW)         ; the old line: clear its rows, redraw it settled
     ld hl,V2_RD_WRAPS
     ld c,(hl)
@@ -2178,6 +2184,84 @@ V2_REDRAW_NAV:
     pop bc
 .full:
     scf
+    ret
+
+; ---- Plan item SH_VIEW (from Leap-C's SH_VIEW, MIT; fixes audit ED4) ---------------------------------
+; V2_VIEW -- VIEW_TOP_INDEX, the first line on the screen: up to 20 lines above the cursor's line (as
+; before), fewer when they need more rows than there are above it, so that the cursor's line is always
+; whole on rows 0-22.  No table of heights: a line dropped from the top is measured again.
+; Out: HL = the record at VIEW_TOP_INDEX (0: an empty program).  Destroys AF BC DE IX.
+V2_VIEW:
+    ld hl,EDIT_LINE_BUF
+    call EDITOR_WRAP_CALC
+    call V2_VIEW_BOUND
+    ld (VIEW_TOP_INDEX),hl
+    ld a,(EDIT_WRAP_COUNT)
+    ld b,a                       ; B = the rows needed: the cursor line's ...
+    push bc
+    ex de,hl
+    call V2_FIND_INDEX           ; its record
+    pop bc
+    push hl
+    inc c
+    jr .count
+.walk:                           ; ... and those of the C lines above it
+    call V2_MEASURE
+    add a,b
+    ld b,a
+.count:
+    dec c
+    jr nz,.walk
+    pop hl
+.trim:                           ; lines off the top until all fit on rows 0-22
+    ld a,b
+    cp 24
+    ret c
+    call V2_MEASURE
+    neg
+    add a,b
+    ld b,a
+    ld de,(VIEW_TOP_INDEX)
+    inc de
+    ld (VIEW_TOP_INDEX),de
+    jr .trim
+
+; HL = max(0, CUR_EDIT_INDEX - 20), the view's top by the line count alone; C = the lines from it to the
+; cursor's line, B = 0.  Destroys AF.
+V2_VIEW_BOUND:
+    ld hl,(CUR_EDIT_INDEX)
+    ld bc,20
+    or a
+    sbc hl,bc
+    ret nc
+    add hl,bc
+    ld c,l
+    ld hl,0
+    ret
+
+; In: HL = a record.  Out: A = its screen rows (as V2_DRAW_TEXT draws its copy), HL = the next record
+; (not checked against PROG_END: V2_VIEW stays above the cursor's line).  Keeps BC.  Destroys DE IX.
+V2_MEASURE:
+    ld e,(hl)
+    inc hl
+    ld d,(hl)
+    inc hl                       ; HL = the text, DE = its length + 1 (the CR)
+    push hl
+    add hl,de
+    ex (sp),hl                   ; (SP) = the next record
+    dec e                        ; E = the characters (a record holds at most 127, no CR or NUL among them)
+    ld a,e
+    cp 33
+    ld a,1
+    jr c,.done                   ; 32 or fewer: one row
+    push bc
+    ld (WRAP_TEXT_PTR),hl
+    ld b,e
+    call EDITOR_WRAP_CALC_LEN    ; wrapped in place, no copy
+    pop bc
+    ld a,(EDIT_WRAP_COUNT)
+.done:
+    pop hl
     ret
 
 ; V2_DRAW_STATUS -- R10 addition. Composes "LINE n/m" (n = 1-based

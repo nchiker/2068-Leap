@@ -707,6 +707,9 @@ EDITOR_WRAP_CALC:
     ; already holds this scan's own text pointer for the rest of this
     ; routine, not HL itself.
     call EDITOR_SCAN_LEN_CORE
+; EDITOR_WRAP_CALC_LEN -- the same for a text of known length, no terminator needed (the V2 shell
+; measures a stored record in place). In: WRAP_TEXT_PTR = the text, B = its length (<= 127)
+EDITOR_WRAP_CALC_LEN:
     ld   a, b
     ld   (WRAP_REMAIN), a
 

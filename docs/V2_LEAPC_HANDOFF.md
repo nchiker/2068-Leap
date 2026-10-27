@@ -1,26 +1,28 @@
-# Leap-C back-port: handoff after R1 (next: `SH_VIEW`)
+# Leap-C back-port: handoff after `SH_VIEW` (next: 5.2)
 
-Written 2026-10-26 at the end of phase 3; updated at the end of phase 4, after 5.1 and after R1. The
+Written 2026-10-26 at the end of phase 3; updated at the end of phase 4, after 5.1, R1 and `SH_VIEW`. The
 plan is `docs/V2_LEAPC_BACKPORT_PLAN.md`; this file is only where things stand and how to pick up.
 
 ## State
 
 - Branch `backport/leapc` (off `v2-development`), not pushed. Phases 0-4, the redraw item, 5.1
-  (decimal literals, owner decision F8) and R1 (calculator rounding, F10/F11) committed.
-- Free ROM: HOME 441 B, EXROM 905 B (`make budget`). Emergency reserve HOME 64 / EXROM 32
+  (decimal literals, owner decision F8), R1 (calculator rounding, F10/F11) and `SH_VIEW` (ED4) committed.
+- Free ROM: HOME 441 B, EXROM 801 B (`make budget`). Emergency reserve HOME 64 / EXROM 32
   (`make check` fails below it). Spending is weighted by benefit per byte, not floored.
 - No stock-ROM-derived code left in the images: `tools/check_provenance.py` (in `make check`) has an
   empty allow-list. Keep it that way; anything taken from Leap-C is MIT and goes in `NOTICE.md`.
-- Last full `make test` (R1, 2026-10-26, 1,227 s, fast emulation): smoke 9/9, standalone 40/40,
-  production and fill checks, prod-regress 116, prod-arrays 101, known-defects 15, saveall 13, micsave
-  3, maint-qual all PASS; the corpus then had 6 float-`FOR` FAILs, settled by F11: `make qual` 663 PASS
-  + 2 XFAIL + 2 N/A, lifecycle 23; `make doc-examples` 326/326 (the new FOR example `kw.for.6` included).
+- Last full `make test` (`SH_VIEW`, 2026-10-26, 1,631 s, fast emulation): smoke 9/9, standalone 40/40,
+  production and fill checks, prod-regress 120, prod-arrays 101, known-defects 15, saveall 13, micsave 3,
+  maint-qual all PASS; `make qual` 663 PASS + 2 XFAIL + 2 N/A, lifecycle 23; `make doc-examples` 326/326.
 - R1 done: `rom/exrom_calc.asm`'s arithmetic is Leap-C's float core (rounds to nearest, bit-exact with
   Leap-C's `tools/fpmodel.py`), EXROM 186 → 905 B free, speed at or better than before; `Q-34` fixed.
   Float `FOR` follows the BASIC standards (F11: step accumulated, exact end test), so
   `FOR i = 0 TO 1 STEP 0.1` runs 10 times; corpus oracle and manual say so. Everything measured is in
   the plan, "Review item R1", "Outcome". `proto/r1-calc-round` was merged and deleted. `STEP 0` keeps V2's rule (F11).
-- Next: `SH_VIEW` (below). Then 5.2.
+- `SH_VIEW` done: `V2_VIEW` keeps the cursor's line whole on rows 0-22 (ED4 fixed), EXROM +104 B, no RAM
+  (no heights table: short lines measured from their length, long ones wrapped in place). Plan, phase 4,
+  "Outcome, `SH_VIEW`". New `tools/qual/qeditview.py`; 4 `ED4-*` cases in the prod gate (now 120).
+- Next: 5.2 (below).
 
 ## Working rules (owner)
 
@@ -51,75 +53,34 @@ plan is `docs/V2_LEAPC_BACKPORT_PLAN.md`; this file is only where things stand a
 | `tools/qual/qnumcheck.py` | `qliterals` / `qnumparse` output against `NUM_PARSE_CALC`'s sequence replayed through Leap-C's model |
 | `tools/qual/qbench.py` | T-states per program (now also `float_add_lit`, `compile_dec`, `compile_int_if`) |
 | `tools/run_v2_standalone_tests.sh --build-only` | in `make check`: assembles all 40 standalone test images |
+| `tools/qual/qeditview.py` | editor per key: view rule, cursor, T-states; `--oracle` (full-redraw screen), `--ref DIR`, `--measure N` |
 
 Probe pattern (all of the `q*` tools above): a loop assembled at `$F400` (the package window), a
 table at `$8300` below the `$B6xx` cells, the booted snapshot restored per batch (`qharness.Machine`).
 
-## Next: `SH_VIEW` (keep the cursor's line whole on screen, fixes ED4/R9)
+## Next: 5.2 (BREAK poll only at back-edges, calls and after package calls)
 
-**Goal.** The plan's weighed Class B item (phase 4, "Weighed items"): the active line always whole on
-rows 0-22, so its cursor is always visible. Measure, qualify, commit on `backport/leapc` (or prototype
-on a branch first if the size or the redraw interactions surprise).
+**Goal.** Phase 5's item 5.2: `VM_RUN.loop` (`rom/exrom_v2_vm_core.asm`, assembled into HOME, `$110C`) tests
+`VM_HALTED` before every opcode (`ld a,(VM_HALTED) / or a / ret nz`, 22 T per op [M]). The ISR sets it for
+BREAK (`kernel/interrupt/interrupt.asm`, D5: error 66), `OP_HALT` and the error-halts set it too (`OP_HALT`
+returns into the loop, which then sees it; `VM_ERR_COMMON` unwinds through `VM_RUN_SP`). Move the test to
+the places a program can loop or wait: backward jumps, `NEXT`, calls, after package calls (`OP_CALL_EXT`),
+the key/frame waits that already check it (PAUSE, INPUT); `OP_HALT` then has to leave `VM_RUN` itself.
+Measure with `qbench` (integer and float programs), `qbytecode` (bytecode unchanged), the D5 cases
+(`D5-break-running-loop` in the known-defect suite, the BREAK cases of `make qual-maint`), size with
+`make budget`. Leap-C's BREAK model (D4) is in "Not recommended": this is V2's own rule, made cheaper.
 
-**The defect.** `docs/R10_8_EDITOR_USABILITY_AUDIT.md` ED4 (= R9): rows 23 and below are not drawn and
-`V2_RD_CURSOR` / the end of `V2_REDRAW` skip a cursor at row ≥ 23 (`cp 23 / ret nc`). Two ways in:
-(a) a long active line starting low (a line of 97+ characters, 4 rows, starting at row 20; lines are
-at most 127 characters, `EDIT_LINE_BUF_LEN` 128); (b) wrapped lines above it: the view always shows 20
-lines above the cursor's line, so 20 two-row lines push it past row 22 entirely (`V2_ACTIVE_ROW` then
-keeps its default 22). Not in the manual, not in `tools/v2_known_defects.py`.
+**After 5.2.** 5.3 (integer `FOR_NEXT` fast path).
 
-**V2 today** (`rom/exrom_v2_shell.asm`):
+## Pitfalls met in `SH_VIEW`
 
-- `V2_REDRAW` (~l.1878), full path: `VIEW_TOP_INDEX = max(0, CUR_EDIT_INDEX - 20)` (the `.scroll` /
-  `.top` / `.view_ready` block, ~l.1912-1927): line count only, heights ignored.
-- Height-change path (phase-4 redraw item, top of `V2_REDRAW`): "same index, so the same view": redraws
-  from the active line down; an active row of 22 takes the full redraw.
-- `V2_REDRAW_ACTIVE` (~l.2067): same height: the view cannot change. Unaffected.
-- `V2_REDRAW_NAV` (~l.2084), UP/DOWN to a neighbour: assumes "both indices ≤ 20, so the view top
-  stays 0" and checks only that the new row is < 23, not that the new line fits.
-
-**Leap-C** (`~/2068-Leap-C`, MIT): `SH_VIEW` in `src/shell/shell.asm` (~l.1168, 94 B,
-`docs/milestones/M5.md` §2 and its size table): the active line's height (`EDITOR_WRAP_CALC` on
-`EDIT_LINE_BUF`), then each of up to 20 lines above it (copy, `EDITOR_WRAP_CALC`, heights stored in
-`SH_HEIGHTS`, 20 B of RAM, `include/leapc_cells.inc`), then lines dropped from the top while the
-total exceeds 23 rows. Called
-by the full redraw (~l.892) and the height-change path (~l.984: the rows above are left alone only
-when the view stays).
-
-**The change, as a sketch.**
-
-1. `V2_VIEW` (port of `SH_VIEW`) replaces the `max(0, idx - 20)` block. Measure a settled line as it
-   is drawn: `V2_COPY_RECORD` → `DETOK_BUF`, then `EDITOR_WRAP_CALC`. The append line (`V2_POS_IS_APPEND`)
-   is the active line at index = line count.
-2. Height-change path: compute the view; if `VIEW_TOP_INDEX` would change, take the full redraw.
-   Revisit the `cp 22 / jr nc,.full` default (with `V2_VIEW` the active line is always reached).
-3. `V2_REDRAW_NAV`: replace "indices ≤ 20" with "the view for the new index equals `VIEW_TOP_INDEX`"
-   and require new row + new height ≤ 23. Measure the cost per UP/DOWN: up to 20 records copied and
-   measured (the fast path exists to avoid a ~0.9 MT full redraw).
-4. RAM for the 20 heights: `CALC_SPARE_18` (R1 left 18 B free in the calculator block, `$81FD`) is
-   2 B short: 18 lines above the cursor, or a smaller encoding, would fit it. Otherwise a dead span
-   (`docs/RAM_EFFICIENCY_RESULTS.md`, e.g. `$F328-$F3AE`), which means updating
-   `tools/check_ram_layout.py`'s census and `tools/qual/qcanary.py`'s dead-span list; or no table at all
-   (measure again while trimming: slower, full redraws only).
-
-**Size [E].** EXROM +70 to +110 B (`SH_VIEW` 94 B in Leap-C, minus helpers V2 already has, plus the
-two redraw paths). With EXROM 905 B free (after R1) → about 795-835 B: room is not the constraint, so
-prefer the per-key speed (a heights table, the fast UP/DOWN path kept) over the last bytes.
-
-**Qualification.**
-
-- ED4 cases (a) and (b) above, plus a line growing past row 22 while typing and UP/DOWN across a tall
-  line: the cursor cell (inverted attribute) on rows 0-22 after every key, the active line whole,
-  as many lines above it as fit (≤ 20). Add them to the prod regression gate.
-- Differential against the current build where no line wraps far enough to matter: the screen
-  identical after every key (method of the phase-4 redraw item: typed scenarios, screen compared per
-  key; its scratch script is gone, rebuild it on `qharness`, whose `call_routine` delivers keys).
-- Per-key cost for typing, height changes and UP/DOWN near the bottom and in long programs (`T`
-  states, as the phase-4 outcomes report them).
-- `make check` (now also assembles the standalone images), `make doc-examples` (screenshots: any
-  changed cell must be explained), `make test` via a subagent on an rsync copy.
-
-**After `SH_VIEW`.** 5.2 (BREAK poll at back-edges, HOME).
+- A scenario typed in front of an existing line adds that line's length: `scrolled-typing` meant to stay
+  at 3 rows reached 4 (an ED4 case) until the typed text was shortened. DOWN in a wrapped line moves
+  between its rows first: count those keys when a scenario must reach a given line.
+- `qeditview` enters the editor through `V2_COMMAND_LOOP.loop` with `CUR_EDIT_INDEX`/`CUR_EDIT_POS` poked;
+  its oracle calls `V2_REDRAW` from a snapshot at the `IO_READ_KEY` breakpoint (EXROM is paged in there).
+- The cursor after a last row of exactly 32 characters is at column 32 and invisible (both builds; found,
+  Class C, not fixed); the view check accepts it and counts it.
 
 ## Pitfalls met in 5.1
 

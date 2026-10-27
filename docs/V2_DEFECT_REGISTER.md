@@ -69,6 +69,7 @@ case ids (`tools/qual/corpus.py`) or suite case names. Source of the Q-/D-/L-/N-
 | L-INSTR | LOW | INSTR documented, absent | **Decided**: not in V2 (no ROM room); manual entry withdrawn | `str.instr` (expects the compile error) |
 | L-ELIF | LOW | ELSEIF documented, absent | **Decided**: not in V2; `ELSE` + nested `IF` | `if.elseif_kw`, `if.else_if_nested` |
 | F11 | DECISION | float `FOR` counts after R1's rounding (`FOR i = 0 TO 1 STEP 0.1` runs 10 times) | **Decided** (`backport/leapc`): the BASIC standards' loop, step accumulated, exact end test (ECMA-55 §13.4, ANSI X3.113 §8.3.4); manual FOR | `ffor.count.*`, manual `kw.for.6` |
+| ED4 | LOW | the cursor's line could fall below row 22 and lose its cursor (a 97+ character line starting low, or wrapped lines above it: the view always showed 20 lines above) | Fixed (`SH_VIEW`, `backport/leapc`: `V2_VIEW`, Leap-C's view rule) | `ED4-*` (prod-regress), `tools/qual/qeditview.py` |
 | DD-1 | DOC | manual: string array elements hold 31 characters | **Doc**: V2's design is 16-byte (15-character) elements by default; manual corrected | `arr.str_default_width` |
 | T-1, T-2 | TEST | component-test images silently truncated / over size | Fixed (strict builds) | standalone runner |
 | T-4 | TEST | test decompiler gaps | Fixed for opcodes 71-73 (string `>`, short-circuit AND/OR); 70 (5-byte float literal) is not decompiled | `relational` |

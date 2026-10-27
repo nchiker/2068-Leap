@@ -47,7 +47,8 @@ the block-graphics glyph builder, the calculator's arithmetic (add,
 subtract, multiply and divide in `rom/exrom_calc.asm`: Leap-C's float core,
 `src/runtime/fpcore.asm`, adapted to the `RST $28` calculator), the xorshift used by
 `RND`, the register-only `MATH_UMUL16` / `MATH_UDIV16`, the row clear in
-`GFX_CLEAR_ROW_TEXT`, the `1` and `l` glyphs, `tools/fuse/fuseshim.c`
+`GFX_CLEAR_ROW_TEXT`, the `1` and `l` glyphs, the editor's view rule (`V2_VIEW` in
+`rom/exrom_v2_shell.asm`, from Leap-C's `SH_VIEW`), `tools/fuse/fuseshim.c`
 (loaded into Fuse at test time; it contains no Fuse source), and tools adapted
 from Leap-C's (`tools/check_provenance.py`, `tools/check_repro.sh`,
 `tools/qual/qpoweron.py`, the banking checks of `tools/qual/qcanary.py`, the tape

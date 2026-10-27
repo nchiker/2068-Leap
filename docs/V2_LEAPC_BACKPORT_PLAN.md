@@ -35,17 +35,18 @@ Further rules:
 
 ### Running ledger (free bytes after each phase)
 
-| After                        | HOME    | EXROM   | Basis                                                                                                   |
-| ---------------------------- | -------:| -------:| ------------------------------------------------------------------------------------------------------- |
-| today                        | 275     | 26      | [M]                                                                                                     |
-| phase 1 (space)              | **373** | **138** | [M]: 1.1 EXROM −112; 1.2 HOME −36; 1.3 HOME −12; 1.4 HOME −2; 1.5 HOME −48                              |
-| phase 2 (bug fixes)          | **358** | **123** | [M]: phase total HOME −15, EXROM −15 (items 2.1-2.3; v2.0.3)                                            |
-| phase 3 (licensing)          | **358** | **199** | [M]: 3.1 tape block I/O EXROM +19; 3.2 calculator dispatcher EXROM +57                                  |
-| phase 4 (display quick wins) | **354** | **208** | [M]: 4.1 HOME +4; 4.2, 4.3 0; 4.4 EXROM +16, status-bar attribute fill EXROM −25                        |
-| redraw from the cursor line  | **354** | **186** | [M]: EXROM +22                                                                                          |
-| 5.1 decimal literals         | **441** | **186** | [M]: HOME −139 value/divisor path removed, +41 16-bit digits in `NUM_PARSE_CALC`, +11 `5.` stays an INT |
-| R1 calculator rounding       | **441** | **905** | [M]: EXROM +739 Leap-C's float core, −20 three faster loops                                             |
-| phase 5 (speed)              | ≥ 64    | ≥ 32    | Class B: each item sized and weighed before it is started; 5.0 first if the room is not there           |
+| After                        | HOME    | EXROM   | Basis                                                                                                         |
+| ---------------------------- | -------:| -------:| ------------------------------------------------------------------------------------------------------------- |
+| today                        | 275     | 26      | [M]                                                                                                           |
+| phase 1 (space)              | **373** | **138** | [M]: 1.1 EXROM −112; 1.2 HOME −36; 1.3 HOME −12; 1.4 HOME −2; 1.5 HOME −48                                    |
+| phase 2 (bug fixes)          | **358** | **123** | [M]: phase total HOME −15, EXROM −15 (items 2.1-2.3; v2.0.3)                                                  |
+| phase 3 (licensing)          | **358** | **199** | [M]: 3.1 tape block I/O EXROM +19; 3.2 calculator dispatcher EXROM +57                                        |
+| phase 4 (display quick wins) | **354** | **208** | [M]: 4.1 HOME +4; 4.2, 4.3 0; 4.4 EXROM +16, status-bar attribute fill EXROM −25                              |
+| redraw from the cursor line  | **354** | **186** | [M]: EXROM +22                                                                                                |
+| 5.1 decimal literals         | **441** | **186** | [M]: HOME −139 value/divisor path removed, +41 16-bit digits in `NUM_PARSE_CALC`, +11 `5.` stays an INT       |
+| R1 calculator rounding       | **441** | **905** | [M]: EXROM +739 Leap-C's float core, −20 three faster loops                                                   |
+| `SH_VIEW` (ED4)              | **441** | **801** | [M]: EXROM −104: `V2_VIEW` 57, `V2_MEASURE` 29, `V2_VIEW_BOUND` 16, `V2_REDRAW_NAV` +7, `V2_REDRAW` −5; RAM 0 |
+| phase 5 (speed)              | ≥ 64    | ≥ 32    | Class B: each item sized and weighed before it is started; 5.0 first if the room is not there                 |
 
 Every [E] is replaced by `make budget`'s figure as each item lands.
 
@@ -163,7 +164,65 @@ middle and append lines, near the bottom, a scrolled view, wrapped lines above, 
 screen identical after every key. Per height-changing key: a line on row 20 under 20 lines 796k → 115k T;
 a scrolled view 834k → 140k T; long lines above 435k → 212k T; a line near the top gains little (the rows
 below are cleared either way). Not done: clearing only down to the last drawn row (~11 B and a RAM cell,
-for short programs only). `SH_VIEW` waits for 5.1's size (5.1 merged: EXROM unchanged, `SH_VIEW` is next).
+for short programs only). `SH_VIEW` waited for 5.1 and R1; its outcome follows.
+
+Outcome, `SH_VIEW` (2026-10-26, [M]): EXROM 905 → **801 B** free (+104), HOME unchanged, **no RAM**. Fixes
+ED4/R9: the cursor's line is always whole on rows 0-22, so its cursor is always on the screen.
+
+- **What.** `V2_VIEW` (Leap-C's `SH_VIEW`, MIT) sets `VIEW_TOP_INDEX` in the full redraw: `max(0, index − 20)`
+  (`V2_VIEW_BOUND`) as before, then lines dropped from the top while they and the cursor's line need more
+  than rows 0-22. It returns the top record, so the full redraw's `V2_FIND_INDEX` is gone. **No table of
+  heights** (so `CALC_SPARE_18` and the dead spans stay free, the RAM census unchanged): `V2_MEASURE` takes a
+  record of 32 characters or fewer as one row from its length (~130 T) and wraps a longer one in place
+  (`EDITOR_WRAP_CALC_LEN`, a second entry of `EDITOR_WRAP_CALC` after its length scan: no copy); a line dropped
+  from the top is measured again, which costs only in a trimmed view.
+
+- **Height change** (typing or DELETE changes the active line's rows): taller and still ending above row 23,
+  or shorter in a view that is not trimmed (`VIEW_TOP_INDEX` = `max(0, index − 20)`), keeps the view
+  (proved, no walk); the rows from the line down are redrawn as before, now from `CUR_EDIT_POS` instead of a
+  `V2_FIND_INDEX` walk. Otherwise the full redraw decides. The `cp 22` test is gone (the line is always
+  reached; the default 22 stays as a guard).
+
+- **UP/DOWN** (`V2_REDRAW_NAV`): DOWN keeps the two-line path whenever the new line is at most 20 below the
+  view's top and ends above row 23 (exactly when `V2_VIEW` gives the same top, for any top: no walk); UP keeps
+  it from a view at line 0 (as Leap-C). UP from a trimmed view takes the full redraw: deciding it would need
+  the height of the line above the view (a `V2_FIND_INDEX` walk per UP); not done.
+
+- **Qualification.** New `tools/qual/qeditview.py`: 15 typed scenarios, 1,653 keys; after every key the view
+  rule (modelled), the active line whole and showing the buffer, the cursor cell the only inverted attribute
+  on rows 0-22; `--oracle`: the screen equals a full redraw's after every key (every selective path);
+  `--ref`: the old build. New build: all PASS, oracle included. Old build: the 7 ED4 scenarios fail (1,920
+  problems: e.g. 20 two-row lines above, view top 0 where the rule gives 10), the 8 others pass. Differential:
+  in the 8 ED4-free scenarios (630 keys: short programs, a scrolled view, wrapped lines that fit, near the
+  bottom, delete/insert line, a 200-line program) the screen is identical to the old build's after every
+  key. `--measure 3000`: `V2_MEASURE` = `EDITOR_WRAP_CALC` on the copy = the model for 3,000 random texts
+  (rows 1-7; 7 is the most a 127-character line can take, so the 8-row cap never applies). Prod gate: 4 new
+  cases `ED4-*` (a 4-row line from row 20, 20 two-row lines above, a line on rows 20-22 growing a 4th row and
+  back, DOWN onto a 4-row line on row 20): PASS; the old build fails all 4.
+
+- **Per key** (T, mean, old → new; the ED4-free figures on identical screens):
+
+  | scenario                        | typing          | height change   | UP/DOWN, two-line path | UP/DOWN, full redraw |
+  | ------------------------------- | --------------- | --------------- | ---------------------- | -------------------- |
+  | 10 lines, append line           | 53.9k → 53.1k   | 189.2k → 185.0k | 218.0k → 218.3k        |                      |
+  | 25 lines, through all           |                 |                 | 102.1k → 101.2k        | 910.1k → 917.6k      |
+  | 30 lines, line 25 (scrolled)    | 101.4k → 100.6k | 152.7k → 144.1k |                        | 1,007.6k → 1,016.6k  |
+  | 22 lines, line 21 (near bottom) | 84.7k → 83.9k   | 134.1k → 128.0k |                        | 868.8k → 878.6k      |
+  | 200 lines, line 150             | 76.0k → 75.2k   | 190.6k → 147.0k |                        | 1,163.5k → 1,165.5k  |
+  | 8 two-row lines that fit        | 115.5k → 114.8k | 971.1k → 969.7k | 180.4k → 180.0k        |                      |
+
+  ENTER (a full redraw) +0.2% to +1.5%. Where ED4 applied the costs are not comparable (the old build drew
+  less, wrongly): typing in a line now drawn whole costs its rows (a 3-4-row line in a 120-line program with
+  wrapped lines 103k → 235k), a line growing past row 22 scrolls (a full redraw, ~1.0 MT, was ~0.21 MT), UP
+  in a trimmed view is a full redraw (5 keys of `shrink-trimmed`: 176k → 770k mean), full redraws with
+  wrapped lines above +5.5% (1.20 → 1.27 MT: the in-place wraps; a copy into `DETOK_BUF` was +12%).
+
+- **Tests.** `make test` all PASS (1,631 s: `make check` with the reserve check, smoke 9/9, standalone 40/40,
+  production and fill checks, prod-regress 120 (the 4 `ED4-*` included), prod-arrays 101, known-defects 15,
+  saveall 13, micsave 3, qual 663 PASS + 2 XFAIL + 2 N/A, lifecycle 23, maint-qual all); `make doc-examples`
+  326/326, no screenshot changed.
+- **Found, not fixed** (both builds, `qeditview` counts it): a cursor after a last row of exactly 32
+  characters is at column 32, off the screen, so no cursor cell shows until the next character. Class C.
 
 ## Phase 5: speed inside the bytecode model → release v2.1
 
@@ -432,7 +491,7 @@ All decided by the owner on 2026-10-25.
 | F8  | 5.1 decimal literals                     | Integrated, `5.` stays an INT (2026-10-26)                          |
 | F9  | Calculator rounding (`Q-34`)             | R1 is the next item, before `SH_VIEW`: prototype first (2026-10-26) |
 | F10 | R1 prototype                             | Integrated (2026-10-26)                                             |
-| F11 | Float `FOR` counts after R1              | (a): follow the standard; `STEP 0` stays as it is (2026-10-26) |
+| F11 | Float `FOR` counts after R1              | (a): follow the standard; `STEP 0` stays as it is (2026-10-26)      |
 
 ## Also worth doing
 
