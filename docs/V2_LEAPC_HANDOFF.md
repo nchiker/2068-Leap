@@ -19,7 +19,7 @@ plan is `docs/V2_LEAPC_BACKPORT_PLAN.md`; this file is only where things stand a
   Leap-C's `tools/fpmodel.py`), EXROM 186 → 905 B free, speed at or better than before; `Q-34` fixed.
   Float `FOR` follows the BASIC standards (F11: step accumulated, exact end test), so
   `FOR i = 0 TO 1 STEP 0.1` runs 10 times; corpus oracle and manual say so. Everything measured is in
-  the plan, "Review item R1", "Outcome". `proto/r1-calc-round` is merged (same commits); delete it at will.
+  the plan, "Review item R1", "Outcome". `proto/r1-calc-round` was merged and deleted. `STEP 0` keeps V2's rule (F11).
 - Next: `SH_VIEW` (below). Then 5.2.
 
 ## Working rules (owner)

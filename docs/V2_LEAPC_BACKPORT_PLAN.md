@@ -404,8 +404,8 @@ fast-forward, owner decision F10).** Option 1, measured:
   5-byte float, instead of the exact decimal count: 10, 10, 4, 10, 41, 20, 10, 10, 51 and 1,000, the
   counts the ROM gives. The manual's FOR passage (03_keywords.md) states the rule and shows
   `FOR i = 0 TO 1 STEP 0.1` running 10 times (example `kw.for.6`); `docs/V2_DEFECT_REGISTER.md` lists
-  F11 as decided. `STEP 0` with the start already past the limit is left as it is (V2: no pass; the
-  standards' test never ends the loop). After F11: `make qual` 663 PASS + 2 XFAIL + 2 N/A (as before
+  F11 as decided. `STEP 0` with the start already past the limit stays as it is (owner, F11: V2 makes no
+  pass; the standards' test would never end the loop). After F11: `make qual` 663 PASS + 2 XFAIL + 2 N/A (as before
   R1), lifecycle 23, `make doc-examples` 326/326.
 
 ## Not recommended
@@ -432,7 +432,7 @@ All decided by the owner on 2026-10-25.
 | F8  | 5.1 decimal literals                     | Integrated, `5.` stays an INT (2026-10-26)                          |
 | F9  | Calculator rounding (`Q-34`)             | R1 is the next item, before `SH_VIEW`: prototype first (2026-10-26) |
 | F10 | R1 prototype                             | Integrated (2026-10-26)                                             |
-| F11 | Float `FOR` counts after R1              | (a): follow the standard (2026-10-26)                               |
+| F11 | Float `FOR` counts after R1              | (a): follow the standard; `STEP 0` stays as it is (2026-10-26) |
 
 ## Also worth doing
 
