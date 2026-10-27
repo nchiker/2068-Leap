@@ -414,8 +414,8 @@ GFX_SET_BORDER:
 ;      a freshly-generated block-graphics glyph, or UDG_TABLE+offset
 ;      for a UDG); carry set if the character has no glyph at all
 ;      (caller's choice what to do — GFX_PUTCHAR treats it as a space)
-; Destroys: AF, BC, E, HL — the punctuation-table scan uses B as its
-;      loop counter, so B is NOT preserved. This was documented wrong
+; Destroys: AF, BC, E, HL — B is NOT preserved (the block-graphics path
+;      counts in it; the punctuation scan before 5.14 did too). This was documented wrong
 ;      for a while (claimed only AF/HL) and caused a real bug in
 ;      GFX_PUTCHAR, which read B (its row parameter) after this call
 ;      without saving it first — fixed in GFX_PUTCHAR by protecting BC
@@ -428,92 +428,56 @@ GFX_SET_BORDER:
 ;      same lineage, 2026-09-13). D itself is never touched.
 ; ============================================================================
 GFX_CHAR_TO_FONT_OFFSET:
-    ld   e, a                      ; E = input char, preserved across
-                                   ; the punctuation table scan below
-    cp   " "
-    jr   z, .is_space
-    cp   "0"
-    jr   c, .try_punct             ; below '0' and not space: might be
-                                   ; punctuation
-    cp   "9" + 1
-    jr   c, .is_digit
-    cp   "A"
-    jr   c, .try_punct              ; between '9' and 'A': might be
-                                    ; punctuation
-    cp   "Z" + 1
-    jr   c, .is_upper
-    cp   "a"
-    jr   c, .try_punct               ; between 'Z' and 'a': might be
-                                     ; punctuation
-    cp   "z" + 1
-    jr   c, .is_lower
-    ; falls through toward .try_punct for anything above 'z' too, but
-    ; codes 128-164 are intercepted first — block graphics (128-143)
-    ; and UDGs (144-164) are never in PUNCT_CHAR_TABLE
+    ; 5.14 (back-port plan): space, the digits and the punctuation from '!' to
+    ; '@' through one direct index table (LOW_CHAR_TABLE), the letters by
+    ; arithmetic, '_' by itself; was a chain of range tests and a linear scan
+    ; of (char, index) pairs (439 T for '.', ~1,100 for a code with no glyph).
+    ld   e, a                      ; E = the code (the block-graphics path
+                                   ; reads it)
+    sub  " "
+    cp   "@" - " " + 1
+    jr   c, .low_table             ; ' '..'@': A = code - ' '
+    sub  "a" - " "
+    cp   26
+    jr   c, .is_lower              ; A = code - 'a'
+    add  a, "a" - "A"
+    cp   26
+    jr   c, .is_upper              ; A = code - 'A'
+    ld   a, e
+    cp   "_"
+    jr   z, .is_underscore
     cp   128
-    jr   c, .try_punct
+    jr   c, .not_found              ; 0-31, [ \ ] ^ ` { | } ~ and 127
     cp   UDG_CODE_BASE                  ; 144
-    jr   c, .is_block_graphics
+    jr   c, .is_block_graphics          ; 128-143
     cp   UDG_CODE_BASE + UDG_COUNT      ; 165
-    jr   c, .is_udg
-    ; 165+: unmapped, falls through to the punctuation scan same as
-    ; any other unrecognized code (.not_found -> render as space)
-
-.try_punct:
-    ; Linear scan of PUNCT_CHAR_TABLE (char, index) pairs — cleaner and
-    ; less error-prone than a long chain of individual cp/jr z checks
-    ; once the punctuation set grew past a handful of characters.
-    ld   hl, PUNCT_CHAR_TABLE
-    ld   b, PUNCT_CHAR_COUNT
-.punct_loop:
-    ld   a, (hl)
-    cp   e
-    jr   z, .punct_found
-    inc  hl
-    inc  hl                          ; each entry is 2 bytes: char, index
-    djnz .punct_loop
-    jr   .not_found
-
-.punct_found:
-    inc  hl
-    ld   a, (hl)                      ; A = this character's font index
-    jr   .to_offset
-
-.is_space:
-    ld   hl, FONT_TABLE                ; offset 0 -> now an absolute
-                                       ; pointer, same as every other
-                                       ; case below (see this routine's
-                                       ; header)
-    or   a
+    jr   c, .is_udg                     ; 144-164
+.not_found:                             ; 165+ too
+    scf
     ret
-.is_digit:
-    sub  "0"
-    add  a, 1                      ; index 0 is space; digits start at 1
+
+.low_table:
+    ld   hl, LOW_CHAR_TABLE
+    add  a, l
+    ld   l, a                      ; (the table does not cross a page)
+    ld   a, (hl)                   ; the font index
     jr   .to_offset
-.is_upper:
-    sub  "A"
-    add  a, 11                      ; index 0=space, 1-10=digits, 11-36=upper
+.is_underscore:
+    ld   a, 73
     jr   .to_offset
 .is_lower:
-    sub  "a"
-    add  a, 37                       ; 37-62=lowercase, added alongside
-                                    ; upper — see FONT_TABLE's new tail
+    add  a, 37                     ; 37-62 = lower case
+    jr   .to_offset
+.is_upper:
+    add  a, 11                     ; 0 space, 1-10 digits, 11-36 upper case
 .to_offset:
-    ; N*8 via three doublings. An earlier draft here tried to be clever
-    ; with an extra add (aiming for x2,x4,x5,x8) and actually computed
-    ; x10 — caught by re-deriving the arithmetic with a script rather
-    ; than trusting the inline comment. Three plain doublings is both
-    ; simpler and correct.
+    add  a, a                      ; index x 2 (indices <= 85: fits)
     ld   l, a
     ld   h, 0
-    add  hl, hl                      ; x2
-    add  hl, hl                      ; x4
-    add  hl, hl                      ; x8
-    ld   bc, FONT_TABLE                ; fold the ROM base in here so
-    add  hl, bc                        ; every path out of this routine
-                                       ; returns an absolute pointer
-                                       ; uniformly (see header)
-    or   a
+    add  hl, hl                    ; x 4
+    add  hl, hl                    ; x 8
+    ld   bc, FONT_TABLE             ; an absolute pointer from every path
+    add  hl, bc                     ; (carry clear: no overflow)
     ret
 
 .is_block_graphics:
@@ -570,9 +534,6 @@ GFX_CHAR_TO_FONT_OFFSET:
     or   a
     ret
 
-.not_found:
-    scf
-    ret
 
 ; ============================================================================
 ; GFX_CHAR_SETUP (internal — not in kernel_api.inc)
@@ -1696,40 +1657,16 @@ BIT_MASK_TABLE:
 ; ---- screen-row base addresses, computed and verified numerically
 ; (see file header) rather than derived by hand from the bit-shuffle
 ; formula ----
-; ---- punctuation character -> font index lookup, used by
-; GFX_CHAR_TO_FONT_OFFSET's table scan. Only the double-quote character
-; needs single-quote delimiters here (to avoid self-conflict); every
-; other character, including the apostrophe, safely uses double-quote
-; delimiters instead — mirrors the convention already proven working
-; for the standalone quote check this replaced. ----
-PUNCT_CHAR_TABLE:
-    ; In order of use (plan item 4.2): the scan is linear and runs for every
-    ; punctuation character drawn. Frequencies from the qualification corpus
-    ; plus the manual's BASIC examples; font indices unchanged.
-    DB   '"', 63
-    DB   "=", 77
-    DB   "(", 71
-    DB   ")", 72
-    DB   ",", 76
-    DB   "+", 78
-    DB   ".", 75
-    DB   "$", 67
-    DB   "#", 66
-    DB   "-", 79
-    DB   "*", 82
-    DB   ":", 74
-    DB   ";", 80
-    DB   ">", 84
-    DB   "/", 81
-    DB   "<", 83
-    DB   "!", 64
-    DB   "?", 85
-    DB   "'", 70
-    DB   "_", 73
-    DB   "@", 65
-    DB   "%", 68
-    DB   "&", 69
-PUNCT_CHAR_COUNT EQU 23
+LOW_CHAR_TABLE:
+    ; 5.14: the font index of each code from ' ' to '@' (GFX_CHAR_TO_FONT_OFFSET):
+    ; 0 space, 1-10 the digits, 63-85 the punctuation ('_' is 73, by itself).
+    DB   0, 64, 63, 66, 67, 68, 69, 70   ;   ! " # $ % & '
+    DB   71, 72, 82, 78, 76, 79, 75, 81   ; ( ) * + , - . /
+    DB   1, 2, 3, 4, 5, 6, 7, 8   ; 0 1 2 3 4 5 6 7
+    DB   9, 10, 74, 80, 83, 77, 84, 85   ; 8 9 : ; < = > ?
+    DB   65   ; @
+    ASSERT HIGH LOW_CHAR_TABLE == HIGH (LOW_CHAR_TABLE + "@" - " ")
+PUNCT_CHAR_COUNT EQU 23            ; the punctuation glyphs: the 22 above and '_'
 
 ; Block-graphics (128-143) and UDG (144-164) character-code ranges —
 ; see GFX_CHAR_TO_FONT_OFFSET's .is_block_graphics/.is_udg. UDG_COUNT
