@@ -1,4 +1,4 @@
-# 2068-Leap V2 — Package ABI 2.0 and tape-format versions
+# 2068-Leap V2 — Package ABI 2.1 and tape-format versions
 
 **Status:** implemented in R10.9 Phase 1 (working tree, not committed). **Single source of truth:**
 [`include/v2_package_abi.inc`](../include/v2_package_abi.inc) — every number in this document is
@@ -23,12 +23,13 @@ LOAD was `header word == 1`. Any later change to HOME code or the sysvar layout 
 addresses, and an old package tape still passed the check and then called into the wrong code
 (R10.8 finding **R1**).
 
-ABI 2.0 fixes the three things a "jump table" alone cannot:
+ABI 2.0 fixes the three things a "jump table" alone cannot (ABI 2.1, back-port item 6.1, adds
+package *functions*: §2 "Functions", service 16, the `EXT_CALL_RESULT` pin):
 
 | Layer | Mechanism | Enforced by |
 |---|---|---|
-| **Callable services** | 16 fixed 3-byte `jp` slots in the HOME ROM at `$0096…` (the unused padding after the KTAB) | HOME build (the table is generated from the ABI file); `check_package_abi.py` §1; test `abi-service-table` |
-| **Shared RAM** | 34 package-visible sysvar cells + 11 constants *pinned* to absolute addresses | HOME build `ASSERT`s every pin; `check_package_abi.py` §2–3 |
+| **Callable services** | 17 fixed 3-byte `jp` slots in the HOME ROM at `$0096…` (the unused padding after the KTAB) | HOME build (the table is generated from the ABI file); `check_package_abi.py` §1; test `abi-service-table` |
+| **Shared RAM** | 35 package-visible sysvar cells + 11 constants *pinned* to absolute addresses | HOME build `ASSERT`s every pin; `check_package_abi.py` §2–3 |
 | **Data formats / banking / lifecycle** | tape header version word, record formats, banking and ownership rules (this document) | `STORAGE_LOAD` rejects a wrong word *before any byte is stored*; tests `abi-pkg-reject-*`, `abi-prog-reject-*`; `check_package_abi.py` §4–6 |
 
 Packages are assembled with **only** `include/hardware.inc` and `include/v2_package_abi.inc`.
@@ -50,7 +51,7 @@ tell *unversioned* (bit 15 clear, or major 0) from *versioned*.
 | Tape | Header type | Current word | Meaning |
 |---|---|---|---|
 | Program | 0 | **`$8100`** | program format 1.0: the line store verbatim, `[len:2][text][CR]` records (§7.1) |
-| Package (`SAVE/LOAD … EXT`) | 4 | **`$8200`** | package ABI 2.0 (this document). Major 1 was the unversioned raw-address ABI |
+| Package (`SAVE/LOAD … EXT`) | 4 | **`$8201`** | package ABI 2.1 (this document; 2.0 tapes, `$8200`, still load). Major 1 was the unversioned raw-address ABI |
 | Array (`… ARRAY`) | 8 | **`$8100`** | array format 1.0. Array persistence is an intentional V2 feature (the replacement for `DATA/READ/RESTORE`). R10.9 Phase 2C implements the persistent Array Store (§7.3): the header type, version word and check are unchanged, `SAVE ... ARRAY` now actually writes type 8 (D13) |
 
 **Acceptance rule** (`STORAGE_LOAD`, `.name_ok`): *tag bit and major must equal the ROM's; the tape's
@@ -78,20 +79,39 @@ $F400  jp  <install>          ; image entry (3 bytes); the rest is code + privat
 **Install** — `V2_LOAD` calls `$F400` once after a successful LOAD, **with EXROM paged in** and
 interrupts enabled. The routine registers its statements and returns *carry clear* on success,
 *carry set* on any failure (a failure unregisters everything and zeroes `V2_PACKAGE_LEN`). It may
-call `EXT2_REGISTER` (service 0, below) and nothing else in HOME.
+call `EXT2_REGISTER` (service 0, below) and `EXT2_EXPORTS` (service 16, ABI 2.1) and nothing else in HOME.
 
 `EXT2_REGISTER` — In: `HL` = NUL-terminated upper-case name (≤ 8 significant characters; a literal
 `$` is allowed), `DE` = execute entry point, `B` = argument count 0–5, `C` = argument-type bitmask
-(bit *n* set ⇒ argument *n* is a string expression, delivered as a string-table index). Out: carry
+(bit *n* set ⇒ argument *n* is a string expression, delivered as a string-table index; ABI 2.1: bits
+7-6 are the *kind*, below, 0 for a statement). Out: carry
 clear + `A` = slot, or carry set + `A = $FF` (registry full — 12 slots — or `B > 5`). Destroys
 `AF BC DE HL`. Each registration receives a rolling, never-zero *generation* that the compiler
 bakes into the bytecode; `OP_CALL_EXT` raises runtime error 9 if the slot's generation changed
 (package replaced or cleared) — this part of the mechanism is unchanged and sound.
 
+`EXT2_EXPORTS` (ABI 2.1) — In: `HL` → an export table: per export its NUL-terminated name, its entry
+(2 B), its argument count (1 B) and its signature (1 B, `EXT2_REGISTER`'s `C`); a `0` byte ends the
+table. Registers each export as `EXT2_REGISTER` does; out: carry clear when all are registered, carry set
++ `A = $FF` at the first that is not. An install can be `ld hl,table / jp EXT2_EXPORTS` (each export
+then costs its name + 5 bytes). Destroys `AF BC DE HL`.
+
 **Syntax a package gets.** `NAME expr, expr, …` — the name is matched only by a typed word of exactly its stored length (at most 8 characters, so a longer keyword can never be typed: CBEEP, not CLASSICBEEP); exactly `B` comma-separated expressions, no
-parentheses, no optional arguments, no result (statements only; `COMPILE_EXT_CALL` is generic and
-unchanged). Names are matched case-insensitively against the registry at *compile* time, so a
+parentheses, no optional arguments, no result (`COMPILE_EXT_CALL` is generic). Names are matched case-insensitively against the registry at *compile* time, so a
 package must be registered before the program that uses it is compiled (every `RUN` recompiles).
+
+**Functions (ABI 2.1).** The signature's bits 7-6 (`include/v2_ext_kinds.inc`) are the name's kind:
+`EXT_KIND_STMT` `$00` a statement (every ABI 2.0 package), `EXT_KIND_FN` `$40` a numeric function,
+`EXT_KIND_STR` `$C0` a string function (`$80` is reserved). A function is called in an expression as
+`NAME(expr, …)` (a string function as `NAME$(…)`, registered without the `$`), parsed as a built-in
+function call: exactly `B` arguments, each a string or a number as the signature's bits 4-0 say, the
+built-ins' compile errors (29 no `(`, 30 too few, 31 too many, 3 a wrong argument type). A name binds
+only where its kind fits: a function is not a statement (a function name at the start of a statement
+is compiled as an assignment), a statement name in an expression is a variable or an array, and a
+built-in of the same name wins over a package function. Execute routines are the statements', plus
+the value: a numeric function writes it to `EXT_CALL_RESULT` (16 bits, pushed as an integer); a string
+function writes there the address of `[length 0-31][text]` in its own memory (copied by the VM into a
+string temporary before anything else runs). Floats are not passed either way.
 
 **Execute** — `OP_CALL_EXT` pops the arguments into `EXT_CALL_ARG0…4`, **pages EXROM out**
 (`BANK_PAGE_EXROM_OUT`), then `call`s the registered entry; on return it pages EXROM back in.
@@ -101,8 +121,8 @@ Contract for an execute routine:
   integers, string arguments are string-table indices). Registers: nothing is defined on entry.
 * Exit: `ret`. **All registers may be destroyed** -- IY included: since the V2 Enhanced release the
   VM keeps its dispatch address in IY, and `OP_CALL_EXT` re-enters `VM_RUN` (which reloads it)
-  after every package call. There is no return value (statement packages only; no extension
-  *functions*).
+  after every package call. A statement has no return value; a function writes `EXT_CALL_RESULT`
+  (ABI 2.1, above).
 * Errors: write a package error code to `VM_ERROR_CODE` and `1` to `VM_HALTED` and `ret`
   (`VM_RUN` stops on its next iteration). Codes 12–14 (MODE) and 15–20 (SPRITE; 21 is PRINTER's non-production LLIST) are
   in use; they overlap the VM's own numbering (R10.8 A3) and are not yet a registered range.
@@ -128,10 +148,10 @@ Contract for an execute routine:
 Layout in the HOME ROM [M: read back from the emulated ROM by `abi-service-table`]:
 
 ```
-$0092  5A 02 00 10      magic $5A, ABI major 2, minor 0, slot count 16
+$0092  5A 02 01 11      magic $5A, ABI major 2, minor 1, slot count 17
 $0096  C3 lo hi         slot 0  (jp EXT2_REGISTER)
-...    ...              16 slots, 3 bytes each, ending at $00C5
-$00C6–$00EF             blank ($FF): 14 reserved slots (append-only)
+...    ...              17 slots, 3 bytes each, ending at $00C8
+$00C9–$00EF             blank ($FF): 13 reserved slots (append-only)
 $00F0–$00FD             slot code (PKG_NUM_TO_TEXT_SAFE, 14 bytes)
 $00FE–$00FF             blank
 ```
@@ -159,6 +179,7 @@ lost; everything else is preserved.
 | 13 | `$00BD` | `VM_COMPUTE_PRINT_ATTR` | — | `A` = attribute byte from `CURRENT_INK/PAPER/BRIGHT/FLASH/INVERSE` | `AF BC` | |
 | 14 | `$00C0` | `VM_NUM_TO_TEXT` | `HL` = value, `A` = `TAG_INT` (0) **only** | `HL` → NUL-terminated text in `PRINT_BUF` | `AF BC DE HL` | **EXROM-safe wrapper**, see below. The float tag (`HL` = float-table index) is *not* part of ABI 2.0: it reaches the calculator via `RST $28` and has not been exercised through the wrapper |
 | 15 | `$00C3` | `VM_STR_ADDR` | `A` = string-table index | `HL` → record `[len:1][content…, NUL]` | `AF DE HL` | |
+| 16 | `$00C6` | `EXT2_EXPORTS` | `HL` → export table (§2) | carry/`A` | `AF BC DE HL` | ABI 2.1; install-time only |
 
 **Slot 14 is not a direct jump** (finding **ABI-F1**). `VM_NUM_TO_TEXT` ends in a jump to
 `BASIC_NUM_TO_STRING_EXROM` (`$C09C`), which is EXROM code; a package runs with chunk 6 paged to
@@ -191,6 +212,7 @@ noted); **H** HOME state the package may read.
 |---|---|---|
 | `EXT_CALL_ARG0…3` | `$BED8,$BEDA,$BEDC,$BEDE` (2 B each) | H→P: written by `OP_CALL_EXT` |
 | `EXT_CALL_ARG4` | `$BEEC` (2 B) | H→P: 5th argument, *not* contiguous |
+| `EXT_CALL_RESULT` | `$BEE0` (2 B) | P→H: a function's value (ABI 2.1, §2) |
 | `VM_ERROR_CODE`, `VM_HALTED` | `$B683`, `$B684` | P→H (package error reporting; also written by the VM) |
 | `CURRENT_OVER` | `$8106` | H: current `OVER` state (INK/PAPER/etc. are read through service 13) |
 | `GFX_CIRCLE_XC…GFX_CIRCLE_D` | `$8140–$8148` (9 B) | P: SHAPES `CIRCLE` scratch |
@@ -289,6 +311,11 @@ is **refused** and must be rebuilt from source with `make v2-packages`; the five
 are rebuilt by that target and their `.tzx` stamped `$8200`. This is a one-time, intentional break
 (R10.8 plan M-6). Package *sizes* are unchanged (mode 165, sprite 832, printer 345, shapes 795,
 graphics 467 bytes) [M].
+
+ABI 2.1 (6.1): `make v2-packages` stamps every package tape with the ROM's word, now `$8201`, and
+`SAVE … EXT` stamps the running ROM's word too; a 2.0 ROM refuses `$8201`, so packages built here no
+longer load on v2.0.x ROMs although the shipped ones use nothing of 2.1. Open: stamp each package
+with the minor it needs.
 
 ### 7.3 Array tapes and the Array Store (R10.9 Phase 2C)
 
