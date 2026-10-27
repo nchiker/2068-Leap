@@ -47,6 +47,9 @@ Further rules:
 | R1 calculator rounding       | **441** | **905** | [M]: EXROM +739 Leap-C's float core, −20 three faster loops                                                   |
 | `SH_VIEW` (ED4)              | **441** | **801** | [M]: EXROM −104: `V2_VIEW` 57, `V2_MEASURE` 29, `V2_VIEW_BOUND` 16, `V2_REDRAW_NAV` +7, `V2_REDRAW` −5; RAM 0 |
 | ED3, ED7 (editor fixes)     | **441** | **778** | [M]: EXROM −23: `V2_WRAP` +47, 7 edit-buffer wrap calls −21, `V2_REDRAW_NAV` +2, ED3 −5 |
+| 5.2 BREAK poll (prototype)   | **454** | **778** | [M]: HOME +13 free: JMPZ's own jump code gone (a taken JMPZ falls into OP_JMP), polling exits 1 B each   |
+| 5.3 FOR fast path (proto.)   | **367** | **778** | [M]: HOME −87 free: the integer path in `OP_FOR_NEXT` 80 B, the loop variable's reload on its fallback 7 B   |
+| 5.4 combined ops (proto.)    | **246** | **621** | [M]: HOME −121 free (VM 117: `CMP_JMPZ` 23, `ADD_VAR_*` 91, `VM_FLOAT_BINARY` 3; compiler 4); EXROM −157 (peepholes) |
 | phase 5 (speed)              | ≥ 64    | ≥ 32    | Class B: each item sized and weighed before it is started; 5.0 first if the room is not there                 |
 
 Every [E] is replaced by `make budget`'s figure as each item lands.
@@ -321,6 +324,119 @@ Outcome, 5.1 (2026-10-26, prototyped on `proto/5.1-float5`, merged into `backpor
 - **Owner decision (F8, 2026-10-26):** integrated; the `5.` rule kept (without it `5.` would be a float:
   `PRINT 5.` shows `5.0000`, `b(2.)` is run-time error 11).
 
+Outcome, 5.2-5.4 (2026-10-27, owner decision F13: one group; prototyped on `proto/5.2-5.4-vm-speed`, one
+commit per item: `fa8e5b9` 5.2, `cae1722` 5.3, `51d4f82` 5.4; **not integrated**, awaiting the owner; all [M]):
+
+- **5.2 BREAK poll rule.** `VM_RUN` tests `VM_HALTED` at `.loop` only; ordinary handlers end `jp (iy)` at
+  `.next` (no test). Polled: every taken jump (`OP_JMP`, which a taken `JMPZ` now falls into, so `JMP`,
+  `JMPZ`, `JMP_ELSE`, `JMP_DEFFN`, `AND_SC`/`OR_SC` and FOR's skip), `FOR_NEXT`'s back branch, every `CALL`
+  (PROC, FN), the re-entry after a package (`OP_CALL_EXT` → `VM_RUN`) and the exits of PAUSE, BEEP and
+  INPUT. Every cycle passes one of them: a loop needs a backward transfer, and RET (the only other one)
+  returns from a CALL in the same cycle. `OP_HALT` already left `VM_RUN` by its own `ret`; the error-halts
+  unwind through `VM_RUN_SP`; DIM's EXROM service ends at `VM_RUN_LOOP` (the poll) when it sees a halt.
+  HOME 441 → 454 B free (+13). Speed: 22 T saved per op, 22 T added per taken jump: integer programs −1%
+  to −3%, `for_empty` +0.2% (its back branch, `jp nn` instead of `jp (iy)`).
+- **BREAK qualification** (new `tools/qual/qbreak.py`, 19 cases): CAPS SHIFT + SPACE pressed in the
+  emulated keyboard matrix (the real ISR path, as the maint suite does) while the program is inside its
+  loop or wait: `GOTO` to itself, `IF … THEN GOTO` (constant and variable limit), an IF block with `GOTO`
+  back, integer FOR (empty, with a body, counting down, `STEP 0`), float FOR (float step, float limit,
+  float start), FOR whose frame is not the innermost (`GOTO` out of an inner loop), nested FOR, PROC tree
+  recursion (`CALL t(18)`, no back-edge at all), `DEF FN` in a `GOTO` loop, `PAUSE 0`, `PAUSE 3000`,
+  `BEEP 20,0`, `INPUT` (BREAK, then ENTER). PASS = error 66, the line after the loop never ran, the key
+  came while the program ran. Base, 5.2, 5.3 and 5.4: 19/19 each. The time from the ISR's write of
+  `VM_HALTED` (a ZEsarUX write watchpoint) to the BREAK message, shell unwind included: base 363-5,839 T,
+  5.2 369-6,168 T, 5.4 369-13,448 T (`for-float-var`: one float iteration); at most one loop iteration,
+  under 4 ms. The existing BREAK cases (`D5-break-running-loop`, `make qual-maint`'s BEEP/PAUSE) are in
+  `make test` (below).
+- **5.3 FOR_NEXT integer fast path.** When the loop variable is an INT, its frame is the innermost one
+  (`VM_CSP`) and the limit and step are INTs (small-integer form), NEXT adds, stores and compares in
+  registers: no `VM_FIND_FOR` walk, no `VM_FOR_LOAD_VA`, no `MATH_COMPARE16` call. Anything else, or a
+  sum that overflows (the FLOAT promotion), takes the general path from the start (nothing written yet;
+  the loop variable is reloaded from the operand). An empty control stack cannot pass for a frame
+  (comment at the code: it would need a FLOAT symbol 0 that is the loop variable). HOME 454 → 367 B (−87).
+  Empty loop 1,190 → 911 T per iteration (`for_empty` −23.6%); `for_float_step` +1.0% (the refused tests,
+  ~130 T on a 13 kT float iteration). Differential against 5.2, 22 FOR programs (overflow at ±32768 both
+  ways, `STEP` 3/−3/2/±32767/−32768, the variable changed in the body to an INT and to a FLOAT, `GOTO` out
+  of an inner loop, a float limit and start, NEXT without its FOR with symbol 0 INT, FLOAT and another
+  FLOAT, NEXT inside a PROC, re-entered FOR, `EXIT FOR`, `STEP 0` past the limit): screens and error codes
+  identical. Bug found by `qbench` in the first version: a refused FLOAT step lost the loop variable
+  (error 7 in `for_float_step`); fixed before the commit.
+- **5.4 combined opcodes** (sized from the corpus: weighted by loop nesting, `CMP; JMPZ` is 3.4% of the
+  instructions, `v = v ± k` 2.0%, `LOAD; PUSH; CMP` 3.5%). `CMP_JMPZ` (74, operand `[mask][target]`): a
+  relational operator and IF's `JMPZ` in one dispatch, no 0/1 pushed and popped; mask bit 0/1/2 = true
+  when a < b / a = b / a > b; for `IF … THEN GOTO` the mask is inverted and the target is the label (no
+  `JMP`). A taken jump polls BREAK. `ADD_VAR_I8` (75, `[v][k]`): `v = v + k` and `v = v - k` (as
+  `v + (-k)`: the calculator's FSUB is FADD with the sign flipped, so the FLOAT result is the same);
+  `ADD_VAR_VAR` (76, `[v][w]`): `v = v + w`. INT + INT without overflow in place; otherwise the general
+  sum (`VM_FLOAT_BINARY`, now a subroutine of `VM_FLOAT_BINARY_COMMON`) stored as `STORE_VAR` stores it.
+  - **Size.** HOME 367 → 246 B (−121: VM 117, compiler 4); EXROM 778 → 621 (−157). The handoff assumed
+    the compiler side would be EXROM; `rom/exrom_v2_compiler.asm` is assembled into HOME (`v2_home.asm`),
+    and the first build put 139 B there (HOME 111 B free). The three peepholes moved to the EXROM
+    (`rom/exrom_v2_fuse.asm`) behind three production-only entry slots (`V2_EXROM_FUSE_*_ADDR`), which the
+    HOME compiler calls directly, as it and the VM already call the calculator's slots: every compile
+    runs under the shell with the EXROM paged in (`qcanary --banking`: 667 cases, 0 violations; the
+    machine-stack low-water mark unchanged, `$FDE8`). HOME keeps the call sites and `COMPILE_RELATIONAL`'s
+    six tails merged into one that records `CMP_END` ($BA39, free since 5.1; zeroed at every compile).
+    KTAB magic `$1B` → `$1C` (`$1A` → `$1D` without AY BEEP). Production only: the test-only decompiler
+    rebuilds IF structures from `JMPZ`/`JMP`, so the standalone images compile as before.
+  - **Bytecode review** (the `qbytecode` reset for the group; 667 corpus programs, base vs 5.4, aligned
+    instruction by instruction, every difference accepted only as one of the three rewrites and every
+    jump operand checked against its relocated target): 519 identical, 101 the same compile error, 47
+    changed, all explained: 156 `v = v + k`, 4 `v = v + w`, 20 `CMP` + `JMPZ`, 9 `IF … THEN GOTO`; 667
+    bytes of bytecode fewer in all (4 per fused assignment, 3 per `IF … THEN GOTO`).
+  - **Differential against 5.3**, 95 programs (each relational operator × INT, FLOAT, mixed, negative,
+    equal and ±32767/−32768 operands, in IF/ELSE, IF with a constant, `IF … THEN GOTO` taken and not;
+    `v = v ± k` across 32767/−32768, FLOAT `v`, `v + w` with FLOAT and overflowing `w`, and near misses
+    left unfused: `v - w`, `1 + v`, `v + 1000`, `v + 1 + 1`, AND/OR/NOT, string compares, a compare's
+    value stored): screens and error codes identical. Bit-exact: 900 FLOAT results of a fused `x = x - k`,
+    `x = x + k`, `x = x + w` against the unfused `z = y - k` (… ) in the same program, random values: all
+    identical.
+  - Compiles +0.1% to +0.4% (`compile_only`, `compile_int_if`): two peephole checks and a slot call per
+    assignment and IF.
+- **`qbench` (T, compile and run; new integer programs `int_inc`, `goto_loop`, `if_branch`, `proc_calls`
+  and the `sieve` of `~/2068-rom-benchmarks`, because `int_loop` and `builtins` overflow into FLOAT):**
+
+  | program          |       base |   5.2 |    5.3 |    5.4 | group           |
+  | ---------------- | ----------:| -----:| ------:| ------:| --------------- |
+  | `int_inc`        |  7,984,071 | −2.2% |  −7.2% | −56.8% | −60.8% (2.55×)  |
+  | `goto_loop`      | 11,438,235 | −3.1% |   0.0% | −51.2% | −52.8% (2.12×)  |
+  | `sieve`          | 13,067,779 | −2.5% |  −2.2% | −22.5% | −26.0% (1.35×)  |
+  | `if_branch`      | 16,043,763 | −2.6% |  −3.6% | −21.0% | −25.9% (1.35×)  |
+  | `for_empty`      |  3,572,095 | +0.2% | −23.6% |   0.0% | −23.4% (1.31×)  |
+  | `for_nested`     |  3,944,003 | −0.1% | −21.8% |   0.0% | −21.9% (1.28×)  |
+  | `proc_calls`     |  5,877,700 | −1.5% |  −2.4% | −15.1% | −18.4% (1.23×)  |
+  | `loop_200`       |    507,260 |  0.0% | −11.2% |   0.0% | −11.1%          |
+  | `strings`        |  2,372,574 | −1.1% |  −2.4% |   0.0% | −3.5%           |
+  | `float_add_lit`  |  2,386,714 | −0.8% |  −2.3% | +0.1%  | −3.0%           |
+  | `builtins`       | 11,939,220 | −1.3% |  −1.2% | +0.1%  | −2.4%           |
+  | `int_loop`       | 38,814,914 | −0.9% |  −1.5% | +0.1%  | −2.3%           |
+  | `float_loop`     |  5,911,158 | −0.4% |  −1.0% | +0.1%  | −1.3%           |
+  | `float_div`      |  7,456,157 | −0.4% |  −0.8% |   0.0% | −1.1%           |
+  | `for_float_step` | 40,199,631 |  0.0% |  +1.0% |   0.0% | +1.0%           |
+  | `compile_only`   |  3,686,212 | −0.3% |   0.0% | +0.4%  | +0.1%           |
+  | `compile_int_if` |  3,346,791 |  0.0% |   0.0% | +0.4%  | +0.4%           |
+  | `compile_dec`    |  9,233,848 |  0.0% |   0.0% | +0.1%  | +0.1%           |
+
+- **Group size.** HOME 441 → **246 B** free (−195; 182 above the reserve), EXROM 778 → **621 B** (−157).
+  Per item, HOME: 5.2 +13, 5.3 −87, 5.4 −121.
+- **Tests.** `make check` and the release variant (`make build EXTRA_DEFS=`, HOME 281 / EXROM 620 free)
+  assemble. `make test` all PASS on 5.3 (1,883 s) and on 5.4 (1,730 s): budget reserve check, smoke 9/9,
+  standalone 40/40, production and fill checks, prod-regress 127, prod-arrays 101, known-defects 15
+  (`D5-break-running-loop` included), saveall 13, micsave 3, qual 663 PASS + 2 XFAIL + 2 N/A, lifecycle
+  23, maint-qual all (BREAK during BEEP and PAUSE included). `make doc-examples` on 5.4: 326/327 until the
+  manual followed the change, then 327/327: `mem.compile.1` documents the program's bytecode, and
+  `total = total + i` is now one `ADD_VAR_VAR` (31 → 27 bytes; `04_concepts.md`'s table and typical
+  figures updated, the Word manual is rebuilt at release). `qcanary --banking` (667 cases): 0 canary
+  hits, 0 banking violations, stack low-water mark `$FDE8` on both builds; its depth invariant is armed at
+  `VM_RUN.next` now (every op), `.loop` on older builds.
+- **Not done (candidates, sized [E]).** (i) A compare of a variable with a small constant fused with the
+  branch (`LOAD v; PUSH_I8 k; CMP_JMPZ`, 3.5% of the corpus' weighted instructions): ~45 B HOME, ~0.9 kT
+  per IF. (ii) A cheaper `VM_PUSH` (the operand stack is all in page `$B6`, so the bounds test and the
+  pointer need only the low byte: ~254 → ~134 T per push): a step of 5.5. (iii) A page-aligned opcode
+  table (~30 T per op, the alignment's padding to be found in HOME).
+- **Owner decision needed (F14):** integrate the group into `backport/leapc` (fast-forward), or drop or
+  rework an item (each is its own commit).
+
 ## Phase 6: package ABI 2.1 (minor version: old packages keep working)
 
 | #   | Item                                                                                                                                                                                                    | Notes                                                  |
@@ -532,6 +648,7 @@ All decided by the owner on 2026-10-25.
 | F11 | Float `FOR` counts after R1              | (a): follow the standard; `STEP 0` stays as it is (2026-10-26)      |
 | F12 | Physical TS2068 run                      | Not possible at this time: emulators only (2026-10-26)              |
 | F13 | Phase 5 grouping                         | 5.2, 5.3 and 5.4 together, one commit per item (2026-10-26)         |
+| F14 | 5.2-5.4 prototype                        | Pending (prototype `proto/5.2-5.4-vm-speed`, 2026-10-27)            |
 
 ## Also worth doing
 

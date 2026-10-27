@@ -1,7 +1,8 @@
-# Leap-C back-port: handoff after `SH_VIEW`, ED3 and ED7 (next: 5.2-5.4)
+# Leap-C back-port: handoff after the 5.2-5.4 prototype (awaiting the owner, F14)
 
-Written 2026-10-26 at the end of phase 3; updated at the end of phase 4, after 5.1, R1, `SH_VIEW` and ED3/ED7. The
-plan is `docs/V2_LEAPC_BACKPORT_PLAN.md`; this file is only where things stand and how to pick up.
+Written 2026-10-26 at the end of phase 3; updated at the end of phase 4, after 5.1, R1, `SH_VIEW`, ED3/ED7
+and (2026-10-27) the 5.2-5.4 prototype. The plan is `docs/V2_LEAPC_BACKPORT_PLAN.md`; this file is only where
+things stand and how to pick up.
 
 ## State
 
@@ -28,7 +29,13 @@ plan is `docs/V2_LEAPC_BACKPORT_PLAN.md`; this file is only where things stand a
   Plan, "Outcome, ED3 and ED7"; 7 `ED3-*`/`ED7-*` gate cases (prod-regress now 127); manual `con.edit.5`.
 - Owner, 2026-10-26: no physical TS2068 run is possible for now, emulators only (F12); 5.2, 5.3 and 5.4 are
   done as one group (F13).
-- Next: 5.2-5.4 (below).
+- **5.2-5.4 prototyped** on `proto/5.2-5.4-vm-speed` (off `backport/leapc`), one commit per item
+  (`fa8e5b9` 5.2, `cae1722` 5.3, `51d4f82` 5.4), then a docs commit. **Not integrated: owner decision F14
+  pending.** HOME 441 → 246 B free, EXROM 778 → 621. Everything measured is in the plan, "Outcome,
+  5.2-5.4". If approved: fast-forward `backport/leapc`, mark F14, move the ledger rows out of
+  "(prototype)". `backport/leapc` itself is unchanged.
+- Next after F14: 5.5 (top of stack in registers: prototype first; the cheaper `VM_PUSH` noted in the
+  5.2-5.4 outcome is a first step), then phase 6 (ABI 2.1) for v2.1.
 
 ## Working rules (owner)
 
@@ -57,37 +64,33 @@ plan is `docs/V2_LEAPC_BACKPORT_PLAN.md`; this file is only where things stand a
 | `tools/qual/qcalcround.py` | add/sub/mul/div rounding against exact results; `--leapc DIR` scores Leap-C's model and compares the ROM with it byte for byte |
 | `tools/qual/qcalctime.py` | T per calculator operation by operand class; `--fptoint FILE [--cmp FILE]` differential of `CALC_FP_TO_INT` |
 | `tools/qual/qnumcheck.py` | `qliterals` / `qnumparse` output against `NUM_PARSE_CALC`'s sequence replayed through Leap-C's model |
-| `tools/qual/qbench.py` | T-states per program (now also `float_add_lit`, `compile_dec`, `compile_int_if`) |
+| `tools/qual/qbench.py` | T-states per program (also `float_add_lit`, `compile_dec`, `compile_int_if`; 5.2-5.4: `int_inc`, `goto_loop`, `if_branch`, `proc_calls`, `sieve`) |
+| `tools/qual/qbreak.py` | BREAK through the real keyboard matrix in 19 loop forms and waits; error 66, the loop left, key-to-message T |
 | `tools/run_v2_standalone_tests.sh --build-only` | in `make check`: assembles all 40 standalone test images |
 | `tools/qual/qeditview.py` | editor per key: view rule, cursor, T-states; `--oracle` (full-redraw screen), `--ref DIR`, `--measure N` |
 
 Probe pattern (all of the `q*` tools above): a loop assembled at `$F400` (the package window), a
 table at `$8300` below the `$B6xx` cells, the booted snapshot restored per batch (`qharness.Machine`).
 
-## Next: 5.2, 5.3 and 5.4 together (owner decision F13)
+## Pitfalls met in 5.2-5.4
 
-The three are coupled: 5.2 moves the BREAK test to back-edges, 5.3's integer `NEXT` fast path is a
-back-edge, and a 5.4 combined opcode that jumps backwards is one too. Conditions (agreed with the owner):
-
-1. **The poll rule first.** Today `VM_RUN.loop` (`rom/exrom_v2_vm_core.asm`, assembled into HOME, `$110C`)
-   tests `VM_HALTED` before every opcode (`ld a,(VM_HALTED) / or a / ret nz`, 22 T per op [M]). The ISR sets
-   it for BREAK (`kernel/interrupt/interrupt.asm`, D5: error 66); `OP_HALT` sets it and returns into the loop
-   (it then has to leave `VM_RUN` itself); the error-halts unwind through `VM_RUN_SP`. Rule: every backward
-   jump, `NEXT`, call (`PROC`, `FN`), package call (`OP_CALL_EXT`) and the existing waits (PAUSE, INPUT)
-   test it; every new jumping opcode of 5.3/5.4 must too. Prove it with one BREAK case per loop form (GOTO
-   loop, integer and float FOR, the 5.3 fast path, PROC recursion, each 5.4 opcode that jumps), next to
-   `D5-break-running-loop` (known-defect suite) and `make qual-maint`'s BREAK cases.
-2. **One prototype branch off `backport/leapc`, one commit per item**, `qbench` after each, so each item's
-   bytes and speed go in the ledger separately; `qbytecode` baselines are reset once, for the group (5.4
-   changes the compiler's output: review every changed program, as 5.1 did).
-3. **HOME room.** The handlers are HOME: 441 B free, 377 B above the reserve. Size 5.3 and 5.4 before
-   writing them (the compiler side of 5.4 is EXROM, 778 B free); item 5.0 (shrink pass) first if they do not
-   fit.
-
-Emulators only (F12): ZEsarUX for everything; Fuse only if the owner approves a run (timing-sensitive cases).
-Then stop for the owner with the measured sizes and speed-ups before integrating.
-
-**After 5.2-5.4.** 5.5 (top of stack in registers: prototype first), then phase 6 (ABI 2.1) for v2.1.
+- **The compiler is HOME code** (`rom/v2_home.asm` includes `rom/exrom_v2_compiler.asm`; the file name
+  misleads). Anything added to the compiler costs HOME. 5.4's peepholes live in the EXROM
+  (`rom/exrom_v2_fuse.asm`) behind production-only slots `V2_EXROM_FUSE_*_ADDR`; the HOME compiler may
+  call EXROM slots directly because every compile runs under the shell with the EXROM in. EXROM code
+  sees HOME RAM cells only through the whitelist in `tools/write_v2_crossbank.py`. A slot's
+  `V2_VERIFY_KTAB` destroys AF on entry. Changing the slot list: bump `V2_KTAB_MAGIC`.
+- **The BREAK poll is at `VM_RUN.loop`, the dispatch at `VM_RUN.next`** (5.2). A handler that jumps, calls,
+  or waits must end `jp VM_RUN.loop`; others `jp (iy)`. `qcanary --banking` arms its depth invariant at
+  `.next` now. `tools/qual/qbreak.py` is the BREAK matrix (run it on any change to the dispatch).
+- **Peepholes are production-only** (`IFDEF V2_PRODUCTION`): the test-only decompiler rebuilds IF
+  structures from `JMPZ`/`JMP`. The standalone images compile as before.
+- A register clobbered before a fallback: 5.3's first version used `ld bc,5` with C still the loop
+  variable for the general path (`qbench`'s `for_float_step` ended with error 7). Check every early exit
+  of a fast path for the registers the slow path expects.
+- Opcode operand lengths for a bytecode disassembler are in the review script's table (scratch work, not
+  in the repo): 1 byte for 3/4/18/39/50/51/56/57, 2 for 2/6/12/15/47/52/53/72/73 and 75/76, 3 for
+  13/14/34/48/49/63-66 and 74, 5 for 70, 1+len for 17.
 
 ## Pitfalls met in `SH_VIEW`, ED3 and ED7
 

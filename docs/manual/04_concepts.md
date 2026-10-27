@@ -319,7 +319,7 @@ When you type `RUN` (or an immediate statement after a colon), V2 **compiles** t
 
 So a line's cost has two parts, which you must not confuse: **the text** (length + 3, in the pool, always) and **the code** (a few bytes in the code area, only while compiled). The code is usually *smaller* than the text. Here is a small program and what the compiler makes of it:
 
-```basic ex=mem.compile.1 code=31 source=73
+```basic ex=mem.compile.1 code=27 source=73
 total = 0
 FOR i = 1 TO 10
 total = total + i
@@ -334,14 +334,14 @@ PRINT total
 |---|---|---|
 | `total = 0` (12) | push 0, store in variable 0 | 4 |
 | `FOR i = 1 TO 10` (18) | push 1 (start), push 10 (limit), push 1 (step), start the loop on variable 1 | 10 |
-| `total = total + i` (20) | load `total`, load `i`, add, store `total` | 7 |
+| `total = total + i` (20) | add variable 1 to variable 0 in place (one instruction) | 3 |
 | `NEXT i` (9) | next of variable 1: add the step, go round again | 4 |
 | (after the loop) | drop the loop's frame | 1 |
 | `PRINT total` (14) | load `total`, print the number, new line | 4 |
 | (end of program) | halt | 1 |
-| **Total** | **73 bytes of text** | **31 bytes of code** |
+| **Total** | **73 bytes of text** | **27 bytes of code** |
 
-Typical figures: a small assignment such as `x = 1` is 4 bytes of code; `x = 1.5` is 7 (a fractional number takes five bytes); `x = 40000` is 8; `PRINT "hello"` is 9 (the five letters are in the code); a label or a `REM` takes none; `PROC` 8 and `DEF FN` 10. The code area holds 4011 bytes, which is about a thousand lines of `x = 1`: that is the **second limit** on program size (the program stops compiling with `OUT OF MEMORY` when the code does not fit). The first limit, usually reached sooner, is the pool.
+Typical figures: a small assignment such as `x = 1` is 4 bytes of code; `x = x + 1`, `x = x - 1` and `x = x + y` are 3 (one instruction adds in place); `x = 1.5` is 7 (a fractional number takes five bytes); `x = 40000` is 8; `PRINT "hello"` is 9 (the five letters are in the code); a label or a `REM` takes none; `PROC` 8 and `DEF FN` 10. The code area holds 4011 bytes, which is about a thousand lines of `x = 1`: that is the **second limit** on program size (the program stops compiling with `OUT OF MEMORY` when the code does not fit). The first limit, usually reached sooner, is the pool.
 
 ### The main memory pool
 

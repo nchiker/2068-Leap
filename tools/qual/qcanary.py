@@ -15,8 +15,8 @@ ZEsarUX breakpoint conditions, evaluated after every instruction, in slots the h
 first that holds stops the case, which is then reported with the invariant's name:
   - the stack in chunk 6 ($C000-$DFFF);
   - a write to chunk 6 while the EXROM is paged in (it would be lost: the EXROM is ROM);
-  - a paging depth other than 1 when the VM dispatches an op (VM_RUN.loop): the VM runs with the EXROM
-    in, and a package call (depth 0) has returned before the next op.
+  - a paging depth other than 1 when the VM dispatches an op (VM_RUN.next; VM_RUN.loop before 5.2): the
+    VM runs with the EXROM in, and a package call (depth 0) has returned before the next op.
 """
 import argparse, json, multiprocessing as mp, os, sys
 
@@ -35,7 +35,15 @@ def invariants(S):
     return [("the stack in chunk 6", "SP>BFFFH and SP<E000H"),
             ("a write to chunk 6 with the EXROM paged in", "MWA>BFFFH and MWA<E000H and PEEK(%04XH)<>0" % d),
             ("a paging depth other than 1 at the VM's dispatch",
-             "PC=%04XH and PEEK(%04XH)<>1" % (S("VM_RUN.loop"), d))]
+             "PC=%04XH and PEEK(%04XH)<>1" % (dispatch(S), d))]
+
+
+def dispatch(S):
+    """Every op passes VM_RUN.next since 5.2 (VM_RUN.loop, the BREAK poll, falls into it); before, .loop."""
+    try:
+        return S("VM_RUN.next")
+    except KeyError:
+        return S("VM_RUN.loop")
 
 
 def arm(m):
