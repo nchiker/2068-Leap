@@ -239,10 +239,10 @@ KBD_ISR_TICK:
     ld   (KBD_LASTK), a
     IFDEF V2_PRODUCTION
     cp   KEY_BREAK                     ; STUDY (D5): BREAK halts a running
-    jr   nz, .not_break                ; program at the next dispatch --
-    ld   a, 66                         ; VM_RUN.loop already tests VM_HALTED
-    ld   (VM_ERROR_CODE), a            ; before every opcode, so no poll is
-    ld   a, 1                          ; added to the VM. VM_INIT clears both
+    jr   nz, .not_break                ; program at its next poll -- VM_RUN.loop
+    ld   a, 66                         ; tests VM_HALTED at every taken jump,
+    ld   (VM_ERROR_CODE), a            ; call and wait (5.2), so no poll is
+    ld   a, 1                          ; added here. VM_INIT clears both
     ld   (VM_HALTED), a                ; cells at the next RUN, so a stale
 .not_break:                            ; request raised in the editor is inert
     ENDIF

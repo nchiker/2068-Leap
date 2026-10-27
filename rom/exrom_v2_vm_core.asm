@@ -879,16 +879,24 @@ VM_CARVE_DESC:
 ; ---------------------------------------------------------------------------
 ; VM_RUN — dispatch loop. Entry: VM_IP already set by the caller. Returns
 ; when VM_HALTED becomes nonzero (normal HALT or any error-halt).
+; 5.2 (BREAK poll rule): VM_HALTED is tested at .loop only, not before every opcode. An ordinary
+; handler ends `jp (iy)` (.next, no test). Every taken jump (OP_JMP: JMP, JMPZ, JMP_ELSE,
+; JMP_DEFFN, AND_SC/OR_SC, FOR's skip), FOR_NEXT's back branch, every CALL (PROC, FN), the
+; re-entry after a package (OP_CALL_EXT -> VM_RUN) and the waits (PAUSE, BEEP, INPUT) end at
+; .loop. Every cycle in a program passes one of them: a loop needs a backward transfer, and RET
+; (the only other one) returns from a CALL in the same cycle. A new opcode that jumps must end
+; at .loop too.
 ; ---------------------------------------------------------------------------
 VM_RUN:
         ld (VM_RUN_SP),sp       ; QUAL: any VM error returns straight to VM_RUN's caller
-        ld iy,.loop             ; RC shrink: handlers end `jp (iy)` (2 bytes, was jp VM_RUN.loop).
+        ld iy,.next             ; RC shrink: handlers end `jp (iy)` (2 bytes, was jp VM_RUN.loop).
                                 ; VM_RUN destroys IY; code that runs foreign code (packages:
                                 ; OP_CALL_EXT re-enters at VM_RUN; USR: the trampoline keeps IY)
 .loop:
-        ld a,(VM_HALTED)
+        ld a,(VM_HALTED)        ; 5.2: the BREAK poll (see above)
         or a
         ret nz
+.next:
         ld hl,(VM_IP)
         ld a,(hl)               ; fetch opcode
         inc hl
@@ -2030,8 +2038,7 @@ OP_INPUT_NUM:                   ; RC (Q-15/Q-16): the typed text ('-' first, dig
         call NUM_PUSH_CALC
         ld a,(VM_INPUT_TARGET_TMP)
         call VM_STORE_VAR_BY_INDEX   ; INT or FLOAT
-        call VM_ADVANCE_OUTPUT_ROW
-        jp (iy)
+        jr OP_INPUT_STR.end
 
 OP_INPUT_STR:
         ld hl,(VM_IP)
@@ -2091,8 +2098,9 @@ OP_INPUT_STR:
         call VM_STR_ADDR
         ld a,(VM_INPUT_COUNT)
         ld (hl),a
+.end:
         call VM_ADVANCE_OUTPUT_ROW
-        jp (iy)
+        jp VM_RUN.loop          ; 5.2: a wait polls BREAK (pressed during INPUT: stops after ENTER)
 
 ; R10.5 shrink: OP_ADD/SUB/MUL/DIV shared a near-identical pop/tag-check
 ; prologue and (for ADD/SUB/MUL, and DIV's own float_path) a near-identical
@@ -2153,18 +2161,6 @@ OP_ADD:
 .float_path:
         ld hl,VM_CALC_ADD_STUB
         jr VM_FLOAT_BINARY_COMMON
-
-OP_JMP:
-        ld hl,(VM_IP)
-        ld e,(hl)
-        inc hl
-        ld d,(hl)
-        ld hl,VM_CODE_BASE
-        add hl,de
-        ld (VM_IP),hl           ; O(1) compiled branch — see Milestone 01's
-                                 ; real hardware measurement for the direct
-                                 ; confirmation of this claim.
-        jp (iy)
 
 OP_SUB:
         call VM_PREPARE_BINARY_OPERANDS
@@ -2345,10 +2341,10 @@ VM_LOGIC_SC:
 .t:
         pop af
         cp l
-        jr nz,OP_JMPZ.no_branch  ; not decided: on to the right operand
+        jr nz,VM_SKIP_TARGET    ; not decided: on to the right operand
         xor a                    ; TAG_INT
         call VM_PUSH
-        jp OP_JMP
+        jr OP_JMP
 
 OP_JMPZ:
         rst $10                 ; HL = condition value, A = tag (not
@@ -2356,16 +2352,19 @@ OP_JMPZ:
                                  ; or any int value is a legal condition,
                                  ; same "any nonzero is true" rule V1 uses)
         call VM_FLOAT_TEST_ZERO ; QUAL (Q-06): a FLOAT condition is tested by value (was: its slot index)
-        jr nz,.no_branch
+        jr nz,VM_SKIP_TARGET
+OP_JMP:                         ; 5.2: a taken JMPZ falls in here
         ld hl,(VM_IP)
         ld e,(hl)
         inc hl
         ld d,(hl)
         ld hl,VM_CODE_BASE
         add hl,de
-        ld (VM_IP),hl
-        jp (iy)
-.no_branch:
+        ld (VM_IP),hl           ; O(1) compiled branch — see Milestone 01's
+                                 ; real hardware measurement for the direct
+                                 ; confirmation of this claim.
+        jp VM_RUN.loop          ; 5.2: every taken jump polls BREAK
+VM_SKIP_TARGET:                 ; (was OP_JMPZ.no_branch)
         ld hl,(VM_IP)
         inc hl
         inc hl                  ; skip the 2-byte operand we didn't use
@@ -2445,7 +2444,7 @@ OP_FOR_INIT:
         call VM_FOR_PAST
         dec a
         jp z,OP_JMP             ; already past the limit: skip the body (to FOR_POP)
-        jr OP_JMPZ.no_branch    ; run the body: step over the operand
+        jr VM_SKIP_TARGET       ; run the body: step over the operand
 
 OP_FOR_NEXT:
         ld hl,(VM_IP)
@@ -2519,12 +2518,12 @@ OP_FOR_NEXT:
         call VM_FOR_PAST
 .decide:
         dec a
-        jp z,VM_RUN.loop        ; past the limit: fall through to FOR_POP
+        jp z,VM_RUN.next        ; past the limit: fall through to FOR_POP
         ld de,(VM_FOR_NEXT_BRANCH)
         ld hl,VM_CODE_BASE
         add hl,de
         ld (VM_IP),hl
-        jp (iy)
+        jp VM_RUN.loop          ; 5.2: the back branch polls BREAK
 
 ; VM_FOR_VAR -- A = the current loop's variable (from VM_FOR_FRM). Destroys HL.
 VM_FOR_VAR:
@@ -2659,7 +2658,7 @@ OP_CALL:
                                  ; can undo this
         pop hl                  ; HL = return address
         call VM_CALL_PUSH
-        jp (iy)
+        jp VM_RUN.loop          ; 5.2: a call (PROC, FN) polls BREAK
 
 OP_RET:
         call VM_CALL_POP        ; HL = return address
@@ -3743,7 +3742,7 @@ OP_BEEP:
         ex de,hl                ; DE = frames
         pop hl                  ; HL = semitones
         call AY_BEEP            ; EXROM slot (rom/v2_ay_beep.asm)
-        jp (iy)
+        jp VM_RUN.loop          ; 5.2: a wait polls BREAK (AY_WAIT_FRAMES ends early on it)
 VM_ERR_RANGE EQU BUILTIN_FN_CHR.chr_range_err   ; error 15 (exported to the EXROM)
     ELSE
 OP_BEEP:
@@ -3755,7 +3754,7 @@ OP_BEEP:
                                     ; register); HL now holds whatever
                                     ; DE held before (unused garbage)
         call SOUND_BEEP
-        jp (iy)
+        jp VM_RUN.loop          ; 5.2: a wait polls BREAK
     ENDIF
 
 ; OP_SOUND — pops data then register (compiler pushes register,data,
@@ -3810,7 +3809,10 @@ OP_PAUSE:
         rst $18                 ; HL = n (QUAL Q-30: a FLOAT was its slot index)
         ld a,h
         or l
-        jr z,.wait_key
+        jr nz,.frames
+        call IO_READ_KEY        ; PAUSE 0: a key (BREAK is one)
+        jr .done
+.frames:
     IFDEF V2_MAINT_SHARED_WAIT
         ex de,hl                ; MAINT (shared wait): n HALTs, BREAK ends it (rom/v2_ay_beep.asm)
         call AY_WAIT_FRAMES
@@ -3831,10 +3833,8 @@ OP_PAUSE:
         sbc hl,de                 ; carry set while current < target
         jr c,.wait_loop
     ENDIF
-        jp (iy)
-.wait_key:
-        call IO_READ_KEY
-        jp (iy)
+.done:
+        jp VM_RUN.loop          ; 5.2: a wait polls BREAK
 
 ; OP_RANDOMISE — pops n, reseeds the RNG via the real, unmodified
 ; MATH_RND_SEED (kernel/math). No register survives past this one call

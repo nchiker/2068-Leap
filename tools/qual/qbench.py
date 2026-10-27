@@ -23,6 +23,16 @@ PROGS = {
     "float_div": ["x = 0", "FOR i = 1 TO 200", "x = x + i / 7", "NEXT i"],
     "compile_dec": ["IF 0 THEN"] + ["x%d = %d.25 + %d.5 * (0.%d - 1.75)" % (k, k, k, k + 1) for k in range(60)] + ["ENDIF"],
     "compile_int_if": ["IF 0 THEN"] + ["x%d = %d + %d * (%d - 1)" % (k, k, k, k + 1) for k in range(60)] + ["ENDIF"],
+    # 5.2-5.4: integer programs that stay integer (int_loop and builtins overflow into FLOAT)
+    "int_inc": ["x = 0", "FOR i = 1 TO 2000", "x = x + 1", "NEXT i"],
+    "goto_loop": ["i = 0", "top:", "i = i + 1", "IF i < 2000 THEN GOTO top"],
+    "if_branch": ["a = 0", "g = 0", "FOR i = 1 TO 2000", "g = 1 - g", "IF g = 0 THEN", "a = a + 1", "ENDIF", "NEXT i"],
+    "proc_calls": ["s = 0", "FOR i = 1 TO 500", "CALL p(i)", "NEXT i", "END", "PROC p(n):", "s = s + n", "ENDP"],
+    # the sieve of ~/2068-rom-benchmarks (basic-leap/sieve.bas), one pass, in V2's dialect
+    "sieve": ["s = 500", "DIM g(501)", "c = 0", "FOR i = 0 TO s", "g(i) = 1", "NEXT i", "FOR i = 0 TO s",
+              "IF g(i) = 0 THEN GOTO skip", "r = i + i + 3", "k = i + r", "IF k > s THEN GOTO noclear",
+              "clearloop:", "g(k) = 0", "k = k + r", "IF k <= s THEN GOTO clearloop", "noclear:", "c = c + 1",
+              "skip:", "NEXT i"],
 }
 ap = argparse.ArgumentParser(); ap.add_argument("cfgs", nargs="+"); ap.add_argument("--port", type=int, default=10580)
 ap.add_argument("--root", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "build", "qual-builds"))
