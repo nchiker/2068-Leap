@@ -72,26 +72,71 @@ COMPILE_FUSE_ADD_X:
     scf
     ret
 
-; COMPILE_FUSE_CMP -- IF's condition. Out: A = 12 (JMPZ, to emit), or, when the condition ends with
-; a relational operator (CMP_END = EMIT_PTR), that opcode turned into CMP_JMPZ (74) and A = its
-; mask, emitted in JMPZ's place (the same length). Destroys AF, BC, DE, HL.
+; COMPILE_FUSE_CMP -- IF's condition, HL = where it starts. Out: A = 12 (JMPZ, to emit), or, when the
+; condition ends with a relational operator (CMP_END = EMIT_PTR), that opcode turned into CMP_JMPZ (74)
+; and A = its mask, emitted in JMPZ's place (the same length). 5.12: when the whole condition is
+; LOAD v / PUSH_I8 k (PUSH_I16 k) / the operator, it becomes CMP_VAR_JMPZ (77) v,k (k 16-bit) and A
+; the mask, the operand going on as CMP_JMPZ's. Destroys AF, BC, DE, HL.
 COMPILE_FUSE_CMP_X:
+    push hl
     ld hl,(EMIT_PTR)
     ld de,(CMP_END)
     or a
     sbc hl,de
+    pop bc                      ; BC = the condition's start
     ld a,12
     ret nz                      ; the condition does not end with a relational operator: JMPZ
     dec de
     ld a,(de)                   ; its opcode
     ld hl,CMP_FUSE_TABLE
+    push bc
     ld bc,6
     cpir
     ld a,74
     ld (de),a                   ; CMP_JMPZ
     ld c,5
     add hl,bc
-    ld a,(hl)                   ; the mask
+    ld c,(hl)                   ; C = the mask
+    pop hl                      ; HL -> the condition, DE -> its operator
+    push hl
+    ld a,(hl)
+    cp 3                        ; LOAD_VAR v first?
+    jr nz,.cmp
+    inc hl
+    inc hl
+    ld a,(hl)                   ; PUSH_I8 (1) or PUSH_I16 (2)
+    inc hl
+    ld b,(hl)                   ; k, its low byte
+    inc hl
+    dec a
+    jr z,.k8
+    dec a
+    jr nz,.cmp
+    ld a,(hl)                   ; its high byte
+    inc hl
+    jr .k
+.k8:
+    ld a,b
+    rla
+    sbc a,a                     ; (I8) the sign
+.k:
+    or a                        ; (A survives)
+    sbc hl,de
+    jr nz,.cmp                  ; the operator is not next: more to the condition
+    pop hl
+    ld (hl),77                  ; CMP_VAR_JMPZ
+    inc hl                      ; v
+    inc hl
+    ld (hl),b
+    inc hl
+    ld (hl),a                   ; k
+    inc hl
+    ld (EMIT_PTR),hl
+    ld a,c
+    ret
+.cmp:
+    pop hl
+    ld a,c
     ret
 CMP_FUSE_TABLE:
     db 10, 11, 40, 41, 42, 43   ; CMP_LT, EQ, LE, GT, GE, NE

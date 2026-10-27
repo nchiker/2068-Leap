@@ -904,8 +904,8 @@ VM_RUN:
         ld a,(hl)               ; fetch opcode
         inc hl
         ld (VM_IP),hl
-        cp 77                   ; 77 opcodes (OUT 67, NL 68, PRINT_COMMA 69, PUSH_FLOAT5 70, STR_CMP_GT 71, AND_SC 72, OR_SC 73,
-                                 ; 5.4: CMP_JMPZ 74, ADD_VAR_I8 75, ADD_VAR_VAR 76)
+        cp 78                   ; 78 opcodes (OUT 67, NL 68, PRINT_COMMA 69, PUSH_FLOAT5 70, STR_CMP_GT 71, AND_SC 72, OR_SC 73,
+                                 ; 5.4: CMP_JMPZ 74, ADD_VAR_I8 75, ADD_VAR_VAR 76; 5.12: CMP_VAR_JMPZ 77)
                                  ; (was: 67 opcodes defined (0-66, R8.5 adds
                                  ; 35-38: PRINT_NUM/STR, LPRINT_NUM/STR;
                                  ; 39: CALL_FN (Group 1); 40-43: CMP_LE/
@@ -1050,6 +1050,7 @@ VM_OP_TABLE:
         dw OP_CMP_JMPZ                                      ; 74  5.4: relational + JMPZ
         dw OP_ADD_VAR_I8                                    ; 75  5.4: v = v + k
         dw OP_ADD_VAR_VAR                                   ; 76  5.4: v = v + w
+        dw OP_CMP_VAR_JMPZ                                  ; 77  5.12: IF v <op> k
 
 ; ---------------------------------------------------------------------------
 ; String-table access: index (A) -> HL = record address. Same shape as
@@ -2424,6 +2425,7 @@ VM_LOGIC_SC:
 ; BREAK (OP_JMP).
 OP_CMP_JMPZ:
         call VM_CMP_DISPATCH    ; A = $FF a < b, 0 a = b, 1 a > b
+.test:                          ; 5.12: OP_CMP_VAR_JMPZ's INT compare enters here
         ld hl,(VM_IP)
         inc a
         inc a
@@ -2436,6 +2438,39 @@ OP_CMP_JMPZ:
         djnz .bit               ; carry = the comparison
         jr nc,OP_JMP            ; false: take the branch
         jr VM_SKIP_TARGET       ; true: step over the target
+
+; 5.12: OP_CMP_VAR_JMPZ (77), operand [v][k:2][mask][target:2] -- an IF whose whole condition is
+; LOAD v / PUSH_I8 k (PUSH_I16 k) / a relational operator, fused with its JMPZ: CMP_JMPZ's mask and
+; target. An INT v is compared with k in registers (nothing pushed); a FLOAT v pushes v and k, as
+; the two instructions did, and is compared by CMP_JMPZ (VM_IP is at the mask either way).
+OP_CMP_VAR_JMPZ:
+        ld hl,(VM_IP)
+        ld a,(hl)               ; v
+        inc hl
+        ld c,(hl)
+        inc hl
+        ld b,(hl)               ; BC = k
+        inc hl
+        ld (VM_IP),hl           ; -> the mask
+        call VM_SYM_ADDR        ; HL -> v's record (BC survives)
+        ld a,(hl)               ; v's tag
+        inc hl
+        ld e,(hl)
+        inc hl
+        ld d,(hl)
+        ex de,hl                ; HL = v
+        or a
+        jr nz,.float
+        ld d,b
+        ld e,c
+        call MATH_COMPARE16     ; A = $FF v < k, 0 v = k, 1 v > k
+        jr OP_CMP_JMPZ.test
+.float:
+        call VM_PUSH            ; v (A = its tag)
+        ld h,b
+        ld l,c
+        call VM_PUSH_INT        ; k
+        jr OP_CMP_JMPZ
 
 OP_JMPZ:
         rst $10                 ; HL = condition value, A = tag (not

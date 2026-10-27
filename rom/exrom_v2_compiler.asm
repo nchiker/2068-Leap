@@ -3454,10 +3454,14 @@ COMPILE_GOTO:
 ; mixed, so this one-token peek is sufficient and unambiguous.
 COMPILE_IF:
         rst $08                 ; consume IF
-        call COMPILE_EXPR       ; RC (L-STR): string relations are ordinary factors now
-.condition_done:
     IFDEF V2_PRODUCTION
-        call COMPILE_FUSE_CMP   ; 5.4 (EXROM): A = 12 (JMPZ) or a CMP_JMPZ's mask
+        ld hl,(EMIT_PTR)
+        push hl                 ; 5.12: the condition's start (a compile error returns, so it pops)
+    ENDIF
+        call COMPILE_EXPR       ; RC (L-STR): string relations are ordinary factors now
+    IFDEF V2_PRODUCTION
+        pop hl
+        call COMPILE_FUSE_CMP   ; 5.4 (EXROM): A = 12 (JMPZ) or a CMP_JMPZ's mask (5.12: HL = the start)
     ELSE
         ld a,12        ; QUAL shrink: inlined EMIT_OP_JMPZ
     ENDIF

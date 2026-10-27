@@ -159,6 +159,40 @@ case("sieve", ["s = 100", "DIM g(101)", "c = 0", "FOR i = 0 TO s", "g(i) = 1", "
                "clearloop:", "g(k) = 0", "k = k + r", "IF k <= s THEN GOTO clearloop", "noclear:", "c = c + 1",
                "skip:", "NEXT i", "PRINT c"], nums(_sieve(100)))
 
+# ---------------------------------------------------------------- 5.12: IF v <op> k as one instruction
+# Each relational operator in an IF block (with ELSE) and in IF ... THEN GOTO, for a variable against a
+# constant, one row per form: 1 when the comparison holds. The constants 0-127 are 8-bit literals, 128,
+# 1000, 32767 and -1 (the minus folded in) 16-bit ones: all combine; 4.5 (a 5-byte literal) does not. The
+# FLOAT variables (2.5, -0.5, 40000, 2.5 + 2.5: a FLOAT whose value is whole) take the fallback.
+IFK_VALUES = (("-32767 - 1", -32768), ("-129", -129), ("-1", -1), ("0", 0), ("5", 5), ("127", 127), ("128", 128),
+              ("32767", 32767), ("2.5", Fr(5, 2)), ("-0.5", Fr(-1, 2)), ("40000", 40000), ("2.5 + 2.5", 5))
+IFK_CONSTS = ("0", "5", "127", "128", "1000", "32767", "-1", "4.5")
+for (vi, (vsrc, vv)), (ki, k) in itertools.product(enumerate(IFK_VALUES), enumerate(IFK_CONSTS)):
+    lines, blk, gto = ["x = " + vsrc], "", ""
+    for j, op in enumerate(OPS):
+        lines += ["IF x %s %s THEN" % (op, k), 'PRINT "1";', "ELSE", 'PRINT "0";', "ENDIF"]
+        blk += "1" if OPS[op](Fr(vv), Fr(k)) else "0"
+    lines.append("PRINT")
+    for j, op in enumerate(OPS):
+        lines += ["IF x %s %s THEN GOTO y%d" % (op, k, j), 'PRINT "0";', "GOTO n%d" % j, "y%d:" % j, 'PRINT "1";',
+                  "n%d:" % j]
+    lines.append("PRINT")
+    case("ifk-%d-%d" % (vi, ki), lines, [blk, blk])
+# the variable made FLOAT, then INT again, inside the loop the IF closes
+case("ifk-loop-retag", ["x = 0", "n = 0", "top:", "n = n + 1", "x = x + 0.5", "IF n = 4 THEN", "x = 2", "ENDIF",
+                        "IF x < 3 THEN GOTO top", "PRINT n"], ["6"])
+case("ifk-loop-down", ["i = 300", "top:", "i = i - 1", "IF i > 5 THEN GOTO top", "PRINT i"], ["5"])
+case("ifk-loop-k16", ["i = 0", "top:", "i = i + 7", "IF i <= 2000 THEN GOTO top", "PRINT i"], ["2002"])
+# not the whole condition: a sum on either side, the constant first, two variables, AND, an array
+case("ifk-near", ["a = 1", "b = 2", "c = 3", "d = 4", "DIM g(3)", "g(1) = 9",
+                  "IF c + d < 8 THEN", 'PRINT "a";', "ENDIF", "IF d < 5 + c THEN", 'PRINT "b";', "ENDIF",
+                  "IF 5 > d THEN", 'PRINT "c";', "ENDIF", "IF a < d THEN", 'PRINT "d";', "ENDIF",
+                  "IF a < 2 AND d > 3 THEN", 'PRINT "e";', "ENDIF", "IF g(1) > 8 THEN", 'PRINT "f";', "ENDIF",
+                  "IF (d) = 4 THEN", 'PRINT "g";', "ENDIF", "PRINT"],
+     ["abcdefg"])
+case("ifk-proc", ["s = 0", "CALL p(1)", "PRINT s", "END", "PROC p(n):", "s = s + n", "IF n < 12 THEN", "CALL p(n + 1)",
+                  "ENDIF", "ENDP"], ["78"])
+
 # ---------------------------------------------------------------- 5.5: the operand stack's bounds
 # 1+(1+(...)) with n levels holds n + 1 operands at once; the stack has room for 41 ($B604-$B67F, 3 bytes
 # each; the manual's limit "about 40"), so 40 levels run and 41 stop with STACK OVERFLOW (run-time 2)

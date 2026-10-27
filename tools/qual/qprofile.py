@@ -58,6 +58,12 @@ STATEMENTS = [
     ('x = VAL("12")', [], ['x = VAL("12")']), ("x = i / 7", [], ["x = i / 7"]),
     ("x = i * 0.5", [], ["x = i * 0.5"]), ("x = 2.5 + i", [], ["x = 2.5 + i"]),
     ("PRINT 7 (scrolls)", [], ["PRINT 7"]), ("AT 5, 0: PRINT 7;", [], ["AT 5, 0", "PRINT 7;"]),
+    # 5.12: an IF whose condition is a variable against a constant (false, true, the GOTO form, FLOAT v),
+    # and two variables (not combined)
+    ("IF i < 5 (false)", [], ["IF i < 5 THEN", "ENDIF"]), ("IF i < 1000 (true)", [], ["IF i < 1000 THEN", "ENDIF"]),
+    ("IF i < 0 THEN GOTO", [], ["IF i < 0 THEN GOTO z", "z:"]),
+    ("IF x < 5 (x FLOAT)", ["x = 2.5"], ["IF x < 5 THEN", "ENDIF"]),
+    ("IF i < j (two vars)", ["j = 5"], ["IF i < j THEN", "ENDIF"]),
 ]
 SLOW = ("SQR", "SIN", "COS", "TAN", "scrolls")
 
