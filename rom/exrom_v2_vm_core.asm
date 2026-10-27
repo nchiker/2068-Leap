@@ -324,6 +324,7 @@ VM_PARAM_BIND_INDEX_TMP: equ VM_PARAM_FLOAT_ADDR_TMP+2 ; (1 byte): the
                                      ; symbol index this instruction's own
                                      ; operand names (compiled-index design)
 
+    INCLUDE "include/v2_ext_kinds.inc"   ; 6.1: EXT_KIND_* (also where the registry is stubbed)
 TAG_INT:            equ 0
 TAG_FLOAT:          equ 1
 TAG_STR:            equ 2   ; QUAL (Q-02): a string TEMP index on the operand stack (variable refs stay 0)
@@ -4049,6 +4050,7 @@ OP_CALL_EXT:
         inc hl
         ld (VM_IP),hl
         ld a,(VM_EXT_ARGCOUNT)
+        and $FF ^ EXT_KIND_MASK     ; 6.1: bits 7-6 are the kind (a function's value is pushed)
         ld (VM_EXT_REMAINING),a
 .pop_loop:
         ld a,(VM_EXT_REMAINING)
@@ -4116,7 +4118,23 @@ OP_CALL_EXT:
         IFDEF V2_PRODUCTION
         call BANK_PAGE_EXROM_IN
         ENDIF
-        jp VM_RUN               ; RC: re-enter (IY again) -- the package may have used IY
+        ld a,(VM_EXT_ARGCOUNT)   ; 6.1: the kind (EXT_KIND_*, bits 7-6)
+        add a,a                  ; carry = a string, sign = a function
+        jp p,VM_RUN              ; RC: re-enter (IY again) -- the package may have used IY
+        ld de,VM_RUN
+        push de                  ; the push below returns into VM_RUN
+        ld hl,(EXT_CALL_RESULT)
+        jp nc,VM_PUSH_INT        ; a numeric function: its 16-bit value, an INT
+        push hl                  ; a string function: HL -> [len 0-31][text], copied
+        call VM_STR_ALLOC_TEMP   ; A = a string temp, HL -> its record
+        pop de
+        push af                  ; (VM_PUSH_STR_RESULT pops the index)
+        ex de,hl
+        ld c,(hl)
+        ld b,0
+        inc bc
+        ldir
+        jp VM_PUSH_STR_RESULT
 
 ; ===========================================================================
 ; R8.5 — text I/O (PRINT/LPRINT). V1's own real scope, matched (not

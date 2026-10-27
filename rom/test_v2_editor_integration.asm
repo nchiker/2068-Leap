@@ -386,6 +386,7 @@ EXT2_SLOT_ADDR:
 ; rather than reserving real ROM bytes for space that's never touched.
 EXT_CALL_ARG0: equ $8B00
 EXT_CALL_ARG4: equ $8B00
+EXT_CALL_RESULT: equ $8B00             ; 6.1: OP_CALL_EXT reads it (test stub)
 EXT2_TABLE:    equ $8B00
     INCLUDE "rom/exrom_format.asm"
     INCLUDE "rom/exrom_v2_vm_core.asm"

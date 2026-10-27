@@ -262,12 +262,11 @@ PROC_PARAM_INDEX_TMP: equ $BA31  ; COMPILE_PROC scratch (1 byte): the
                                   ; entries 0-3 (unchanged address/size)
 
 ; --- R6 addition: decimal literals ($BA39-$BA3A were the divisor scratch until 5.1) ---
+    INCLUDE "include/v2_ext_kinds.inc"   ; 6.1: EXT_KIND_* (also where the registry is stubbed)
 CMP_END:            equ $BA39   ; 5.4: EMIT_PTR just after the last relational operator emitted (2 bytes);
                                 ; 0 at the start of every compile (a stale value could equal EMIT_PTR)
 LEX_NUM_START:      equ $BA3B   ; LEX_SCAN_NUMBER: the literal's first character (2 bytes)
-CEXT_SLOT:          equ $BA3D   ; R7.5 (COMPILE_EXT_CALL) scratch, 1
-CEXT_GEN:           equ $BA3E   ; byte each: the matched extension's own
-CEXT_ARGCOUNT:      equ $BA3F   ; slot id/generation/argcount (read by .emit)
+; $BA3D-$BA3F: free (6.1: COMPILE_EXT_CALL keeps the slot, count and signature in registers)
 
 ; R8.5 Group 4 -- DIM/array grammar. Arrays are a SEPARATE compile-time
 ; name table from CSYMTAB/STRSYMTAB (own lexical namespace, like strings
@@ -1733,6 +1732,8 @@ COMPILE_FACTOR:
         bit 7,e
         jr z,.fn_call
 .not_builtin_fn:
+        ld c,EXT_KIND_FN
+        call EXT_FN_TRY          ; 6.1: a package's numeric function (compiled, and returns, if one)
         ld hl,(SRC_PTR)          ; RC (N-4): an array name is read as the array only when '(' follows;
 .peek:                           ; otherwise it is the scalar of the same name (separate namespaces)
         ld a,(hl)
@@ -1823,6 +1824,8 @@ COMPILE_FACTOR:
         rst $30
 .fn_have_rparen:
         rst $08                        ; consume ')'
+        bit 7,d                        ; 6.1: D = $80 + slot: a package function
+        jp nz,COMPILE_EXT_EMIT
         ld a,39        ; QUAL shrink: inlined EMIT_OP_CALL_FN
         rst $20
         ld a,d
@@ -2926,6 +2929,8 @@ COMPILE_STR_FACTOR:
                                        ; so no separate string-context
                                        ; emit path is needed
 .plain_str_ident:
+        ld c,EXT_KIND_STR
+        call EXT_FN_TRY          ; 6.1: a package's string function (compiled, and returns, if one)
         ; Dynamic Data Phase 2 -- a string-array NAME used as a value is
         ; a string-array read, "STR_IDENT(expr)". Checked by NAME lookup
         ; (STRARRSYMTAB is a separate lexical namespace from STRSYMTAB),
@@ -3377,18 +3382,18 @@ COMPILE_LPRINT:
         cp TOK_STR_IDENT
         jr z,.str_arg
         ld hl,LPRINT_NUM_NAME
-        ld b,LPRINT_NUM_NAME_LEN
+        ld bc,LPRINT_NUM_NAME_LEN << 8 | EXT_KIND_STMT
         call EXT2_LOOKUP
         jr c,.not_loaded
-        call COMPILE_LPRINT_RESOLVE_SLOT
+        push af                  ; 6.1: the slot, kept on the stack across the argument
         call COMPILE_EXPR
         jr COMPILE_LPRINT_EMIT
 .str_arg:
         ld hl,LPRINT_STR_NAME
-        ld b,LPRINT_STR_NAME_LEN
+        ld bc,LPRINT_STR_NAME_LEN << 8 | EXT_KIND_STMT
         call EXT2_LOOKUP
         jr c,.not_loaded
-        call COMPILE_LPRINT_RESOLVE_SLOT
+        push af
         call COMPILE_STR_EXPR
         jr COMPILE_LPRINT_EMIT
 .not_loaded:
@@ -3400,39 +3405,19 @@ LPRINT_NUM_NAME_LEN: equ $-LPRINT_NUM_NAME-1
 LPRINT_STR_NAME: db "LPRINT$",0
 LPRINT_STR_NAME_LEN: equ $-LPRINT_STR_NAME-1
 
-; COMPILE_LPRINT_RESOLVE_SLOT -- input: A = slot id (from EXT2_LOOKUP).
-; Parks CEXT_SLOT/CEXT_GEN exactly like COMPILE_EXT_CALL's own entry
-; does, reused here since COMPILE_LPRINT_EMIT's own tail is otherwise
-; identical to COMPILE_EXT_CALL's `.emit:`. Destroys: AF, HL.
-COMPILE_LPRINT_RESOLVE_SLOT:
-        ld (CEXT_SLOT),a
-        call EXT2_SLOT_ADDR
-        ld a,(hl)
-        ld (CEXT_GEN),a
-        ld a,1
-        ld (CEXT_ARGCOUNT),a    ; bounded ROM consolidation pass: set
-                                  ; here so COMPILE_LPRINT_EMIT below can
-                                  ; just reuse COMPILE_EXT_CALL's own
-                                  ; `.emit:` tail instead of duplicating
-                                  ; its 3x "ld a,(CEXT_x):call EMIT_BYTE"
-                                  ; sequence
-        ret
-
 ; COMPILE_LPRINT_EMIT -- shared tail for both COMPILE_LPRINT branches:
 ; checks COMPILE_ERROR_CODE (set by the just-compiled argument
-; expression), then emits OP_CALL_EXT [slot][gen][argcount=1] -- same
-; operand shape COMPILE_EXT_CALL's own `.emit:` produces, so .op_call_
-; ext's existing generic decompile path needs no LPRINT-specific code
-; at all.
+; expression), then emits OP_CALL_EXT [slot][gen][argcount=1] through
+; COMPILE_EXT_EMIT, so .op_call_ext's existing generic decompile path
+; needs no LPRINT-specific code at all. 6.1: the slot comes off the
+; stack (a package function in the argument would have overwritten the
+; old CEXT_* cells).
 COMPILE_LPRINT_EMIT:
+        pop de                   ; D = the slot
         call CHK_ERR           ; RC shrink: return if a compile error is pending
-        jp COMPILE_EXT_CALL.emit  ; CEXT_SLOT/CEXT_GEN/CEXT_ARGCOUNT
-                                     ; already set (COMPILE_LPRINT_
-                                     ; RESOLVE_SLOT above) -- reuses the
-                                     ; SAME 3x "ld a,(CEXT_x):call
-                                     ; EMIT_BYTE" tail COMPILE_EXT_CALL's
-                                     ; own generic path already has,
-                                     ; rather than a second copy
+        ld b,1                   ; one argument
+        ld e,b                   ; signature: a statement (bits 7-6 clear)
+        jp COMPILE_EXT_EMIT
 
 ; COMPILE_GOTO — GOTO <label>
 COMPILE_GOTO:
@@ -4125,10 +4110,8 @@ COMPILE_STATEMENT_LIST:
         ; already imposes (see the regression suite's own `*_unloaded`
         ; tests). If nothing matches, this identifier is genuinely just
         ; a variable/label, exactly as before this addition.
-        ld hl,(TOK_NAME)
-        ld a,(TOK_LEN)
-        ld b,a
-        call EXT2_LOOKUP
+        ld c,EXT_KIND_STMT
+        call EXT_FIND_TOK        ; 6.1: a statement only (a function name is not one)
         jr c,.not_extension
         call COMPILE_EXT_CALL
         jr .after_stmt
@@ -4564,16 +4547,13 @@ COMPILE_DEF_FN:
 ; and DECOMPILE-TIME (how to render the fragment back) concern.
 ; ===========================================================================
 COMPILE_EXT_CALL:
-        ld (CEXT_SLOT),a
+        push af
         call EXT2_SLOT_ADDR      ; HL -> registry record
-        ld a,(hl)                  ; generation
-        ld (CEXT_GEN),a
-        ld de,12
-        add hl,de
-        ld a,(hl)                   ; argcount
-        ld (CEXT_ARGCOUNT),a
-        ld b,a                      ; B = argcount, C = arguments remaining,
-        ld c,a                      ; E = argtypes: pushed across each
+        pop de                   ; D = slot (6.1: in a register, as a function's
+        ld bc,12                 ; call nested in an argument would overwrite a cell)
+        add hl,bc
+        ld b,(hl)                   ; B = argcount, C = arguments remaining,
+        ld c,b                      ; D = slot, E = argtypes: pushed across each
         inc hl                      ; argument compile below
         ld e,(hl)                   ; argtypes bitmask
         rst $08                     ; consume the extension keyword
@@ -4615,15 +4595,57 @@ COMPILE_EXT_CALL:
         rst $08                     ; consume ','
         jr .arg_loop
 .emit:
+; COMPILE_EXT_EMIT -- OP_CALL_EXT [slot][generation][argcount byte] for a package
+; statement or function (6.1). In: D = slot (bit 7 ignored: COMPILE_FACTOR.fn_call's
+; $80 + slot), B = argument count, E = signature (bits 7-6, the kind, go into the
+; argcount byte: OP_CALL_EXT pushes a function's value). Destroys AF, BC, HL.
+COMPILE_EXT_EMIT:
+        ld a,e
+        and EXT_KIND_MASK
+        or b
+        ld c,a                   ; C = the argcount byte
         ld a,34        ; QUAL shrink: inlined EMIT_OP_CALL_EXT
         rst $20
-        ld a,(CEXT_SLOT)
-        rst $20
-        ld a,(CEXT_GEN)
-        rst $20
-        ld a,(CEXT_ARGCOUNT)
+        ld a,d
+        and $7F
+        rst $20                  ; slot (A kept: EMIT_BYTE preserves it)
+        push bc
+        call EXT2_SLOT_ADDR
+        pop bc
+        ld a,(hl)
+        rst $20                  ; generation
+        ld a,c
         rst $20
         ret                      ; RC shrink: tail call through the RST (was jp EMIT_BYTE)
+
+; EXT_FN_TRY -- 6.1: the identifier token as a package function of kind C
+; (EXT_KIND_FN from a numeric factor, EXT_KIND_STR from a string factor).
+; Not one: returns with carry set. One: NAME(args) is compiled by
+; COMPILE_FACTOR.fn_call exactly as a built-in's call (the arguments typed
+; by the signature's bits 4-0), with D = $80 + slot, and this returns for
+; its CALLER (the return address is dropped). Destroys AF, BC, DE, HL.
+EXT_FN_TRY:
+        call EXT_FIND_TOK
+        ret c
+        push af
+        call EXT2_SLOT_ADDR
+        ld de,12
+        add hl,de
+        ld b,(hl)                ; B = argument count
+        inc hl
+        ld e,(hl)                ; E = signature
+        pop af
+        pop hl                   ; drop the return address
+        or $80                   ; A = $80 + slot (fn_call: D)
+        jp COMPILE_FACTOR.fn_call
+
+; EXT_FIND_TOK -- 6.1: EXT2_LOOKUP of the current identifier token. In: C =
+; the kind wanted. Out and Destroys as EXT2_LOOKUP.
+EXT_FIND_TOK:
+        ld hl,(TOK_NAME)
+        ld a,(TOK_LEN)
+        ld b,a
+        jp EXT2_LOOKUP
 
 ; COMPILE_TEST_ARGTYPE_BIT removed (bounded ROM consolidation pass) --
 ; was byte-identical to rom/exrom_v2_decompiler.asm's own DECOMP_TEST_
