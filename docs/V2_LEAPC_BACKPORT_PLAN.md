@@ -44,6 +44,7 @@ Further rules:
 | phase 4 (display quick wins) | **354** | **208** | [M]: 4.1 HOME +4; 4.2, 4.3 0; 4.4 EXROM +16, status-bar attribute fill EXROM −25              |
 | redraw from the cursor line  | **354** | **186** | [M]: EXROM +22                                                                                |
 | 5.1 decimal literals         | **441** | **186** | [M]: HOME −139 value/divisor path removed, +41 16-bit digits in `NUM_PARSE_CALC`, +11 `5.` stays an INT |
+| R1 prototype (not merged)    | 441     | 905     | [M]: EXROM +739 Leap-C's float core, −20 three faster loops (`proto/r1-calc-round`; owner decision pending) |
 | phase 5 (speed)              | ≥ 64    | ≥ 32    | Class B: each item sized and weighed before it is started; 5.0 first if the room is not there |
 
 Every [E] is replaced by `make budget`'s figure as each item lands.
@@ -304,6 +305,80 @@ from the old build), `make doc-examples` (examples printing decimals may change 
 **Interaction with `SH_VIEW`.** Both are EXROM. Option 1 would free far more than `SH_VIEW` uses
 (~94 B); option 2 and `SH_VIEW` together would leave about 186 − 94 − 75 ≈ 17 B, below the 32 B
 reserve.
+
+**Prototype outcome (2026-10-26, branch `proto/r1-calc-round` off `backport/leapc`; owner decision
+pending).** Option 1, measured:
+
+- **What.** `CALC_OP_ADD/SUB/MUL/DIV` are Leap-C's `FUNPK`/`FPACK`/`FNORM`/`FADD`/`FMUL`/`FDIV`/`FDONE`
+  and helpers behind V2's dispatcher: the operands from `CALC_OP1_PTR`/`CALC_OP2_PTR`, either in the
+  small-integer form (`FUNPK` normalises its 16 bits in registers), the result packed to the first slot
+  (zero as five zero bytes), V2's error paths (`CALC_ABORT_NUMERIC_OVERFLOW`, division by zero through
+  `CALC_ABORT_STREAM`; a nested abort is safe: every `RST $28` site is a `VM_CALC_*_STUB`, whose
+  `VM_CALC_CHECK` unwinds through `VM_ERR_COMMON`). `CALC_FP_TO_INT` reads the new layout. Cells: the
+  37 B block is now `CALC_FX` 7, `CALC_FY` 7, `CALC_FQ` 5 and `CALC_SPARE_18` (nothing after it moved).
+  Three loops are faster than Leap-C's with the same bits: `FADD` aligns in registers (Leap-C: a 5-byte
+  memory shift per bit), `FMUL` takes the multiplier's bits from A, `FDIV` compares before it subtracts
+  and builds the quotient a byte at a time (marker bit) instead of shifting all of Q per bit.
+- **Size.** EXROM 186 → **905 B free (+719)**; `exrom_calc.asm` 1,872 → 1,153 B. HOME unchanged (image
+  identical). The faithful port alone gave 925; the three speed changes cost 20 B net (`FADD` −17,
+  `FMUL` −5, `FDIV` +2).
+- **Rounding.** `qcalcround.py --leapc` (4,000 pairs × 4 operations): every result equals Leap-C's model
+  byte for byte (16,000/16,000). Correctly rounded: add 100.0%, sub 99.9%, mul 100%, div 100%, m/10^k
+  100% (before: 72 / 72 / 64 / 41 / 51%, worst 2 ulp). The 6 exceptions (add 2, sub 4) are all
+  effective subtractions with exponents 15-27 apart, off by 0.5002-0.5034 ulp: `FADD` drops the
+  smaller operand's bits below the guard byte (no sticky bit), so a borrow they would cause is lost;
+  the error is at most 0.5 + 2^-8 ulp, by design in Leap-C's core and model. The ten visible cases
+  (`INT(3.1*10)` … `1/10*10=1`) all give the expected value; summing 0.001 a thousand times still stays
+  below 1 (binary floating point).
+- **`CALC_FP_TO_INT` unchanged** (`qcalctime.py --fptoint`): 22,420 values (random general forms,
+  exponents 0-2, 120-149, 200, 255 with edge mantissas, both signs, small-integer forms): HL, carry,
+  `CALC_TRUNC_FLAG`, `CALC_ERROR_CODE`, `CALC_SP` identical to the old build for all.
+- **Speed per operation** (`qcalctime.py`, T, mean of 1,000 pairs, stub + `RST $28` + dispatcher):
+
+  | operands  | add           | sub           | mul             | div             |
+  | --------- | ------------- | ------------- | --------------- | --------------- |
+  | float     | 3,999 → 4,397 | 3,825 → 4,224 | 28,612 → 16,794 | 20,589 → 22,324 |
+  | int       | 7,000 → 4,801 | 6,823 → 4,624 | 26,777 → 14,806 | 23,748 → 23,060 |
+  | float,int | 5,280 → 4,154 | 5,197 → 4,211 | 24,651 → 14,178 | 22,641 → 22,859 |
+
+  The faithful port was slower where Leap-C loops bit by bit: div 38.7-39.6 kT, float add 7.3 kT
+  (`qbench`: `float_div` +40%, `compile_dec` +54%, `int_loop` +16%); the three speed changes remove that.
+- **`qbench`** (T, old → new): `float_loop` 7.71 → 5.91 M (−23.3%), `int_loop` 42.57 → 38.81 M (−8.8%),
+  `builtins` −6.3%, `for_float_step` −5.0%, `compile_dec` −2.7%, `float_div` (new: `x = x + i / 7`)
+  −0.9%, `float_add_lit` +0.95%; integer-only programs 0.
+- **Literals.** `qliterals.py`: 675 of 1,542 literals change in the last bit (`0.1` = `7D4CCCCCCD`, was
+  `…CC`), tags unchanged; `qnumparse.py`: 2,787 of 5,000 texts change value, fraction digits,
+  characters used and errors unchanged. New `qnumcheck.py` replays `NUM_PARSE_CALC`'s sequence through
+  the model: every literal and parser value is the model's (the old build fails exactly the changed
+  ones). `qdecimals.py` (exhaustive, all 131,072 short decimals): each literal equals the run-time
+  sequence on the same build (PASS), and against the model all 131,072 lexer values are its m / 10^k
+  and every one is the nearest 5-byte float (before R1: 51% of `qcalcround`'s 1,000 m / 10^k pairs).
+- **Tests.** `make check`, `make repro` OK; smoke ROMs 9/9 (`test_calc_smoke_division` expected the
+  truncated 1/3, `…AA`: now `…AB`); standalone 40/40; production checks, fill check, prod-regress 116,
+  prod-arrays 101, known-defects 15, saveall 13, micsave 3: all PASS; lifecycle 23, maint-qual all PASS;
+  `make doc-examples` 325/325, every output identical to the old build's. **Corpus: 657 PASS + 6 FAIL
+  + 2 XFAIL + 2 N/A** (before: 663 PASS): the 6 are float `FOR` counts one short, `ffor.count.0_1_0.1`
+  10 (expected 11), `0_2_0.2` 10, `1_0_-0.1` 10, `2_0_-0.2` 10, `-1_1_0.1` 20 (21), `long` (`0 TO 10
+  STEP 0.01`) 1,000 (1,001). Why: a float loop adds the step and stops when v − limit is past 0. The
+  rounded `0.1` (`7D4CCCCCCD`) is 5.8e-12 above 0.1, and ten rounded additions give `8100000001`, one
+  ulp above 1; the truncated `0.1` (`…CC`) was below and every truncated sum stayed below, so before R1
+  these inclusive loops always reached their limit (a side effect of `Q-34`'s downward bias). The model
+  agrees (0.01 × 1,000 additions: 10 + 1.7e-7). The other 4 `ffor.count.*` cases and all other float
+  loops still pass. The manual already says not to rely on the count (keywords, FOR: "the 25 loops of
+  the qualification test were all exact, but do not rely on it"). **Owner decision needed** (below).
+- **The `FOR` decision.** (a) Accept: the 6 corpus expectations become the rounded arithmetic's counts
+  and the manual's sentence is corrected; 0 B. (b) A tolerance in `VM_FOR_PAST`: "past" only when v −
+  limit exceeds a small fraction of the step (an exponent comparison, e.g. 2^-16 of it), so decimal
+  steps reach their limit again; HOME about −20 to −30 B [E], a documented rule. (c) Compute v = start
+  + k × step from a hidden count (10 × `0.1` rounds to exactly 1): exact for these cases, but a
+  multiply per iteration (≈ +10 kT) and frame/RAM changes; not recommended.
+- **Tools.** `tools/qual/qcalctime.py` (T per operation; `--fptoint` differential), `tools/qual/qnumcheck.py`,
+  `qcalcround.py --leapc` now compares the ROM with the model byte for byte, `qbench.py` `float_div`;
+  `tools/z80sim/sim.py`: EQU constants and `+`/`-` expressions, `rl`/`rr`/`sla`/`srl (hl)`, `set`/`res`,
+  `lddr` (`test_calc_dispatcher.py` runs the new code). `NOTICE.md`: the arithmetic's Leap-C origin.
+- **To integrate** (if approved): fast-forward `backport/leapc`, the ledger row, `Q-34` fixed
+  (`defects.py`, `RC_FIXED`), the plan's R1 outcome. `CALC_SPARE_18` stays free (2 B short of
+  `SH_VIEW`'s 20 heights).
 
 ## Not recommended
 

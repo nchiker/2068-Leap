@@ -1,6 +1,7 @@
-# Leap-C back-port: handoff after 5.1
+# Leap-C back-port: handoff after the R1 prototype
 
-Written 2026-10-26 at the end of phase 3; updated at the end of phase 4 and after 5.1. The plan is
+Written 2026-10-26 at the end of phase 3; updated at the end of phase 4, after 5.1 and after the R1
+prototype. The plan is
 `docs/V2_LEAPC_BACKPORT_PLAN.md`; this file is only where things stand and how to pick up.
 
 ## State
@@ -12,8 +13,13 @@ Written 2026-10-26 at the end of phase 3; updated at the end of phase 4 and afte
 - No stock-ROM-derived code left in the images: `tools/check_provenance.py` (in `make check`) has an
   empty allow-list. Keep it that way; anything taken from Leap-C is MIT and goes in `NOTICE.md`.
 - Last full `make test`: all PASS on 5.1 (2,444 s, loaded host; counts in the plan's 5.1 outcome).
-- Next: review item R1 (the calculator does not round, `Q-34`; owner decision F9: before `SH_VIEW`,
-  prototype first). Then `SH_VIEW`.
+- R1 prototype done on branch `proto/r1-calc-round` (off `backport/leapc`, not merged): Leap-C's float
+  core behind the calculator, EXROM 186 → 905 B free, every result bit-exact with Leap-C's model, speed
+  at or better than before. `make test` all PASS except 6 corpus float-`FOR` counts now one short
+  (`FOR i = 0 TO 1 STEP 0.1` runs 10 times): the old truncation's downward bias had hidden this.
+  Measurements in the plan, "Review item R1", "Prototype outcome".
+- Next: the owner's decisions on R1 (integrate or not; the `FOR` counts: accept, or a tolerance in
+  `VM_FOR_PAST`) and then the list under "To integrate" there. Then `SH_VIEW`.
 
 ## Working rules (owner)
 
@@ -39,14 +45,18 @@ Written 2026-10-26 at the end of phase 3; updated at the end of phase 4 and afte
 | `tools/qual/qdecimals.py` | all 131,072 short decimals: the lexer's value against the old run-time sequence |
 | `tools/qual/qnumparse.py` | `NUM_PARSE_CALC` on random texts; `--ref` another build's run |
 | `tools/qual/qliterals.py` | `vN = <literal>` compiled and run, tags and bytes; `--ref` |
-| `tools/qual/qcalcround.py` | add/sub/mul/div rounding against exact results; `--leapc DIR` scores Leap-C's model |
+| `tools/qual/qcalcround.py` | add/sub/mul/div rounding against exact results; `--leapc DIR` scores Leap-C's model and compares the ROM with it byte for byte |
+| `tools/qual/qcalctime.py` | T per calculator operation by operand class; `--fptoint FILE [--cmp FILE]` differential of `CALC_FP_TO_INT` |
+| `tools/qual/qnumcheck.py` | `qliterals` / `qnumparse` output against `NUM_PARSE_CALC`'s sequence replayed through Leap-C's model |
 | `tools/qual/qbench.py` | T-states per program (now also `float_add_lit`, `compile_dec`, `compile_int_if`) |
 | `tools/run_v2_standalone_tests.sh --build-only` | in `make check`: assembles all 40 standalone test images |
 
 Probe pattern (all of the `q*` tools above): a loop assembled at `$F400` (the package window), a
 table at `$8300` below the `$B6xx` cells, the booted snapshot restored per batch (`qharness.Machine`).
 
-## Next: R1, the calculator rounds (Leap-C's float arithmetic behind V2's interface)
+## R1, the calculator rounds (Leap-C's float arithmetic behind V2's interface): prototyped
+
+Done on `proto/r1-calc-round` as described below; the outcome is in the plan. Kept here for reference.
 
 **Goal of this step.** A prototype on a branch off `backport/leapc` (e.g. `proto/r1-calc-round`):
 V2's arithmetic replaced by Leap-C's 40-bit core, with its measured size, speed and rounding; the
@@ -168,6 +178,16 @@ integrated, adds its savings first.
 - `NUM_PARSE_CALC` is slow when the calculator does the digits (~30 kT a digit); keep the 16-bit path.
 - `pkill -f <pattern>` also matches the shell running it when the pattern is in its command line:
   kill by PID.
+
+## Pitfalls met in R1
+
+- `tools/z80sim` runs `rom/exrom_calc.asm` in `make check` (`test_calc_dispatcher.py`) and knew no EQU,
+  no `rl`/`rr (hl)`, no `set`/`res`, no `lddr`: added. It still has no `EXX` or `EX (SP),HL`, so the
+  calculator avoids them; its cells must be registered in the test (`CALC_FX/FY/FQ`).
+- `rom/test_calc_smoke_division.asm` hard-coded the truncated 1/3 (`…AA`): now `…AB`. Other expected
+  values that encode the old truncation would look like this: a smoke ROM or a test printing bytes.
+- The faithful port was slower than V2 where Leap-C loops bit by bit (divide 1.9×, float add 1.8×); the
+  three "R1, speed" loops fix that with the same bits (`qcalcround --leapc` must stay 16,000/16,000).
 
 ## Open points from phase 3
 
