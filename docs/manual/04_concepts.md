@@ -963,7 +963,22 @@ The program is a list of lines. You type a line and press ENTER to store it. Key
 
 Moving up or down puts the cursor at the **start** of the line it arrives on. You cannot move below the empty line after the last program line -- the **last line** -- and you cannot go above line 1.
 
-The commands `RUN`, `LIST`, `NEW`, `SAVE`, `LOAD`, `VERIFY`, and the immediate statements (`: statement`) are typed on that empty last line. Typed on any other line they would simply be stored as program lines.
+A long line wraps onto the next screen rows, at a space where it can. The line the cursor is on is always shown whole, so when it would run into the status line, the lines above it move up. When its last row is full -- 32 characters -- the line gets one more, empty, row while you edit it: the cursor after its last character is shown there.
+
+The commands `RUN`, `LIST`, `NEW`, `SAVE`, `LOAD`, `VERIFY`, and the immediate statements (`: statement`) are usually typed on that empty last line, but ENTER carries out a command on any line: typed over a program line, the command runs and the line keeps its text. Here the text of line 1 is deleted and `RUN` typed in its place; after the run (a key returns to the editor) line 1 still reads `x = 5`:
+
+```keys ex=con.edit.5
+x = 5
+PRINT x * 2
+{UP}{UP}{RIGHT}{RIGHT}{RIGHT}{RIGHT}{RIGHT}{DEL}{DEL}{DEL}{DEL}{DEL}RUN
+{ANY}\
+```
+```screen ex=con.edit.5
+x = 5
+PRINT x * 2
+...
+LINE 1/2
+```
 
 Here three lines are typed. Pressing up moves to the previous line, and a letter is inserted there; the status line shows where the cursor is:
 

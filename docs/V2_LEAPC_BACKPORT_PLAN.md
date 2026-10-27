@@ -46,6 +46,7 @@ Further rules:
 | 5.1 decimal literals         | **441** | **186** | [M]: HOME −139 value/divisor path removed, +41 16-bit digits in `NUM_PARSE_CALC`, +11 `5.` stays an INT       |
 | R1 calculator rounding       | **441** | **905** | [M]: EXROM +739 Leap-C's float core, −20 three faster loops                                                   |
 | `SH_VIEW` (ED4)              | **441** | **801** | [M]: EXROM −104: `V2_VIEW` 57, `V2_MEASURE` 29, `V2_VIEW_BOUND` 16, `V2_REDRAW_NAV` +7, `V2_REDRAW` −5; RAM 0 |
+| ED3, ED7 (editor fixes)     | **441** | **778** | [M]: EXROM −23: `V2_WRAP` +47, 7 edit-buffer wrap calls −21, `V2_REDRAW_NAV` +2, ED3 −5 |
 | phase 5 (speed)              | ≥ 64    | ≥ 32    | Class B: each item sized and weighed before it is started; 5.0 first if the room is not there                 |
 
 Every [E] is replaced by `make budget`'s figure as each item lands.
@@ -221,8 +222,45 @@ ED4/R9: the cursor's line is always whole on rows 0-22, so its cursor is always 
   production and fill checks, prod-regress 120 (the 4 `ED4-*` included), prod-arrays 101, known-defects 15,
   saveall 13, micsave 3, qual 663 PASS + 2 XFAIL + 2 N/A, lifecycle 23, maint-qual all); `make doc-examples`
   326/326, no screenshot changed.
-- **Found, not fixed** (both builds, `qeditview` counts it): a cursor after a last row of exactly 32
-  characters is at column 32, off the screen, so no cursor cell shows until the next character. Class C.
+- **Found:** a cursor after a last row of exactly 32 characters is at column 32, off the screen (both
+  builds). Fixed next as ED7.
+
+Outcome, ED3 and ED7 (2026-10-26, [M]; owner request after `SH_VIEW`): EXROM 801 → **778 B** free (+23), HOME
+unchanged, no RAM.
+
+- **ED3** (editor audit, MEDIUM): only the empty last line offered its text to `V2_DISPATCH`, so a command
+  typed over a program line was stored as that line (`RUN` over line 12 replaced it). `V2_COMMAND_LOOP` now
+  dispatches every non-empty line first (−5 B): a command runs on any line, the record is untouched, and
+  `.loop` reloads its text; anything else is stored as before. No command word is a program keyword, so no
+  program line can be taken for one; `run = 4`, `listing = 2` are still stored (`V2_MATCH_EXACT` /
+  `V2_MATCH_PREFIX` need the word alone or followed by a space). Unchanged: `save = 3` and the like were
+  already commands with a bad name on the last line (`SYNTAX ERROR`), now on every line; UP/DOWN with an
+  uncommitted command in the buffer still stores it (D9a's rule: an edit is kept). Manual: `04_concepts.md`
+  (commands on any line, new example `con.edit.5`, which fails on the old build: line 1 became `RUN`).
+- **ED7** (new, LOW, found by `qeditview`): with a last row of exactly 32 characters, the cursor after it was at
+  column 32: no cell (`GFX_INVERT_ATTR` refuses it), and LEFT/RIGHT from there "restored" (row + 1, 0)
+  (`.clear_cursor_attr` has no bound), whitening the status bar's first cell when the line ended on row 22.
+  Now `V2_WRAP_EDIT` / `V2_WRAP` (`EDITOR_WRAP_CALC` plus, for the edit buffer only, an empty row after a full
+  last row) serve all 7 edit-buffer wraps and `V2_DRAW_TEXT`: the cursor at the end shows at (row + 1, 0);
+  the view, the redraw paths and UP/DOWN inside the line count the row; a settled line is drawn without it.
+  A line that gains the row as it becomes active moves the lines below it, so `V2_REDRAW_NAV` takes the full
+  redraw then (`V2_WRAP` returns Z; found by the oracle in the prototype). 7 rows is the most a 127-character
+  line takes, so the 8-entry wrap table has room.
+- **Qualification.** `qeditview` (18 scenarios, 3 new for the edit row: 32 and 64 characters, a word-wrapped
+  last row of 32, a line on row 21 whose edit row makes the view scroll): all PASS with the oracle; against
+  the `SH_VIEW` build (`--edit-row-ref`) every screen identical except the states with the edit row and two
+  explained ones (the old status-cell symptom), compared until the two builds' cursor states part (UP/DOWN
+  inside a line with the edit row). Prod gate: 7 new cases, `ED3-*` (RUN, LIST, `:` and NEW over a line;
+  `run = 4` / `listing = 2` still stored) and `ED7-*` (the cursor at (row + 1, 0) after 32 characters, LEFT,
+  RIGHT, the 33rd; the edit row scrolling the view on row 21): PASS.
+- **Per key** (T, mean, `SH_VIEW` → now): typing −2% to +0% (10 lines 56.4k → 54.0k); full redraws +0.1% to
+  +0.5%; the height change moves from the 33rd character to the 32nd (the same total over a typed line);
+  UP/DOWN inside a line with the edit row +7% (one more row cleared); UP/DOWN onto such a line is a full
+  redraw (162k → 512k in `edit-row`).
+- **Tests.** `make test` all PASS (1,781 s: `make check` with the reserve check, smoke 9/9, standalone 40/40,
+  production and fill checks, prod-regress 127 (the 11 `ED3-*`/`ED4-*`/`ED7-*` included), prod-arrays 101,
+  known-defects 15, saveall 13, micsave 3, qual 663 PASS + 2 XFAIL + 2 N/A, lifecycle 23, maint-qual all);
+  `make doc-examples` 327/327 (`con.edit.5` new), no screenshot changed.
 
 ## Phase 5: speed inside the bytecode model → release v2.1
 
@@ -492,10 +530,12 @@ All decided by the owner on 2026-10-25.
 | F9  | Calculator rounding (`Q-34`)             | R1 is the next item, before `SH_VIEW`: prototype first (2026-10-26) |
 | F10 | R1 prototype                             | Integrated (2026-10-26)                                             |
 | F11 | Float `FOR` counts after R1              | (a): follow the standard; `STEP 0` stays as it is (2026-10-26)      |
+| F12 | Physical TS2068 run                      | Not possible at this time: emulators only (2026-10-26)              |
+| F13 | Phase 5 grouping                         | 5.2, 5.3 and 5.4 together, one commit per item (2026-10-26)         |
 
 ## Also worth doing
 
-- **Physical TS2068 run** before v2.1: neither V2 nor Leap-C has run on real hardware; items 1.4, 2.2,
+- **Physical TS2068 run** before v2.1 (owner, F12: not possible at this time; emulators only): neither V2 nor Leap-C has run on real hardware; items 1.4, 2.2,
   3.1 and 4.x all have hardware-sensitive parts (60 Hz frames, power-on RAM, tape tolerance, contention).
 - **Fuse alongside ZEsarUX for timing-sensitive cases**: ZEsarUX runs the TS2068 at the 48K's 50 Hz
   frame; the real machine is 60 Hz [L: M9]. Everything counted in frames is 20% faster on hardware.

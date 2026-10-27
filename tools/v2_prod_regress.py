@@ -64,14 +64,15 @@ def editor_delete_line():
 # ------------------------------------- the cursor's line whole on screen (plan item SH_VIEW, ED4)
 # The view: up to 20 lines above the cursor's line, fewer when they do not fit on rows 0-22 with it.
 # tools/qual/qeditview.py runs the long scenarios (every key, a full-redraw oracle, timings).
-def _rows(text):
-    """Screen rows of a line as EDITOR_WRAP_CALC wraps it (at the last space of 32 characters)."""
+def _rows(text, edit=False):
+    """Screen rows of a line as EDITOR_WRAP_CALC wraps it (at the last space of 32 characters); the
+    edit buffer (`edit`) has one more, empty, row after a last row of 32 characters (V2_WRAP_EDIT, ED7)."""
     n = 1
     while len(text) > 32 and n < 8:
         sp = text[:32].rfind(" ")
         text = text[32:] if sp < 0 else text[sp + 1:]
         n += 1
-    return n
+    return n + (edit and len(text) == 32)
 
 
 def _edit_at(lines, idx):
@@ -92,7 +93,7 @@ def _view(keys=()):
         if k is not None:
             P.key(k)
         h = [_rows(l) for l in P.store()]
-        idx, ha = P.cur_index(), _rows(P.edit_line().decode("latin-1"))
+        idx, ha = P.cur_index(), _rows(P.edit_line().decode("latin-1"), True)
         top = max(0, idx - 20)
         while sum(h[top:idx]) + ha > 23:
             top += 1
@@ -132,6 +133,104 @@ def ed4_grow_past_22():
 def ed4_down_onto_tall():
     _edit_at(SHORT + ["x" * 100], 19)
     return _view([KEY_DOWN, KEY_UP])
+
+
+# ED7: the cursor after a last row of exactly 32 characters was at column 32, off the screen (and LEFT
+# from there whitened the first cell of the row below).  The edit buffer now has an empty row after it.
+def _cursor_cell():
+    cells = [(i // 32, i % 32) for i, a in enumerate(read(0x5800, 23 * 32)) if a != 0x38]
+    return cells[0] if len(cells) == 1 else cells
+
+
+@case("ED7-cursor-after-32", "after 32 typed characters the cursor shows at the start of the line's next row")
+def ed7_cursor_after_32():
+    P.boot()
+    for ch in "x" * 32:
+        P.key(ord(ch))
+    row = read(sym("BASIC_ACTIVE_ROW"), 1)[0]
+    at32 = _cursor_cell()
+    P.key(KEY_LEFT)
+    left = _cursor_cell()
+    P.key(KEY_RIGHT)
+    right = _cursor_cell()
+    P.key(ord("y"))
+    at33 = _cursor_cell()
+    ok = (at32, left, right, at33) == ((row + 1, 0), (row, 31), (row + 1, 0), (row + 1, 1))
+    return ok, "row %d: cursor at 32 %s, LEFT %s, RIGHT %s, at 33 %s" % (row, at32, left, right, at33)
+
+
+@case("ED7-edit-row-low", "a 64-character line on rows 21-22: its edit row does not fit, so the view scrolls")
+def ed7_edit_row_low():
+    _edit_at(WRAP2[:1] + SHORT[:19] + ["q" * 63], 20)
+    for _ in range(63):
+        P.key(KEY_RIGHT)
+    return _view([ord("q"), KEY_DELETE, KEY_UP, KEY_DOWN])
+
+
+# ED3: a command typed over a program line ran nowhere and replaced the line (only the last line
+# dispatched commands).  Now ENTER carries a command out on any line and the line keeps its text.
+def _over_line(lines, idx, command):
+    """Edit `lines`, go to line `idx`, delete its text, type `command` and ENTER."""
+    P.boot()
+    for t in lines:
+        P.type_text(t)
+    for _ in range(len(lines) - idx):
+        P.key(KEY_UP)
+    for _ in lines[idx]:
+        P.key(KEY_RIGHT)
+    for _ in lines[idx]:
+        P.key(KEY_DELETE)
+    return P.type_text(command)
+
+
+ED3_PROG = ["x = 5", "y = x * 2", "z = y + 1"]
+
+
+@case("ED3-run-over-a-line", "RUN typed over line 1 runs the program; line 1 keeps its text")
+def ed3_run():
+    _over_line(ED3_PROG, 0, "run")
+    v = P.variables(3)
+    P.key(0x20)                              # the run's end: any key back to the editor
+    st, idx, line = P.store(), P.cur_index(), P.edit_line()
+    ok = [x[1] for x in v] == [5, 10, 11] and st == ED3_PROG and idx == 0 and line == b"x = 5"
+    return ok, "vars=%s store=%s cursor=%d line=%r" % (v, st, idx, line)
+
+
+@case("ED3-list-over-a-line", "LIST typed over line 2 lists; the program is unchanged")
+def ed3_list():
+    _over_line(ED3_PROG, 1, "LIST")
+    shown = read(0x5800, 1) is not None
+    P.key(0x20)
+    st, idx, line = P.store(), P.cur_index(), P.edit_line()
+    return shown and st == ED3_PROG and idx == 1 and line == b"y = x * 2", \
+        "store=%s cursor=%d line=%r" % (st, idx, line)
+
+
+@case("ED3-immediate-over-a-line", "`: statement` typed over a line runs it; the line keeps its text")
+def ed3_immediate():
+    _over_line(ED3_PROG, 2, ": q = 7")
+    P.key(0x20)
+    st, idx, line = P.store(), P.cur_index(), P.edit_line()
+    return st == ED3_PROG and idx == 2 and line == b"z = y + 1", "store=%s cursor=%d line=%r" % (st, idx, line)
+
+
+@case("ED3-new-over-a-line", "NEW typed over a line wipes the program, as on the last line")
+def ed3_new():
+    _over_line(ED3_PROG, 1, "new")
+    return P.store() == [] and P.cur_index() == 0, "store=%s cursor=%d" % (P.store(), P.cur_index())
+
+
+@case("ED3-text-still-stored", "text that is not a command (`run = 4`, `listing = 2`) still replaces the line")
+def ed3_text():
+    _over_line(ED3_PROG, 0, "run = 4")
+    P.key(KEY_UP)
+    for _ in "run = 4":
+        P.key(KEY_RIGHT)
+    for _ in "run = 4":
+        P.key(KEY_DELETE)
+    P.type_text("listing = 2")
+    st = P.store()
+    return st == ["listing = 2", "y = x * 2", "z = y + 1"], "store=%s" % st
 
 
 # ------------------------------------------------------------- tape (LOAD/VERIFY)

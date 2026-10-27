@@ -112,10 +112,8 @@ V2_COMMAND_LOOP:
     ld a,(EDIT_LINE_BUF)
     or a
     jr z,.loop
-    call V2_POS_IS_APPEND
-    jr nz,.store
-    call V2_DISPATCH
-    jr nc,.loop
+    call V2_DISPATCH             ; ED3: a command runs on any line, not only the last; the line's record
+    jr nc,.loop                  ; is not touched (.loop reloads its text)
 .store:
     call V2_STORE_EDIT           ; STUDY: the store sequence is now shared with V2_NAV_COMMIT
     jr c,.no_space
@@ -521,8 +519,7 @@ V2_NAV:
     cp EDIR_DOWN
     ret nz
 .wrap_down:
-    ld hl,EDIT_LINE_BUF
-    call EDITOR_WRAP_CALC
+    call V2_WRAP_EDIT
     call EDITOR_WRAP_OFFSET_TO_ROWCOL
     ld a,(EDIT_WRAP_COUNT)
     dec a
@@ -535,8 +532,7 @@ V2_NAV:
     ld (EDIT_BUF_OFFSET+1),a
     ret
 .wrap_up:
-    ld hl,EDIT_LINE_BUF
-    call EDITOR_WRAP_CALC
+    call V2_WRAP_EDIT
     call EDITOR_WRAP_OFFSET_TO_ROWCOL
     ld a,b
     or a
@@ -1576,13 +1572,48 @@ V2_COPY_RECORD:
     ld (de),a
     ret
 
+; V2_WRAP_EDIT -- EDITOR_WRAP_CALC on EDIT_LINE_BUF, with one more, empty, row after a last row of 32
+; characters: the cursor after the last character goes there (its column 32 is off the screen).
+; V2_WRAP -- the same for the text at HL: only the edit buffer gets that row (a settled line has no
+; cursor).  Out: Z = the row was added.  Destroys AF BC DE HL IX.
+V2_WRAP_EDIT:
+    ld hl,EDIT_LINE_BUF
+V2_WRAP:
+    push hl
+    call EDITOR_WRAP_CALC
+    pop de
+    ld hl,EDIT_LINE_BUF
+    or a
+    sbc hl,de
+    ret nz
+    ld a,(EDIT_WRAP_COUNT)
+    ld l,a
+    ld h,0
+    ld de,EDIT_WRAP_LEN-1
+    add hl,de                    ; HL = the last row's length
+    ld a,(hl)
+    cp 32
+    ret nz
+    inc hl
+    ld (hl),0                    ; the new row: no characters ...
+    ld de,EDIT_WRAP_START-EDIT_WRAP_LEN-1
+    add hl,de
+    ld a,(hl)
+    add a,32
+    inc hl
+    ld (hl),a                    ; ... from the end of the text (a 127-character line takes at most 7
+    ld hl,EDIT_WRAP_COUNT        ; rows, so the eighth table entry is free)
+    inc (hl)
+    cp a                         ; Z: added
+    ret
+
 ; Draw a null-terminated line using the canonical editor's wrap table.
 ; B = starting physical row. V2_DRAW_ROW returns the next free row.
 V2_DRAW_TEXT:
     ld (V2_DRAW_PTR),hl
     ld a,b
     ld (V2_DRAW_ROW),a
-    call EDITOR_WRAP_CALC
+    call V2_WRAP
     xor a
     ld (V2_DRAW_SUBROW),a
 .row:
@@ -1979,8 +2010,7 @@ V2_REDRAW:
                                ; row 23 -- runs on every redraw,
                                ; regardless of which exit path below
                                ; this block takes
-    ld hl,EDIT_LINE_BUF
-    call EDITOR_WRAP_CALC
+    call V2_WRAP_EDIT
     ld a,(EDIT_WRAP_COUNT)       ; STUDY: remembered for the selective paths' geometry checks
     ld (V2_RD_WRAPS),a
     ld hl,(CUR_EDIT_INDEX)
@@ -2051,8 +2081,7 @@ V2_RD_DRAW_ACTIVE:
 
 ; Cursor cell of the active line (inverted attribute), if it is on screen.
 V2_RD_CURSOR:
-    ld hl,EDIT_LINE_BUF
-    call EDITOR_WRAP_CALC
+    call V2_WRAP_EDIT
     call EDITOR_WRAP_OFFSET_TO_ROWCOL
     ld a,(V2_ACTIVE_ROW)
     add a,b
@@ -2063,8 +2092,7 @@ V2_RD_CURSOR:
 
 ; Typing / backspace: same record, same view, same row count -> redo only the active line's rows.
 V2_REDRAW_ACTIVE:
-    ld hl,EDIT_LINE_BUF
-    call EDITOR_WRAP_CALC
+    call V2_WRAP_EDIT
     ld a,(EDIT_WRAP_COUNT)
     ld hl,V2_RD_WRAPS
     cp (hl)
@@ -2132,8 +2160,8 @@ V2_REDRAW_NAV:
     cp (hl)
     jr nz,.full_pop              ; the old line is not drawn the way the record would be
 .old_blank:
-    ld hl,EDIT_LINE_BUF
-    call EDITOR_WRAP_CALC        ; the NEW line's height
+    call V2_WRAP_EDIT        ; the NEW line's height
+    jr z,.full_pop               ; it gains the edit row as the active line: the lines below it move
     ld a,(EDIT_WRAP_COUNT)
     ld (V2_RD_NEWH),a
     pop bc
@@ -2192,8 +2220,7 @@ V2_REDRAW_NAV:
 ; whole on rows 0-22.  No table of heights: a line dropped from the top is measured again.
 ; Out: HL = the record at VIEW_TOP_INDEX (0: an empty program).  Destroys AF BC DE IX.
 V2_VIEW:
-    ld hl,EDIT_LINE_BUF
-    call EDITOR_WRAP_CALC
+    call V2_WRAP_EDIT
     call V2_VIEW_BOUND
     ld (VIEW_TOP_INDEX),hl
     ld a,(EDIT_WRAP_COUNT)

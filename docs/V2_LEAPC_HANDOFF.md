@@ -1,19 +1,20 @@
-# Leap-C back-port: handoff after `SH_VIEW` (next: 5.2)
+# Leap-C back-port: handoff after `SH_VIEW`, ED3 and ED7 (next: 5.2-5.4)
 
-Written 2026-10-26 at the end of phase 3; updated at the end of phase 4, after 5.1, R1 and `SH_VIEW`. The
+Written 2026-10-26 at the end of phase 3; updated at the end of phase 4, after 5.1, R1, `SH_VIEW` and ED3/ED7. The
 plan is `docs/V2_LEAPC_BACKPORT_PLAN.md`; this file is only where things stand and how to pick up.
 
 ## State
 
 - Branch `backport/leapc` (off `v2-development`), not pushed. Phases 0-4, the redraw item, 5.1
-  (decimal literals, owner decision F8), R1 (calculator rounding, F10/F11) and `SH_VIEW` (ED4) committed.
-- Free ROM: HOME 441 B, EXROM 801 B (`make budget`). Emergency reserve HOME 64 / EXROM 32
+  (decimal literals, owner decision F8), R1 (calculator rounding, F10/F11), `SH_VIEW` (ED4) and the editor fixes ED3/ED7
+  committed.
+- Free ROM: HOME 441 B, EXROM 778 B (`make budget`). Emergency reserve HOME 64 / EXROM 32
   (`make check` fails below it). Spending is weighted by benefit per byte, not floored.
 - No stock-ROM-derived code left in the images: `tools/check_provenance.py` (in `make check`) has an
   empty allow-list. Keep it that way; anything taken from Leap-C is MIT and goes in `NOTICE.md`.
-- Last full `make test` (`SH_VIEW`, 2026-10-26, 1,631 s, fast emulation): smoke 9/9, standalone 40/40,
-  production and fill checks, prod-regress 120, prod-arrays 101, known-defects 15, saveall 13, micsave 3,
-  maint-qual all PASS; `make qual` 663 PASS + 2 XFAIL + 2 N/A, lifecycle 23; `make doc-examples` 326/326.
+- Last full `make test` (ED3/ED7, 2026-10-26, 1,781 s, fast emulation): smoke 9/9, standalone 40/40,
+  production and fill checks, prod-regress 127, prod-arrays 101, known-defects 15, saveall 13, micsave 3,
+  maint-qual all PASS; `make qual` 663 PASS + 2 XFAIL + 2 N/A, lifecycle 23; `make doc-examples` 327/327.
 - R1 done: `rom/exrom_calc.asm`'s arithmetic is Leap-C's float core (rounds to nearest, bit-exact with
   Leap-C's `tools/fpmodel.py`), EXROM 186 → 905 B free, speed at or better than before; `Q-34` fixed.
   Float `FOR` follows the BASIC standards (F11: step accumulated, exact end test), so
@@ -21,8 +22,13 @@ plan is `docs/V2_LEAPC_BACKPORT_PLAN.md`; this file is only where things stand a
   the plan, "Review item R1", "Outcome". `proto/r1-calc-round` was merged and deleted. `STEP 0` keeps V2's rule (F11).
 - `SH_VIEW` done: `V2_VIEW` keeps the cursor's line whole on rows 0-22 (ED4 fixed), EXROM +104 B, no RAM
   (no heights table: short lines measured from their length, long ones wrapped in place). Plan, phase 4,
-  "Outcome, `SH_VIEW`". New `tools/qual/qeditview.py`; 4 `ED4-*` cases in the prod gate (now 120).
-- Next: 5.2 (below).
+  "Outcome, `SH_VIEW`". New `tools/qual/qeditview.py`; 4 `ED4-*` cases in the prod gate.
+- ED3 and ED7 fixed (owner request): a command typed over any line runs and the line keeps its text; the
+  edit buffer has an empty row after a full 32-character last row, where the cursor shows (EXROM +23 B).
+  Plan, "Outcome, ED3 and ED7"; 7 `ED3-*`/`ED7-*` gate cases (prod-regress now 127); manual `con.edit.5`.
+- Owner, 2026-10-26: no physical TS2068 run is possible for now, emulators only (F12); 5.2, 5.3 and 5.4 are
+  done as one group (F13).
+- Next: 5.2-5.4 (below).
 
 ## Working rules (owner)
 
@@ -58,29 +64,44 @@ plan is `docs/V2_LEAPC_BACKPORT_PLAN.md`; this file is only where things stand a
 Probe pattern (all of the `q*` tools above): a loop assembled at `$F400` (the package window), a
 table at `$8300` below the `$B6xx` cells, the booted snapshot restored per batch (`qharness.Machine`).
 
-## Next: 5.2 (BREAK poll only at back-edges, calls and after package calls)
+## Next: 5.2, 5.3 and 5.4 together (owner decision F13)
 
-**Goal.** Phase 5's item 5.2: `VM_RUN.loop` (`rom/exrom_v2_vm_core.asm`, assembled into HOME, `$110C`) tests
-`VM_HALTED` before every opcode (`ld a,(VM_HALTED) / or a / ret nz`, 22 T per op [M]). The ISR sets it for
-BREAK (`kernel/interrupt/interrupt.asm`, D5: error 66), `OP_HALT` and the error-halts set it too (`OP_HALT`
-returns into the loop, which then sees it; `VM_ERR_COMMON` unwinds through `VM_RUN_SP`). Move the test to
-the places a program can loop or wait: backward jumps, `NEXT`, calls, after package calls (`OP_CALL_EXT`),
-the key/frame waits that already check it (PAUSE, INPUT); `OP_HALT` then has to leave `VM_RUN` itself.
-Measure with `qbench` (integer and float programs), `qbytecode` (bytecode unchanged), the D5 cases
-(`D5-break-running-loop` in the known-defect suite, the BREAK cases of `make qual-maint`), size with
-`make budget`. Leap-C's BREAK model (D4) is in "Not recommended": this is V2's own rule, made cheaper.
+The three are coupled: 5.2 moves the BREAK test to back-edges, 5.3's integer `NEXT` fast path is a
+back-edge, and a 5.4 combined opcode that jumps backwards is one too. Conditions (agreed with the owner):
 
-**After 5.2.** 5.3 (integer `FOR_NEXT` fast path).
+1. **The poll rule first.** Today `VM_RUN.loop` (`rom/exrom_v2_vm_core.asm`, assembled into HOME, `$110C`)
+   tests `VM_HALTED` before every opcode (`ld a,(VM_HALTED) / or a / ret nz`, 22 T per op [M]). The ISR sets
+   it for BREAK (`kernel/interrupt/interrupt.asm`, D5: error 66); `OP_HALT` sets it and returns into the loop
+   (it then has to leave `VM_RUN` itself); the error-halts unwind through `VM_RUN_SP`. Rule: every backward
+   jump, `NEXT`, call (`PROC`, `FN`), package call (`OP_CALL_EXT`) and the existing waits (PAUSE, INPUT)
+   test it; every new jumping opcode of 5.3/5.4 must too. Prove it with one BREAK case per loop form (GOTO
+   loop, integer and float FOR, the 5.3 fast path, PROC recursion, each 5.4 opcode that jumps), next to
+   `D5-break-running-loop` (known-defect suite) and `make qual-maint`'s BREAK cases.
+2. **One prototype branch off `backport/leapc`, one commit per item**, `qbench` after each, so each item's
+   bytes and speed go in the ledger separately; `qbytecode` baselines are reset once, for the group (5.4
+   changes the compiler's output: review every changed program, as 5.1 did).
+3. **HOME room.** The handlers are HOME: 441 B free, 377 B above the reserve. Size 5.3 and 5.4 before
+   writing them (the compiler side of 5.4 is EXROM, 778 B free); item 5.0 (shrink pass) first if they do not
+   fit.
 
-## Pitfalls met in `SH_VIEW`
+Emulators only (F12): ZEsarUX for everything; Fuse only if the owner approves a run (timing-sensitive cases).
+Then stop for the owner with the measured sizes and speed-ups before integrating.
+
+**After 5.2-5.4.** 5.5 (top of stack in registers: prototype first), then phase 6 (ABI 2.1) for v2.1.
+
+## Pitfalls met in `SH_VIEW`, ED3 and ED7
 
 - A scenario typed in front of an existing line adds that line's length: `scrolled-typing` meant to stay
   at 3 rows reached 4 (an ED4 case) until the typed text was shortened. DOWN in a wrapped line moves
   between its rows first: count those keys when a scenario must reach a given line.
 - `qeditview` enters the editor through `V2_COMMAND_LOOP.loop` with `CUR_EDIT_INDEX`/`CUR_EDIT_POS` poked;
   its oracle calls `V2_REDRAW` from a snapshot at the `IO_READ_KEY` breakpoint (EXROM is paged in there).
-- The cursor after a last row of exactly 32 characters is at column 32 and invisible (both builds; found,
-  Class C, not fixed); the view check accepts it and counts it.
+- The cursor after a last row of exactly 32 characters was at column 32 and invisible: fixed as ED7 (the
+  edit row). A line that gains the edit row as it becomes active moves the lines below it: the UP/DOWN fast
+  path must refuse it (the oracle found this in the prototype). `qeditview --edit-row-ref` compares against
+  a build without the edit row.
+- `ED3`: `P.type_text` ends with ENTER; to type over a line the gate cases go UP, RIGHT to its end and
+  DELETE its characters first (`_over_line`).
 
 ## Pitfalls met in 5.1
 

@@ -9,13 +9,15 @@ key's delivery to the next key wait) and the screen (bitmap and attributes) are 
 Checks on the build under test (BUILD, default this tree):
   view     the cursor cell (attribute $87) is the only non-text attribute on rows 0-22; the active line
            is whole on rows 0-22, starts at BASIC_ACTIVE_ROW and shows EDIT_LINE_BUF wrapped as
-           EDITOR_WRAP_CALC wraps it; VIEW_TOP_INDEX and the active row are those of the view rule
+           V2_WRAP_EDIT wraps it (an empty row after a full last row: the cursor's at its end); VIEW_TOP_INDEX and the active row are those of the view rule
            (up to 20 lines above, fewer when they do not fit; modelled here)
   oracle   (--oracle) after every key the screen equals a full redraw's (V2_REDRAW_SCOPE 0, called
            from a snapshot): every selective path draws what the full redraw draws
   diff     (--ref DIR) the screen after every key equals the other build's, for the scenarios marked
            `same` (no line where ED4 matters); the others are reported as a count only
   measure  (--measure N, alone) V2_MEASURE on N random records against EDITOR_WRAP_CALC and the model
+  edit row (--edit-row-ref with --ref DIR) DIR has no edit row (ED7): every screen the same except where
+           the buffer's last row is full, compared until the two builds' cursor states part
 
 Usage: python3 tools/qual/qeditview.py [--build DIR] [--ref DIR] [--port N] [--oracle] [--json OUT]
                                       [--keys] [--measure N] [scenario-substring ...]
@@ -54,6 +56,15 @@ def wrap(text):
         remain -= used
         if len(rows) >= 8 or remain == 0:
             break
+    return rows
+
+
+def wrap_edit(text):
+    """The edit buffer's rows (V2_WRAP_EDIT): one more, empty, row after a last row of 32 characters,
+    where the cursor after the last character goes (ED7)."""
+    rows = wrap(text)
+    if rows[-1][1] == 32:
+        rows.append((rows[-1][0] + 32, 0))
     return rows
 
 
@@ -104,6 +115,13 @@ SCENARIOS = [
     ("near-bottom-fit", True, short(22), 21, typed(60) + [DEL] * 60 + [U, D, D]),
     ("long-program", True, short(200), 150,
      [U] * 6 + [D] * 6 + typed(40) + [DEL] * 10 + [ENT] + [U] * 3),
+    # ED7: a last row of exactly 32 characters (the cursor after it used to be at column 32, unseen)
+    ("edit-row", False, short(6), 6,
+     T("x" * 32) + [L, R] + T("y") + [DEL, DEL, R] + T("zz") + T("w" * 31) + [U, U, D, D, L, R, ENT, U, D]),
+    ("edit-row-words", False, short(4), 4,
+     typed(32) + T("a" * 32) + [L] * 3 + [R] * 5 + [U, D, D] + [ENT]),              # rows 31 + 32
+    ("edit-row-low", False, [two_row(0)] + short(19), 20,                          # line on row 21:
+     T("q" * 64) + [L, R, DEL, R] + T("q") + [U, D, U]),                           # the edit row scrolls
     # ED4: the cursor's line used to fall below row 22
     ("ed4a-long-line-low", False, short(25), 20, typed(110) + [DEL] * 110 + [U, D]),
     ("ed4a-scrolled", False, short(30), 25, typed(90) + [DEL] * 40 + [U, U, D, D, D] + [ENT]),
@@ -212,7 +230,7 @@ def check_view(ed, st):
     scr, attrs = st["scr"], st["scr"][6144:]
     lines = ed.store()
     idx, buf = st["idx"], st["buf"]
-    rows = wrap(buf)
+    rows = wrap_edit(buf)
     h = len(rows)
     heights = [len(wrap(l[:127])) for l in lines]
     top = view_top(heights, idx, h)
@@ -231,10 +249,9 @@ def check_view(ed, st):
         if last or rows[k + 1][0] > off:
             crow, ccol = k, min(off - s, ln)
             break
-    # a cursor after a full 32-character row is at column 32, off the screen: no cell (not ED4)
-    want = [(st["row"] + crow, ccol, ATTR_CURSOR)] if ccol < 32 else []
-    if ccol >= 32:
-        st["col32"] = True
+    want = [(st["row"] + crow, ccol, ATTR_CURSOR)]
+    if len(rows) > len(wrap(buf)):
+        st["editrow"] = True            # the line's last row is full: the edit row is part of it (ED7)
     if odd != want:
         errs.append("attributes on rows 0-22 %s, expected the cursor only at %s" % (odd[:4], want))
     txt = ed.m.screen_rows(scr, 24)
@@ -257,7 +274,7 @@ def classify(prev, st, k):
         return "enter"
     if k in (INS, DLN):
         return "line-key"
-    hp, hn = len(wrap(prev["buf"])), len(wrap(st["buf"]))
+    hp, hn = len(wrap_edit(prev["buf"])), len(wrap_edit(st["buf"]))
     if hp == hn:
         return "type-same-height"
     return "height-change" + ("-scroll" if st["top"] != prev["top"] else "")
@@ -287,10 +304,10 @@ def run_build(cfgdir, port, names, oracle, want_checks):
                     if oracle and ed.full_redraw_screen() != st["scr"]:
                         problems.append("key %d (%d): the screen differs from a full redraw's" % (n + 1, k))
             out[name] = {"same": same, "states": states, "problems": problems, "secs": time.time() - t0}
-            c32 = sum(1 for s in states if s.get("col32"))
+            c32 = sum(1 for s in states if s.get("editrow"))
             print("  %-20s %4d keys %5.1f s %s%s" % (name, len(keys), time.time() - t0,
                                                      "PASS" if not problems else "FAIL %d" % len(problems),
-                                                     "  (%d with the cursor at column 32)" % c32 if c32 else ""),
+                                                     "  (%d with the edit row)" % c32 if c32 else ""),
                   flush=True)
     finally:
         ed.stop()
@@ -371,6 +388,10 @@ def main():
     ap.add_argument("--json")
     ap.add_argument("--keys", action="store_true", help="print T per key")
     ap.add_argument("--measure", type=int, metavar="N", help="only the V2_MEASURE probe, N random texts")
+    ap.add_argument("--edit-row-ref", action="store_true",
+                    help="--ref is a build without the edit row (ED7): every scenario must draw the same "
+                         "screens except where the buffer's last row is full (compared until the two "
+                         "builds' cursor states part)")
     ap.add_argument("names", nargs="*")
     a = ap.parse_args()
     if a.measure:
@@ -379,7 +400,35 @@ def main():
     res = run_build(a.build, a.port, a.names, a.oracle, True)
     ref = None
     fails = sum(len(r["problems"]) for r in res.values())
-    if a.ref:
+    if a.ref and a.edit_row_ref:
+        print("ref %s (no edit row)" % a.ref)
+        ref = run_build(a.ref, a.port + 1, a.names, False, False)
+        for name, r in res.items():
+            same = skipped = status = 0
+            bad, parted = [], None
+            for i, (x, y) in enumerate(zip(r["states"], ref[name]["states"])):
+                if (x["idx"], x["buf"], x["off"]) != (y["idx"], y["buf"], y["off"]):
+                    parted = i
+                    break
+                if len(wrap_edit(x["buf"])) > len(wrap(x["buf"])):
+                    skipped += 1
+                elif x["scr"] != y["scr"]:
+                    # the old build's LEFT/RIGHT from a cursor at column 32 of row 22 restored "its" cell:
+                    # row 23, column 0 (no bound in .clear_cursor_attr), whitening the status bar's first
+                    # cell until the next full redraw; the only difference that symptom of ED7 can leave
+                    sc = 6144 + 23 * 32
+                    if [k for k in range(6912) if x["scr"][k] != y["scr"][k]] == [sc] and y["scr"][sc] == ATTR_TEXT:
+                        status += 1
+                    else:
+                        bad.append(i)
+                else:
+                    same += 1
+            fails += len(bad)
+            print("  diff %-20s %4d identical, %3d with the edit row skipped%s%s%s" % (
+                name, same, skipped, ", %d with the old status-cell symptom" % status if status else "",
+                "" if parted is None else ", parted at state %d" % parted,
+                "" if not bad else "  FAIL at states %s" % bad[:6]))
+    elif a.ref:
         print("ref %s" % a.ref)
         ref = run_build(a.ref, a.port + 1, a.names, False, False)
         for name, r in res.items():
