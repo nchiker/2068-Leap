@@ -8,18 +8,18 @@ prototype. The plan is
 
 - Branch `backport/leapc` (off `v2-development`), not pushed. Phases 0-4, the redraw item and 5.1
   (decimal literals, `1bb5e65`, owner decision F8) committed.
-- Free ROM: HOME 441 B, EXROM 186 B (`make budget`). Emergency reserve HOME 64 / EXROM 32
+- Free ROM: HOME 441 B, EXROM 905 B (`make budget`). Emergency reserve HOME 64 / EXROM 32
   (`make check` fails below it). Spending is weighted by benefit per byte, not floored.
 - No stock-ROM-derived code left in the images: `tools/check_provenance.py` (in `make check`) has an
   empty allow-list. Keep it that way; anything taken from Leap-C is MIT and goes in `NOTICE.md`.
 - Last full `make test`: all PASS on 5.1 (2,444 s, loaded host; counts in the plan's 5.1 outcome).
-- R1 prototype done on branch `proto/r1-calc-round` (off `backport/leapc`, not merged): Leap-C's float
+- R1 integrated (owner decision F10; `backport/leapc` fast-forwarded to the prototype): Leap-C's float
   core behind the calculator, EXROM 186 → 905 B free, every result bit-exact with Leap-C's model, speed
   at or better than before. `make test` all PASS except 6 corpus float-`FOR` counts now one short
   (`FOR i = 0 TO 1 STEP 0.1` runs 10 times): the old truncation's downward bias had hidden this.
   Measurements in the plan, "Review item R1", "Prototype outcome".
-- Next: the owner's decisions on R1 (integrate or not; the `FOR` counts: accept, or a tolerance in
-  `VM_FOR_PAST`) and then the list under "To integrate" there. Then `SH_VIEW`.
+- Next: the owner's `FOR` decision (F11; the plan's R1 outcome: the BASIC standards' rule is what V2
+  does, recommended; `make qual` has these 6 FAILs until then). Then `SH_VIEW`.
 
 ## Working rules (owner)
 

@@ -44,7 +44,7 @@ Further rules:
 | phase 4 (display quick wins) | **354** | **208** | [M]: 4.1 HOME +4; 4.2, 4.3 0; 4.4 EXROM +16, status-bar attribute fill EXROM −25              |
 | redraw from the cursor line  | **354** | **186** | [M]: EXROM +22                                                                                |
 | 5.1 decimal literals         | **441** | **186** | [M]: HOME −139 value/divisor path removed, +41 16-bit digits in `NUM_PARSE_CALC`, +11 `5.` stays an INT |
-| R1 prototype (not merged)    | 441     | 905     | [M]: EXROM +739 Leap-C's float core, −20 three faster loops (`proto/r1-calc-round`; owner decision pending) |
+| R1 calculator rounding       | **441** | **905** | [M]: EXROM +739 Leap-C's float core, −20 three faster loops                                   |
 | phase 5 (speed)              | ≥ 64    | ≥ 32    | Class B: each item sized and weighed before it is started; 5.0 first if the room is not there |
 
 Every [E] is replaced by `make budget`'s figure as each item lands.
@@ -306,8 +306,8 @@ from the old build), `make doc-examples` (examples printing decimals may change 
 (~94 B); option 2 and `SH_VIEW` together would leave about 186 − 94 − 75 ≈ 17 B, below the 32 B
 reserve.
 
-**Prototype outcome (2026-10-26, branch `proto/r1-calc-round` off `backport/leapc`; owner decision
-pending).** Option 1, measured:
+**Outcome (2026-10-26; prototyped on `proto/r1-calc-round`, integrated into `backport/leapc` by
+fast-forward, owner decision F10).** Option 1, measured:
 
 - **What.** `CALC_OP_ADD/SUB/MUL/DIV` are Leap-C's `FUNPK`/`FPACK`/`FNORM`/`FADD`/`FMUL`/`FDIV`/`FDONE`
   and helpers behind V2's dispatcher: the operands from `CALC_OP1_PTR`/`CALC_OP2_PTR`, either in the
@@ -366,19 +366,28 @@ pending).** Option 1, measured:
   agrees (0.01 × 1,000 additions: 10 + 1.7e-7). The other 4 `ffor.count.*` cases and all other float
   loops still pass. The manual already says not to rely on the count (keywords, FOR: "the 25 loops of
   the qualification test were all exact, but do not rely on it"). **Owner decision needed** (below).
-- **The `FOR` decision.** (a) Accept: the 6 corpus expectations become the rounded arithmetic's counts
-  and the manual's sentence is corrected; 0 B. (b) A tolerance in `VM_FOR_PAST`: "past" only when v −
-  limit exceeds a small fraction of the step (an exponent comparison, e.g. 2^-16 of it), so decimal
-  steps reach their limit again; HOME about −20 to −30 B [E], a documented rule. (c) Compute v = start
-  + k × step from a hidden count (10 × `0.1` rounds to exactly 1): exact for these cases, but a
-  multiply per iteration (≈ +10 kT) and frame/RAM changes; not recommended.
-- **Tools.** `tools/qual/qcalctime.py` (T per operation; `--fptoint` differential), `tools/qual/qnumcheck.py`,
-  `qcalcround.py --leapc` now compares the ROM with the model byte for byte, `qbench.py` `float_div`;
-  `tools/z80sim/sim.py`: EQU constants and `+`/`-` expressions, `rl`/`rr`/`sla`/`srl (hl)`, `set`/`res`,
-  `lddr` (`test_calc_dispatcher.py` runs the new code). `NOTICE.md`: the arithmetic's Leap-C origin.
-- **To integrate** (if approved): fast-forward `backport/leapc`, the ledger row, `Q-34` fixed
-  (`defects.py`, `RC_FIXED`), the plan's R1 outcome. `CALC_SPARE_18` stays free (2 B short of
-  `SH_VIEW`'s 20 heights).
+- **The `FOR` decision.** The BASIC standards define this case. Minimal BASIC (ECMA-55 1978 = ANSI
+  X3.60-1978 = ISO 6373:1984, §13.4) and Full BASIC (ANSI X3.113-1987 = ISO/IEC 10279:1991, §8.3.4)
+  define FOR/NEXT by an equivalent program: limit and step evaluated once, `LET v = v + own2` (the step
+  accumulated), and the loop ends when `(v - own1) * SGN(own2) > 0`, an exact test. ECMA-55 §13.6:
+  "Where arithmetic is approximate (as with decimal fractions in a binary machine), the loop will be
+  executed within the limits of machine arithmetic. No presumptions about approximate achievement of
+  the end test are made", and with truncating arithmetic `FOR X = 0 TO 1 STEP 0.1` "will work as the
+  user expects" but `FOR X = 1 TO 0 STEP -0.1` "will probably not". Full BASIC's way to exact decimal
+  steps is `OPTION ARITHMETIC DECIMAL` (decimal floating point, ≥ 10 digits), not a fuzzy test. V2's
+  float loop is this rule, so after R1 it conforms with correctly rounded arithmetic. Options:
+  (a) **accept (the standard's rule; recommended)**: the 6 corpus expectations become the counts the
+  rule gives, and the manual's FOR note says why; 0 B. (b) A tolerance in `VM_FOR_PAST` (a fraction of
+  the step): changes the standard's end test, and a fixed fraction fails again for longer loops (model:
+  2^-16 of the step misses `0 TO 10 STEP 0.01`) and can include a limit just below a multiple; values
+  still drift. HOME about −20 to −30 B [E]. (c+ε) v = start + k × step from a hidden count, with an end
+  test allowing a few ulps: the decimal-intent count in 300/300 random decimal loops (A: 165, B 2^-12:
+  300, C without ε: 242) and no drift (worst value error 9.5e-6 against A's 3.4e-4, which changes
+  PRINT's 4th decimal in 17 of 300 loops); departs from the standard's `LET v = v + own2`, costs a
+  multiply per float NEXT and a larger FOR frame, HOME about −60 to −100 B [E].
+- **Integrated** (F10): `backport/leapc` fast-forwarded; the ledger row; `Q-34` fixed (`defects.py`,
+  `RC_FIXED`, `docs/V2_DEFECT_REGISTER.md`). `CALC_SPARE_18` stays free (2 B short of `SH_VIEW`'s 20
+  heights). The 6 corpus `FOR` counts stay FAIL until the `FOR` decision (F11).
 
 ## Not recommended
 
@@ -403,6 +412,8 @@ All decided by the owner on 2026-10-25.
 | F7  | Fast emulation (0.10)                    | Default for the suites (2026-10-26)                       |
 | F8  | 5.1 decimal literals                     | Integrated, `5.` stays an INT (2026-10-26)                |
 | F9  | Calculator rounding (`Q-34`)             | R1 is the next item, before `SH_VIEW`: prototype first (2026-10-26) |
+| F10 | R1 prototype                             | Integrated (2026-10-26)                                   |
+| F11 | Float `FOR` counts after R1              | Pending: (a), the BASIC standards' rule, recommended       |
 
 ## Also worth doing
 
