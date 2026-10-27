@@ -1,50 +1,84 @@
-# Leap-C back-port: handoff after phase 5 (5.1-5.5)
+# Leap-C back-port: handoff for the rest of phase 5 and for phase 6
 
-Written 2026-10-26 at the end of phase 3; updated at the end of phase 4, after 5.1, R1, `SH_VIEW`, ED3/ED7
-and (2026-10-27) 5.2-5.5. The plan is `docs/V2_LEAPC_BACKPORT_PLAN.md`; this file is only where
-things stand and how to pick up.
+Written 2026-10-26 at the end of phase 3, updated through phases 4 and 5; this version 2026-10-27, at the
+end of 5.6-5.8. The plan is `docs/V2_LEAPC_BACKPORT_PLAN.md` (the ledger, every item's outcome, the owner
+decisions F1-F19); this file is only where things stand, what comes next and how to pick it up.
 
-## State
+## Where things stand
 
-- Branch `backport/leapc` (off `v2-development`), not pushed. Phases 0-4, the redraw item, 5.1
-  (decimal literals, owner decision F8), R1 (calculator rounding, F10/F11), `SH_VIEW` (ED4), the editor fixes ED3/ED7
-  and 5.2-5.5 (VM speed, F14/F16) committed.
-- Free ROM: HOME 273 B, EXROM 621 B (`make budget`). Emergency reserve HOME 64 / EXROM 32
-  (`make check` fails below it). Spending is weighted by benefit per byte, not floored.
-- No stock-ROM-derived code left in the images: `tools/check_provenance.py` (in `make check`) has an
-  empty allow-list. Keep it that way; anything taken from Leap-C is MIT and goes in `NOTICE.md`.
-- Last full `make test` (5.5, 2026-10-27, 1,742 s, fast emulation): smoke 9/9, standalone 40/40,
-  production and fill checks, prod-regress 127, prod-arrays 101, known-defects 15, saveall 13, micsave 3,
-  maint-qual all PASS; `make qual` 663 PASS + 2 XFAIL + 2 N/A, lifecycle 23, `qvmedge` 120; `make
-  doc-examples` 327/327.
-- R1 done: `rom/exrom_calc.asm`'s arithmetic is Leap-C's float core (rounds to nearest, bit-exact with
-  Leap-C's `tools/fpmodel.py`), EXROM 186 → 905 B free, speed at or better than before; `Q-34` fixed.
-  Float `FOR` follows the BASIC standards (F11: step accumulated, exact end test), so
-  `FOR i = 0 TO 1 STEP 0.1` runs 10 times; corpus oracle and manual say so. Everything measured is in
-  the plan, "Review item R1", "Outcome". `proto/r1-calc-round` was merged and deleted. `STEP 0` keeps V2's rule (F11).
-- `SH_VIEW` done: `V2_VIEW` keeps the cursor's line whole on rows 0-22 (ED4 fixed), EXROM +104 B, no RAM
-  (no heights table: short lines measured from their length, long ones wrapped in place). Plan, phase 4,
-  "Outcome, `SH_VIEW`". New `tools/qual/qeditview.py`; 4 `ED4-*` cases in the prod gate.
-- ED3 and ED7 fixed (owner request): a command typed over any line runs and the line keeps its text; the
-  edit buffer has an empty row after a full 32-character last row, where the cursor shows (EXROM +23 B).
-  Plan, "Outcome, ED3 and ED7"; 7 `ED3-*`/`ED7-*` gate cases (prod-regress now 127); manual `con.edit.5`.
-- Owner, 2026-10-26: no physical TS2068 run is possible for now, emulators only (F12); 5.2, 5.3 and 5.4 are
-  done as one group (F13).
-- **5.2-5.4 integrated** (F14, 2026-10-27): `backport/leapc` fast-forwarded to the prototype
-  (`fa8e5b9` 5.2, `cae1722` 5.3, `51d4f82` 5.4, `201b960` docs); `proto/5.2-5.4-vm-speed` can be deleted.
-  HOME 441 → 246 B free, EXROM 778 → 621. Everything measured is in the plan, "Outcome, 5.2-5.4". Their
-  edge cases are in `make qual` as `tools/qual/qvmedge.py` (118 cases, written from the manual's rules).
-- Before the v2.1 release: the manual's speed figures are stale (plan, "Outcome, 5.2-5.4": re-run
-  `tools/qual/manual_measure.py`).
-- **5.5 integrated** (step 1 only, owner F15; integrated F16, 2026-10-27): `VM_PUSH`/`VM_POP` move only
-  the low byte of `VM_SP` (stack, pointer and floor share page `$B6`, an `ASSERT` keeps it so). HOME 246 →
-  273 B free; bytecode unchanged; integer programs with expressions 6-13% faster; `make test` all PASS
-  (1,742 s), `make doc-examples` 327/327. `proto/5.5-vm-push` can be deleted. The top of the stack in
-  registers (step 2) is not to be done. Plan, "Outcome, 5.5".
-- Phase 5 follow-ups (owner F17, 2026-10-27): profiled after 5.5 with the new `tools/qual/qprofile.py`;
-  items 5.6-5.12 in the plan, "Phase 5 follow-ups" (owner rule: significant speed or less HOME/EXROM).
-  5.6 (calculator multiply/divide in registers), 5.7 (`SQR` halving), 5.8 (scroll's bottom-row clear)
-  are being done first, then phase 6 (ABI 2.1) for v2.1.
+- **Branch `backport/leapc`** (off `v2-development`), not pushed. On it: phases 0-4, the redraw item,
+  5.1 (decimal literals), R1 (calculator rounding), `SH_VIEW` (ED4), ED3/ED7, 5.2-5.5 (VM speed) and
+  5.6-5.8 (calculator multiply/divide in registers, `SQR` halving, the row clear; owner F18: integrated
+  once `make test` passed). Merged prototype branches that can be deleted: `proto/5.2-5.4-vm-speed`,
+  `proto/5.5-vm-push`, `proto/5.6-5.8-calc-sqr-scroll`.
+- **Free ROM: HOME 286 B, EXROM 573 B** (`make budget`). Emergency reserve HOME 64 / EXROM 32 (`make check`
+  fails below it). Spending is weighted by benefit per byte (F1).
+- **Owner rules for what is left** (2026-10-27): a change must give a *significant speed increase* or
+  *use less HOME or EXROM* (F17); and the phase 5 follow-ups must *leave room for phase 6* (F19).
+- **What phase 5 gave** [M] (`qbench`, `qprofile --statements`, against the build before 5.2): counter
+  and GOTO loops 2.4-2.55×, the sieve 1.53×, IF-heavy loops 1.56×, empty FOR 1.31×; `SQR` 3.0×,
+  `SIN`/`COS` 2.0×, a float divide −40% and multiply −37% a statement, a scrolling `PRINT` −10.6%;
+  every result and every screen identical to before (the bytecode changed only in 5.4's intended
+  rewrites).
+- Last full `make test` (5.6-5.8, 2026-10-27, 1,824 s, fast emulation): all PASS (smoke 9/9, standalone
+  40/40, prod-regress 127, prod-arrays 101, known-defects 15, saveall 13, micsave 3, qual 663 PASS + 2
+  XFAIL + 2 N/A, lifecycle 23, `qvmedge` 120, maint-qual all); `make doc-examples` 327/327. Emulators only
+  (F12): nothing has run on a physical TS2068.
+- No stock-ROM-derived code in the images (`tools/check_provenance.py`, empty allow-list); anything
+  taken from Leap-C is MIT and goes in `NOTICE.md`.
+
+## What comes next, in this order
+
+The space arithmetic is the plan's "Room for phase 6": phase 6 is allowed **HOME ~260 B, EXROM ~100 B**
+[E] until 6.1 is sized; with 286 B free HOME is ~40 B short of that already. Check every item against
+*free - reserve - phase 6's allowance >= its cost* in the ROM it uses.
+
+1. **5.9 with 5.10: the float built-ins to the EXROM** (the only item that frees HOME, up to 611 B:
+   `SQR`, `PI`, `RAD`, `DEG`, `SIN`, `COS`, `TAN`, `SIN_PEEK_POP`, the divisor table). They only run
+   while the EXROM is paged in (program runs and immediate statements, under the shell); confirm with
+   `qcanary --banking`, and that the compiler never calls them (no constant folding of functions). The
+   built-in jump table (`BUILTIN_FN_JUMP_TABLE`, HOME) then points at fixed EXROM slots (the
+   `V2_EXROM_SLOT` pattern of 5.4's peepholes; bump `V2_KTAB_MAGIC`). Moving as they are is bit-identical
+   (`qfndiff` for each function must show 0 differences). The EXROM side is +450 to +650 B, more than
+   fits with phase 6's 100 B: measure, move `SIN`/`COS`/`TAN` (452 B) first, the rest if it fits.
+   **5.10** (one multiply by pi/180, a polynomial with stored coefficients instead of a divide per term)
+   shortens that code and makes `SIN` ~2.3× faster again, but **changes the last bits: owner decision
+   first**; measure its accuracy against exact values (as `qcalcround` does) and list what changes with
+   `qfndiff`.
+2. **Size 6.1** (package functions with Leap-C's export table and signature bytes) as a prototype, to
+   replace phase 6's allowance with a measured figure before spending more.
+3. **Then, where the room is** (after 5.9 HOME has it, the EXROM may not):
+   - 5.13, `PRINT` of a string (~3× a character: the addresses worked out once, an unrolled glyph copy);
+     the print path runs only with the EXROM in, so either ROM works. Check: `qscrdiff` (same screen).
+   - 5.11, the scroll copy (each screen third's rows in one block per scanline, unrolled; ~218 → ~180 kT,
+     contention-bound). HOME (`kernel/graphics`); the editor shares `GFX_COPY_ROW_BITMAP`, so also
+     `qeditview`. Check: `qscrdiff`, `qrtime`.
+   - 5.12, `LOAD v; PUSH k; CMP_JMPZ` as one instruction (~1,000 T an `IF i < k`): the handler in the
+     EXROM only if the dispatch can reach it there (the EXROM is in at every dispatch: `qcanary`'s
+     invariant), the compiler side next to 5.4's in `rom/exrom_v2_fuse.asm`. Bytecode changes:
+     `qbytecode` review and baseline reset; `qvmedge` cases.
+4. **Phase 6 (ABI 2.1)**, items 6.1-6.6, for v2.1. Before the v2.1 release: re-run
+   `tools/qual/manual_measure.py` and update the manual's speed figures (`04_concepts.md` "Speed",
+   `FOR`'s note), which predate all of phase 5.
+
+Not to be done (owner or below the bar): the top of the operand stack in registers (5.5 step 2, F15), a
+page-aligned opcode table, `LOAD_VAR` pushing for itself. The SCLD offers nothing for output speed
+(no hardware scroll, blitter or text mode); page flipping with the second display file would be a
+language feature.
+
+## Before pushing (owner, 2026-10-27)
+
+`backport/leapc` now vendors the simulator at `~/z80sim` commit `13c9bce`, which exists **only in the
+local clone** (`~/z80sim` is one commit ahead of `origin/main` on GitHub). Nothing pushes it
+automatically. To publish both:
+
+1. `git -C ~/z80sim push origin main` (first, or in the same sitting);
+2. then push 2068-Leap's branch.
+
+`tools/hooks/pre-push` (installed in this clone: `git config core.hooksPath tools/hooks`) refuses step 2
+until step 1 is done, naming the missing commit and the command. In another clone, set `core.hooksPath`
+once (CONTRIBUTING.md). Branches that still vendor the older, already-published simulator
+(`v2-development`) push as before.
 
 ## Working rules (owner)
 
@@ -53,7 +87,9 @@ things stand and how to pick up.
 - Run long suites on an rsync copy in the scratchpad, never `make` in the real tree while a suite runs
   there. `make test` is ~32-40 min (fast emulation); the prod suites use ports 10241-10246.
 - Never run `make test-legacy` / `test-all` (Fuse) unprompted. Fuse was approved only for probe 0.8.
-- Commit only on `backport/leapc`; don't push. A prototype may live on its own branch off it.
+- Commit only on `backport/leapc`; don't push. A prototype may live on its own branch off it, and is
+  integrated (fast-forward) only on the owner's word. `~/z80sim` changes: commit there (owner-approved
+  for the simulator), never push without asking.
 - Each item: measure bytes with `make budget`, record them in the plan's ledger and item outcome.
 
 ## Tools (use them)
@@ -76,6 +112,9 @@ things stand and how to pick up.
 | `tools/qual/qbench.py` | T-states per program (also `float_add_lit`, `compile_dec`, `compile_int_if`; 5.2-5.4: `int_inc`, `goto_loop`, `if_branch`, `proc_calls`, `sieve`) |
 | `tools/qual/qbreak.py` | BREAK through the real keyboard matrix in 19 loop forms and waits; error 66, the loop left, key-to-message T |
 | `tools/qual/qprofile.py` | where the run time goes: per-instruction profile of 11 workloads (a breakpoint at every dispatch); `--statements`: T one statement adds to a loop |
+| `tools/qual/qfndiff.py` | a numeric built-in on two builds, `v = F(arg)` for ~1,900 arguments, every result's 5 bytes compared (5.7, 5.9, 5.10) |
+| `tools/qual/qscrdiff.py` | 15 printing programs that scroll, on two builds: the whole screen compared (5.8, 5.11, 5.13) |
+| `tools/qual/qrtime.py` | T-states of one ROM routine with given registers and pokes (`GFX_CLEAR_ROW BC=0x1700`) |
 | `tools/qual/qvmedge.py` | in `make qual`: 120 edge cases of the integer FOR path, the combined instructions and the operand stack's limit (5.3-5.5), expectations from the manual's rules |
 | `tools/run_v2_standalone_tests.sh --build-only` | in `make check`: assembles all 40 standalone test images |
 | `tools/qual/qeditview.py` | editor per key: view rule, cursor, T-states; `--oracle` (full-redraw screen), `--ref DIR`, `--measure N` |
@@ -106,6 +145,17 @@ table at `$8300` below the `$B6xx` cells, the booted snapshot restored per batch
   program with compile error 12 on both builds, and the comparison passes having run nothing. Check
   that a differential's programs compile (`ce` 0) before trusting "identical".
 
+## Pitfalls met in 5.6-5.8
+
+- `make check` runs the calculator (and sprite drivers) in the Python simulator `tools/z80sim`: an
+  instruction the ROM starts using must exist there (5.6 needed `EXX`, `ADC HL,rr`, `CCF`). Change it in
+  `~/z80sim` first, with a test, commit there, then copy the files back and record the commit in
+  `tools/z80sim/UPSTREAM.md` (R1 had edited the vendored copy in place; that is now reconciled).
+- The alternate register set (BC', DE', HL') is free in V2 (only the tape code uses AF'); a routine that
+  uses it must not call anything that might start using it.
+- BASIC test programs: a string literal is at most 31 characters (compile error 70); `out` and `over` are
+  keywords, not labels.
+
 ## Pitfalls met in `SH_VIEW`, ED3 and ED7
 
 - A scenario typed in front of an existing line adds that line's length: `scrolled-typing` meant to stay
@@ -132,8 +182,8 @@ table at `$8300` below the `$B6xx` cells, the booted snapshot restored per batch
 ## Pitfalls met in R1
 
 - `tools/z80sim` runs `rom/exrom_calc.asm` in `make check` (`test_calc_dispatcher.py`) and knew no EQU,
-  no `rl`/`rr (hl)`, no `set`/`res`, no `lddr`: added. It still has no `EXX` or `EX (SP),HL`, so the
-  calculator avoids them; its cells must be registered in the test (`CALC_FX/FY/FQ`).
+  no `rl`/`rr (hl)`, no `set`/`res`, no `lddr`: added (5.6 added `EXX`, `ADC HL,rr`, `CCF`, upstream
+  first). It still has no `EX (SP),HL`; its cells must be registered in the test (`CALC_FX/FY/FQ`).
 - `rom/test_calc_smoke_division.asm` hard-coded the truncated 1/3 (`…AA`): now `…AB`. Other expected
   values that encode the old truncation would look like this: a smoke ROM or a test printing bytes.
 - The faithful port was slower than V2 where Leap-C loops bit by bit (divide 1.9×, float add 1.8×); the

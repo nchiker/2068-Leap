@@ -51,6 +51,9 @@ Further rules:
 | 5.3 FOR fast path            | **367** | **778** | [M]: HOME −87 free: the integer path in `OP_FOR_NEXT` 80 B, the loop variable's reload on its fallback 7 B   |
 | 5.4 combined ops             | **246** | **621** | [M]: HOME −121 free (VM 117: `CMP_JMPZ` 23, `ADD_VAR_*` 91, `VM_FLOAT_BINARY` 3; compiler 4); EXROM −157 (peepholes) |
 | 5.5 cheaper push/pop        | **273** | **621** | [M]: HOME +27 free: `VM_PUSH` 45 → 22 B, `VM_POP` 26 → 22 B; RAM `$B685-$B687` free (F15: step 1 only) |
+| 5.6 calc mul/div             | **273** | **573** | [M]: EXROM −48 free: `FMUL`/`FDIV` in registers (the alternate set)                                    |
+| 5.7 `SQR` halving            | **278** | **573** | [M]: HOME +5 free: the exponent decremented instead of pushing 2 and dividing                           |
+| 5.8 row clear                | **286** | **573** | [M]: HOME +8 free: `GFX_CLEAR_ROW` fills the attributes and falls into `GFX_CLEAR_ROW_TEXT`            |
 | phase 5 (speed)              | ≥ 64    | ≥ 32    | Class B: each item sized and weighed before it is started; 5.0 first if the room is not there                 |
 
 Every [E] is replaced by `make budget`'s figure as each item lands.
@@ -528,11 +531,89 @@ in V2's dialect; `--statements` for what one statement adds to a loop) [M]:
 | 5.10 | `SIN`/`COS`/`TAN`: one multiply by π/180 and a polynomial with stored coefficients (with 5.9)   | `SIN` 251k → ~140k T, ~55k with 5.6                                    | —          | smaller code   | last bits change: owner |
 | 5.11 | Scroll: each screen third's rows copied per scanline in one block, unrolled copy loop          | scroll ~244k → ~175k T with 5.8                                        | +30 to +60 | 0              | identical          |
 | 5.12 | `LOAD v; PUSH k; CMP_JMPZ` as one instruction (handler in the EXROM if that holds up)         | ~1,000 T an `IF i < k`: `goto_loop` −45%, `if_branch` −20%, sieve 0     | ~4 (or 45) | ~70            | identical          |
+| 5.13 | `PRINT` of a string: the screen and attribute addresses worked out once and stepped along the row, the 8 glyph bytes copied unrolled (today each character redoes its range checks and both addresses: `GFX_PUTCHAR` 830 T, `GFX_SET_ATTR` 217, the loop ~220) | 1,266 → ~400-450 T a character (~3×) | ~0 | +60 to +120 | identical screen |
+
+The TS2068's SCLD (port `$FF`) offers nothing to speed output up (checked 2026-10-27): no hardware
+scroll or display-start register, no blitter, no text mode. V2 already uses its display modes (normal,
+`MODE 1`'s 8 x 1 attributes in the second display file, the 512-pixel mode). The second display file
+could give page flipping in normal mode (`$6000-$77FF` is free there): flicker-free drawing, a language
+feature, not faster output. The frame interrupt is 2,028 T a frame (2.9%) [M]: nothing to gain there.
+
+**Room for phase 6** (owner, 2026-10-27: the follow-ups must leave room for phase 6). Allowance until 6.1
+is sized [E]: 6.1 package functions ~150-200 B HOME (the study's simpler mechanism measured 95, `study/extfn`;
+the export table and type-checked binding add to it; the compiler is HOME code), 6.2-6.4 ~30-60 B HOME,
+EXROM 0-100 (compile-time parts behind EXROM slots); 6.5, 6.6 no ROM. Reserved: **HOME 260, EXROM 100**.
+With 5.6-5.8: HOME 286 free (222 above the 64 B reserve: already ~40 B short of the allowance), EXROM
+573 (541 above the reserve). So, for each remaining item, *free − reserve − phase 6's allowance ≥ its
+cost* in the ROM it uses:
+
+- 5.9 (with 5.10) comes first: it is the only item that frees HOME (up to 611 B), which phase 6 needs.
+  It moves that code into the EXROM (+450 to +650 B; less once 5.10 shortens `SIN`/`COS`/`TAN`), which
+  with phase 6's 100 B would leave ~0-90 B of EXROM above its reserve: the EXROM side is measured before
+  5.9 is committed, and only as much moves as fits (`SIN`/`COS`/`TAN`, 452 B, first).
+- 5.11, 5.12 and 5.13 then go where the room is: after 5.9 HOME has the room and the EXROM may not, so
+  5.13 and 5.12's handler may live in HOME instead of the EXROM (5.13's print path runs only while the
+  EXROM is paged in, so either works).
+- Without 5.9, only items that cost no HOME fit (5.13 and 5.12 in the EXROM), and phase 6 would need
+  the 5.0 shrink pass for its last ~40 B of HOME.
 
 Below the bar, not to be done: a page-aligned opcode table (30 of the 151 T dispatch: ≤ 5% on tight
 integer loops, ~1% elsewhere, HOME padding); `LOAD_VAR` pushing for itself (~2%); the string and
 procedure-call instructions (1-2 kT each, small gains). Owner decision F17 (2026-10-27): these items go
-in the plan; 5.6, 5.7 and 5.8 first.
+in the plan; 5.6, 5.7 and 5.8 first. F19 (2026-10-27): 5.13 added; the follow-ups keep phase 6's room
+(above).
+
+Outcome, 5.6-5.8 (2026-10-27; prototyped on `proto/5.6-5.8-calc-sqr-scroll` off `backport/leapc` `d55bede`,
+one commit per item: `460e05c` the simulator, `5774d61` 5.6, `54cd877` 5.7, `22b4999` 5.8, `bbd7189` the
+pre-push hook; integrated into `backport/leapc` by fast-forward, owner decision F18; all [M]):
+
+- **5.6, the calculator's multiply and divide in registers.** `FMUL` builds the 40-bit product in
+  HL:HL':E' with the multiplicand in BC:BC' (my's bits from A, as before); `FDIV` keeps the remainder in
+  HL:HL' and the divisor in BC:BC', the quotient a byte at a time in A behind a marker bit. Nothing else
+  in V2 uses BC', DE' or HL' (the tape code uses AF' only; the interrupt handler none). Same bits:
+  `qcalcround --leapc`, 20,000 random pairs per operation, every result equal to Leap-C's model, and the
+  raw results equal to 5.5's; `qfndiff` (new) `SIN` over 1,850 arguments and `TAN` over 1,760, 5.5
+  against 5.8: every result's 5 bytes equal. `qcalctime` (T, float operands): multiply 16,794 → 6,664, divide 22,324 →
+  9,464 (int operands 14,806 → 7,108 and 23,060 → 10,267; add and subtract unchanged). EXROM 621 → 573 B
+  free (−48). *The simulator:* `make check` runs the calculator in `tools/z80sim`, which had no `EXX`,
+  `ADC HL,rr` or `CCF`; owner choice (2026-10-27): added in `~/z80sim` with tests and committed there
+  (`13c9bce`, local, not pushed), together with R1's additions, which had been made in the vendored copy
+  only (`EQU` constants, shifts on `(HL)`, `SET`/`RES`, `LDDR`); the vendored copy matches it again.
+- **5.7, `SQR` halves by the exponent.** Each Newton step's `(x + n/x) / 2` decrements the exponent
+  byte instead of pushing 2 and dividing (exact either way). 1,900 arguments (integers, decimals, 10^6 and
+  10^-6 scales): every result's 5 bytes equal 5.6's. HOME 273 → 278 B free (+5).
+- **5.8, the row clear.** `GFX_CLEAR_ROW` writes `ATTR_DEFAULT` to the row's 32 attributes and falls into
+  `GFX_CLEAR_ROW_TEXT` (an `ASSERT` keeps them adjacent) instead of 32 `GFX_PUTCHAR` spaces and
+  `GFX_SET_ATTR` calls: the same bytes (the space glyph is 8 zero bytes), rows of 24 or more still
+  ignored. 33,205 → 7,527 T; `GFX_SCROLL_OUTPUT_UP` 243,944 → 218,252 T. 13 scrolling `PRINT` programs
+  (colours, `BRIGHT`/`FLASH`, `INVERSE`, `OVER`, wrapping lines, `AT 23`, `PLOT`, `CLS`): the whole
+  screen equal to 5.7's. HOME 278 → 286 B free (+8).
+- **Group size.** HOME 273 → **286 B** free (+13); EXROM 621 → **573 B** (−48).
+- **Speed per statement** (`qprofile --statements`, T a statement adds to a loop, 5.5 → 5.8):
+
+  | statement            |     5.5 |     5.8 | change          |
+  | -------------------- | -------:| -------:| --------------- |
+  | `x = SQR(i)`         | 264,312 |  88,383 | 3.0× (est. 3.6×) |
+  | `x = SQR(2.5)`       | 253,005 |  82,202 | 3.1×            |
+  | `x = SIN(i)`, `COS`  | 251,297 | 126,852 | 2.0× (est. 2.3×) |
+  | `x = TAN(i)`         | 553,234 | 291,443 | 1.9×            |
+  | `x = i / 7`          |  26,470 |  15,790 | −40%            |
+  | `x = i * 0.5`        |  18,340 |  11,469 | −37%            |
+  | `PRINT 7` (scrolls)  | 250,321 | 223,813 | −10.6% (est. −11%) |
+  | `x = 2.5 + i`, `RND`, `DIV`, `MOD`, `STR$`, `VAL`, `AT`/`PRINT` | | | unchanged |
+
+  `qbench` (5.5 → 5.8): `float_div` −29.7%, `compile_dec` −25.6% (a decimal literal's divide at compile
+  time), `float_loop` −25.3%, `float_add_lit` −0.3%; the integer, string and built-in programs unchanged.
+- **Checks.** New tools for these and the later items: `tools/qual/qfndiff.py` (a built-in's results on
+  two builds, byte for byte), `qscrdiff.py` (whole screens after scrolling programs), `qrtime.py` (one
+  routine's T). `qbytecode` 667/667 identical (no compiler change). `qvmedge` 120/120, `qbreak` 19/19,
+  `qcanary --banking` (667): 0 hits, 0 banking violations, Z80 stack low-water mark `$FDE8` as before.
+  `make check` (with the simulator's calculator checks).
+- **Tests.** `make test` all PASS (1,824 s, on a copy): smoke 9/9, standalone 40/40, production and fill
+  checks, prod-regress 127, prod-arrays 101, known-defects 15, saveall 13, micsave 3, qual 663 PASS + 2
+  XFAIL + 2 N/A, lifecycle 23, `qvmedge` 120, maint-qual all (ay_beep 59, cbeep 27, di_wait 14,
+  cbeep_tape 3). `make doc-examples` 327/327.
+- **Owner decision F18 (2026-10-27):** integrate once the tests pass; done (fast-forward).
 
 ## Phase 6: package ABI 2.1 (minor version: old packages keep working)
 
@@ -544,6 +625,10 @@ in the plan; 5.6, 5.7 and 5.8 first.
 | 6.4 | Reserved slots trap with a defined error instead of blank `$FF` bytes                                                                                                                                   | Small; tidier than relying on the version check        |
 | 6.5 | **Measured package stack budget** (Leap-C measured per service incl. an interrupt: 30-42 B) instead of the unmeasured 512 B allowance                                                                   | Lets phase 7 reclaim part of `$F800-$F9FF`             |
 | 6.6 | Document what happens when a package name equals a keyword; host tool warns (Leap-C `lib2tape.py`)                                                                                                      |                                                        |
+
+Size allowance [E] (held free by the phase 5 follow-ups, "Room for phase 6"): HOME ~260 B, EXROM ~100 B
+in all, mostly 6.1 (the study's simpler function packages measured HOME 95 B, `study/extfn` `7c349f2`).
+Sizing 6.1 first replaces it with a measured figure.
 
 ## Phase 7: decision gate for a V3 (major: ABI 3.0, new RAM map)
 
@@ -751,6 +836,8 @@ All decided by the owner on 2026-10-25.
 | F15 | 5.5 scope                                | Step 1 only (cheaper push/pop); no top of stack in registers (2026-10-27) |
 | F16 | 5.5 prototype                            | Integrated, fast-forward to `6af3278` (2026-10-27)                  |
 | F17 | Phase 5 follow-ups                       | Added (5.6-5.12); 5.6, 5.7, 5.8 first (2026-10-27)                  |
+| F18 | 5.6-5.8 prototype                        | Integrated (fast-forward, 2026-10-27); simulator: a local commit in `~/z80sim` (owner), pushed with the project (pre-push hook) |
+| F19 | 5.13; room for phase 6                   | 5.13 added; follow-ups keep HOME ~260 / EXROM ~100 B free for phase 6 [E] (2026-10-27) |
 
 ## Also worth doing
 
