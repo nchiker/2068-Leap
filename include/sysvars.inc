@@ -2277,50 +2277,14 @@ CALC_STACK_OVERFLOW_FLAG:DEFS 1         ; 1 byte — diagnostic stack depth at
                                 ; diagnostic rather than silent memory
                                 ; corruption past the array's end
 
-; ---- Real arithmetic (add/sub/multiply) + INT_TO_FP/FP_TO_INT, added
-; 2026-08-21. All scratch, no persistent state carried between calls.
-CALC_UNP_A:          DEFS 6           ; 6 bytes — unpacked-float record for
-                                ; operand A: byte0=sign ($00/$FF,
-                                ; matching the float format's own small-
-                                ; int-form convention), byte1=biased
-                                ; exponent (0=zero value), bytes2-5=
-                                ; 32-bit mantissa MSB-first with the
-                                ; implicit leading bit made explicit
-                                ; (bit7 of byte2 set for any nonzero
-                                ; value). Filled by CALC_UNPACK, read by
-                                ; CALC_PACK and the arithmetic engines.
-                                ; Also doubles as the RESULT record for
-                                ; every op below — the final answer
-                                ; always ends up here before CALC_PACK.
-CALC_UNP_B:          DEFS 6           ; 6 bytes — same layout, operand B
-CALC_SHIFT_COUNT:    DEFS 1           ; 1 byte — scratch shift/loop counter,
-                                ; shared across CALC_UNPACK's
-                                ; normalization loop and the add/sub
-                                ; engine's alignment-shift loop (never
-                                ; live across a call boundary, so one
-                                ; shared byte is safe — same reasoning
-                                ; already applied to CALC_LITERAL_PARAM)
-CALC_MUL_ACC:        DEFS 8           ; 8 bytes — 64-bit product accumulator
-                                ; for CALC_OP_MUL's shift-add multiply,
-                                ; byte0=LSB..byte7=MSB
-CALC_MUL_CAND:       DEFS 8           ; 8 bytes — 64-bit shifting multiplicand
-                                ; for the same routine (top 4 bytes
-                                ; start zero, bottom 4 = operand A's
-                                ; mantissa, then shifts left each of the
-                                ; 32 iterations)
-CALC_DIV_REM:        DEFS 4           ; 4 bytes — 32-bit remainder for
-                                ; CALC_OP_DIV's shift-subtract mantissa
-                                ; divide, MSB-first (matching CALC_UNP_*'s
-                                ; own mantissa byte order). Starts as the
-                                ; dividend mantissa (optionally pre-
-                                ; shifted right 1 — see that routine's own
-                                ; header), shifted left and conditionally
-                                ; reduced by the divisor mantissa once per
-                                ; iteration.
-CALC_DIV_QUOT:       DEFS 4           ; 4 bytes — 32-bit quotient accumulator
-                                ; for the same routine, MSB-first, built
-                                ; up one bit per iteration alongside
-                                ; CALC_DIV_REM above.
+; ---- The arithmetic's working cells (rom/exrom_calc.asm, R1: 2068-Leap-C's float core, MIT). All
+; scratch, nothing carried between calls. The block keeps its old size (37 bytes) so nothing after
+; it moves.
+CALC_FX:             DEFS 7           ; unpacked number: [sign $80/0][exponent][m0 m1 m2 m3][guard];
+                                ; the first operand and the result (also CALC_FP_TO_INT's work)
+CALC_FY:             DEFS 7           ; the second operand, same layout
+CALC_FQ:             DEFS 5           ; a product or quotient being built, big-endian
+CALC_SPARE_18:       DEFS 18          ; free (the old arithmetic's scratch; not referenced)
 
 ; ---- "function-result float" scratch (2026-08-22): SQR and SIN now
 ; compute through the calculator engine and can PRINT a genuine

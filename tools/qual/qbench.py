@@ -19,6 +19,8 @@ PROGS = {
     # the same lines with integers
     "loop_200": ["x = 0", "FOR i = 1 TO 200", "NEXT i"],
     "float_add_lit": ["x = 0", "FOR i = 1 TO 200", "x = x + 0.5", "NEXT i"],
+    # R1: a division in a loop (the arithmetic's slowest operation)
+    "float_div": ["x = 0", "FOR i = 1 TO 200", "x = x + i / 7", "NEXT i"],
     "compile_dec": ["IF 0 THEN"] + ["x%d = %d.25 + %d.5 * (0.%d - 1.75)" % (k, k, k, k + 1) for k in range(60)] + ["ENDIF"],
     "compile_int_if": ["IF 0 THEN"] + ["x%d = %d + %d * (%d - 1)" % (k, k, k, k + 1) for k in range(60)] + ["ENDIF"],
 }

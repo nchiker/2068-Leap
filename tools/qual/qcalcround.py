@@ -8,7 +8,9 @@ float (32-bit mantissa, ties away from zero): per operation, the share correctly
 units of the last place (ulp) and its direction. Operands: random normalised floats (exponents 98-158,
 both signs) and decimal-literal pairs m / 10^k (m 1..32767, k 1..4, as CALC_INT_TO_FP pushes them).
 --leapc DIR scores Leap-C's float core on the same operands through its bit-exact model
-(DIR/tools/fpmodel.py, which Leap-C's own float suite checks against its ROM).
+(DIR/tools/fpmodel.py, which Leap-C's own float suite checks against its ROM), and counts the ROM's
+results that equal the model's byte for byte (R1: this ROM's arithmetic is Leap-C's core), listing
+the first few that do not.
 
 Usage: python3 tools/qual/qcalcround.py [--tree DIR] [--port N] [--pairs N] [--leapc DIR] [--out FILE]
 """
@@ -205,6 +207,13 @@ def main():
             print("  " + score(name, [(f(value(x), value(y)), fp.binop(sym[name], x, y)) for x, y in norm]))
         print("  " + score("m/10^k", [(value(x) / value(y), fp.binop("/", gx, gy))
                                       for (x, y), (gx, gy) in zip(pairs, norm) if x[0] == 0]))
+        print("The ROM against the model, byte for byte:")
+        for k, (name, _, _f) in enumerate(OPS):
+            diff = [(x, y, r[k], fp.binop(sym[name], gx, gy))
+                    for (x, y), (gx, gy), r in zip(pairs, norm, res) if r[k] != fp.binop(sym[name], gx, gy)]
+            print("  %-4s %5d of %d equal" % (name, len(pairs) - len(diff), len(pairs)))
+            for x, y, got, want in diff[:5]:
+                print("       %s %s %s: ROM %s, model %s" % (x.hex(), sym[name], y.hex(), got.hex(), want.hex()))
     if a.out:
         json.dump([[x.hex(), y.hex()] + [b.hex() for b in r] for (x, y), r in zip(pairs, res)], open(a.out, "w"))
     return 0

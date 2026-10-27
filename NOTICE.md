@@ -43,7 +43,9 @@ Earlier releases and the git history still contain the derived versions.
 2068-Leap-C (https://github.com/nchiker/2068-Leap-C, MIT License, copyright
 (c) 2026 Charlie Day) is built on this project's platform; code it wrote has
 been brought back here: the tape block I/O (`kernel/storage/tapeblock.asm`),
-the block-graphics glyph builder, the xorshift used by
+the block-graphics glyph builder, the calculator's arithmetic (add,
+subtract, multiply and divide in `rom/exrom_calc.asm`: Leap-C's float core,
+`src/runtime/fpcore.asm`, adapted to the `RST $28` calculator), the xorshift used by
 `RND`, the register-only `MATH_UMUL16` / `MATH_UDIV16`, the row clear in
 `GFX_CLEAR_ROW_TEXT`, the `1` and `l` glyphs, `tools/fuse/fuseshim.c`
 (loaded into Fuse at test time; it contains no Fuse source), and tools adapted

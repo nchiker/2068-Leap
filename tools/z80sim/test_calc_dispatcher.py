@@ -59,13 +59,11 @@ sim.SYSVARS['CALC_ERR_STACK_OVERFLOW'] = 3
 sim.SYSVARS['CALC_ERR_DIVISION_BY_ZERO'] = 4
 sim.SYSVARS['CALC_ERR_NUMERIC_OVERFLOW'] = 5
 sim.SYSVARS['CALC_ERR_UNIMPLEMENTED'] = 6
-# ---- 2026-08-21 real-arithmetic addition: register the 5 new scratch
-# sysvars (include/sysvars.inc's own real addresses, not invented) ----
-sim.SYSVARS['CALC_UNP_A'] = 0xB24F
-sim.SYSVARS['CALC_UNP_B'] = 0xB255
-sim.SYSVARS['CALC_SHIFT_COUNT'] = 0xB25B
-sim.SYSVARS['CALC_MUL_ACC'] = 0xB25C
-sim.SYSVARS['CALC_MUL_CAND'] = 0xB264
+# ---- the arithmetic's working cells (R1: 2068-Leap-C's float core; the file's
+# FX/FY/FQ and field-offset EQUs resolve against these) ----
+sim.SYSVARS['CALC_FX'] = 0xB24F
+sim.SYSVARS['CALC_FY'] = 0xB256
+sim.SYSVARS['CALC_FQ'] = 0xB25D
 
 # CALC_TABLE's real address depends on wherever rom/exrom_build.asm
 # ends up placing it inside the EXROM image — this simulator has no
