@@ -5288,10 +5288,8 @@ BUILTIN_FN_SQR:
         call CALC_PUSH_FP_RAW        ; [x,x,n]
         rst $28
         db $01,$05,$0F,$38           ; exchange, divide, add: [x + n/x]
-        ld hl,2
-        call CALC_INT_TO_FP
-        rst $28
-        db $05,$38                   ; [(x + n/x) / 2]
+        ld hl,CALC_STACK             ; 5.7: / 2 by its exponent (in the general form; x + n/x is
+        dec (hl)                     ; far above 2^-127): the same bits as dividing by 2, ~22 kT less
         pop bc
         djnz .sqr_loop
         jp VM_FLOAT_STORE_RESULT
