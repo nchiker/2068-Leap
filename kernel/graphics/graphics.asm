@@ -182,6 +182,66 @@ GFX_ROW_BASE_ADDR:
     ret
 
 ; ============================================================================
+; GFX_SCROLL_OUTPUT_UP
+; Scrolls all 24 program-output rows up one text row (PRINT, INPUT's echo
+; and the newline after a PRINT at the bottom), then clears the new bottom
+; row (GFX_CLEAR_ROW: the default attribute, a blank bitmap).
+; 5.11 (back-port plan): a scanline of the 23 rows that move is one stream
+; through the three screen thirds -- rows 1-7 -> 0-6 inside third 0 (224
+; contiguous bytes), row 8 -> 7 across to it (32), rows 9-15 -> 8-14, row
+; 16 -> 15, rows 17-23 -> 16-22 -- copied 16 bytes at a time by unrolled
+; LDIs (16 T a byte, LDIR's 21), for each of the 8 scanlines; the 23 rows'
+; attributes (linear memory) the same way. It was 23 GFX_COPY_ROW_BITMAP
+; calls, each 8 LDIRs of 32 bytes. Copies forward (each destination below
+; its source), as a memmove must.
+; In:  none
+; Out: none
+; Destroys: AF, BC, DE, HL
+; ============================================================================
+GFX_SCROLL_OUTPUT_UP:
+    call GFX_SPRITE_INVALIDATE
+    ld   hl, ATTR_ADDR + 32         ; rows 1-23's attributes -> rows 0-22
+    ld   de, ATTR_ADDR
+    ld   a, 23*32/16
+    call .ldi16
+    ld   hl, SCREEN_ADDR + 32       ; scanline 0 of row 1
+    ld   de, SCREEN_ADDR            ; ... of row 0
+.third:                             ; HL, DE on this scanline of a third
+    ld   a, 7*32/16                 ; its rows 1-7 -> 0-6
+    call .ldi16
+    ld   a, h                       ; HL = this third's next scanline:
+    cp   HIGH (SCREEN_ADDR + $1100) ; past the last third's ($51-$58)?
+    jr   nc, .scanline_done
+    add  a, 7                       ; HL -> the next third's row 0
+    ld   h, a
+    ld   a, 32/16                   ; -> this third's row 7
+    call .ldi16
+    ld   a, d                       ; DE -> the next third's row 0
+    add  a, 7
+    ld   d, a
+    jr   .third
+.scanline_done:                     ; HL = third 2's scanline + 256,
+    sub  $10                        ; DE = third 2's row 7 of this scanline
+    ld   h, a
+    ld   l, 32                      ; HL -> row 1 of the next scanline
+    ld   a, d
+    sub  $0F
+    ld   d, a
+    ld   e, 0                       ; DE -> row 0 of the next scanline
+    cp   HIGH (SCREEN_ADDR + $0800)
+    jr   c, .third                  ; until all 8 scanlines are done
+    ld   b, 23
+    jp   GFX_CLEAR_ROW
+.ldi16:                             ; A x 16 bytes (HL) -> (DE), ascending
+    REPT 16
+    ldi
+    ENDR
+    dec  a
+    jr   nz, .ldi16
+    ret
+
+    IFNDEF V2_PRODUCTION          ; 5.11: unused by the V2 images (GFX_SCROLL_OUTPUT_UP above copies itself)
+; ============================================================================
 ; GFX_COPY_ROW_BITMAP
 ; Copies one text row's entire 8-scanline bitmap (256 bytes total) from
 ; one row to another. Non-linear addressing (see ROW_BASE_TABLE's own
@@ -263,22 +323,7 @@ GFX_SCROLL_TEXT_UP:
     jr   c, .row_loop
     ret
 
-; Scroll all 24 program-output rows up, then clear the new bottom row.
-; The editor primitive above deliberately protects its status row, so reuse
-; it for rows 0-21 and finish the additional row here.
-GFX_SCROLL_OUTPUT_UP:
-    call GFX_SCROLL_TEXT_UP
-    ld   a, 22
-    ld   (GFX_SCROLL_DST_ROW), a
-    ld   a, 23
-    ld   (GFX_SCROLL_SRC_ROW), a
-    call GFX_COPY_ROW_BITMAP
-    ld   hl, ATTR_ADDR + 23*32
-    ld   de, ATTR_ADDR + 22*32
-    ld   bc, 32
-    ldir
-    ld   b, 23
-    jp   GFX_CLEAR_ROW
+    ENDIF
 
 ; ============================================================================
 ; GFX_SCROLL_TEXT_DOWN
