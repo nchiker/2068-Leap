@@ -1,71 +1,134 @@
-# Leap-C back-port: handoff for the rest of phase 5 and for phase 6
+# Leap-C back-port: handoff for item VER, the rest of phase 5 and phase 6
 
-Written 2026-10-26 at the end of phase 3, updated through phases 4 and 5; this version 2026-10-27, at the
-end of 5.6-5.8. The plan is `docs/V2_LEAPC_BACKPORT_PLAN.md` (the ledger, every item's outcome, the owner
-decisions F1-F22); this file is only where things stand, what comes next and how to pick it up.
+Written 2026-10-26 at the end of phase 3, updated through phases 4 and 5; this version 2026-10-27, after
+5.9/5.10. The plan is `docs/V2_LEAPC_BACKPORT_PLAN.md` (the ledger, every item's outcome, the owner
+decisions F1-F26); this file is only where things stand, what comes next and how to pick it up.
 
 ## Where things stand
 
-- **Branch `backport/leapc`** (off `v2-development`), pushed to GitHub (owner F21, 2026-10-27). On it: phases 0-4, the redraw item,
-  5.1 (decimal literals), R1 (calculator rounding), `SH_VIEW` (ED4), ED3/ED7, 5.2-5.5 (VM speed) and
-  5.6-5.8 (calculator multiply/divide in registers, `SQR` halving, the row clear; owner F18: integrated
-  once `make test` passed). The merged prototype branches are deleted (owner, 2026-10-27).
-- **Prototype `proto/5.9-5.10-float-fn-exrom`** (off `0227797`, not pushed): 5.9 `edd6beb`, 5.10 `61d9726`,
-  item VER in the plan `74f3d91`, then the tests' record. HOME **746** / EXROM **171** B free; `make test`
-  all PASS, `make doc-examples` 327 with the spiral's image rewritten (5.10's exact `COS(120)`). Waiting
-  for the owner's decision to integrate it (fast-forward); the figures below are `backport/leapc`'s.
-- **Free ROM: HOME 286 B, EXROM 573 B** (`make budget`). Emergency reserve HOME 64 / EXROM 32 (`make check`
+- **Branch `backport/leapc`** (off `v2-development`). On it: phases 0-4, the redraw item, 5.1 (decimal
+  literals), R1 (calculator rounding), `SH_VIEW` (ED4), ED3/ED7, 5.2-5.5 (VM speed), 5.6-5.8 (calculator
+  multiply/divide in registers, `SQR` halving, the row clear) and 5.9/5.10 (`SIN`/`COS`/`TAN` in the
+  EXROM, the polynomial, Q-35; owner F26: integrated by fast-forward). GitHub has it up to `0227797`
+  (F21); 5.9/5.10 and later are local until the owner says to push.
+- **Free ROM: HOME 746 B, EXROM 171 B** (`make budget`). Emergency reserve HOME 64 / EXROM 32 (`make check`
   fails below it). Spending is weighted by benefit per byte (F1).
 - **Owner rules for what is left** (2026-10-27): a change must give a *significant speed increase* or
-  *use less HOME or EXROM* (F17); and the phase 5 follow-ups must *leave room for phase 6* (F19).
+  *use less HOME or EXROM* (F17); the phase 5 follow-ups must *leave room for phase 6* (F19); item VER
+  is the owner's own request (F22).
 - **What phase 5 gave** [M] (`qbench`, `qprofile --statements`, against the build before 5.2): counter
   and GOTO loops 2.4-2.55×, the sieve 1.53×, IF-heavy loops 1.56×, empty FOR 1.31×; `SQR` 3.0×,
-  `SIN`/`COS` 2.0×, a float divide −40% and multiply −37% a statement, a scrolling `PRINT` −10.6%;
-  every result and every screen identical to before (the bytecode changed only in 5.4's intended
-  rewrites).
-- Last full `make test` (5.6-5.8, 2026-10-27, 1,824 s, fast emulation): all PASS (smoke 9/9, standalone
-  40/40, prod-regress 127, prod-arrays 101, known-defects 15, saveall 13, micsave 3, qual 663 PASS + 2
-  XFAIL + 2 N/A, lifecycle 23, `qvmedge` 120, maint-qual all); `make doc-examples` 327/327. Emulators only
-  (F12): nothing has run on a physical TS2068.
+  `SIN`/`COS` 3.0× (2.0× by 5.6, 1.48× more by 5.10), `TAN` 2.7×, a float divide −40% and multiply −37%
+  a statement, a scrolling `PRINT` −10.6%. Every result and screen identical to before, except
+  `SIN`/`COS`/`TAN` (5.10: within ~2 ulp of exact, were up to 16,713 ulp off; F23) and the Q-35 fix.
+- Last full `make test` (5.10, 2026-10-27, 1,794 s, fast emulation): all PASS (smoke 9/9, standalone
+  40/40, prod-regress 127, prod-arrays 101, known-defects 15, saveall 13, micsave, qual 666 PASS + 2 XFAIL
+  + 2 N/A of 670, lifecycle 23, `qvmedge` 120, maint-qual all); `make doc-examples` 327 (the spiral's image
+  rewritten for 5.10). Emulators only (F12): nothing has run on a physical TS2068.
 - No stock-ROM-derived code in the images (`tools/check_provenance.py`, empty allow-list); anything
   taken from Leap-C is MIT and goes in `NOTICE.md`.
 
 ## What comes next, in this order
 
 The space arithmetic is the plan's "Room for phase 6": phase 6 is allowed **HOME ~260 B, EXROM ~100 B**
-[E] until 6.1 is sized; with 286 B free HOME is ~40 B short of that already. Check every item against
-*free - reserve - phase 6's allowance >= its cost* in the ROM it uses.
+[E] until 6.1 is sized. Now HOME has 422 B above the reserve and that allowance; the EXROM 39 B. Check
+every item against *free - reserve - phase 6's allowance >= its cost* in the ROM it uses.
 
-1. **5.9 with 5.10: the float built-ins to the EXROM** (the only item that frees HOME, up to 611 B:
-   `SQR`, `PI`, `RAD`, `DEG`, `SIN`, `COS`, `TAN`, `SIN_PEEK_POP`, the divisor table). They only run
-   while the EXROM is paged in (program runs and immediate statements, under the shell); confirm with
-   `qcanary --banking`, and that the compiler never calls them (no constant folding of functions). The
-   built-in jump table (`BUILTIN_FN_JUMP_TABLE`, HOME) then points at fixed EXROM slots (the
-   `V2_EXROM_SLOT` pattern of 5.4's peepholes; bump `V2_KTAB_MAGIC`). Moving as they are is bit-identical
-   (`qfndiff` for each function must show 0 differences). The EXROM side is +450 to +650 B, more than
-   fits with phase 6's 100 B: measure, move `SIN`/`COS`/`TAN` (452 B) first, the rest if it fits.
-   **5.10** (one multiply by pi/180, a polynomial with stored coefficients instead of a divide per term)
-   shortens that code and makes `SIN` ~2.3× faster again; it changes the last bits, which the owner
-   allows (F20, 2026-10-27): measure its accuracy against exact values (as `qcalcround` does), list what
-   changes with `qfndiff`, and record both in the outcome.
-2. **Item VER** (owner F22): the ROM's version on the screen at power-on, while the startup chime
-   plays (the plan's "Item VER": the boot head of `V2_COMMAND_LOOP`, a version constant edited at
-   release, ~25 B HOME [E]).
-3. **Size 6.1** (package functions with Leap-C's export table and signature bytes) as a prototype, to
+1. **Item VER** (owner F22): the ROM's version on the screen at power-on, while the startup chime plays.
+   The plan's "Item VER" has the item; how to pick it up is below.
+2. **Size 6.1** (package functions with Leap-C's export table and signature bytes) as a prototype, to
    replace phase 6's allowance with a measured figure before spending more.
-4. **Then, where the room is** (after 5.9 HOME has it, the EXROM may not):
+3. **Then, where the room is** (HOME has it; the EXROM has 39 B above phase 6's line):
    - 5.13, `PRINT` of a string (~3× a character: the addresses worked out once, an unrolled glyph copy);
-     the print path runs only with the EXROM in, so either ROM works. Check: `qscrdiff` (same screen).
+     the print path runs only with the EXROM in, so either ROM works: HOME now. Check: `qscrdiff`.
    - 5.11, the scroll copy (each screen third's rows in one block per scanline, unrolled; ~218 → ~180 kT,
      contention-bound). HOME (`kernel/graphics`); the editor shares `GFX_COPY_ROW_BITMAP`, so also
      `qeditview`. Check: `qscrdiff`, `qrtime`.
-   - 5.12, `LOAD v; PUSH k; CMP_JMPZ` as one instruction (~1,000 T an `IF i < k`): the handler in the
-     EXROM only if the dispatch can reach it there (the EXROM is in at every dispatch: `qcanary`'s
-     invariant), the compiler side next to 5.4's in `rom/exrom_v2_fuse.asm`. Bytecode changes:
+   - 5.12, `LOAD v; PUSH k; CMP_JMPZ` as one instruction (~1,000 T an `IF i < k`): the handler in HOME
+     (the room is there), the compiler side next to 5.4's in `rom/exrom_v2_fuse.asm` (EXROM, ~70 B [E]:
+     more than the EXROM's 39 B above phase 6's line, so measure, or put it in HOME). Bytecode changes:
      `qbytecode` review and baseline reset; `qvmedge` cases.
-5. **Phase 6 (ABI 2.1)**, items 6.1-6.6, for v2.1. The manual's speed figures were updated after 5.8
-   (`tools/qual/manual_measure.py`, owner F21); re-run it after any later speed change and update
-   `04_concepts.md` "Speed" and `FOR`'s note (the Word edition is rebuilt at release).
+4. **Phase 6 (ABI 2.1)**, items 6.1-6.6, for v2.1. The manual's speed figures were updated after 5.8
+   (`tools/qual/manual_measure.py`, owner F21; it has no `SIN`/`COS`/`TAN` entry); re-run it after any
+   later speed change and update `04_concepts.md` "Speed" and `FOR`'s note (the Word edition is rebuilt
+   at release).
+
+## Item VER: how to pick it up
+
+**Goal (owner F22).** At power-on the screen shows the ROM's version, e.g. `2068 LEAP V2.1`, *while the
+startup chime plays*: on the screen before its first note and still there after its last. Proposed in
+the plan (not decided): it then stays until the first key, which reaches the editor as usual. If keeping
+it past the editor's first redraw costs much or disturbs the tests, ask the owner before settling for
+"during the chime only". Only at power-on, like the chime (not on `NEW` or a return to the editor).
+
+**The boot path today.** `V2_COMMAND_LOOP` (`rom/exrom_v2_shell.asm`, EXROM), its one-time head:
+`KTAB_GFX_CLS`, `V2_RESET_DISPLAY`, `V2_RESET_EDIT`, `STARTUP_CHIME`; then `.loop` (re-entered on `NEW`
+and every return to the editor): `V2_RESET_DISPLAY` (colours, border, mode 0; no clear), `EDITOR_INIT`,
+the hooks, `V2_LOAD_EDIT`, `EDITOR_ENTER` → `EDITOR_REDRAW_SCREEN` (→ `V2_REDRAW`, which ends in
+`V2_DRAW_STATUS`: row 23 cleared and `LINE n/m` printed, with the status-bar attribute) → `EDITOR_LOOP`
+(`KTAB_IO_READ_KEY`). The screen is blank during the chime today.
+- Printing the text between `V2_RESET_EDIT` and `STARTUP_CHIME` puts it up for the whole chime. Row 23 is
+  natural (the status row), but `V2_DRAW_STATUS` overwrites it at the editor's first redraw, right after
+  the chime. Keeping it to the first key needs e.g. a one-shot flag that `V2_DRAW_STATUS` honours (print
+  the version instead of `LINE n/m`) and that the first key clears; check `V2_REDRAW`'s selective paths
+  (`V2_REDRAW_SCOPE`, `V2_REDRAW_NAV`) also redraw the status when the flag clears.
+- `V2_SHOW_MESSAGE` (the status-line messages) is *not* usable as it is: it ends in `jp KTAB_IO_READ_KEY`
+  (it waits for, and takes, a key) and calls `SA_UNBUILD` when `SA_BUILT` is set.
+- The chime: the default (MAINT) build plays chime C (`V2_MAINT_CHIME_C`): attack 27 frames, hold 19,
+  release 9, 55 frames (~0.9 s at 60 Hz; BREAK ends it with `V2_MAINT_SHARED_WAIT`); the release
+  definitions (`make build EXTRA_DEFS=`) play the original table chime; `V2_MAINT_CHIME_B` is a third
+  variant. The text must be up for each of them: print before the call, not inside a variant.
+
+**The version.** One constant in a new include (e.g. `include/v2_version.inc`: the text), edited at each
+release, the next being v2.1 (F4). Not `git describe`: every commit would build a different ROM (`make
+repro`; comparing a build with the released images' hashes). The released v2.0.x images are fixed.
+
+**Where the bytes go.** HOME has the room (746 free): the text and a small print routine in HOME,
+exported to the EXROM through `tools/write_v2_crossbank.py` (`NAMES`; a global name, not a local
+`.label`), called from the boot head (3 B of EXROM). `KTAB_GFX_PRINT_STRING` (HL text, B row, C column)
+and `V2_STATUS_SET_BAR_ATTR` are what the status line uses. Estimate ~25 B HOME. Record `make budget`'s
+figures in the ledger.
+
+**Checks.**
+- A probe (like the 5.9 slot probe, `qharness.Machine`): boot from reset with breakpoints at
+  `STARTUP_CHIME`'s entry and at its return (its caller's next instruction), read the screen
+  (`m.read(0x4000, 6912)`, or the harness's text reader) at both: the version text present. Then a key
+  (`KBD_LASTK`/`KBD_KEYHIT`, as `call_routine` does): it reaches the editor (typed character on screen),
+  and the status row shows `LINE n/m` again.
+- The chime itself unchanged: `make qual-maint` / maint-qual's `ay_beep` and `cbeep` (AY register writes,
+  frame waits).
+- **The test harness's boot snapshot** (`qharness.Machine.start`) is taken at the first `IO_READ_KEY`,
+  i.e. with the text still up if it stays to the first key. Every tool restoring that snapshot then starts
+  from that screen: `qeditview` (its oracle redraws with `V2_REDRAW`), `qscrdiff`, the editor and
+  production suites, `doc-examples` screenshots (`manual_run.py`). Run them; a difference confined to row
+  23 before the first key is expected, anything else is not. If many tools need re-baselining, prefer
+  clearing the flag where the harness's first action would anyway, and say so to the owner.
+- `make check`, `make build EXTRA_DEFS=` (the release definitions assemble), `make repro`, `make test`
+  (subagent, on a copy), `make doc-examples`.
+- The manual: where the version is shown (`01_introduction.md`, `07_appendices.md`); a `doc-examples`
+  case is not needed (it is not a BASIC example).
+
+## Pitfalls met in 5.9/5.10
+
+- **The two-bank standalone harness** (`rom/test_v2_harness_*`) assembles the VM core into its HOME with
+  the calculator in its EXROM; only `CALC_INT_TO_FP`, `CALC_FP_TO_INT`, `CALC_PUSH_PI`,
+  `CALC_PUSH_FP_RAW` and `CALC_SP_TO_NEXT_FREE_PTR` are reachable from HOME there
+  (`rom/test_v2_harness_addrs.inc`). Code the VM core includes must use only those (5.9's first
+  `SIN_PEEK` used `CALC_SP_TO_TOP_PTR`: `make check` failed on the standalone build).
+- **Cross-bank exports** (`tools/write_v2_crossbank.py`): its pattern takes global names only; export a
+  local label through a global `EQU` alias (`FP_TRUNC_ZERO`, `VM_ERR_RANGE`). A name that exists only
+  under a build define (`VM_ERR_RANGE` was MAINT-only) breaks the release build: check `make build
+  EXTRA_DEFS=` after adding one.
+- **`qfndiff`'s "0 differ"** counts a program that stops on both builds as equal: read the "(N in programs
+  that stopped)" figure (24 `TAN` arguments in 5.9, the Q-35 cases).
+- **Simulate the calculator first**: Leap-C's `tools/fpmodel.py` is bit-exact with this calculator
+  (FUNPK's small-integer form = `fri` of its 16-bit pattern); `tools/qual/qsinfit.py --leapc DIR` shows
+  the pattern. 5.10's form was chosen that way before any Z80 was written.
+- **`doc-examples` screenshots**: a last-bit change can move a plotted point (`INT` of a whole number:
+  `COS(120)` was 1 ulp short of −0.5). Rewrite an image (`manual_run.py --write-shots --filter id`) only
+  after checking the moved pixels against exact maths.
+- The calculator stack has 8 slots; `CALC_PUSH_FP_RAW` leaves HL 5 bytes on (walk a constant table with
+  it); `rst $28`'s B is the literal parameter (0 for the arithmetic).
 
 Not to be done (owner or below the bar): the top of the operand stack in registers (5.5 step 2, F15), a
 page-aligned opcode table, `LOAD_VAR` pushing for itself. The SCLD offers nothing for output speed
@@ -97,7 +160,7 @@ on GitHub, and prints that command.
 
 | Tool | What it checks |
 | --- | --- |
-| `tools/qual/qcanary.py --banking` | paging invariants over the corpus |
+| `tools/qual/qcanary.py --banking` | paging invariants over the corpus (5.9: also an EXROM entry slot entered with the EXROM paged out) |
 | `tools/qual/qpoweron.py` | boot from non-zero RAM patterns |
 | `tools/qual/fuse_frames_probe.py` | frames lost by `di` windows (Fuse; approved probe only) |
 | `tools/qual/qrnd.py`, `qmuldiv.py` | RND sequence/period, 16-bit mul/div differential |
@@ -114,6 +177,8 @@ on GitHub, and prints that command.
 | `tools/qual/qbreak.py` | BREAK through the real keyboard matrix in 19 loop forms and waits; error 66, the loop left, key-to-message T |
 | `tools/qual/qprofile.py` | where the run time goes: per-instruction profile of 11 workloads (a breakpoint at every dispatch); `--statements`: T one statement adds to a loop |
 | `tools/qual/qfndiff.py` | a numeric built-in on two builds, `v = F(arg)` for ~1,900 arguments, every result's 5 bytes compared (5.7, 5.9, 5.10) |
+| `tools/qual/qfndiff.py --exact` | the same, each build's results scored in ulp against exact values (`SIN`, `COS`, `TAN`, `SQR`) |
+| `tools/qual/qsinfit.py [--leapc DIR]` | `SIN_COEFFS` re-derived (Remez); with Leap-C's model, `SIN`/`COS`/`TAN` simulated step by step and scored |
 | `tools/qual/qscrdiff.py` | 15 printing programs that scroll, on two builds: the whole screen compared (5.8, 5.11, 5.13) |
 | `tools/qual/qrtime.py` | T-states of one ROM routine with given registers and pokes (`GFX_CLEAR_ROW BC=0x1700`) |
 | `tools/qual/qvmedge.py` | in `make qual`: 120 edge cases of the integer FOR path, the combined instructions and the operand stack's limit (5.3-5.5), expectations from the manual's rules |

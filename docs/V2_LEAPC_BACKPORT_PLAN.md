@@ -725,6 +725,9 @@ Outcome, 5.10 (2026-10-27; on the same prototype branch, after 5.9; all [M]):
   for −5; 5.10 gives ±0.5 exactly and the exact positions (simulated: 6 points move, 5 visibly; the
   screenshot differs in exactly those). `docs/manual/images/spiral.png` rewritten (`--write-shots`); the
   example passes against it.
+- **Owner decisions F23-F26 (2026-10-27):** 5.10's changes beyond the last bit accepted (they are the old
+  series' error); the Q-35 fix accepted; `SQR`/`PI`/`RAD`/`DEG` stay in HOME (the rest of 5.9 closed);
+  integrated into `backport/leapc` by fast-forward.
 
 ### Item VER: the ROM's version at power-on (owner request F22, 2026-10-27; next after 5.9/5.10)
 
@@ -984,6 +987,10 @@ All decided by the owner on 2026-10-25.
 | F20 | 5.10's results                           | `SIN`/`COS`/`TAN` may change in the last bit (2026-10-27)           |
 | F21 | Manual speed figures; pushing            | Updated now (5.6-5.8 build); `backport/leapc` may be pushed (2026-10-27) |
 | F22 | The ROM's version                        | Item VER added after 5.9/5.10: the version on the screen at power-on, while the startup chime plays (2026-10-27) |
+| F23 | 5.10's changes beyond the last bit       | Accepted: they are the old series' error (up to 16,713 ulp near ±90°); new results within ~2 ulp of exact (2026-10-27) |
+| F24 | Q-35 (`COS` above 32677)                 | Fix accepted (part of 5.10) (2026-10-27)                            |
+| F25 | `SQR`, `PI`, `RAD`, `DEG`                | Stay in HOME; the rest of 5.9 closed (no EXROM room, HOME no longer short). Revisit only if 6.1's sizing leaves HOME short (2026-10-27) |
+| F26 | 5.9-5.10 prototype                       | Integrated (fast-forward, 2026-10-27); next: item VER               |
 
 ## Also worth doing
 
