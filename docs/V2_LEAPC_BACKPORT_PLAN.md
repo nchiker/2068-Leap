@@ -62,6 +62,7 @@ Further rules:
 | 5.13 `PRINT` of a string     | **454** | **113** | [M], integrated (F30): HOME −88 free (`GFX_PRINT_STRING_ATTR` 64 → 168 B, `GFX_PUTCHAR_OVER` 16 removed); EXROM 0; RAM 0 |
 | 5.11 the scroll copy         | **462** | **113** | [M], integrated (F31): HOME +8 free (`GFX_SCROLL_OUTPUT_UP` 32 → 100 B with its LDI block; `GFX_COPY_ROW_BITMAP` 36 and `GFX_SCROLL_TEXT_UP` 40 left to the non-V2 builds); EXROM 0; RAM 0 |
 | 5.14 the glyph lookup        | **500** | **113** | [M], integrated (F32; owner request, 2026-10-27): HOME +38 free (`LOW_CHAR_TABLE` 33 B replaces the 46-byte pair table; the lookup's code 25 B shorter); EXROM 0; RAM 0 |
+| 6.2 floats for packages      | **377** | **113** | [M], prototype (`proto/6.2-float-service`, owner decision pending): HOME −123 free (`FP_OP` 83, service 17; `OP_CALL_EXT`'s float form 34: the arguments into calculator slots 0-4, a float value stored as a FLOAT temp; `EXT2_REGISTER` refusing the float form with a string argument 6); EXROM 0; slot 17 takes 3 B of the reserved slot area (not counted); RAM 0 |
 | phase 5 (speed)              | ≥ 64    | ≥ 32    | Class B: each item sized and weighed before it is started; 5.0 first if the room is not there                 |
 
 Every [E] is replaced by `make budget`'s figure as each item lands.
@@ -1079,6 +1080,48 @@ Then phase 6's rest (6.2-6.6) and the manual's speed figures (`tools/qual/manual
   `cbeep_tape` 3).
 - **Owner (2026-10-27):** integrate 6.1 (F28): `backport/leapc` fast-forwarded to `e9423ab` (with
   `docs/PACKAGE_ABI.md` for 2.1). Open from it: stamp each package tape with the ABI minor it needs.
+
+### Item 6.2 outcome (prototype, 2026-10-27; `proto/6.2-float-service` off `backport/leapc` `bc81c01`; all [M])
+
+- **Scope (owner, 2026-10-27):** the full form: float arguments, float values and float arithmetic
+  (chosen over the service alone, the service and a float value, or the value kind alone).
+- **The float form.** Signature bit 5, `EXT_SIG_FLOAT` (`$20`, `include/v2_ext_kinds.inc`), with any
+  kind; `$80` stays reserved. `COMPILE_EXT_EMIT` carries bit 5 into `OP_CALL_EXT`'s count byte (the
+  count is masked to 3 bits now). With it, each argument is pushed into calculator slot n (an INT
+  converted by the calculator's own `CALC_INT_TO_FP`) and `EXT_CALL_ARGn` is that slot's address; a
+  numeric function's `EXT_CALL_RESULT` points to 5 bytes that the VM stores as a FLOAT temp
+  (`VM_FLOAT_STORE_RESULT`). A string function and a statement return as before. The float form's
+  arguments are all numbers: `EXT2_REGISTER` refuses bit 5 with any string bit (6 B), since the run
+  time cannot tell a string argument from an INT by its tag.
+- **`FP_OP`** (service 17, `rom/v2_pkg_fp.asm`): `A` = `FOP_ADD`/`SUB`/`MUL`/`DIV` (x = x op y),
+  `FOP_INT` (x = the integer DE, the small-integer form written directly), `FOP_TRUNC` (HL = x
+  truncated, CF outside 16 bits; `CALC_FP_TO_INT` between `BANK_PAGE_EXROM_IN`/`_OUT`). The four
+  operations call the VM's own calculator stubs (7 bytes apart, `ASSERT`ed), so an overflow or a
+  division by zero is runtime error 67, raised as in BASIC; `VM_ERR_COMMON` unwinds from package code
+  with the EXROM paged in again (item 2.3): checked, `BANK_EXROM_DEPTH` 1 after errors 67 and 15
+  raised in a package. Hence execute-time only. It works in slots 5-6, so the arguments survive it.
+  No new RAM.
+- **ABI.** Still 2.1 (2.1 is unreleased; one minor for all of phase 6): 18 slots (12 reserved left),
+  `docs/PACKAGE_ABI.md` §2 "The float form" and §3 "Service 17". `tools/check_package_abi.py` audits
+  `FP_OP`: its closure, the trampoline's indirect call taken as the four stubs, reaches the EXROM only
+  through `RST $28` (followed past the literal stream) and through `CALC_FP_TO_INT` right after a
+  page-in and before a page-out; a negative control (the page-in removed) is reported.
+- **Bytes** (`make budget`, `bc81c01` → `83373d8`): HOME 500 → **377** free (−123: `FP_OP` 83,
+  `OP_CALL_EXT` 34, `EXT2_REGISTER` 6); EXROM 113 (0). The estimate was ~110-125.
+- **Checks.** `tools/qual/qpkgfn.py` 56/56 (38 before; 18 float cases with the new test package
+  `rom/v2_package_fptest.asm`, 9 exports; fntest's 10 and these do not fit the registry's 12 together):
+  sums and the division against BASIC's own, INTs converted, values beyond 16 bits, five arguments in
+  order, arguments as copies, nesting, temps, a FOR loop, a float statement and a float-form string
+  function, `FOP_TRUNC` at ±32767/−32768 and beyond (package error 15), error 67 for ÷0 and overflow, a
+  string argument refused at compile time, and `EXT2_REGISTER`'s refusal. `qbytecode` `bc81c01` vs
+  `83373d8`: 670/670 corpus programs identical (12,418 B). `qcanary --banking`: 670 cases, 0
+  violations, 0 canary hits. `make check` OK. `make test` (fast emulation, 1,967 s): all PASS: smoke
+  9/9, standalone 40/40, production checks, fill, prod-regress 127, prod-arrays 101, known-defects 15,
+  saveall 13, micsave 3, qual 666 PASS + 2 XFAIL + 2 N/A of 670, lifecycle 23, `qvmedge` 221,
+  maint-qual all; `make doc-examples` 327/327.
+- **Not done:** slot 14's float tag (packages hold no float-table index; a float is printed by
+  converting it in the package); `LPRINT` of a float (the PRINTER package would need the float form
+  and a formatter); `SQR`/`SIN`-class operations in `FP_OP` (a math package builds them from the four).
 
 ## Phase 7: decision gate for a V3 (major: ABI 3.0, new RAM map)
 
