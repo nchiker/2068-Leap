@@ -57,6 +57,7 @@ Further rules:
 | 5.9 `SIN`/`COS`/`TAN` to the EXROM | **746** | **142** | [M]: HOME +460 free (`SIN` 340, `TAN` 58, `COS` 27, `SIN_PEEK_POP` 27, the divisor table 8); EXROM −431 (the code 413 after bit-identical compaction, 3 slots 18); `SQR`/`PI`/`RAD`/`DEG` stay (no room) |
 | 5.10 `SIN`/`COS`/`TAN` series | **746** | **171** | [M]: EXROM +29 free: the series 136 → 90 B, its constants 8 → 30 (π/180, five coefficients); `COS` 27 → 4 (enters `SIN` with a shift); the reduction +18 (Q-35: the shift, reduced again; the fraction negated by its sign bit) |
 | VER the ROM's version       | **690** | **163** | [M]: HOME −56 free (`rom/v2_version.asm`: the text 15, `V2_VER_STATUS` 18, `V2_VER_SCOPE` 18, the flag set at cold start 5); EXROM −8 (boot head 3, `V2_DRAW_STATUS` 5; `V2_REDRAW`'s scope read became the call, 0); RAM `$BEC6` |
+| 6.1 package functions (prototype) | *590* | *163* | [M], `proto/6.1-pkg-functions` `2970ffd`, not integrated (owner decision pending): HOME −100 free (registry 43: the kind filter 18, `EXT2_EXPORTS` 25; VM 32: the count mask 2, the INT push 14, the string copy 16; compiler 25 net); EXROM 0; service slot 16 in the reserved slot area (3 B, not counted); RAM `$BFA9`, `$BA3D-$BA3F` freed |
 | phase 5 (speed)              | ≥ 64    | ≥ 32    | Class B: each item sized and weighed before it is started; 5.0 first if the room is not there                 |
 
 Every [E] is replaced by `make budget`'s figure as each item lands.
@@ -805,6 +806,64 @@ Outcome, VER (2026-10-27; prototyped on `proto/ver-boot-version` off `backport/l
 Size allowance [E] (held free by the phase 5 follow-ups, "Room for phase 6"): HOME ~260 B, EXROM ~100 B
 in all, mostly 6.1 (the study's simpler function packages measured HOME 95 B, `study/extfn` `7c349f2`).
 Sizing 6.1 first replaces it with a measured figure.
+
+**Re-sized after 6.1's prototype (2026-10-27; owner decision pending):** 6.1 HOME **100** B, EXROM **0** [M];
+6.2-6.4 stay [E]: HOME ~30-60 (6.2's EXROM page-in wrapper for the float service, and a float function
+kind if wanted, ~15; 6.3's error service; 6.4's trap), EXROM ~0-30 (a package error message). Allowance
+now **HOME ~160, EXROM ~30** (was 260 / 100). Against `backport/leapc` today (690 / 163 free), above the
+reserve and the allowance: HOME **466** (was 366), EXROM **101** (was 31).
+
+### Item 6.1 outcome (prototype, 2026-10-27; `proto/6.1-pkg-functions` off `backport/leapc` `fb57545`; all [M])
+
+- **The signature byte.** Leap-C's `[return:4][parameters:4]` adapted to V2's registry, which already
+  holds an argument count (B, 0-5) and the argument types (C, bit n = argument n is a string): C becomes
+  the signature, its bits 7-6 the *kind* (`include/v2_ext_kinds.inc`): `$00` a statement (every ABI 2.0
+  package: the shipped ones pass 0 or 1), `$40` a numeric function, `$C0` a string function; bits 4-0
+  stay the argument types. V2 passes 16-bit integers and strings, so no parameter-list table is needed.
+  `$80` is free for a float function (6.2).
+- **The export table.** `EXT2_EXPORTS` (service 16, HOME): per export the NUL-terminated name, the entry
+  (2 B), the argument count and the signature; a 0 ends it. A package installs with `ld hl,table / jp
+  EXT2_EXPORTS`; an export costs its name + 5 B in the package instead of its name + ~15 B of
+  `EXT2_REGISTER` calls. NUL-terminated names (not Leap-C's bit 7) keep `EXT2_REGISTER`'s rules; old
+  packages keep calling `EXT2_REGISTER`. Not at a fixed address (one could be agreed for a host tool, 6.6).
+- **Binding.** `EXT2_LOOKUP` takes the kind wanted in C; a record of another kind never matches, so a name
+  binds only where its kind fits: a numeric factor looks for a numeric function after the ROM's built-ins
+  (a built-in of the same name wins, as Leap-C's ROM functions do) and before arrays and variables;
+  `NAME$` in a string factor for a string function; the start of a statement for a statement. A function
+  at the start of a statement is not one (compile error 42), a statement name in an expression is a
+  variable or an array (64), and a variable may share a function's name (`SEVEN = 3` compiles; `SEVEN`
+  in an expression is the function).
+- **Type-checked calls.** A package function is compiled by `COMPILE_FACTOR.fn_call`, the built-ins' own
+  call parser (`D` = $80 + slot), so the syntax and the errors are the built-ins': `NAME(a, b)`, the exact
+  count (30 too few, 31 too many, 29 without parentheses), each argument as the signature types it (a
+  number for a string argument: 3). `COMPILE_EXT_EMIT` emits `OP_CALL_EXT [slot][generation][count |
+  kind]` for statements, functions and `LPRINT`; the slot, count and signature stay in registers, so the
+  `CEXT_*` cells (`$BA3D-$BA3F`) are free: a function nested in a statement's or `LPRINT`'s argument
+  would have overwritten them (the study's version had this).
+- **The value.** `OP_CALL_EXT` masks the count; after the call a numeric function's `EXT_CALL_RESULT`
+  (`$BEE0`, pinned now) is pushed as an INT; a string function's points to `[length 0-31][text]` in the
+  package's memory, copied into a string temp (`VM_STR_ALLOC_TEMP`) and pushed. A function raises an
+  error as a statement does (`VM_ERROR_CODE`, `VM_HALTED`).
+- **ABI 2.0 → 2.1** (minor: slot 16 and the `EXT_CALL_RESULT` pin appended): old package tapes load and
+  run unchanged. Not done in the prototype: `docs/PACKAGE_ABI.md` (at integration), the shipped packages'
+  tape word (they would be tagged 2.1 by the build although they need only 2.0, so a 2.0 ROM would refuse
+  them: tag each package with the minor it needs), float arguments and results (6.2), the test-only
+  decompiler (it does not render package functions; no test image has one).
+- **Bytes** (`make budget`, `fb57545` → `2970ffd`): HOME 690 → **590** free (−100): the registry +43 (the
+  kind filter 18, `EXT2_EXPORTS` 25), the VM +32 (the count mask 2, the INT push 14, the string copy
+  16), the compiler +25 net (`EXT_FN_TRY` 20, `EXT_FIND_TOK` 10, the two factor sites 10, `fn_call`'s
+  branch 5 and `COMPILE_EXT_EMIT`, less the `CEXT_*` code and `LPRINT`'s slot resolver); EXROM 0. Slot
+  16 takes 3 B of the reserved slot area (`$00C6`; 13 reserved slots left), not counted by `make
+  budget`. RAM: `EXT2_LOOKUP_KIND` `$BFA9`. The parts: numeric functions with `EXT2_REGISTER` only **54
+  B**; string functions +21; the export table +25. (`study/extfn`: 95 B, numeric only, no binding by kind,
+  the nesting fault.) The test package `rom/v2_package_fntest.asm` (10 exports) is 325 B.
+- **Checks.** `tools/qual/qpkgfn.py` (new) 38/38: numeric and string values, in expressions, `IF`, `FOR`,
+  nested in a function's and in a statement's arguments, five arguments with a string third, 31- and
+  0-character strings, three string temps in one expression, an error from a function, the built-in
+  winning, the kind rules and the compile errors above, the names without the package, and one statement
+  of each ABI 2.0 package (SHAPES, GRAPHICS, MODE, SPRITE, CBEEP) after it. `qbytecode` `fb57545` vs
+  `2970ffd`: 670/670 corpus programs compile to identical bytecode (12,447 B). `make check` OK (the ABI
+  checker: 2.1, 17 slots, 35 pins).
 
 ## Phase 7: decision gate for a V3 (major: ABI 3.0, new RAM map)
 

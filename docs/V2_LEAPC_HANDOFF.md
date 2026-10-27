@@ -35,7 +35,12 @@ The space arithmetic is the plan's "Room for phase 6": phase 6 is allowed **HOME
 every item against *free - reserve - phase 6's allowance >= its cost* in the ROM it uses.
 
 1. **Size 6.1** (package functions with Leap-C's export table and signature bytes) as a prototype, to
-   replace phase 6's allowance with a measured figure before spending more.
+   replace phase 6's allowance with a measured figure before spending more. **Done as a prototype**
+   (2026-10-27, `proto/6.1-pkg-functions`, not integrated; the plan's "Item 6.1 outcome"): HOME 100 B,
+   EXROM 0 [M] (numeric functions alone 54 B; string functions +21; the export table +25). Phase 6's
+   allowance becomes HOME ~160 / EXROM ~30, leaving HOME 466 / EXROM 101 above the reserve and it.
+   **Owner decision pending:** integrate 6.1 now or at phase 6, and which parts; nothing below is
+   started until then.
 2. **Then, where the room is** (HOME has it; the EXROM has 31 B above phase 6's line):
    - 5.13, `PRINT` of a string (~3× a character: the addresses worked out once, an unrolled glyph copy);
      the print path runs only with the EXROM in, so either ROM works: HOME now. Check: `qscrdiff`.
