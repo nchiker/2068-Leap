@@ -2,7 +2,9 @@
 """Printing programs that scroll, on two builds: the whole screen (6,144 bitmap and 768 attribute
 bytes) compared after each. For output changes that must draw the same bytes (5.8 the row clear,
 5.11 the scroll copy, 5.13 string printing): colours, BRIGHT/FLASH, INVERSE, OVER, lines that wrap,
-commas and semicolons, AT 23, PLOT before a scroll, CLS, the block graphics and UDGs.
+commas and semicolons, AT 23, PLOT before a scroll, CLS, the block graphics and UDGs; for 5.13 every
+character code, OVER and INVERSE over text, rows of exactly 32, wraps that scroll inside a string,
+empty strings and positions off the screen.
 
   python3 tools/qual/qscrdiff.py [--root DIR] cfgA cfgB [--port N]
 """
@@ -35,6 +37,24 @@ PROGRAMS = {
     "plot-scroll": ["FOR x = 0 TO 255", "PLOT x, 100", "NEXT x"] + lines(10),
     "cls-scroll": lines(30) + ["CLS"] + lines(28),
     "udg-block": ["FOR i = 128 TO 164", "PRINT CHR$(i);", "NEXT i"] + lines(24),
+    # 5.13: strings -- every character code (punctuation, block graphics, UDGs, codes with no glyph),
+    # OVER and INVERSE over text, rows of exactly 32, a wrap that scrolls inside a string, empty
+    # strings, and positions off the screen (only a POKE of the output cells makes them)
+    "chars-all": ["FOR i = 1 TO 255", "PRINT CHR$(i);", "NEXT i", "PRINT", "FOR i = 32 TO 127", "PRINT CHR$(i);",
+                  "NEXT i"],
+    "over-strings": ['a$ = "Hello, world! 0123"', "FOR i = 0 TO 5", "AT i, i", "PRINT a$", "NEXT i", "OVER 1",
+                     "FOR i = 0 TO 5", "AT i, 2 * i", "PRINT a$", "NEXT i", "AT 3, 0", 'PRINT "#####"', "AT 3, 0",
+                     'PRINT "#####"', "INVERSE 1", "AT 8, 0", "PRINT a$", "AT 8, 4", "PRINT a$"],
+    "inverse-strings": ["INVERSE 1", "INK 2", 'a$ = "inverse text"', "FOR i = 1 TO 30", "PRINT a$; i", "NEXT i"],
+    # (a string holds at most 31 characters: "-" and a$ fill the 32 columns)
+    "exact-32": ['a$ = "0123456789ABCDEFGHIJ" + "KLMNOPQRSTU"', "FOR i = 1 TO 30", 'PRINT "-"; a$', "NEXT i",
+                 "FOR i = 1 TO 5", "PRINT a$;", "NEXT i", 'PRINT "end"', "AT 23, 1", "PRINT a$;", 'PRINT "e"'],
+    "wrap-bottom": ['a$ = "0123456789ABCDEFGHIJ" + "KLMNOPQRSTUVWXYZ"', "FOR i = 0 TO 12", "AT 23, i * 2", "PRINT a$;",
+                    "NEXT i", "AT 10, 31", 'PRINT "xyz"', "AT 23, 31", 'PRINT "q";', 'PRINT "r"'],
+    "empty": ['a$ = ""', "FOR i = 1 TO 30", "PRINT a$", "PRINT a$; i; a$", 'PRINT "";', "NEXT i"],
+    "poke-off": ['a$ = "0123456789ABCDEFGHIJ" + "KLMNOPQRSTUVWXYZabcd"', "AT 5, 3", 'PRINT "before"',
+                 "POKE {ROW}, 30", "PRINT a$", 'PRINT "after1"', "POKE {COL}, 40", 'PRINT "xyz"', "POKE {COL}, 255",
+                 'PRINT "pq"', "POKE {ROW}, 255", "POKE {COL}, 0", "PRINT a$; a$", 'PRINT "after2"'],
 }
 
 
@@ -51,8 +71,9 @@ def main():
         m = Machine(os.path.join(a.root, cfg), a.port + k).start()
         try:
             res[cfg] = {}
+            cells = {"ROW": m.sym("VM_OUTPUT_ROW"), "COL": m.sym("VM_OUTPUT_COL")}
             for name, prog in PROGRAMS.items():
-                r = m.run_program(prog, maxi=300_000_000)
+                r = m.run_program([ln.format(**cells) for ln in prog], maxi=300_000_000)
                 res[cfg][name] = (r.ce, r.ve, r.status, m.read(0x4000, 6912))
         finally:
             m.stop()

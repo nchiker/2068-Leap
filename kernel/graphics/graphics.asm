@@ -639,24 +639,6 @@ GFX_PUTCHAR:
     djnz .scanline_loop
     ret
 
-; XOR-plots a glyph instead of replacing the destination bytes. Kept
-; separate so every existing editor/status/help caller retains ordinary
-; opaque text semantics; BASIC PRINT selects this only for OVER 1.
-GFX_PUTCHAR_OVER:
-    call GFX_CHAR_SETUP
-    ret  c
-    ld   b, 8
-.scanline_loop:
-    ld   a, (hl)
-    ex   de, hl
-    xor  (hl)
-    ld   (hl), a
-    inc  h
-    ex   de, hl
-    inc  hl
-    djnz .scanline_loop
-    ret
-
 ; ============================================================================
 ; GFX_PUTCHAR_BOLD
 ; Plots one character with a synthesized bold effect: each scanline
@@ -726,86 +708,147 @@ GFX_PRINT_STRING:
 
 ; ============================================================================
 ; GFX_PRINT_STRING_ATTR
-; Prints a null-terminated string with BASIC-style attributes. At column 32
-; it wraps; past row 23 it scrolls all 24 output rows and continues on the
-; newly cleared bottom row. It also sets the attribute cell
-; under each character to a given byte — built for basic/'s INK/PAPER/
-; FLASH/INVERSE support, which needs printed text to actually carry
-; the current attribute state, unlike every other caller of
-; GFX_PRINT_STRING (HELP screens, error messages, the editor), which
-; always wants the plain default/inherited attribute and must NOT be
-; affected by this. Kept as a separate routine rather than adding an
-; attribute parameter to GFX_PRINT_STRING itself, so none of those
-; existing callers need to change.
+; Prints a null-terminated string with BASIC-style attributes (PRINT, and
+; INPUT's echo). At column 32 it wraps; past row 23 it scrolls all 24
+; output rows and continues on the newly cleared bottom row. Every printed
+; cell gets the given attribute byte (INK/PAPER/BRIGHT/FLASH, with INVERSE
+; already folded in by the caller); OVER 1 XORs the glyph into the cell.
+; The other text callers (HELP, messages, the editor) use GFX_PRINT_STRING
+; and keep the cell's attribute.
 ;
-; The attribute value is stashed in PRINT_ATTR_SCRATCH (a real RAM
-; sysvar, sysvars.inc), not a register — both GFX_PUTCHAR and
-; GFX_SET_ATTR destroy AF/BC/DE/HL per their own contracts, so a bare
-; register holding the attribute would not survive either call. This
-; is the same "value must survive a call -> use memory, not a
-; register" pattern this project has hit repeatedly (see
-; MEM_LINE_FIRST/NEXT's own DE-clobbering history) — BUT NOTE: this
-; scratch value must live in RAM specifically, never in a `DB` byte
-; embedded in this file's own code. A `DB` byte sits in ROM once
-; assembled, and this entire codebase assembles into ROM — writing to
-; a ROM-resident "variable" via `ld (addr), a` is a silent no-op on
-; real hardware, so the byte always reads back its compile-time
-; initial value, never whatever was "written" at runtime. This was a
-; real, shipped bug: an earlier version of this routine used exactly
-; that pattern (a local `.attr_scratch: DB 0`), and every PRINT wrote
-; attribute $00 (black-on-black) regardless of INK/PAPER, found via a
-; real memory dump showing GFX_CLS's own fill elsewhere on screen was
-; correctly $38 while PRINT's own writes were stuck at $00. See
-; docs/v1/programmers_reference.md's "INK / PAPER / FLASH / INVERSE /
-; OVER" section for the full writeup.
+; 5.13 (back-port plan): the screen and attribute addresses are worked out
+; once per row and stepped along it, and the glyph's 8 bytes copied
+; unrolled (was GFX_PUTCHAR and GFX_SET_ATTR per character: both
+; addresses and both range checks each time). A position off the screen
+; (row >= 24 or column >= 32: only a POKE of VM_OUTPUT_ROW/COL makes one)
+; draws nothing and steps on a character at a time, as before.
+; PRINT_ATTR_SCRATCH and PRINT_OVER_SCRATCH are RAM cells (sysvars.inc):
+; a `DB` "variable" in this file would be ROM, and a write to it lost (a
+; real, shipped bug of an earlier version: every PRINT came out $00).
 ; In:  HL = pointer to null-terminated string, B = row, C = column,
 ;      A = attribute byte to set at every printed cell, D = OVER flag
 ; Out: B/C = row/column immediately after the final character
-; Destroys: AF, BC, DE, HL
+; Destroys: AF, BC, DE, HL, BC', DE', HL'
 ; ============================================================================
 GFX_PRINT_STRING_ATTR:
     ld   (PRINT_ATTR_SCRATCH), a
     ld   a, d
     ld   (PRINT_OVER_SCRATCH), a
-.loop:
+.top:
     ld   a, (hl)
     or   a
     ret  z
-    push hl
-    push bc                  ; GFX_PUTCHAR destroys BC entirely
-    ld   a, (PRINT_OVER_SCRATCH)
-    or   a
-    jr   z, .opaque
-    ld   a, (hl)
-    call GFX_PUTCHAR_OVER
-    jr   .glyph_done
-.opaque:
-    ld   a, (hl)
-    call GFX_PUTCHAR
-.glyph_done:
-    pop  bc
-    push bc                  ; GFX_SET_ATTR also destroys BC — needs
-                             ; its own save/restore, same row/column
-    ld   a, (PRINT_ATTR_SCRATCH)
-    call GFX_SET_ATTR
-    pop  bc
-    pop  hl
+    ld   a, b
+    cp   24
+    jr   nc, .off_screen
+    ld   a, c
+    cp   32
+    jr   c, .run
+.off_screen:                        ; nothing drawn; the column moves on
     inc  hl
     inc  c
     ld   a, c
     cp   32
-    jr   c, .loop
+    jr   c, .top
+.wrap:
     ld   c, 0
     inc  b
     ld   a, b
     cp   24
-    jr   c, .loop
+    jr   c, .top
     push hl
     call GFX_SCROLL_OUTPUT_UP
     pop  hl
     ld   b, 23
     ld   c, 0
-    jr   .loop
+    jr   .top
+.run:
+    ; a run of characters along row B from column C: B' = the columns left
+    ; in the row, C' = the attribute, D' = the row, HL' -> the attribute
+    ; cell; DE -> the cell's scanline 0, HL -> the text
+    push hl
+    ld   a, b
+    call GFX_ROW_BASE_ADDR          ; HL = the row's scanline 0, column 0 (BC survives)
+    ld   a, l
+    add  a, c                       ; (row bases are $xx00-$xxE0: no carry)
+    ld   l, a
+    push hl
+    call GFX_CELL_ATTR_ADDR         ; HL -> the attribute (in range: NC; BC survives)
+    ld   a, 32
+    sub  c
+    push hl
+    push bc
+    exx
+    pop  de                         ; D' = the row
+    pop  hl
+    ld   b, a
+    ld   a, (PRINT_ATTR_SCRATCH)
+    ld   c, a
+    exx
+    pop  de
+    pop  hl
+.char:
+    ld   a, (hl)
+    or   a
+    jr   z, .run_end
+    inc  hl
+    push hl
+    push de
+    call GFX_CHAR_TO_FONT_OFFSET    ; HL -> the glyph (destroys BC, E)
+    jr   nc, .glyph
+    ld   hl, FONT_TABLE             ; no glyph: a space
+.glyph:
+    pop  de
+    ld   a, (PRINT_OVER_SCRATCH)
+    or   a
+    jr   nz, .over
+    REPT 7
+    ld   a, (hl)
+    ld   (de), a
+    inc  hl
+    inc  d                          ; next scanline (+256)
+    ENDR
+    ld   a, (hl)
+    ld   (de), a
+.drawn:
+    ld   a, d
+    sub  7
+    ld   d, a
+    inc  e                          ; the next cell
+    pop  hl
+    exx
+    ld   (hl), c                    ; its attribute
+    inc  hl
+    dec  b
+    exx
+    jr   nz, .char
+    exx
+    ld   a, d                       ; column 32: the row is full
+    exx
+    ld   b, a
+    jr   .wrap
+.over:                              ; OVER 1: XOR the glyph in
+    ld   b, 7
+.over_line:
+    ld   a, (de)
+    xor  (hl)
+    ld   (de), a
+    inc  hl
+    inc  d
+    djnz .over_line
+    ld   a, (de)
+    xor  (hl)
+    ld   (de), a
+    jr   .drawn
+.run_end:                           ; the end of the text inside the row
+    exx
+    ld   a, 32
+    sub  b
+    ld   e, a                       ; the column
+    push de                         ; D = the row
+    exx
+    pop  bc
+    ret
 
 ; ============================================================================
 ; GFX_ATTR_SWAP (internal — not in kernel_api.inc)

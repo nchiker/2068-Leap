@@ -64,6 +64,10 @@ STATEMENTS = [
     ("IF i < 0 THEN GOTO", [], ["IF i < 0 THEN GOTO z", "z:"]),
     ("IF x < 5 (x FLOAT)", ["x = 2.5"], ["IF x < 5 THEN", "ENDIF"]),
     ("IF i < j (two vars)", ["j = 5"], ["IF i < j THEN", "ENDIF"]),
+    # 5.13: a string's characters (20 of them; OVER 1 XORs them in), and one character
+    ("AT 5, 0: PRINT a$; (20)", ['a$ = "ABCDEFGHIJklmnopqrst"'], ["AT 5, 0", "PRINT a$;"]),
+    ("  the same, OVER 1", ['a$ = "ABCDEFGHIJklmnopqrst"', "OVER 1"], ["AT 5, 0", "PRINT a$;"]),
+    ('AT 5, 0: PRINT "x";', [], ["AT 5, 0", 'PRINT "x";']),
 ]
 SLOW = ("SQR", "SIN", "COS", "TAN", "scrolls")
 
