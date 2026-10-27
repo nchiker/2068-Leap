@@ -868,7 +868,11 @@ FSWAP:                              ; FX <-> FY
 ; ============================================================================
 ; FMUL -- FX *= FY: 32 x 32 bits, the product's top 40 bits
 ; FDIV -- FX /= FY: 40 quotient bits by restoring division
-; Errors: overflow; FDIV: division by 0. Destroys: AF, BC, DE, HL
+; 5.6 (docs/V2_LEAPC_BACKPORT_PLAN.md, "Phase 5 follow-ups"): both loops work in registers, using the
+; alternate set (nothing else in V2 uses BC', DE' or HL'; only the tape code uses AF'), for the same
+; bits as the loops on FQ and FX they replace: FMUL's product is floor(mx * my / 2^24), FDIV's
+; quotient floor(mx * 2^39 / my), the remainder dropped.
+; Errors: overflow; FDIV: division by 0. Destroys: AF, BC, DE, HL, BC', DE', HL'
 ; ============================================================================
 FMUL:
     ld   a, (FX + U_E)
@@ -880,36 +884,57 @@ FMUL:
     call FSIGN
     add  hl, de
     push hl                         ; ex + ey
-    ld   hl, FQ
-    ld   b, 5
-    call FZERO
-    ld   hl, FY + U_M + 3           ; (R1, speed: the multiplier's bits come from A, a byte at
-    ld   c, 4                       ; a time; Leap-C shifts FY's mantissa for each bit)
+    ld   hl, (FX + U_M + 2)         ; HL:HL':E' = the product being built, BC:BC' = mx (5.6)
+    ld   b, l
+    ld   c, h                       ; m2 m3
+    ld   hl, 0
+    ld   e, l
+    exx                             ; (into the alternate set)
+    ld   hl, (FX + U_M)
+    ld   b, l
+    ld   c, h                       ; m0 m1
+    ld   hl, 0
+    ld   a, (FY + U_M + 3)          ; my's bits from A, a byte at a time, the least significant first
+    call .byte
+    ld   a, (FY + U_M + 2)
+    call .byte
+    ld   a, (FY + U_M + 1)
+    call .byte
+    ld   a, (FY + U_M)
+    call .byte
+    ld   a, h                       ; FQ = the product, big-endian
+    ld   (FQ), a
+    ld   a, l
+    ld   (FQ + 1), a
+    exx
+    ld   a, h
+    ld   (FQ + 2), a
+    ld   a, l
+    ld   (FQ + 3), a
+    ld   a, e
+    ld   (FQ + 4), a
+    ld   de, -128
+    jp   FDONE
 .byte:
-    ld   a, (hl)
     scf
     rra                             ; C = its lowest bit, a marker bit above the other seven
 .bit:
-    push hl
-    push af
-    jr   nc, .no
-    ld   hl, FX + U_M + 3
-    ld   de, FQ + 3
-    ld   b, 4
-    call FADDN                      ; (C = the carry out)
-.no:
-    ld   hl, FQ
-    ld   b, 5
-    call FSHR
-    pop  af
-    pop  hl
+    jr   nc, .shift
+    exx
+    add  hl, bc
+    exx
+    adc  hl, bc                     ; the top 32 bits += mx (C = the carry out)
+.shift:
+    rr   h                          ; the 40 bits >>= 1, the carry in at the top
+    rr   l
+    exx
+    rr   h
+    rr   l
+    rr   e
+    exx
     srl  a                          ; C = the multiplier's next bit (Z: the marker is out)
     jr   nz, .bit
-    dec  hl
-    dec  c
-    jr   nz, .byte
-    ld   de, -128
-    jr   FDONE
+    ret
 FDIV:
     ld   a, (FY + U_E)
     or   a
@@ -924,49 +949,60 @@ FDIV:
     or   a
     sbc  hl, de
     push hl                         ; ex - ey
-    ld   hl, FQ                     ; (R1, speed: Q is built a byte at a time in C and R is
-    ld   bc, $0501                  ; compared with D before it is subtracted; Leap-C shifts
-    or   a                          ; all of Q per bit and adds D back. The same 40 bits.)
-.bit:                               ; B = Q's bytes left, C = this byte so far behind a marker
-    push bc                         ; bit (out after 8 bits), the carry = R's 33rd bit
-    push hl
-    jr   c, .sub                    ; R had a 33rd bit: it is larger
-    ld   hl, FX + U_M
-    ld   de, FY + U_M
-    ld   b, 4
-.cmp:                               ; the most significant bytes first
-    ld   a, (de)
-    cp   (hl)
-    jr   c, .sub                    ; D < R
-    jr   nz, .q                     ; D > R: this bit 0 (C clear)
-    inc  hl
-    inc  de
-    djnz .cmp                       ; (R = D: subtract)
-.sub:
-    ld   hl, FY + U_M + 3
-    ld   de, FX + U_M + 3
-    ld   b, 4
-    call FSUBN                      ; R -= D
-    scf                             ; this bit: 1
+    ld   hl, (FY + U_M + 2)         ; HL:HL' = R (FX's mantissa, the carry its 33rd bit), BC:BC' = D
+    ld   b, l                       ; (FY's), A = this quotient byte behind a marker bit, DE -> FQ,
+    ld   c, h                       ; E' = the bytes left (5.6)
+    ld   hl, (FX + U_M + 2)
+    ld   a, l
+    ld   l, h
+    ld   h, a
+    ld   e, 5
+    exx                             ; (into the alternate set)
+    ld   hl, (FY + U_M)
+    ld   b, l
+    ld   c, h
+    ld   hl, (FX + U_M)
+    ld   a, l
+    ld   l, h
+    ld   h, a
+    ld   de, FQ
+    ld   a, 1                       ; the marker
+    or   a                          ; no 33rd bit
+.bit:
+    jr   c, .big
+    exx
+    sbc  hl, bc                     ; R -= D (C is clear here)
+    exx
+    sbc  hl, bc
+    jr   nc, .q                     ; R >= D: kept (C clear: this bit 1)
+    exx
+    add  hl, bc
+    exx
+    adc  hl, bc                     ; R < D: R back (C set: this bit 0)
+    jr   .q
+.big:                               ; R has a 33rd bit: R >= 2^32 > D
+    exx
+    or   a
+    sbc  hl, bc
+    exx
+    sbc  hl, bc
+    or   a                          ; this bit 1
 .q:
-    pop  hl
-    pop  bc
-    rl   c                          ; the bit into Q's byte
+    ccf                             ; C = this bit
+    adc  a, a                       ; into Q's byte (C: the marker is out, 8 bits)
     jr   nc, .r
-    ld   (hl), c                    ; 8 bits: Q's next byte
-    inc  hl
-    ld   c, 1
-    dec  b
+    ld   (de), a                    ; Q's next byte
+    inc  de
+    ld   a, 1
+    exx
+    dec  e
+    exx
     jr   z, .end
 .r:
-    push hl
-    push bc
-    ld   hl, FX + U_M + 3
-    ld   b, 4
-    or   a
-    call FSHL                       ; R <<= 1, C = its 33rd bit
-    pop  bc
-    pop  hl
+    exx
+    add  hl, hl
+    exx
+    adc  hl, hl                     ; R <<= 1, C = its 33rd bit
     jr   .bit
 .end:
     ld   de, 129                    ; the first bit has the weight 2^0
