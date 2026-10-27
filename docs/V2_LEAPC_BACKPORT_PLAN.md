@@ -58,7 +58,7 @@ Further rules:
 | 5.10 `SIN`/`COS`/`TAN` series | **746** | **171** | [M]: EXROM +29 free: the series 136 → 90 B, its constants 8 → 30 (π/180, five coefficients); `COS` 27 → 4 (enters `SIN` with a shift); the reduction +18 (Q-35: the shift, reduced again; the fraction negated by its sign bit) |
 | VER the ROM's version       | **690** | **163** | [M]: HOME −56 free (`rom/v2_version.asm`: the text 15, `V2_VER_STATUS` 18, `V2_VER_SCOPE` 18, the flag set at cold start 5); EXROM −8 (boot head 3, `V2_DRAW_STATUS` 5; `V2_REDRAW`'s scope read became the call, 0); RAM `$BEC6` |
 | 6.1 package functions        | **590** | **163** | [M], integrated (F28, fast-forward to `e9423ab`): HOME −100 free (registry 43: the kind filter 18, `EXT2_EXPORTS` 25; VM 32: the count mask 2, the INT push 14, the string copy 16; compiler 25 net); EXROM 0; service slot 16 in the reserved slot area (3 B, not counted); RAM `$BFA9`, `$BA3D-$BA3F` freed |
-| 5.12 `IF v <op> k` (prototype) | **542** | **113** | [M], prototype `proto/5.12-cmp-var-jmpz` (owner decision pending): HOME −48 free (`OP_CMP_VAR_JMPZ` 41, its table entry 2, `COMPILE_IF` passing the condition's start 5); EXROM −50 (`COMPILE_FUSE_CMP` 31 → 81); RAM 0 |
+| 5.12 `IF v <op> k`           | **542** | **113** | [M], integrated (F29, fast-forward to `45d1bf3`): HOME −48 free (`OP_CMP_VAR_JMPZ` 41, its table entry 2, `COMPILE_IF` passing the condition's start 5); EXROM −50 (`COMPILE_FUSE_CMP` 31 → 81); RAM 0 |
 | phase 5 (speed)              | ≥ 64    | ≥ 32    | Class B: each item sized and weighed before it is started; 5.0 first if the room is not there                 |
 
 Every [E] is replaced by `make budget`'s figure as each item lands.
@@ -733,7 +733,7 @@ Outcome, 5.10 (2026-10-27; on the same prototype branch, after 5.9; all [M]):
   integrated into `backport/leapc` by fast-forward.
 
 Outcome, 5.12 (2026-10-27; prototyped on `proto/5.12-cmp-var-jmpz` off `backport/leapc` `23b0bd6`;
-all [M]; owner decision pending):
+all [M]; integrated into `backport/leapc` by fast-forward, owner decision F29):
 
 - **What it is.** `CMP_VAR_JMPZ` (opcode 77, operand `[v][k:2][mask][target:2]`): an IF whose whole
   condition is `LOAD_VAR v`, `PUSH_I8 k` or `PUSH_I16 k`, and a relational operator, fused with its
@@ -1174,6 +1174,7 @@ All decided by the owner on 2026-10-25.
 | F26 | 5.9-5.10 prototype                       | Integrated (fast-forward, 2026-10-27); next: item VER               |
 | F27 | Item VER                                 | Integrated on a passing `make test` (fast-forward, 2026-10-27); next: size 6.1 |
 | F28 | 6.1 package functions                    | Integrated whole (fast-forward to `e9423ab`, 2026-10-27): HOME 100, EXROM 0; next: the phase 5 items, 5.12, 5.13, 5.11 (proposed order) |
+| F29 | 5.12 `IF v <op> k`                       | Integrated (fast-forward to `45d1bf3`, 2026-10-27): HOME 48, EXROM 50; the two-variable form not taken up; next: 5.13 |
 
 ## Also worth doing
 
