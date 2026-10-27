@@ -955,7 +955,7 @@ NEXT k
 * Jumping out of a loop with `GOTO` is allowed; jumping **into** one is not (the `NEXT` then stops the program with a run-time error).
 * A `FOR` with no matching `NEXT` is a compile error, and so is a `NEXT` for a different variable than the innermost open `FOR`.
 * Any loop variable name may be used, including a long one.
-* A `FOR`/`NEXT` pass with nothing inside costs about 1100 to 1200 T-states: roughly 3 000 empty passes per second. See the concept [Speed](04_concepts.md#speed).
+* A whole-number `FOR`/`NEXT` pass with nothing inside costs about 830 T-states: roughly 4 200 empty passes per second. See the concept [Speed](04_concepts.md#speed).
 
 **See also** NEXT, STEP, TO, EXIT FOR, GOTO.
 

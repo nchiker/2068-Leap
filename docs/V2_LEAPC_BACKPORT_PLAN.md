@@ -455,7 +455,9 @@ fast-forward on 2026-10-27, owner decision F14; all [M]):
   per-statement table) are the release's measurements and predate 5.1, R1 and 5.2-5.4. On `201b960`
   (`manual_measure.py`, 2026-10-27): an empty pass 827 T (was 1,107); `a = a * 1.0001` adds ~20,900 T
   (was 55,200), so the text's "whole numbers about twelve times faster than floating point" is about 4.6
-  times now. Re-run the tool and update the table and the text before the v2.1 release.
+  times now. Re-run the tool and update the table and the text before the v2.1 release. *Done*
+  (owner, 2026-10-27, on the 5.6-5.8 build): an empty pass 827 T; `a = a * 1.0001` adds 11,500 (5.6),
+  so "about three times"; a scrolling `PRINT` 224,000 (5.8), 16 lines a second; the `FOR` note 830 T.
 - **Owner decision F14 (2026-10-27):** integrate all three; fast-forwarded `backport/leapc` to `201b960`.
 
 Outcome, 5.5 (2026-10-27; prototyped on `proto/5.5-vm-push` off `backport/leapc` `3d337c1`, commits `4303cf8`
@@ -528,7 +530,7 @@ in V2's dialect; `--statements` for what one statement adds to a loop) [M]:
 | 5.7  | `SQR` halves its estimate by the exponent, not a float divide by 2 (exact either way)         | `SQR` −43%; ~3.6× with 5.6                                             | ~0         | 0              | identical          |
 | 5.8  | Scroll: the new bottom row cleared by `GFX_CLEAR_ROW_TEXT` and a 32-byte attribute fill        | −26,000 T a scrolled line (−11%)                                       | a few B    | 0              | identical (check INVERSE/OVER) |
 | 5.9  | Float built-ins moved to the EXROM behind slots                                               | ~0 (a slot call against ~250 kT)                                       | up to −611 | +450 to +650   | identical          |
-| 5.10 | `SIN`/`COS`/`TAN`: one multiply by π/180 and a polynomial with stored coefficients (with 5.9)   | `SIN` 251k → ~140k T, ~55k with 5.6                                    | —          | smaller code   | last bits change: owner |
+| 5.10 | `SIN`/`COS`/`TAN`: one multiply by π/180 and a polynomial with stored coefficients (with 5.9)   | `SIN` 251k → ~140k T, ~55k with 5.6                                    | —          | smaller code   | last bits change: allowed (F20) |
 | 5.11 | Scroll: each screen third's rows copied per scanline in one block, unrolled copy loop          | scroll ~244k → ~175k T with 5.8                                        | +30 to +60 | 0              | identical          |
 | 5.12 | `LOAD v; PUSH k; CMP_JMPZ` as one instruction (handler in the EXROM if that holds up)         | ~1,000 T an `IF i < k`: `goto_loop` −45%, `if_branch` −20%, sieve 0     | ~4 (or 45) | ~70            | identical          |
 | 5.13 | `PRINT` of a string: the screen and attribute addresses worked out once and stepped along the row, the 8 glyph bytes copied unrolled (today each character redoes its range checks and both addresses: `GFX_PUTCHAR` 830 T, `GFX_SET_ATTR` 217, the loop ~220) | 1,266 → ~400-450 T a character (~3×) | ~0 | +60 to +120 | identical screen |
@@ -838,6 +840,8 @@ All decided by the owner on 2026-10-25.
 | F17 | Phase 5 follow-ups                       | Added (5.6-5.12); 5.6, 5.7, 5.8 first (2026-10-27)                  |
 | F18 | 5.6-5.8 prototype                        | Integrated (fast-forward, 2026-10-27); simulator: z80sim `13c9bce`, pushed to GitHub (owner, 2026-10-27) |
 | F19 | 5.13; room for phase 6                   | 5.13 added; follow-ups keep HOME ~260 / EXROM ~100 B free for phase 6 [E] (2026-10-27) |
+| F20 | 5.10's results                           | `SIN`/`COS`/`TAN` may change in the last bit (2026-10-27)           |
+| F21 | Manual speed figures; pushing            | Updated now (5.6-5.8 build); `backport/leapc` may be pushed (2026-10-27) |
 
 ## Also worth doing
 

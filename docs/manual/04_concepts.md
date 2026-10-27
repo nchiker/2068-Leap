@@ -790,24 +790,24 @@ The TS2068's **loudspeaker** -- the beeper of the Spectrum -- is not used by the
 
 ## Speed
 
-V2 compiles the program before it runs it, so it is much faster than an interpreter that reads the text again every time. Here is what things cost on the release, measured in the emulator by `tools/qual/manual_measure.py` (T-states of the Z80, which runs at about 3.5 MHz, so a million T-states is about 0.29 seconds). Each figure is what one extra statement adds to a loop; the loop's own `FOR`/`NEXT` pass costs 1107 T-states, about 3000 passes a second.
+V2 compiles the program before it runs it, so it is much faster than an interpreter that reads the text again every time. Here is what things cost on the release, measured in the emulator by `tools/qual/manual_measure.py` (T-states of the Z80, which runs at about 3.5 MHz, so a million T-states is about 0.29 seconds). Each figure is what one extra statement adds to a loop; the loop's own `FOR`/`NEXT` pass costs 827 T-states, about 4200 passes a second.
 
 | Statement in the loop | Adds (T-states) | About, per second |
 |---|---|---|
-| `a = i` | 1 240 | 2 800 |
-| `a = i * 2 + 1` (whole numbers) | 4 600 | 760 |
-| `a = a * 1.0001` (floating point) | 55 200 | 63 |
-| `t(3) = i : x = t(3)` (array store and load) | 4 500 | 780 |
-| `a$ = LEFT$(a$ + "x", 20)` | 9 300 | 380 |
-| `PLOT 100, 100` | 2 800 | 1 250 |
-| `CALL p(1)` (an empty procedure) | 3 800 | 920 |
-| `AT 5, 0 : PRINT 7;` | 5 800 | 600 |
-| `PRINT 7` when the screen **scrolls** | 250 000 | 14 |
+| `a = i` | 1 040 | 3 400 |
+| `a = i * 2 + 1` (whole numbers) | 3 700 | 950 |
+| `a = a * 1.0001` (floating point) | 11 500 | 300 |
+| `t(3) = i : x = t(3)` (array store and load) | 3 700 | 930 |
+| `a$ = LEFT$(a$ + "x", 20)` | 8 400 | 420 |
+| `PLOT 100, 100` | 2 500 | 1 400 |
+| `CALL p(1)` (an empty procedure) | 3 500 | 990 |
+| `AT 5, 0 : PRINT 7;` | 5 200 | 670 |
+| `PRINT 7` when the screen **scrolls** | 224 000 | 16 |
 
 Things to take from the table:
 
-* **Whole-number arithmetic is much faster than floating point** -- about twelve times here. Use whole numbers for counters, indices and scaled values (work in hundredths instead of fractions of a unit).
-* **Scrolling is expensive**: moving the whole screen up one line costs about 245 000 T-states, 70 milliseconds. A program that prints line after line to a full screen is limited to about 14 lines a second; one that prints at fixed positions with `AT` is not.
+* **Whole-number arithmetic is much faster than floating point** -- about three times here. Use whole numbers for counters, indices and scaled values (work in hundredths instead of fractions of a unit).
+* **Scrolling is expensive**: moving the whole screen up one line costs about 218 000 T-states, 62 milliseconds. A program that prints line after line to a full screen is limited to about 16 lines a second; one that prints at fixed positions with `AT` is not.
 * `PAUSE n` and `BEEP` count display frames (69 888 T-states each in the emulator, 1/60 second on a TS2068): `PAUSE 100` took 6 985 733 T-states, `BEEP 1, 0` 60 frames.
 * Compilation itself takes a moment for a long program; `RUN` then starts.
 

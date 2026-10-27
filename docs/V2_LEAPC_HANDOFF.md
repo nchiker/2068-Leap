@@ -6,7 +6,7 @@ decisions F1-F19); this file is only where things stand, what comes next and how
 
 ## Where things stand
 
-- **Branch `backport/leapc`** (off `v2-development`), not pushed. On it: phases 0-4, the redraw item,
+- **Branch `backport/leapc`** (off `v2-development`), pushed to GitHub (owner F21, 2026-10-27). On it: phases 0-4, the redraw item,
   5.1 (decimal literals), R1 (calculator rounding), `SH_VIEW` (ED4), ED3/ED7, 5.2-5.5 (VM speed) and
   5.6-5.8 (calculator multiply/divide in registers, `SQR` halving, the row clear; owner F18: integrated
   once `make test` passed). The merged prototype branches are deleted (owner, 2026-10-27).
@@ -41,9 +41,9 @@ The space arithmetic is the plan's "Room for phase 6": phase 6 is allowed **HOME
    (`qfndiff` for each function must show 0 differences). The EXROM side is +450 to +650 B, more than
    fits with phase 6's 100 B: measure, move `SIN`/`COS`/`TAN` (452 B) first, the rest if it fits.
    **5.10** (one multiply by pi/180, a polynomial with stored coefficients instead of a divide per term)
-   shortens that code and makes `SIN` ~2.3× faster again, but **changes the last bits: owner decision
-   first**; measure its accuracy against exact values (as `qcalcround` does) and list what changes with
-   `qfndiff`.
+   shortens that code and makes `SIN` ~2.3× faster again; it changes the last bits, which the owner
+   allows (F20, 2026-10-27): measure its accuracy against exact values (as `qcalcround` does), list what
+   changes with `qfndiff`, and record both in the outcome.
 2. **Size 6.1** (package functions with Leap-C's export table and signature bytes) as a prototype, to
    replace phase 6's allowance with a measured figure before spending more.
 3. **Then, where the room is** (after 5.9 HOME has it, the EXROM may not):
@@ -56,9 +56,9 @@ The space arithmetic is the plan's "Room for phase 6": phase 6 is allowed **HOME
      EXROM only if the dispatch can reach it there (the EXROM is in at every dispatch: `qcanary`'s
      invariant), the compiler side next to 5.4's in `rom/exrom_v2_fuse.asm`. Bytecode changes:
      `qbytecode` review and baseline reset; `qvmedge` cases.
-4. **Phase 6 (ABI 2.1)**, items 6.1-6.6, for v2.1. Before the v2.1 release: re-run
-   `tools/qual/manual_measure.py` and update the manual's speed figures (`04_concepts.md` "Speed",
-   `FOR`'s note), which predate all of phase 5.
+4. **Phase 6 (ABI 2.1)**, items 6.1-6.6, for v2.1. The manual's speed figures were updated after 5.8
+   (`tools/qual/manual_measure.py`, owner F21); re-run it after any later speed change and update
+   `04_concepts.md` "Speed" and `FOR`'s note (the Word edition is rebuilt at release).
 
 Not to be done (owner or below the bar): the top of the operand stack in registers (5.5 step 2, F15), a
 page-aligned opcode table, `LOAD_VAR` pushing for itself. The SCLD offers nothing for output speed
