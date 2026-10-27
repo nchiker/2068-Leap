@@ -1156,41 +1156,27 @@ GFX_SET_MODE:
 ; clearing just the one row that actually changed is the first piece
 ; needed to avoid that.
 ;
-; Reuses GFX_PUTCHAR (a space character, for the bitmap) and
-; GFX_SET_ATTR (for the attribute), rather than reimplementing the
-; Spectrum-family interleaved screen addressing from scratch — both
-; are already proven, tested primitives, and a character row isn't
-; contiguous in bitmap memory (it's 8 scanlines spread across the
-; standard third-of-screen interleaving), so hand-rolling this
-; addressing again here would just be duplicating logic that already
-; exists and already works.
-;
-; Both GFX_PUTCHAR and GFX_SET_ATTR destroy B/C (row/column) per their
-; own documented contracts, so each is wrapped in its own push/pop —
-; this project's most recurring mistake is assuming a register
-; survives a call without checking its "Destroys:" line first.
+; 5.8 (docs/V2_LEAPC_BACKPORT_PLAN.md, "Phase 5 follow-ups"): the row's 32 attributes are set to
+; ATTR_DEFAULT and its bitmap zeroed by GFX_CLEAR_ROW_TEXT -- the same bytes as the 32 GFX_PUTCHAR
+; spaces (FONT_TABLE's space is 8 zero bytes) and GFX_SET_ATTR calls this did, ~7 kT instead of ~33
+; (every scroll of the output clears its new bottom row here). A row of 24 or more is ignored, as
+; before (GFX_CELL_ATTR_ADDR's bounds check).
 ; In:  B = row (0-23)
 ; Out: none
 ; Destroys: AF, BC, DE, HL
 ; ============================================================================
 GFX_CLEAR_ROW:
     ld   c, 0
-.loop:
-    push bc
-    ld   a, " "
-    call GFX_PUTCHAR
-    pop  bc
-
-    push bc
+    call GFX_CELL_ATTR_ADDR         ; HL = the row's first attribute (B, C kept)
+    ret  c                          ; no such row
     ld   a, ATTR_DEFAULT
-    call GFX_SET_ATTR
-    pop  bc
-
-    inc  c
-    ld   a, c
-    cp   GFX_COLS
-    jr   c, .loop
-    ret
+    ld   c, GFX_COLS
+.attr:
+    ld   (hl), a
+    inc  l                          ; (a row's 32 attributes never cross a page)
+    dec  c
+    jr   nz, .attr
+    ASSERT $ == GFX_CLEAR_ROW_TEXT   ; B = the row: on into its bitmap
 
 ; ============================================================================
 ; GFX_CLEAR_ROW_TEXT
