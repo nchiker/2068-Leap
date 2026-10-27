@@ -901,7 +901,8 @@ VM_RUN:
         ld a,(hl)               ; fetch opcode
         inc hl
         ld (VM_IP),hl
-        cp 74                   ; 74 opcodes (OUT 67, NL 68, PRINT_COMMA 69, PUSH_FLOAT5 70, STR_CMP_GT 71, AND_SC 72, OR_SC 73)
+        cp 77                   ; 77 opcodes (OUT 67, NL 68, PRINT_COMMA 69, PUSH_FLOAT5 70, STR_CMP_GT 71, AND_SC 72, OR_SC 73,
+                                 ; 5.4: CMP_JMPZ 74, ADD_VAR_I8 75, ADD_VAR_VAR 76)
                                  ; (was: 67 opcodes defined (0-66, R8.5 adds
                                  ; 35-38: PRINT_NUM/STR, LPRINT_NUM/STR;
                                  ; 39: CALL_FN (Group 1); 40-43: CMP_LE/
@@ -1043,6 +1044,9 @@ VM_OP_TABLE:
         dw OP_STR_CMP_GT                                    ; 71  RC: string >
         dw OP_AND_SC                                        ; 72  RC: short-circuit AND
         dw OP_OR_SC                                         ; 73  RC: short-circuit OR
+        dw OP_CMP_JMPZ                                      ; 74  5.4: relational + JMPZ
+        dw OP_ADD_VAR_I8                                    ; 75  5.4: v = v + k
+        dw OP_ADD_VAR_VAR                                   ; 76  5.4: v = v + w
 
 ; ---------------------------------------------------------------------------
 ; String-table access: index (A) -> HL = record address. Same shape as
@@ -2123,12 +2127,16 @@ VM_PREPARE_BINARY_OPERANDS:
 
 VM_FLOAT_BINARY_COMMON:
         ; entry: HL = address of the CALC_*_STUB to invoke for this op
+        call VM_FLOAT_BINARY
+        jp (iy)
+; VM_FLOAT_BINARY -- 5.4: the calculator operation HL (a CALC_*_STUB) on VM_FLOAT_A/B, its result
+; pushed as a FLOAT temp (OP_ADD_VAR_* use it as a subroutine).
+VM_FLOAT_BINARY:
         push hl
         call VM_CALC_PUSH_AB
         pop hl
         call VM_CALL_USR_TRAMPOLINE   ; indirect call to the stub in HL
-        call VM_FLOAT_STORE_RESULT
-        jp (iy)
+        jp VM_FLOAT_STORE_RESULT
 
 ; QUAL: VM_CALC_PUSH_AB -- a fresh calculator stack holding [a, b] from VM_FLOAT_A/B_TAG/VAL
 ; (shared by the float arithmetic, the float compare, DIV and MOD). Destroys AF, BC, DE, HL.
@@ -2249,6 +2257,71 @@ OP_DIV:
         ld hl,VM_CALC_DIV_STUB
         jp VM_FLOAT_BINARY_COMMON
 
+; 5.4: OP_ADD_VAR_I8 (75), operand [v][k]: v = v + k, k signed 8-bit (the compiler's `v = v + k` and
+; `v = v - k`, k a literal 0-127, as -k: the calculator subtracts by adding with the sign flipped,
+; so the FLOAT result is the same). OP_ADD_VAR_VAR (76), operand [v][w]: v = v + w. INT + INT
+; without overflow is done in place; otherwise the general sum (the float sum, or D11's promotion),
+; stored as STORE_VAR stores it: the result and tag of LOAD v / PUSH k (LOAD w) / ADD / STORE v.
+OP_ADD_VAR_I8:
+        or a                    ; NC: the addend is a literal
+        db $3E                  ; ld a,n: swallows the scf
+OP_ADD_VAR_VAR:
+        scf                     ; C: the addend is a variable
+        ld hl,(VM_IP)
+        ld c,(hl)               ; C = v
+        inc hl
+        ld a,(hl)               ; A = k or w
+        inc hl
+        ld (VM_IP),hl
+        jr c,.var
+        ld l,a
+        rla
+        sbc a,a
+        ld h,a                  ; HL = k
+        xor a                   ; TAG_INT
+        jr VM_ADD_VAR
+.var:
+        call VM_SYM_ADDR        ; HL -> w's record (C survives)
+        ld a,(hl)
+        inc hl
+        ld e,(hl)
+        inc hl
+        ld d,(hl)
+        ex de,hl                ; A = w's tag, HL = its value
+VM_ADD_VAR:                     ; C = v, A/HL = the addend's tag and value
+        ld (VM_FLOAT_B_TAG),a
+        ld (VM_FLOAT_B_VAL),hl
+        ld b,a
+        ld a,c
+        call VM_SYM_ADDR        ; HL -> v's record (BC survives)
+        ld a,(hl)
+        ld (VM_FLOAT_A_TAG),a
+        inc hl
+        ld e,(hl)
+        inc hl
+        ld d,(hl)               ; DE = v, HL -> its high byte
+        ld (VM_FLOAT_A_VAL),de
+        or b
+        jr nz,.sum              ; a FLOAT operand
+        ex de,hl                ; HL = v, DE -> its high byte (carry clear: or b)
+        push de
+        ld de,(VM_FLOAT_B_VAL)
+        adc hl,de               ; HL = v + addend
+        pop de
+        jp pe,.sum              ; signed overflow: the FLOAT sum (D11)
+        ex de,hl
+        ld (hl),d
+        dec hl
+        ld (hl),e               ; v stays INT
+        jp (iy)
+.sum:
+        push bc
+        ld hl,VM_CALC_ADD_STUB
+        call VM_FLOAT_BINARY    ; the sum, a FLOAT temp on the operand stack
+        pop bc
+        ld a,c
+        jp VM_STORE_VAR_LOOP    ; v = the sum
+
 OP_CMP_LT:
         call VM_CMP_DISPATCH     ; A = 0 if a=b, 1 if a>b, $FF if a<b
         ld hl,0
@@ -2345,6 +2418,26 @@ VM_LOGIC_SC:
         xor a                    ; TAG_INT
         call VM_PUSH
         jr OP_JMP
+
+; 5.4: OP_CMP_JMPZ (74), operand [mask][target:2] -- a relational operator and the JMPZ after it in
+; one dispatch (no 0/1 pushed and popped). Mask bit 0: true when a < b, bit 1: a = b, bit 2: a > b
+; (< 1, = 2, <= 3, > 4, <> 5, >= 6). Jumps when the comparison is false, as JMPZ does; for
+; IF ... THEN GOTO the compiler inverts the mask and jumps to the label (no JMP). A taken jump polls
+; BREAK (OP_JMP).
+OP_CMP_JMPZ:
+        call VM_CMP_DISPATCH    ; A = $FF a < b, 0 a = b, 1 a > b
+        ld hl,(VM_IP)
+        inc a
+        inc a
+        ld b,a                  ; 1, 2, 3
+        ld a,(hl)               ; the mask
+        inc hl
+        ld (VM_IP),hl           ; -> the target
+.bit:
+        rrca
+        djnz .bit               ; carry = the comparison
+        jr nc,OP_JMP            ; false: take the branch
+        jr VM_SKIP_TARGET       ; true: step over the target
 
 OP_JMPZ:
         rst $10                 ; HL = condition value, A = tag (not

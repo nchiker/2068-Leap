@@ -42,6 +42,9 @@ V2_EXROM_ENTRY:
     IFDEF V2_MAINT_AY_BEEP
     V2_EXROM_SLOT V2_EXROM_AY_BEEP_ADDR, AY_BEEP
     ENDIF
+    V2_EXROM_SLOT V2_EXROM_FUSE_ADD_ADDR, COMPILE_FUSE_ADD_X    ; 5.4
+    V2_EXROM_SLOT V2_EXROM_FUSE_CMP_ADDR, COMPILE_FUSE_CMP_X
+    V2_EXROM_SLOT V2_EXROM_FUSE_GOTO_ADDR, COMPILE_FUSE_GOTO_X
     ASSERT $ == V2_EXROM_ARRSVC_ADDR
     INCLUDE "rom/exrom_v2_arrstore.asm"
 ; V2_VERIFY_KTAB -- the HOME/EXROM contract check every entry slot makes first.
@@ -52,6 +55,7 @@ V2_VERIFY_KTAB:
 .mismatch:
     jr .mismatch
 
+    INCLUDE "rom/exrom_v2_fuse.asm"        ; 5.4: the compiler's combined-opcode peepholes
     INCLUDE "kernel/storage/storage.asm"
     IFDEF STORAGE_TEST_FAKE_RECEIVE
         INCLUDE "rom/exrom_storage_test.asm"

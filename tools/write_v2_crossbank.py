@@ -9,6 +9,8 @@ from pathlib import Path
 NAMES = (
     "SRC_PTR",
     "EMIT_PTR",
+    "CMP_END",              # 5.4: the compiler's combined-opcode peepholes (rom/exrom_v2_fuse.asm)
+    "IF_SKIP_PATCH_TMP",
     "COMPILE_ERROR_CODE",
     "VM_CODE_BASE",
     "VM_IP",

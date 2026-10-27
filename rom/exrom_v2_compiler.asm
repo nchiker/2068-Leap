@@ -261,7 +261,9 @@ PROC_PARAM_INDEX_TMP: equ $BA31  ; COMPILE_PROC scratch (1 byte): the
 ; own separate SYMTAB/STRTAB split (rom/exrom_v2_vm_core.asm). ---
                                   ; entries 0-3 (unchanged address/size)
 
-; --- R6 addition: decimal literals ($BA39-$BA3A free since 5.1: the divisor scratch) ---
+; --- R6 addition: decimal literals ($BA39-$BA3A were the divisor scratch until 5.1) ---
+CMP_END:            equ $BA39   ; 5.4: EMIT_PTR just after the last relational operator emitted (2 bytes);
+                                ; 0 at the start of every compile (a stale value could equal EMIT_PTR)
 LEX_NUM_START:      equ $BA3B   ; LEX_SCAN_NUMBER: the literal's first character (2 bytes)
 CEXT_SLOT:          equ $BA3D   ; R7.5 (COMPILE_EXT_CALL) scratch, 1
 CEXT_GEN:           equ $BA3E   ; byte each: the matched extension's own
@@ -472,6 +474,7 @@ COMPILER_INIT_COMMON:
         ld h,a                   ; R10.9 2D: restart the source-line counter
         ld l,a
         ld (LEX_LINE),hl
+        ld (CMP_END),hl          ; 5.4: no relational operator emitted yet
         ret
 
 ; ===========================================================================
@@ -1537,41 +1540,30 @@ COMPILE_RELATIONAL:
         jr z,.do_ne
         ret
 .do_lt:
-        rst $08
-        call COMPILE_ADDITIVE
-        ld a,10        ; QUAL shrink: inlined EMIT_OP_CMP_LT (tail)
-        rst $20
-        ret                      ; RC shrink: tail call through the RST (was jp EMIT_BYTE)
+        ld a,10                  ; CMP_LT
+        jr .emit
 .do_le:
-        rst $08
-        call COMPILE_ADDITIVE
-        ld a,40        ; QUAL shrink: inlined EMIT_OP_CMP_LE (tail)
-        rst $20
-        ret                      ; RC shrink: tail call through the RST (was jp EMIT_BYTE)
+        ld a,40                  ; CMP_LE
+        jr .emit
 .do_eq:
-        rst $08
-        call COMPILE_ADDITIVE
-        ld a,11        ; QUAL shrink: inlined EMIT_OP_CMP_EQ (tail)
-        rst $20
-        ret                      ; RC shrink: tail call through the RST (was jp EMIT_BYTE)
+        ld a,11                  ; CMP_EQ
+        jr .emit
 .do_ge:
-        rst $08
-        call COMPILE_ADDITIVE
-        ld a,42        ; QUAL shrink: inlined EMIT_OP_CMP_GE (tail)
-        rst $20
-        ret                      ; RC shrink: tail call through the RST (was jp EMIT_BYTE)
+        ld a,42                  ; CMP_GE
+        jr .emit
 .do_gt:
-        rst $08
-        call COMPILE_ADDITIVE
-        ld a,41        ; QUAL shrink: inlined EMIT_OP_CMP_GT (tail)
-        rst $20
-        ret                      ; RC shrink: tail call through the RST (was jp EMIT_BYTE)
+        ld a,41                  ; CMP_GT
+        jr .emit
 .do_ne:
+        ld a,43                  ; CMP_NE
+.emit:                           ; 5.4: one tail for the six (was six copies)
+        push af
         rst $08
         call COMPILE_ADDITIVE
-        ld a,43        ; QUAL shrink: inlined EMIT_OP_CMP_NE (tail)
-        rst $20
-        ret                      ; RC shrink: tail call through the RST (was jp EMIT_BYTE)
+        pop af
+        rst $20                  ; EMIT_BYTE: HL = EMIT_PTR after it
+        ld (CMP_END),hl          ; 5.4: a JMPZ emitted right here fuses with it (COMPILE_FUSE_CMP)
+        ret
 
 COMPILE_ADDITIVE:
         call COMPILE_TERM
@@ -2340,13 +2332,24 @@ COMPILE_ASSIGN_CONTINUED:
 .have_assign:
         rst $08                 ; consume '='
         push bc                 ; C = the target's index -- the expression's own
+    IFDEF V2_PRODUCTION
+        ld hl,(EMIT_PTR)
+        push hl                 ; 5.4: where the expression starts
+        call COMPILE_EXPR       ; symbol lookups use C, so it rides the stack
+        pop hl
+        pop bc
+        call COMPILE_FUSE_ADD   ; 5.4 (EXROM): v = v + k / v - k / v + w, one opcode that stores (NC)
+        ret nc
+    ELSE
         call COMPILE_EXPR       ; symbol lookups use C, so it rides the stack
         pop bc
+    ENDIF
         ld a,4        ; QUAL shrink: inlined EMIT_BYTE_OP_STORE_VAR
         rst $20
         ld a,c
         rst $20
         ret                      ; RC shrink: tail call through the RST (was jp EMIT_BYTE)
+
 
 ; ===========================================================================
 ; R8.5 Group 4 -- DIM/array grammar.
@@ -3468,7 +3471,11 @@ COMPILE_IF:
         rst $08                 ; consume IF
         call COMPILE_EXPR       ; RC (L-STR): string relations are ordinary factors now
 .condition_done:
+    IFDEF V2_PRODUCTION
+        call COMPILE_FUSE_CMP   ; 5.4 (EXROM): A = 12 (JMPZ) or a CMP_JMPZ's mask
+    ELSE
         ld a,12        ; QUAL shrink: inlined EMIT_OP_JMPZ
+    ENDIF
         rst $20
         call EMIT_PLACEHOLDER_16   ; HL = patch address for the "skip" target
         ld (IF_SKIP_PATCH_TMP),hl
@@ -3494,6 +3501,10 @@ COMPILE_IF:
         ld a,12
         rst $30
 .have_target:
+    IFDEF V2_PRODUCTION
+        call COMPILE_FUSE_GOTO  ; 5.4 (EXROM): NC = the CMP_JMPZ now jumps to the label, HL = its operand
+        jp nc,COMPILE_BRANCH_TARGET   ; (no JMP, nothing to skip)
+    ENDIF
         ld a,6        ; QUAL shrink: inlined EMIT_OP_JMP
         rst $20
         call EMIT_PLACEHOLDER_16   ; HL = patch address for the real target
