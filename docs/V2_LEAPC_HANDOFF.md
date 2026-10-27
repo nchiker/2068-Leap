@@ -1,7 +1,7 @@
-# Leap-C back-port: handoff after 5.2-5.4
+# Leap-C back-port: handoff after the 5.5 prototype (awaiting the owner, F16)
 
 Written 2026-10-26 at the end of phase 3; updated at the end of phase 4, after 5.1, R1, `SH_VIEW`, ED3/ED7
-and (2026-10-27) 5.2-5.4. The plan is `docs/V2_LEAPC_BACKPORT_PLAN.md`; this file is only where
+and (2026-10-27) 5.2-5.4 and the 5.5 prototype. The plan is `docs/V2_LEAPC_BACKPORT_PLAN.md`; this file is only where
 things stand and how to pick up.
 
 ## State
@@ -36,8 +36,15 @@ things stand and how to pick up.
   edge cases are in `make qual` as `tools/qual/qvmedge.py` (118 cases, written from the manual's rules).
 - Before the v2.1 release: the manual's speed figures are stale (plan, "Outcome, 5.2-5.4": re-run
   `tools/qual/manual_measure.py`).
-- Next: 5.5 (top of stack in registers: prototype first; the cheaper `VM_PUSH` noted in the
-  5.2-5.4 outcome is a first step), then phase 6 (ABI 2.1) for v2.1.
+- **5.5 prototyped** on `proto/5.5-vm-push` (off `backport/leapc` `3d337c1`), step 1 only by owner
+  decision F15: `VM_PUSH`/`VM_POP` move only the low byte of `VM_SP` (stack, pointer and floor share page
+  `$B6`). HOME 246 → 273 B free, EXROM 621; bytecode unchanged; integer programs with expressions 6-13%
+  faster; `make test` all PASS (1,742 s), `make doc-examples` 327/327. **Not integrated: owner decision F16
+  pending.** The top of the stack in registers (step 2) is not
+  to be done. Everything measured is in the plan, "Outcome, 5.5". If approved: fast-forward
+  `backport/leapc`, mark F16, drop "(proto.)" from the ledger row.
+- Next after F16: phase 6 (ABI 2.1) for v2.1. Phase 5's remaining candidates (a compare of a variable with
+  a constant fused with the branch, ~45 B HOME; a page-aligned opcode table) are optional.
 
 ## Working rules (owner)
 
@@ -68,7 +75,7 @@ things stand and how to pick up.
 | `tools/qual/qnumcheck.py` | `qliterals` / `qnumparse` output against `NUM_PARSE_CALC`'s sequence replayed through Leap-C's model |
 | `tools/qual/qbench.py` | T-states per program (also `float_add_lit`, `compile_dec`, `compile_int_if`; 5.2-5.4: `int_inc`, `goto_loop`, `if_branch`, `proc_calls`, `sieve`) |
 | `tools/qual/qbreak.py` | BREAK through the real keyboard matrix in 19 loop forms and waits; error 66, the loop left, key-to-message T |
-| `tools/qual/qvmedge.py` | in `make qual`: 118 edge cases of the integer FOR path and the combined instructions, expectations from the manual's rules |
+| `tools/qual/qvmedge.py` | in `make qual`: 120 edge cases of the integer FOR path, the combined instructions and the operand stack's limit (5.3-5.5), expectations from the manual's rules |
 | `tools/run_v2_standalone_tests.sh --build-only` | in `make check`: assembles all 40 standalone test images |
 | `tools/qual/qeditview.py` | editor per key: view rule, cursor, T-states; `--oracle` (full-redraw screen), `--ref DIR`, `--measure N` |
 

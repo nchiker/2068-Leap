@@ -50,6 +50,7 @@ Further rules:
 | 5.2 BREAK poll               | **454** | **778** | [M]: HOME +13 free: JMPZ's own jump code gone (a taken JMPZ falls into OP_JMP), polling exits 1 B each   |
 | 5.3 FOR fast path            | **367** | **778** | [M]: HOME −87 free: the integer path in `OP_FOR_NEXT` 80 B, the loop variable's reload on its fallback 7 B   |
 | 5.4 combined ops             | **246** | **621** | [M]: HOME −121 free (VM 117: `CMP_JMPZ` 23, `ADD_VAR_*` 91, `VM_FLOAT_BINARY` 3; compiler 4); EXROM −157 (peepholes) |
+| 5.5 cheaper push/pop (proto.)| **273** | **621** | [M]: HOME +27 free: `VM_PUSH` 45 → 22 B, `VM_POP` 26 → 22 B; RAM `$B685-$B687` free (F15: step 1 only) |
 | phase 5 (speed)              | ≥ 64    | ≥ 32    | Class B: each item sized and weighed before it is started; 5.0 first if the room is not there                 |
 
 Every [E] is replaced by `make budget`'s figure as each item lands.
@@ -278,7 +279,7 @@ memory-based tagged operand stack is ~45% [E] (push ~234 T, pop ~150 T, variable
 | 5.2 | BREAK poll only at back-edges, calls and after package calls (not every op)                                       | 22 T per op [M]                                                                                                                                  |
 | 5.3 | Integer fast path in `FOR_NEXT` (int variable, constant STEP)                                                     | Empty loop 1,122 T/iteration today [M]                                                                                                           |
 | 5.4 | Combined opcodes for common patterns (e.g. add a small constant to a variable)                                    | Fewer dispatches and stack round trips                                                                                                           |
-| 5.5 | Top of the operand stack in registers; cheaper push/pop                                                           | Largest structural change in this phase; prototype first                                                                                         |
+| 5.5 | Top of the operand stack in registers; cheaper push/pop                                                           | Owner F15: the cheaper push/pop only (step 1); the top of the stack in registers (step 2) is not done. See "Outcome, 5.5"                      |
 
 Each item: `qbench` before/after, `qbytecode` reviewed (intended changes only), size from `make budget`
 against the floors. Combined estimate for 5.2-5.5: 1.5-2.5× on integer code [E]; 5.1 and 5.3 add more on
@@ -453,6 +454,52 @@ fast-forward on 2026-10-27, owner decision F14; all [M]):
   (was 55,200), so the text's "whole numbers about twelve times faster than floating point" is about 4.6
   times now. Re-run the tool and update the table and the text before the v2.1 release.
 - **Owner decision F14 (2026-10-27):** integrate all three; fast-forwarded `backport/leapc` to `201b960`.
+
+Outcome, 5.5 (2026-10-27; prototyped on `proto/5.5-vm-push` off `backport/leapc` `3d337c1`; **not integrated**,
+awaiting the owner; all [M] unless marked):
+
+- **Scope (owner decision F15, 2026-10-27).** Step 1 only: a cheaper `VM_PUSH`/`VM_POP` on the same stack
+  layout. Step 2, the top of the stack kept in registers, is not done: sized [E] at +100 to +250 B HOME,
+  since the gain needs ~15 hot handlers rewritten (5-15 B each) and the cached value written back wherever
+  the stack is read in memory (`VM_TEMP_PICK`, the calculator bridge, package calls, USR, errors).
+- **Change.** The stack (`$B604-$B67F`), its pointer `VM_SP` (`$B602`) and its floor share page `$B6` (an
+  `ASSERT` keeps it so), so both routines move only the pointer's low byte. `VM_PUSH` keeps the tag with
+  `push af`/`pop af` instead of two RAM scratch bytes: 45 → 22 B, 234 → 116 T (counted). `VM_POP`: 26 → 22
+  B, 140 → 105 T (counted). Outputs as before (HL, A, DE; `VM_POP` returns CF set, ZF clear), except that
+  `VM_PUSH` returns the caller's flags (was NC): no caller tests them (every call site, and the callers of
+  the 20 routines that end in a jump to `VM_PUSH`: the built-in functions return to `jp (iy)`). An overflow
+  leaves one word on the Z80 stack, discarded by `VM_ERR_COMMON`'s unwind from `VM_RUN_SP`. RAM
+  `$B685-$B687` is free.
+- **Size.** HOME 246 → **273 B** free (+27); EXROM 621 unchanged.
+- **Bytecode.** No change: `qbytecode` 667/667 identical, no baseline reset.
+- **Speed (`qbench`, T, compile and run; 5.4 → 5.5, and against the build before 5.2):**
+
+  | program          |        5.4 |        5.5 |  5.5   | since 5.2's base |
+  | ---------------- | ----------:| ----------:| ------:| ---------------- |
+  | `if_branch`      | 11,888,684 | 10,310,976 | −13.3% | −35.7% (1.56×)   |
+  | `goto_loop`      |  5,402,826 |  4,772,304 | −11.7% | −58.3% (2.40×)   |
+  | `sieve`          |  9,664,538 |  8,559,811 | −11.4% | −34.5% (1.53×)   |
+  | `builtins`       | 11,649,512 | 10,625,826 |  −8.8% | −11.0% (1.12×)   |
+  | `strings`        |  2,289,749 |  2,132,055 |  −6.9% | −10.1% (1.11×)   |
+  | `int_loop`       | 37,931,551 | 35,725,668 |  −5.8% | −8.0% (1.09×)    |
+  | `float_add_lit`  |  2,314,983 |  2,218,489 |  −4.2% | −7.0% (1.08×)    |
+  | `float_loop`     |  5,832,760 |  5,675,066 |  −2.7% | −4.0% (1.04×)    |
+  | `proc_calls`     |  4,795,355 |  4,676,676 |  −2.5% | −20.4% (1.26×)   |
+  | `float_div`      |  7,375,626 |  7,217,932 |  −2.1% | −3.2% (1.03×)    |
+  | `compile_only`   |  3,690,619 |  3,624,318 |  −1.8% | −1.7% (1.02×)    |
+  | `for_float_step` | 40,594,024 | 40,122,166 |  −1.2% | −0.2%            |
+  | `for_nested`     |  3,081,711 |  3,051,671 |  −1.0% | −22.6% (1.29×)   |
+  | `for_empty`, `int_inc`, `loop_200`, `compile_int_if`, `compile_dec` | | | 0.0% to −0.1% | (paths without a push) |
+
+- **Checks.** `qvmedge` 120/120 on 5.5 and on 5.4, with two new cases at the stack's limit: 40 nested
+  operands run, 41 stop with STACK OVERFLOW (run-time 2), the same boundary on both builds (the stack holds
+  41 entries; the manual says "about 40"). `qbreak` 19/19. `qcanary --banking` (667): 0 hits, 0 banking
+  violations, Z80 stack low-water mark `$FDE8` as before. `make check` assembles.
+- **Tests.** `make test` all PASS (1,742 s, on a copy): smoke 9/9, standalone 40/40, production and fill
+  checks, prod-regress 127, prod-arrays 101, known-defects 15, saveall 13, micsave 3, qual 663 PASS + 2
+  XFAIL + 2 N/A, lifecycle 23, `qvmedge` 120, maint-qual all (ay_beep 59, cbeep 27, di_wait 14,
+  cbeep_tape 3). `make doc-examples` 327/327.
+- **Owner decision needed (F16):** integrate 5.5 into `backport/leapc` (fast-forward).
 
 ## Phase 6: package ABI 2.1 (minor version: old packages keep working)
 
@@ -666,6 +713,8 @@ All decided by the owner on 2026-10-25.
 | F12 | Physical TS2068 run                      | Not possible at this time: emulators only (2026-10-26)              |
 | F13 | Phase 5 grouping                         | 5.2, 5.3 and 5.4 together, one commit per item (2026-10-26)         |
 | F14 | 5.2-5.4 prototype                        | Integrated, fast-forward to `201b960` (2026-10-27)                  |
+| F15 | 5.5 scope                                | Step 1 only (cheaper push/pop); no top of stack in registers (2026-10-27) |
+| F16 | 5.5 prototype                            | Pending (prototype `proto/5.5-vm-push`, 2026-10-27)                 |
 
 ## Also worth doing
 
