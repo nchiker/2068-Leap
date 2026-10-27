@@ -57,7 +57,7 @@ Further rules:
 | 5.9 `SIN`/`COS`/`TAN` to the EXROM | **746** | **142** | [M]: HOME +460 free (`SIN` 340, `TAN` 58, `COS` 27, `SIN_PEEK_POP` 27, the divisor table 8); EXROM −431 (the code 413 after bit-identical compaction, 3 slots 18); `SQR`/`PI`/`RAD`/`DEG` stay (no room) |
 | 5.10 `SIN`/`COS`/`TAN` series | **746** | **171** | [M]: EXROM +29 free: the series 136 → 90 B, its constants 8 → 30 (π/180, five coefficients); `COS` 27 → 4 (enters `SIN` with a shift); the reduction +18 (Q-35: the shift, reduced again; the fraction negated by its sign bit) |
 | VER the ROM's version       | **690** | **163** | [M]: HOME −56 free (`rom/v2_version.asm`: the text 15, `V2_VER_STATUS` 18, `V2_VER_SCOPE` 18, the flag set at cold start 5); EXROM −8 (boot head 3, `V2_DRAW_STATUS` 5; `V2_REDRAW`'s scope read became the call, 0); RAM `$BEC6` |
-| 6.1 package functions (prototype) | *590* | *163* | [M], `proto/6.1-pkg-functions` `2970ffd`, not integrated (owner decision pending): HOME −100 free (registry 43: the kind filter 18, `EXT2_EXPORTS` 25; VM 32: the count mask 2, the INT push 14, the string copy 16; compiler 25 net); EXROM 0; service slot 16 in the reserved slot area (3 B, not counted); RAM `$BFA9`, `$BA3D-$BA3F` freed |
+| 6.1 package functions        | **590** | **163** | [M], integrated (F28, fast-forward to `e9423ab`): HOME −100 free (registry 43: the kind filter 18, `EXT2_EXPORTS` 25; VM 32: the count mask 2, the INT push 14, the string copy 16; compiler 25 net); EXROM 0; service slot 16 in the reserved slot area (3 B, not counted); RAM `$BFA9`, `$BA3D-$BA3F` freed |
 | phase 5 (speed)              | ≥ 64    | ≥ 32    | Class B: each item sized and weighed before it is started; 5.0 first if the room is not there                 |
 
 Every [E] is replaced by `make budget`'s figure as each item lands.
@@ -807,11 +807,27 @@ Size allowance [E] (held free by the phase 5 follow-ups, "Room for phase 6"): HO
 in all, mostly 6.1 (the study's simpler function packages measured HOME 95 B, `study/extfn` `7c349f2`).
 Sizing 6.1 first replaces it with a measured figure.
 
-**Re-sized after 6.1's prototype (2026-10-27; owner decision pending):** 6.1 HOME **100** B, EXROM **0** [M];
+**Re-sized after 6.1 (2026-10-27; 6.1 integrated, F28):** 6.1 HOME **100** B, EXROM **0** [M];
 6.2-6.4 stay [E]: HOME ~30-60 (6.2's EXROM page-in wrapper for the float service, and a float function
 kind if wanted, ~15; 6.3's error service; 6.4's trap), EXROM ~0-30 (a package error message). Allowance
-now **HOME ~160, EXROM ~30** (was 260 / 100). Against `backport/leapc` today (690 / 163 free), above the
-reserve and the allowance: HOME **466** (was 366), EXROM **101** (was 31).
+now **HOME ~160, EXROM ~30** (was 260 / 100). With 6.1 in (590 / 163 free), what is left for phase 6
+is 6.2-6.4's HOME ~60 / EXROM ~30, and above the reserve and that: HOME **466** (was 366), EXROM
+**101** (was 31).
+
+**The remaining phase 5 items, in order** (proposed 2026-10-27 after 6.1; all three fit: HOME ≤ ~225,
+EXROM ≤ ~70 of 466 / 101; benefit per byte):
+
+1. **5.12** `LOAD v; PUSH k; CMP_JMPZ` as one instruction: ~1,000 T an `IF i < k`, `goto_loop` −45%,
+   `if_branch` −20% [E], the commonest test in BASIC loops, for ~75 B (the handler ~4-45 HOME, the
+   peephole ~70 next to 5.4's in the EXROM, which has the room now; or in HOME if it measures larger).
+   A bytecode change: the highest-value item and the one with the most to check, so first.
+2. **5.13** `PRINT` of a string ~3× a character (1,266 → ~400-450 T) for ~60-120 B (HOME; the print
+   path runs with the EXROM in, so either). Every `PRINT` gains; it is the whole cost of output that
+   does not scroll (a 20-character line ~25 → ~9 kT).
+3. **5.11** the scroll copy, ~218 → ~180 kT a scrolled line (−17%, contention-bound) for ~30-60 B HOME.
+   The smallest gain, and the editor shares `GFX_COPY_ROW_BITMAP`.
+
+Then phase 6's rest (6.2-6.6) and the manual's speed figures (`tools/qual/manual_measure.py`).
 
 ### Item 6.1 outcome (prototype, 2026-10-27; `proto/6.1-pkg-functions` off `backport/leapc` `fb57545`; all [M])
 
@@ -870,9 +886,8 @@ reserve and the allowance: HOME **466** (was 366), EXROM **101** (was 31).
   saveall 13, micsave; `make qual` (run after the fix) 666 PASS + 2 XFAIL (Q-24, Q-26) + 2 N/A of 670,
   lifecycle 23, `qvmedge` 120; `make qual-maint` all (`ay_beep` 59, `cbeep` 27, `di_wait` 14,
   `cbeep_tape` 3).
-- **Owner decision pending:** integrate 6.1 (fast-forward) now, at phase 6, or in part (numeric
-  functions alone 54 B; string functions; the export table); and whether the HOME and EXROM room it
-  leaves (466 / 101 above the reserve and phase 6's new allowance) goes to 5.13, 5.11, 5.12.
+- **Owner (2026-10-27):** integrate 6.1 (F28): `backport/leapc` fast-forwarded to `e9423ab` (with
+  `docs/PACKAGE_ABI.md` for 2.1). Open from it: stamp each package tape with the ABI minor it needs.
 
 ## Phase 7: decision gate for a V3 (major: ABI 3.0, new RAM map)
 
@@ -1090,6 +1105,7 @@ All decided by the owner on 2026-10-25.
 | F25 | `SQR`, `PI`, `RAD`, `DEG`                | Stay in HOME; the rest of 5.9 closed (no EXROM room, HOME no longer short). Revisit only if 6.1's sizing leaves HOME short (2026-10-27) |
 | F26 | 5.9-5.10 prototype                       | Integrated (fast-forward, 2026-10-27); next: item VER               |
 | F27 | Item VER                                 | Integrated on a passing `make test` (fast-forward, 2026-10-27); next: size 6.1 |
+| F28 | 6.1 package functions                    | Integrated whole (fast-forward to `e9423ab`, 2026-10-27): HOME 100, EXROM 0; next: the phase 5 items, 5.12, 5.13, 5.11 (proposed order) |
 
 ## Also worth doing
 

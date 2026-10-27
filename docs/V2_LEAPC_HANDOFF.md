@@ -1,60 +1,99 @@
-# Leap-C back-port: handoff for sizing 6.1, the rest of phase 5 and phase 6
+# Leap-C back-port: handoff for the rest of phase 5 (5.12, 5.13, 5.11) and phase 6
 
 Written 2026-10-26 at the end of phase 3, updated through phases 4 and 5; this version 2026-10-27, after
-item VER. The plan is `docs/V2_LEAPC_BACKPORT_PLAN.md` (the ledger, every item's outcome, the owner
-decisions F1-F27); this file is only where things stand, what comes next and how to pick it up.
+6.1 (package functions). The plan is `docs/V2_LEAPC_BACKPORT_PLAN.md` (the ledger, every item's outcome,
+the owner decisions F1-F28); this file is only where things stand, what comes next and how to pick it up.
 
 ## Where things stand
 
-- **Branch `backport/leapc`** (off `v2-development`). On it: phases 0-4, the redraw item, 5.1 (decimal
-  literals), R1 (calculator rounding), `SH_VIEW` (ED4), ED3/ED7, 5.2-5.5 (VM speed), 5.6-5.8 (calculator
-  multiply/divide in registers, `SQR` halving, the row clear) and 5.9/5.10 (`SIN`/`COS`/`TAN` in the
-  EXROM, the polynomial, Q-35; owner F26: integrated by fast-forward) and item VER (the ROM's version on
-  the status row at power-on, through the chime to the first key; F27). GitHub has it up to `0227797`
-  (F21); 5.9/5.10 and later are local until the owner says to push.
-- **Free ROM: HOME 690 B, EXROM 163 B** (`make budget`). Emergency reserve HOME 64 / EXROM 32 (`make check`
+- **Branch `backport/leapc`** (off `v2-development`), at `e9423ab`. On it: phases 0-4, the redraw item,
+  5.1 (decimal literals), R1 (calculator rounding), `SH_VIEW` (ED4), ED3/ED7, 5.2-5.5 (VM speed),
+  5.6-5.8 (calculator multiply/divide in registers, `SQR` halving, the row clear), 5.9/5.10
+  (`SIN`/`COS`/`TAN` in the EXROM, the polynomial, Q-35; F26), item VER (the ROM's version at power-on;
+  F27) and **6.1** (package functions, package ABI 2.1; F28, integrated whole by fast-forward). GitHub
+  has it up to `0227797` (F21); everything after is local (12 commits) until the owner says to push.
+- **Free ROM: HOME 590 B, EXROM 163 B** (`make budget`). Emergency reserve HOME 64 / EXROM 32 (`make check`
   fails below it). Spending is weighted by benefit per byte (F1).
+- **Phase 6's room, re-sized by 6.1** (plan, "Re-sized after 6.1"): 6.1 took HOME 100 / EXROM 0 [M];
+  6.2-6.4 keep HOME ~60 / EXROM ~30 [E]. **Above the reserve and that: HOME 466 B, EXROM 101 B.** Check
+  every item against *free − reserve − 6.2-6.4's allowance ≥ its cost* in the ROM it uses.
 - **Owner rules for what is left** (2026-10-27): a change must give a *significant speed increase* or
   *use less HOME or EXROM* (F17); the phase 5 follow-ups must *leave room for phase 6* (F19).
 - **What phase 5 gave** [M] (`qbench`, `qprofile --statements`, against the build before 5.2): counter
   and GOTO loops 2.4-2.55×, the sieve 1.53×, IF-heavy loops 1.56×, empty FOR 1.31×; `SQR` 3.0×,
-  `SIN`/`COS` 3.0× (2.0× by 5.6, 1.48× more by 5.10), `TAN` 2.7×, a float divide −40% and multiply −37%
-  a statement, a scrolling `PRINT` −10.6%. Every result and screen identical to before, except
-  `SIN`/`COS`/`TAN` (5.10: within ~2 ulp of exact, were up to 16,713 ulp off; F23) and the Q-35 fix.
-- Last full `make test` (VER, 2026-10-27, 1,975 s, fast emulation): all PASS (smoke 9/9, standalone
-  40/40, prod-regress 127, prod-arrays 101, known-defects 15, saveall 13, micsave, qual 666 PASS + 2 XFAIL
-  + 2 N/A of 670, lifecycle 23, `qvmedge` 120, maint-qual all); `make doc-examples` 327 (the boot screen's image
-  rewritten for VER). Emulators only (F12): nothing has run on a physical TS2068.
+  `SIN`/`COS` 3.0×, `TAN` 2.7×, a float divide −40% and multiply −37% a statement, a scrolling `PRINT`
+  −10.6%. Every result and screen identical to before, except `SIN`/`COS`/`TAN` (5.10; F23) and Q-35.
+- **6.1 in brief** (plan, "Item 6.1 outcome"): a package can export numeric functions `NAME(a, b)` and
+  string functions `NAME$(a)`; the signature byte's bits 7-6 are the kind (`include/v2_ext_kinds.inc`);
+  `EXT2_LOOKUP` binds a name only where its kind fits; calls compile through the built-ins' parser
+  (`COMPILE_FACTOR.fn_call`); `OP_CALL_EXT` pushes `EXT_CALL_RESULT`; `EXT2_EXPORTS` (service 16)
+  registers an export table. Test package `rom/v2_package_fntest.asm`, probe `tools/qual/qpkgfn.py`.
+- Last full `make test` (6.1, 2026-10-27, fast emulation): all PASS once `abi-pkg-reject-newer-minor` was
+  moved off `$8201` (now the ROM's own word): smoke 9/9, standalone 40/40, production checks 21, fill 10,
+  prod-regress 127, prod-arrays 101, known-defects 15, saveall 13, micsave, qual 666 PASS + 2 XFAIL
+  (Q-24, Q-26) + 2 N/A of 670, lifecycle 23, `qvmedge` 120, maint-qual all. `make doc-examples` was not
+  run for 6.1 (no ROM text or shipped package changed; run it with the next item). Emulators only (F12).
 - No stock-ROM-derived code in the images (`tools/check_provenance.py`, empty allow-list); anything
   taken from Leap-C is MIT and goes in `NOTICE.md`.
 
 ## What comes next, in this order
 
-The space arithmetic is the plan's "Room for phase 6": phase 6 is allowed **HOME ~260 B, EXROM ~100 B**
-[E] until 6.1 is sized. Now HOME has 366 B above the reserve and that allowance; the EXROM 31 B. Check
-every item against *free - reserve - phase 6's allowance >= its cost* in the ROM it uses.
+All three phase 5 items fit the room together (HOME ≤ ~225 of 466, EXROM ≤ ~70 of 101). Ranked by
+benefit per byte (plan, "The remaining phase 5 items, in order"); each one as before: a prototype branch
+off `backport/leapc`, measured (`make budget`, the ledger row and the item's outcome), `make test`
+through a cheaper subagent, then **stop for the owner's decision** before integrating.
 
-1. **Size 6.1** (package functions with Leap-C's export table and signature bytes) as a prototype, to
-   replace phase 6's allowance with a measured figure before spending more. **Done as a prototype**
-   (2026-10-27, `proto/6.1-pkg-functions`, not integrated; the plan's "Item 6.1 outcome"): HOME 100 B,
-   EXROM 0 [M] (numeric functions alone 54 B; string functions +21; the export table +25). Phase 6's
-   allowance becomes HOME ~160 / EXROM ~30, leaving HOME 466 / EXROM 101 above the reserve and it.
-   **Owner decision pending:** integrate 6.1 now or at phase 6, and which parts; nothing below is
-   started until then.
-2. **Then, where the room is** (HOME has it; the EXROM has 31 B above phase 6's line):
-   - 5.13, `PRINT` of a string (~3× a character: the addresses worked out once, an unrolled glyph copy);
-     the print path runs only with the EXROM in, so either ROM works: HOME now. Check: `qscrdiff`.
-   - 5.11, the scroll copy (each screen third's rows in one block per scanline, unrolled; ~218 → ~180 kT,
-     contention-bound). HOME (`kernel/graphics`); the editor shares `GFX_COPY_ROW_BITMAP`, so also
-     `qeditview`. Check: `qscrdiff`, `qrtime`.
-   - 5.12, `LOAD v; PUSH k; CMP_JMPZ` as one instruction (~1,000 T an `IF i < k`): the handler in HOME
-     (the room is there), the compiler side next to 5.4's in `rom/exrom_v2_fuse.asm` (EXROM, ~70 B [E]:
-     more than the EXROM's 31 B above phase 6's line, so measure, or put it in HOME). Bytecode changes:
-     `qbytecode` review and baseline reset; `qvmedge` cases.
-3. **Phase 6 (ABI 2.1)**, items 6.1-6.6, for v2.1. The manual's speed figures were updated after 5.8
-   (`tools/qual/manual_measure.py`, owner F21; it has no `SIN`/`COS`/`TAN` entry); re-run it after any
-   later speed change and update `04_concepts.md` "Speed" and `FOR`'s note (the Word edition is rebuilt
-   at release).
+1. **5.12, `LOAD v; PUSH k; CMP_JMPZ` as one instruction** (~1,000 T an `IF i < k`; `goto_loop` −45%,
+   `if_branch` −20% [E]). The handler in HOME (`rom/exrom_v2_vm_core.asm`, beside 5.4's `CMP_JMPZ`); the
+   peephole next to 5.4's in `rom/exrom_v2_fuse.asm` (EXROM, ~70 B [E], production-only behind a
+   `V2_EXROM_FUSE_*_ADDR` slot: bump `V2_KTAB_MAGIC` if the slot list changes); if it measures well over
+   ~70, move it to HOME. A bytecode change: a new opcode (77; `VM_RUN.next`'s `cp 77` and the table),
+   the `qbytecode` review and baseline reset, new `qvmedge` cases (mask, both branch directions, the
+   operand at the stack's limit, a FLOAT variable falling back), `qbreak` (it jumps: `jp VM_RUN.loop`),
+   `qbench` before/after, `qprofile --statements`. The test-only decompiler rebuilds IFs from plain
+   `JMPZ`, so the peephole stays production-only (as 5.4's).
+2. **5.13, `PRINT` of a string** (~3× a character: the screen and attribute addresses worked out once and
+   stepped along the row, the 8 glyph bytes copied unrolled; ~60-120 B, HOME). Keep `INVERSE`, `OVER`,
+   the attribute, the wrap at column 32 and the scroll at the bottom exactly as they are. Checks:
+   `qscrdiff` (15 programs, whole screens), `qeditview` if anything shared with the editor changes,
+   `qbench`/`qprofile --statements` for the T a character.
+3. **5.11, the scroll copy** (each screen third's rows in one block per scanline, unrolled; ~218 →
+   ~180 kT a scrolled line, contention-bound; ~30-60 B HOME, `kernel/graphics`). The editor shares
+   `GFX_COPY_ROW_BITMAP`: `qeditview --oracle --ref`. Checks: `qscrdiff`, `qrtime`.
+4. **Then** phase 6's rest for v2.1 (6.2 float service slot, 6.3 error service and a package error
+   range, 6.4 reserved slots trap, 6.5 measured package stack, 6.6 package names vs keywords), the open
+   item from 6.1 (stamp each package tape with the ABI minor it needs: `tools/make_extension_tzx.py`
+   stamps the ROM's word, so the shipped packages are now `$8201` and a v2.0.x ROM refuses them), and the
+   manual's speed figures after the last speed change (`tools/qual/manual_measure.py`; `04_concepts.md`
+   "Speed" and `FOR`'s note).
+
+## Suggested model and effort
+
+- **Model: Opus 5.5** (fast mode is fine) for the item work: 5.12 changes the bytecode, the compiler's
+  peephole and the VM's dispatch together, and 5.13/5.11 are T-state-counted Z80 with screen-layout
+  edge cases; all three need the differential tools read critically (the "0 differ" and "ce 0"
+  pitfalls below). **Effort: high**: the work is measurement-driven with good tools, not open design;
+  xhigh is not needed. If an item turns into a design question (5.12's peephole not fitting either ROM),
+  stop and ask rather than raising the effort.
+- **Test runs: Sonnet 5.5** subagents (owner rule): `make test`, `make qual`, the prod suites, on an
+  rsync copy in the scratchpad; Haiku is enough for a single suite with a fixed command.
+
+## Pitfalls met in 6.1
+
+- **The registry is stubbed in most standalone test images** (`rom/test_v2_*.asm` define `EXT_CALL_ARG0`,
+  `EXT2_LOOKUP` and so on as stubs, as `equ`s or as bare labels): a new name the VM core or compiler uses
+  (6.1: `EXT_CALL_RESULT`, `EXT_KIND_*`) must be added to every stub set, or `make check`'s standalone
+  build fails. `include/v2_ext_kinds.inc` is included by the compiler and VM core for this reason.
+- **A test pinned to "the next version"** breaks when the version moves (`abi-pkg-reject-newer-minor` used
+  `$8201`; RC-10 was the same for programs): write "the ROM's word + 1".
+- **V2's one-line `IF … THEN` takes only `GOTO`**; any other statement needs the block form `IF … THEN` /
+  `ENDIF` (a test program with `IF x THEN s = 1` is compile error 9 on every build).
+- **The compiler's `CEXT_*` cells are gone**: `COMPILE_EXT_CALL` keeps the slot (D), count (B) and
+  signature (E) in registers, because a package function in an argument re-enters the call compile.
+  Shared state in fixed cells across a recursive compile is the M-4 and N-1 pattern; check for it in any
+  peephole that compiles a sub-expression.
+- `EXT2_LOOKUP` now takes the kind in C (`EXT_KIND_STMT` for a statement): a new caller that forgets C
+  matches whatever kind C happens to hold.
 
 ## Pitfalls met in item VER
 
@@ -143,6 +182,7 @@ on GitHub, and prints that command.
 | `tools/qual/qrtime.py` | T-states of one ROM routine with given registers and pokes (`GFX_CLEAR_ROW BC=0x1700`) |
 | `tools/qual/qvmedge.py` | in `make qual`: 120 edge cases of the integer FOR path, the combined instructions and the operand stack's limit (5.3-5.5), expectations from the manual's rules |
 | `tools/run_v2_standalone_tests.sh --build-only` | in `make check`: assembles all 40 standalone test images |
+| `tools/qual/qpkgfn.py` | package functions (6.1): 38 cases with `rom/v2_package_fntest.asm`, and one statement of each shipped package |
 | `tools/qual/qeditview.py` | editor per key: view rule, cursor, T-states; `--oracle` (full-redraw screen), `--ref DIR`, `--measure N` |
 
 Probe pattern (all of the `q*` tools above): a loop assembled at `$F400` (the package window), a
