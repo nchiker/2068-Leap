@@ -1,25 +1,26 @@
-# Leap-C back-port: handoff after the R1 prototype
+# Leap-C back-port: handoff after R1 (next: `SH_VIEW`)
 
-Written 2026-10-26 at the end of phase 3; updated at the end of phase 4, after 5.1 and after the R1
-prototype. The plan is
-`docs/V2_LEAPC_BACKPORT_PLAN.md`; this file is only where things stand and how to pick up.
+Written 2026-10-26 at the end of phase 3; updated at the end of phase 4, after 5.1 and after R1. The
+plan is `docs/V2_LEAPC_BACKPORT_PLAN.md`; this file is only where things stand and how to pick up.
 
 ## State
 
-- Branch `backport/leapc` (off `v2-development`), not pushed. Phases 0-4, the redraw item and 5.1
-  (decimal literals, `1bb5e65`, owner decision F8) committed.
+- Branch `backport/leapc` (off `v2-development`), not pushed. Phases 0-4, the redraw item, 5.1
+  (decimal literals, owner decision F8) and R1 (calculator rounding, F10/F11) committed.
 - Free ROM: HOME 441 B, EXROM 905 B (`make budget`). Emergency reserve HOME 64 / EXROM 32
   (`make check` fails below it). Spending is weighted by benefit per byte, not floored.
 - No stock-ROM-derived code left in the images: `tools/check_provenance.py` (in `make check`) has an
   empty allow-list. Keep it that way; anything taken from Leap-C is MIT and goes in `NOTICE.md`.
-- Last full `make test`: all PASS on 5.1 (2,444 s, loaded host; counts in the plan's 5.1 outcome).
-- R1 integrated (owner decision F10; `backport/leapc` fast-forwarded to the prototype): Leap-C's float
-  core behind the calculator, EXROM 186 → 905 B free, every result bit-exact with Leap-C's model, speed
-  at or better than before. `make test` all PASS except 6 corpus float-`FOR` counts now one short
-  (`FOR i = 0 TO 1 STEP 0.1` runs 10 times): the old truncation's downward bias had hidden this.
-  Measurements in the plan, "Review item R1", "Prototype outcome".
-- Next: the owner's `FOR` decision (F11; the plan's R1 outcome: the BASIC standards' rule is what V2
-  does, recommended; `make qual` has these 6 FAILs until then). Then `SH_VIEW`.
+- Last full `make test` (R1, 2026-10-26, 1,227 s, fast emulation): smoke 9/9, standalone 40/40,
+  production and fill checks, prod-regress 116, prod-arrays 101, known-defects 15, saveall 13, micsave
+  3, maint-qual all PASS; the corpus then had 6 float-`FOR` FAILs, settled by F11: `make qual` 663 PASS
+  + 2 XFAIL + 2 N/A, lifecycle 23; `make doc-examples` 326/326 (the new FOR example `kw.for.6` included).
+- R1 done: `rom/exrom_calc.asm`'s arithmetic is Leap-C's float core (rounds to nearest, bit-exact with
+  Leap-C's `tools/fpmodel.py`), EXROM 186 → 905 B free, speed at or better than before; `Q-34` fixed.
+  Float `FOR` follows the BASIC standards (F11: step accumulated, exact end test), so
+  `FOR i = 0 TO 1 STEP 0.1` runs 10 times; corpus oracle and manual say so. Everything measured is in
+  the plan, "Review item R1", "Outcome". `proto/r1-calc-round` is merged (same commits); delete it at will.
+- Next: `SH_VIEW` (below). Then 5.2.
 
 ## Working rules (owner)
 
@@ -54,60 +55,7 @@ prototype. The plan is
 Probe pattern (all of the `q*` tools above): a loop assembled at `$F400` (the package window), a
 table at `$8300` below the `$B6xx` cells, the booted snapshot restored per batch (`qharness.Machine`).
 
-## R1, the calculator rounds (Leap-C's float arithmetic behind V2's interface): prototyped
-
-Done on `proto/r1-calc-round` as described below; the outcome is in the plan. Kept here for reference.
-
-**Goal of this step.** A prototype on a branch off `backport/leapc` (e.g. `proto/r1-calc-round`):
-V2's arithmetic replaced by Leap-C's 40-bit core, with its measured size, speed and rounding; the
-owner then decides whether to integrate (owner decision F9). Measurements, root causes and Leap-C's
-side are in the plan, section "Review item R1"; defect `Q-34`.
-
-**Why first.** A correctness fix (`INT(3.1*10)` = 30 today), and if it lands near Leap-C's size it frees
-EXROM for `SH_VIEW` and the later items (V2's arithmetic 1,331 B, Leap-C's 522 B).
-
-**V2 today** (`rom/exrom_calc.asm`, EXROM): `CALC_UNPACK` (~l.333, also reads the small-integer
-form), `CALC_PACK` (~l.469, no rounding), `CALC_FP_TO_INT` (~l.580: the only other reader of the
-unpacked layout), `CALC_ADDSUB_ENGINE` (~l.794), `CALC_OP_ADD`/`SUB` (~l.1034), `CALC_OP_MUL`
-(~l.1093), `CALC_OP_DIV` (~l.1309), helpers `CALC_ADD8`..`CALC_SUB4` (~l.1497), `CALC_TABLE` (~l.1612,
-8 literals). Nothing outside this file touches the internals. Cells (`include/sysvars.inc`
-~l.2234-2320): `CALC_OP1/OP2_PTR`, `CALC_UNP_A/B` (6 B each), `CALC_SHIFT_COUNT`, `CALC_MUL_ACC`,
-`CALC_MUL_CAND` (8 B each), `CALC_DIV_REM`, `CALC_DIV_QUOT` (4 B each): 37 B.
-
-**Leap-C** (`~/2068-Leap-C/src/runtime/fpcore.asm`, MIT): `FUNPK`, `FPACK` (rounds half away from
-zero on the guard byte), `FNORM`, `FADD`, `FSWAP`, `FMUL`, `FDIV`, `FDONE`, `FSIGN`, helpers `FSHL`,
-`FSHR`, `FADDN`, `FSUBN`, `FZERO`; unpacked layout `[sign][exponent][m0..m3][guard]` (7 B). Its
-`XF_BIN` dispatcher and `XF_*` entry points are not needed (V2 keeps its `RST $28` literal stream).
-`tools/fpmodel.py` is a bit-exact model of every operation.
-
-**Adapting it.**
-
-- Working cells: FX, FY (7 B each) and FQ (5 B) in V2's 37 B calculator cells, not at `CALC_STACK`
-  as in Leap-C (V2's operand slots live there). The cells left over may be freed (RAM census).
-- Inputs: V2 operands may be in the small-integer form (`CALC_INT_TO_FP`'s output; byte 0 = 0 is
-  not zero there): `FUNPK` must read it, as `CALC_UNPACK` does. Outputs: the general form; zero as
-  five zero bytes (the bytes V2 already uses for zero).
-- Errors: V2's codes and paths (`CALC_ABORT_NUMERIC_OVERFLOW`, `CALC_ERR_DIVISION_BY_ZERO`,
-  `CALC_ABORT_STREAM`), not Leap-C's `F_ERR`. Underflow gives 0 in both.
-- `CALC_FP_TO_INT`: port to the new layout, its results unchanged (differential over many values).
-- Keep `CALC_TABLE`'s literals and operand counts (`tools/z80sim/test_calc_dispatcher.py`).
-
-**Measurements.**
-
-- Size: `make budget` (EXROM; HOME should not change). Estimate [E] EXROM +500 to +700 B free.
-- Rounding: `tools/qual/qcalcround.py --leapc ~/2068-Leap-C`: 100% correctly rounded, or each
-  exception explained; the results equal Leap-C's model bit for bit.
-- Speed: T per operation before/after (time the four stubs, as `qcalcround.py` calls them) and
-  `qbench` (`float_loop`, `float_add_lit`, `for_float_step`, `builtins`): Leap-C loops where V2
-  unrolls, so a slowdown is possible; report it and weigh it against the bytes.
-- Values change in the last bit by design: `qdecimals.py` stays self-consistent (same build on both
-  sides); for `qliterals.py` / `qnumparse.py` against the old build, check the new values against
-  the model instead of expecting identity. The visible cases (`INT(3.1*10)` etc., plan R1) become right.
-- `make check`, `make doc-examples` (examples that print decimals may change: explain each),
-  corpus expectations (`tools/qual/corpus.py` may have float cases that flip), `make test` via a
-  subagent on an rsync copy. `NOTICE.md`: the Leap-C origin of the arithmetic.
-
-## After R1: `SH_VIEW` (keep the cursor's line whole on screen, fixes ED4/R9)
+## Next: `SH_VIEW` (keep the cursor's line whole on screen, fixes ED4/R9)
 
 **Goal.** The plan's weighed Class B item (phase 4, "Weighed items"): the active line always whole on
 rows 0-22, so its cursor is always visible. Measure, qualify, commit on `backport/leapc` (or prototype
@@ -130,10 +78,11 @@ keeps its default 22). Not in the manual, not in `tools/v2_known_defects.py`.
 - `V2_REDRAW_NAV` (~l.2084), UP/DOWN to a neighbour: assumes "both indices ≤ 20, so the view top
   stays 0" and checks only that the new row is < 23, not that the new line fits.
 
-**Leap-C** (`~/2068-Leap-C`, MIT): `SH_VIEW` in `src/shell/shell.asm` (~l.1163, 94 B,
+**Leap-C** (`~/2068-Leap-C`, MIT): `SH_VIEW` in `src/shell/shell.asm` (~l.1168, 94 B,
 `docs/milestones/M5.md` §2 and its size table): the active line's height (`EDITOR_WRAP_CALC` on
 `EDIT_LINE_BUF`), then each of up to 20 lines above it (copy, `EDITOR_WRAP_CALC`, heights stored in
-`SH_HEIGHTS`, 20 B of RAM), then lines dropped from the top while the total exceeds 23 rows. Called
+`SH_HEIGHTS`, 20 B of RAM, `include/leapc_cells.inc`), then lines dropped from the top while the
+total exceeds 23 rows. Called
 by the full redraw (~l.892) and the height-change path (~l.984: the rows above are left alone only
 when the view stays).
 
@@ -147,13 +96,15 @@ when the view stays).
 3. `V2_REDRAW_NAV`: replace "indices ≤ 20" with "the view for the new index equals `VIEW_TOP_INDEX`"
    and require new row + new height ≤ 23. Measure the cost per UP/DOWN: up to 20 records copied and
    measured (the fast path exists to avoid a ~0.9 MT full redraw).
-4. RAM for the 20 heights: a dead span (`docs/RAM_EFFICIENCY_RESULTS.md`, e.g. `$F328-$F3AE`) means
-   updating `tools/check_ram_layout.py`'s census and `tools/qual/qcanary.py`'s dead-span list; or no
-   table at all (measure again while trimming: slower, full redraws only).
+4. RAM for the 20 heights: `CALC_SPARE_18` (R1 left 18 B free in the calculator block, `$81FD`) is
+   2 B short: 18 lines above the cursor, or a smaller encoding, would fit it. Otherwise a dead span
+   (`docs/RAM_EFFICIENCY_RESULTS.md`, e.g. `$F328-$F3AE`), which means updating
+   `tools/check_ram_layout.py`'s census and `tools/qual/qcanary.py`'s dead-span list; or no table at all
+   (measure again while trimming: slower, full redraws only).
 
 **Size [E].** EXROM +70 to +110 B (`SH_VIEW` 94 B in Leap-C, minus helpers V2 already has, plus the
-two redraw paths). With EXROM 186 B free (before R1) → about 80-115 B, above the 32 B reserve; R1, if
-integrated, adds its savings first.
+two redraw paths). With EXROM 905 B free (after R1) → about 795-835 B: room is not the constraint, so
+prefer the per-key speed (a heights table, the fast UP/DOWN path kept) over the last bytes.
 
 **Qualification.**
 

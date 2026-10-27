@@ -933,14 +933,35 @@ for _cid, _q in (("tag.chr_float", "Q-30"), ("tag.pause_frames", "Q-30"), ("tag.
 # relational operators; the loop ends when the variable is past the limit in the step's direction;
 # STEP 0 counts as ascending (manual: an intentional infinite loop). Expected values are exact.
 # These cases are marked Q-08 on every configuration where they fail (decision 1 not implemented).
+# Iteration counts (owner decision F11, 2026-10-26: follow the standard): the loop of ECMA-55 §13.4 /
+# ANSI X3.113 §8.3.4 -- v = v + step, each sum rounded to the nearest 5-byte float as the calculator
+# does since R1, and the exact end test (v - limit) * SGN(step) > 0; the literals are their nearest
+# 5-byte values. Not the exact decimal count: FOR i = 0 TO 1 STEP 0.1 runs 10 times (ten rounded
+# additions of 0.1, itself just above 0.1, end one ulp above 1). Before R1 the arithmetic truncated,
+# which biased every sum low, and these counts happened to equal the decimal ones.
 # =====================================================================================
+def _r5(q):
+    """q rounded to the nearest 5-byte float (32-bit mantissa, ties away from zero)."""
+    if q == 0:
+        return q
+    a = abs(q)
+    e = a.numerator.bit_length() - a.denominator.bit_length()
+    while a >= Fr(2) ** e:
+        e += 1
+    while a < Fr(2) ** (e - 1):
+        e -= 1
+    ulp = Fr(2) ** (e - 32)
+    m = int(a / ulp + Fr(1, 2))
+    return (m * ulp) if q > 0 else -(m * ulp)
+
+
 def _cnt(a, b, s):
-    a, b, s = Fr(a), Fr(b), Fr(s)
+    a, b, s = _r5(Fr(a)), _r5(Fr(b)), _r5(Fr(s))
     n = 0
     v = a
     while (v <= b) if s >= 0 else (v >= b):
         n += 1
-        v += s
+        v = _r5(v + s)
     return n, v
 
 
@@ -948,9 +969,10 @@ for _a, _b, _s in (("0", "1", "0.1"), ("1", "0", "-0.1"), ("0", "0.3", "0.1"), (
                    ("-1", "1", "0.1"), ("0", "6.3", "0.7"), ("2", "0", "-0.2"), ("0", "5", "0.1")):
     _n, _ = _cnt(_a, _b, _s)
     T("ffor.count.%s_%s_%s" % (_a, _b, _s), "stmt.FOR.float", ["n = 0", "FOR i = %s TO %s STEP %s" % (_a, _b, _s), "n = n + 1", "NEXT i", "PRINT n"],
-      Lines(I(_n)), note="iteration count = the exact mathematical count (accumulated step)")
-T("ffor.count.long", "stmt.FOR.float", ["n = 0", "FOR i = 0 TO 10 STEP 0.01", "n = n + 1", "NEXT i", "PRINT n"], Lines(I(1001)), maxi=400_000_000,
-  note="1000 accumulated additions of 0.01")
+      Lines(I(_n)), note="iteration count = the standard's loop with rounded sums (F11)")
+T("ffor.count.long", "stmt.FOR.float", ["n = 0", "FOR i = 0 TO 10 STEP 0.01", "n = n + 1", "NEXT i", "PRINT n"],
+  Lines(I(_cnt("0", "10", "0.01")[0])), maxi=400_000_000,
+  note="the standard's loop: accumulated additions of 0.01, rounded (F11)")
 T("ffor.values.down_quarter", "stmt.FOR.float", ["FOR x = 1 TO 0 STEP -0.25", "PRINT x", "NEXT x"],
   Lines(I(1), F(Fr(3, 4)), F(Fr(1, 2)), F(Fr(1, 4)), F(0)), note="INT start; FLOAT values after the first NEXT")
 T("ffor.values.int_limit_float", "stmt.FOR.float", ["FOR i = 1 TO 2.5", "PRINT i", "NEXT i"], Lines(I(1), I(2)),
