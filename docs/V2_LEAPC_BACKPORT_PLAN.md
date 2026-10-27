@@ -59,6 +59,7 @@ Further rules:
 | VER the ROM's version       | **690** | **163** | [M]: HOME −56 free (`rom/v2_version.asm`: the text 15, `V2_VER_STATUS` 18, `V2_VER_SCOPE` 18, the flag set at cold start 5); EXROM −8 (boot head 3, `V2_DRAW_STATUS` 5; `V2_REDRAW`'s scope read became the call, 0); RAM `$BEC6` |
 | 6.1 package functions        | **590** | **163** | [M], integrated (F28, fast-forward to `e9423ab`): HOME −100 free (registry 43: the kind filter 18, `EXT2_EXPORTS` 25; VM 32: the count mask 2, the INT push 14, the string copy 16; compiler 25 net); EXROM 0; service slot 16 in the reserved slot area (3 B, not counted); RAM `$BFA9`, `$BA3D-$BA3F` freed |
 | 5.12 `IF v <op> k`           | **542** | **113** | [M], integrated (F29, fast-forward to `45d1bf3`): HOME −48 free (`OP_CMP_VAR_JMPZ` 41, its table entry 2, `COMPILE_IF` passing the condition's start 5); EXROM −50 (`COMPILE_FUSE_CMP` 31 → 81); RAM 0 |
+| 5.13 `PRINT` of a string     | **454** | **113** | [M], integrated (F30): HOME −88 free (`GFX_PRINT_STRING_ATTR` 64 → 168 B, `GFX_PUTCHAR_OVER` 16 removed); EXROM 0; RAM 0 |
 | phase 5 (speed)              | ≥ 64    | ≥ 32    | Class B: each item sized and weighed before it is started; 5.0 first if the room is not there                 |
 
 Every [E] is replaced by `make budget`'s figure as each item lands.
@@ -799,6 +800,60 @@ all [M]; integrated into `backport/leapc` by fast-forward, owner decision F29):
 - **Not done (a candidate, [E]).** The same for two variables (`IF k <= s`, the sieve's inner loop: 1,790 T
   an IF today): a second opcode beside 77, ~20 B HOME and ~15 EXROM.
 
+Outcome, 5.13 (2026-10-27; prototyped on `proto/5.13-print-str` off `backport/leapc` `714558a`; all [M];
+integrated into `backport/leapc` by fast-forward, owner decision F30):
+
+- **What changed.** `GFX_PRINT_STRING_ATTR` (`kernel/graphics/graphics.asm`; `PRINT`'s numbers and
+  strings and `INPUT`'s echo, nothing else) works the screen address and the attribute address out once
+  for each run of characters along a row and steps them (`inc e`, the attribute pointer), and copies
+  each glyph's 8 bytes unrolled; it called `GFX_PUTCHAR` (or `GFX_PUTCHAR_OVER`) and `GFX_SET_ATTR` per
+  character, each redoing its range checks and its address. The alternate set holds the attribute
+  pointer, the attribute, the columns left in the row and the row (nothing V2 calls from here uses it;
+  the glyph lookup `GFX_CHAR_TO_FONT_OFFSET` is unchanged and shared with the editor). OVER 1 keeps a
+  short XOR loop. Unchanged by construction: the attribute byte (INVERSE is folded into it by
+  `VM_COMPUTE_PRINT_ATTR`), the wrap after column 31 and the scroll after row 23 (both right after the
+  character that fills the row, as before, so a string ending in column 31 of row 23 scrolls at once),
+  an unmapped code drawn as a space, and a position off the screen (row ≥ 24 or column ≥ 32, which only
+  a POKE of `VM_OUTPUT_ROW`/`VM_OUTPUT_COL` makes): nothing drawn, the column stepped a character at a
+  time, as the old loop did. `GFX_PUTCHAR_OVER` had no other caller and is gone.
+- **Size.** HOME 542 → **454** B free (−88: the routine 64 → 168 B, `GFX_PUTCHAR_OVER`'s 16 B removed);
+  EXROM 0. Above the reserve and 6.2-6.4's allowance: HOME 330, EXROM 51.
+- **Speed.** `qrtime GFX_PRINT_STRING_ATTR`, 20 characters at row 5: 25,237 → **11,550 T** (2.19×); with
+  OVER 1 26,557 → 14,886 (1.78×). `qprofile --statements` (new rows; T a statement adds to a FOR loop):
+
+  | statement                        | 5.12   | 5.13   | change |
+  | -------------------------------- | ------:| ------:| ------ |
+  | `AT 5, 0: PRINT a$;` (20 chars)  | 28,929 | 14,843 | 1.95×  |
+  | the same, OVER 1                 | 30,328 | 18,426 | 1.65×  |
+  | `AT 5, 0: PRINT "x";`            | 4,358  | 4,164  | −4.5%  |
+  | `AT 5, 0: PRINT 7;`              | 5,208  | 5,018  | −3.6%  |
+  | `PRINT 7` (scrolls)              | 223,813 | 223,669 | −0.1% |
+
+  Per character (the 20-character row less the one-character row, over 19): 1,293 → **562 T** (2.30×;
+  est. ~3×, 400-450 T). What is left of a character: the glyph lookup ~230 T (a call and a chain of
+  range tests; `GFX_CHAR_TO_FONT_OFFSET`, shared with the editor), the unrolled copy ~200, the loop
+  ~130. A string `PRINT` also carries ~3,600 T that are not per character (the copy into `PRINT_BUF`,
+  the attribute, the statement). `qbench` unchanged (its programs do not print).
+- **Screens** (`qscrdiff`, 5.12 against 5.13, the whole bitmap and attributes after each program): 22
+  programs, 0 differ, all ran (ce 0, ve 0). Seven are new: every character code 1-255 (punctuation, block
+  graphics, UDGs, codes with no glyph), OVER 1 over text and over itself and INVERSE with OVER, INVERSE
+  strings with a colour, rows of exactly 32 characters (`"-"; a$`: a string holds at most 31), strings
+  that wrap and scroll from `AT 23, n` and one ending in column 31 of row 23, empty strings, and the
+  output cells POKEd off the screen (row 30, column 40, column 255, row 255). Checked that their screens
+  are not blank (168 to 5,008 non-zero bitmap bytes).
+- **Editor.** Nothing the editor runs changed (it prints through `GFX_PUTCHAR`, `GFX_PRINT_STRING` and
+  its own paths); `qeditview --oracle --ref` (5.13 against 5.12): 36 scenarios, 3,762 keys, every
+  screen equal to a full redraw's; the 18 compared with 5.12: 0 of 1,899 screens differ.
+- **Checks.** `make check`; the release definitions (`make build EXTRA_DEFS=`) assemble.
+- **Tests** (on a copy, fast emulation). `make test` all PASS (2,048 s): budget reserve check, smoke 9/9,
+  standalone 40/40, production and fill checks, prod-regress 127, prod-arrays 101, known-defects 15,
+  saveall 13, micsave 3, qual 666 PASS + 2 XFAIL + 2 N/A, lifecycle 23, `qvmedge` 221, maint-qual all
+  (ay_beep 59, cbeep 27, di_wait 14, cbeep_tape 3). `make doc-examples` 327/327 (its screenshots
+  include printed text: every one equal).
+- **Not done (a candidate, [E]).** The glyph lookup is ~40% of what a character costs now: its chain
+  of range tests reordered (lower case first, one subtract per range) would save ~40-60 T a letter, for
+  `PRINT` and the editor's redraw alike, at a few bytes.
+
 ### Item VER: the ROM's version at power-on (owner request F22, 2026-10-27; next after 5.9/5.10)
 
 Today nothing tells a user which ROM they run: there is no version text in either image (the release
@@ -1175,6 +1230,7 @@ All decided by the owner on 2026-10-25.
 | F27 | Item VER                                 | Integrated on a passing `make test` (fast-forward, 2026-10-27); next: size 6.1 |
 | F28 | 6.1 package functions                    | Integrated whole (fast-forward to `e9423ab`, 2026-10-27): HOME 100, EXROM 0; next: the phase 5 items, 5.12, 5.13, 5.11 (proposed order) |
 | F29 | 5.12 `IF v <op> k`                       | Integrated (fast-forward to `45d1bf3`, 2026-10-27): HOME 48, EXROM 50; the two-variable form not taken up; next: 5.13 |
+| F30 | 5.13 `PRINT` of a string                | Integrated on a passing `make test` (fast-forward, 2026-10-27): HOME 88, EXROM 0; next: 5.11 |
 
 ## Also worth doing
 
