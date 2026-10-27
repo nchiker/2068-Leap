@@ -2456,6 +2456,79 @@ OP_FOR_NEXT:
         inc hl
         ld (VM_IP),hl
         ld (VM_FOR_NEXT_BRANCH),de
+        ; 5.3: the integer fast path -- v INT, its frame the innermost one, limit and step INTs (both
+        ; in the small-integer form). Anything else, or a sum that overflows, takes the general path
+        ; below from the start (nothing has been written). An empty control stack cannot pass for a
+        ; frame: VM_CSP = VARS_START is then the first SYMTAB record (the lowest carved table), and
+        ; [T_FOR][c] there would be a FLOAT symbol 0 (a FLOAT record holds its own index) with c = 0,
+        ; i.e. v itself FLOAT, which the first test refuses.
+        ld a,c
+        call VM_SYM_ADDR        ; HL -> v's record (C survives)
+        ld a,(hl)
+        or a
+        jr nz,.general          ; v is FLOAT
+        inc hl
+        push hl                 ; -> v
+        ld e,(hl)
+        inc hl
+        ld d,(hl)               ; DE = v
+        ld hl,(VM_CSP)
+        ld a,(hl)
+        dec a                   ; T_FOR?
+        jr nz,.gen_pop
+        inc hl
+        ld a,(hl)
+        cp c
+        jr nz,.gen_pop          ; not the innermost frame: the general path finds it
+        inc hl                  ; -> limit[0]
+        ld a,(hl)
+        ld bc,5
+        add hl,bc               ; -> step[0]
+        or (hl)
+        jr nz,.gen_pop          ; a FLOAT limit or step
+        inc hl
+        inc hl
+        ld c,(hl)
+        inc hl
+        ld b,(hl)               ; BC = step, HL -> its high byte (frame+10)
+        ex de,hl                ; HL = v (carry is clear: or (hl))
+        adc hl,bc               ; HL = v + step
+        ld a,b                  ; bit 7: counting down
+        jp pe,.gen_pop          ; signed overflow: the FLOAT sum (general path)
+        ld b,h
+        ld c,l                  ; BC = v + step
+        pop hl
+        ld (hl),c
+        inc hl
+        ld (hl),b               ; v = v + step, still INT
+        ld hl,-6
+        add hl,de               ; -> the limit's low byte (frame+4)
+        ld e,(hl)
+        inc hl
+        ld d,(hl)               ; DE = limit
+        ld h,b
+        ld l,c                  ; HL = v
+        rla
+        jr c,.down
+        ex de,hl                ; counting up: HL = limit, DE = v
+.down:
+        or a
+        sbc hl,de               ; up: limit - v, down: v - limit; past iff negative
+        ld a,h
+        jp po,.sign
+        cpl                     ; signed overflow: the true sign is the other one
+.sign:
+        rla
+        jp c,VM_RUN.next        ; past the limit: fall through to FOR_POP
+        jr .branch
+.gen_pop:
+        ld hl,(VM_IP)
+        dec hl
+        dec hl
+        dec hl
+        ld c,(hl)               ; the loop variable again (BC held the step)
+        pop hl
+.general:
         call VM_FIND_FOR        ; QUAL: this loop's own frame
         jp nz,VM_ERR_CALL_STACK_UNDERFLOW  ; NEXT without its FOR (GOTO into a body, a FOR skipped by IF)
         ld (VM_CSP),hl          ; drop loops abandoned above it by GOTO
@@ -2519,6 +2592,7 @@ OP_FOR_NEXT:
 .decide:
         dec a
         jp z,VM_RUN.next        ; past the limit: fall through to FOR_POP
+.branch:
         ld de,(VM_FOR_NEXT_BRANCH)
         ld hl,VM_CODE_BASE
         add hl,de
