@@ -153,6 +153,7 @@ v2-packages: build
 	tools/sjasmplus_strict.sh rom/v2_package_graphics.asm
 	tools/sjasmplus_strict.sh rom/v2_package_cbeep.asm
 	tools/sjasmplus_strict.sh rom/v2_package_fntest.asm
+	tools/sjasmplus_strict.sh rom/v2_package_fptest.asm
 	python3 tools/make_extension_tzx.py build/extensions/v2_mode.tzx MODE build/v2_package_mode.bin --v2
 	python3 tools/make_extension_tzx.py build/extensions/v2_sprite.tzx SPRITE build/v2_package_sprite.bin --v2
 	python3 tools/make_extension_tzx.py build/extensions/v2_printer.tzx PRINTER build/v2_package_printer.bin --v2

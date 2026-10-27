@@ -7,4 +7,16 @@ EXT_KIND_STMT           EQU $00     ; a statement: NAME a, b (every ABI 2.0 pack
 EXT_KIND_FN             EQU $40     ; a numeric function: NAME(a, b), its value from EXT_CALL_RESULT
 EXT_KIND_STR            EQU $C0     ; a string function: NAME$(a, b), EXT_CALL_RESULT -> [len][text]
 EXT_KIND_MASK           EQU $C0
+; 6.2 (ABI 2.1): bit 5, the float form. Its numeric arguments arrive as the addresses of 5-byte
+; floats (an INT converted), and a numeric function's value is a float (EXT_CALL_RESULT -> its 5
+; bytes). Its arguments are all numbers (bits 4-0 = 0; EXT2_REGISTER refuses anything else).
+EXT_SIG_FLOAT           EQU $20
+EXT_COUNT_MASK          EQU $07     ; the argument count in OP_CALL_EXT's operand byte (0-5)
+; 6.2: FP_OP's operations (service 17, A on entry)
+FOP_ADD                 EQU 0       ; x = x + y
+FOP_SUB                 EQU 1       ; x = x - y
+FOP_MUL                 EQU 2       ; x = x * y
+FOP_DIV                 EQU 3       ; x = x / y
+FOP_INT                 EQU 4       ; x = the 16-bit integer DE
+FOP_TRUNC               EQU 5       ; HL = x truncated toward zero (CF: outside -32768..32767)
     ENDIF

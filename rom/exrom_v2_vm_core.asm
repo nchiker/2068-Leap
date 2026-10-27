@@ -4085,7 +4085,7 @@ OP_CALL_EXT:
         inc hl
         ld (VM_IP),hl
         ld a,(VM_EXT_ARGCOUNT)
-        and $FF ^ EXT_KIND_MASK     ; 6.1: bits 7-6 are the kind (a function's value is pushed)
+        and EXT_COUNT_MASK          ; 6.1/6.2: bits 7-6 the kind, bit 5 the float form
         ld (VM_EXT_REMAINING),a
 .pop_loop:
         ld a,(VM_EXT_REMAINING)
@@ -4095,8 +4095,12 @@ OP_CALL_EXT:
         ld (VM_EXT_REMAINING),a   ; A = the arg index this value fills
                                     ; (argcount-1 on the first iteration,
                                     ; counting down to 0)
+        ld hl,VM_EXT_ARGCOUNT
+        bit 5,(hl)                 ; 6.2: EXT_SIG_FLOAT
+        jr nz,.float_arg
         call VM_POP_ADDR           ; QUAL (Q-33): HL = the value as a 16-bit int (a FLOAT is
                                      ; truncated; it used to arrive as its slot index)
+.popped:
         ld (VM_EXT_POPVAL),hl
         ld a,(VM_EXT_REMAINING)
         cp 4                        ; the 5th slot (index 4, GRAB's own
@@ -4119,6 +4123,14 @@ OP_CALL_EXT:
         inc hl
         ld (hl),d
         jr .pop_loop
+.float_arg:                         ; 6.2: argument n -> calculator slot n (an INT converted);
+        ld (CALC_SP),a              ; the argument is that slot's address. Slots 0-4 are the
+        rst $10                     ; package's for the call (FP_OP works in slots 5-6)
+        call VM_FLOAT_PUSH_TAGGED
+        call CALC_SP_TO_NEXT_FREE_PTR   ; DE -> slot n + 1
+        ld hl,-FLOAT_REC_LEN
+        add hl,de
+        jr .popped
 .args_done:
         ld a,(VM_EXT_SLOT)
         call EXT2_SLOT_ADDR        ; HL -> registry record
@@ -4159,7 +4171,14 @@ OP_CALL_EXT:
         ld de,VM_RUN
         push de                  ; the push below returns into VM_RUN
         ld hl,(EXT_CALL_RESULT)
-        jp nc,VM_PUSH_INT        ; a numeric function: its 16-bit value, an INT
+        jr c,.str_result
+        add a,a                  ; 6.2: sign = the float form
+        jp p,VM_PUSH_INT         ; a numeric function: its 16-bit value, an INT
+        ld de,CALC_STACK         ; a float: HL -> its 5 bytes, stored as a FLOAT temp
+        ld bc,FLOAT_REC_LEN
+        ldir
+        jp VM_FLOAT_STORE_RESULT
+.str_result:
         push hl                  ; a string function: HL -> [len 0-31][text], copied
         call VM_STR_ALLOC_TEMP   ; A = a string temp, HL -> its record
         pop de

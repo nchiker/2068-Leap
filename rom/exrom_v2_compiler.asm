@@ -4605,7 +4605,7 @@ COMPILE_EXT_CALL:
 ; argcount byte: OP_CALL_EXT pushes a function's value). Destroys AF, BC, HL.
 COMPILE_EXT_EMIT:
         ld a,e
-        and EXT_KIND_MASK
+        and EXT_KIND_MASK | EXT_SIG_FLOAT   ; 6.2: the float form travels with the kind
         or b
         ld c,a                   ; C = the argcount byte
         ld a,34        ; QUAL shrink: inlined EMIT_OP_CALL_EXT

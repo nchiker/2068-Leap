@@ -207,7 +207,8 @@ EXT2_NAME_LEN:
 ; set = argument N is a STRING expression; 0 = every argument numeric,
 ; the only value every pre-printer-package extension uses). Out: carry
 ; set + A=0xFF on failure (table full, or argcount>5); carry clear +
-; A=slot id on success. Destroys: AF, BC, DE, HL.
+; A=slot id on success. Destroys: AF, BC, DE, HL. (6.2: a signature with
+; EXT_SIG_FLOAT and a string argument also fails.)
 ;
 ; Cap raised 4->5 (2068-Leap's own post-R8.5 sprite-module reconciliation
 ; -- see docs/ARCHITECTURE_B_IMPLEMENTATION_PLAN.md's own SPRITE
@@ -228,6 +229,9 @@ EXT2_REGISTER:
         ld (EXT2_REG_EXEC),de
         ld a,c
         ld (EXT2_REG_ARGTYPES),a
+        and EXT_SIG_FLOAT | $1F     ; 6.2: the float form's arguments are all numbers
+        cp EXT_SIG_FLOAT + 1
+        jr nc,.fail
         ld a,b
         cp 6
         jr nc,.fail

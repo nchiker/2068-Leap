@@ -120,6 +120,7 @@ AY_BEEP EQU V2_EXROM_AY_BEEP_ADDR        ; MAINT (AY BEEP)
     INCLUDE "rom/v2_saveall.asm"            ; RC: SAVE ... ALL (owner decision 2)
     INCLUDE "rom/v2_session_undo.asm"
     INCLUDE "rom/v2_version.asm"            ; VER: the ROM's version on the status row at power-on
+    INCLUDE "rom/v2_pkg_fp.asm"             ; 6.2: FP_OP, package service 17
 ; R10.9: the package ABI pins -- every package-visible sysvar / constant must still live
 ; where include/v2_package_abi.inc says (a mismatch fails the build).
     INCLUDE "rom/v2_lowrom_fill.asm"        ; RC shrink: small routines in the RST-slot padding

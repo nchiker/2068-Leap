@@ -24,11 +24,12 @@ addresses, and an old package tape still passed the check and then called into t
 (R10.8 finding **R1**).
 
 ABI 2.0 fixes the three things a "jump table" alone cannot (ABI 2.1, back-port item 6.1, adds
-package *functions*: §2 "Functions", service 16, the `EXT_CALL_RESULT` pin):
+package *functions*: §2 "Functions", service 16, the `EXT_CALL_RESULT` pin; item 6.2 adds floats:
+§2 "The float form", service 17 `FP_OP`):
 
 | Layer | Mechanism | Enforced by |
 |---|---|---|
-| **Callable services** | 17 fixed 3-byte `jp` slots in the HOME ROM at `$0096…` (the unused padding after the KTAB) | HOME build (the table is generated from the ABI file); `check_package_abi.py` §1; test `abi-service-table` |
+| **Callable services** | 18 fixed 3-byte `jp` slots in the HOME ROM at `$0096…` (the unused padding after the KTAB) | HOME build (the table is generated from the ABI file); `check_package_abi.py` §1; test `abi-service-table` |
 | **Shared RAM** | 35 package-visible sysvar cells + 11 constants *pinned* to absolute addresses | HOME build `ASSERT`s every pin; `check_package_abi.py` §2–3 |
 | **Data formats / banking / lifecycle** | tape header version word, record formats, banking and ownership rules (this document) | `STORAGE_LOAD` rejects a wrong word *before any byte is stored*; tests `abi-pkg-reject-*`, `abi-prog-reject-*`; `check_package_abi.py` §4–6 |
 
@@ -51,7 +52,7 @@ tell *unversioned* (bit 15 clear, or major 0) from *versioned*.
 | Tape | Header type | Current word | Meaning |
 |---|---|---|---|
 | Program | 0 | **`$8100`** | program format 1.0: the line store verbatim, `[len:2][text][CR]` records (§7.1) |
-| Package (`SAVE/LOAD … EXT`) | 4 | **`$8201`** | package ABI 2.1 (this document; 2.0 tapes, `$8200`, still load). Major 1 was the unversioned raw-address ABI |
+| Package (`SAVE/LOAD … EXT`) | 4 | **`$8201`** | package ABI 2.1 (this document; 2.0 tapes, `$8200`, still load). Major 1 was the unversioned raw-address ABI. 2.1 is not yet released, so its later additions (6.2's float form and service 17) are still 2.1 |
 | Array (`… ARRAY`) | 8 | **`$8100`** | array format 1.0. Array persistence is an intentional V2 feature (the replacement for `DATA/READ/RESTORE`). R10.9 Phase 2C implements the persistent Array Store (§7.3): the header type, version word and check are unchanged, `SAVE ... ARRAY` now actually writes type 8 (D13) |
 
 **Acceptance rule** (`STORAGE_LOAD`, `.name_ok`): *tag bit and major must equal the ROM's; the tape's
@@ -84,8 +85,9 @@ call `EXT2_REGISTER` (service 0, below) and `EXT2_EXPORTS` (service 16, ABI 2.1)
 `EXT2_REGISTER` — In: `HL` = NUL-terminated upper-case name (≤ 8 significant characters; a literal
 `$` is allowed), `DE` = execute entry point, `B` = argument count 0–5, `C` = argument-type bitmask
 (bit *n* set ⇒ argument *n* is a string expression, delivered as a string-table index; ABI 2.1: bits
-7-6 are the *kind*, below, 0 for a statement). Out: carry
-clear + `A` = slot, or carry set + `A = $FF` (registry full — 12 slots — or `B > 5`). Destroys
+7-6 are the *kind*, below, 0 for a statement; bit 5 the *float form*, below). Out: carry
+clear + `A` = slot, or carry set + `A = $FF` (registry full — 12 slots — `B > 5`, or the float form
+with a string argument). Destroys
 `AF BC DE HL`. Each registration receives a rolling, never-zero *generation* that the compiler
 bakes into the bytecode; `OP_CALL_EXT` raises runtime error 9 if the slot's generation changed
 (package replaced or cleared) — this part of the mechanism is unchanged and sound.
@@ -111,14 +113,26 @@ is compiled as an assignment), a statement name in an expression is a variable o
 built-in of the same name wins over a package function. Execute routines are the statements', plus
 the value: a numeric function writes it to `EXT_CALL_RESULT` (16 bits, pushed as an integer); a string
 function writes there the address of `[length 0-31][text]` in its own memory (copied by the VM into a
-string temporary before anything else runs). Floats are not passed either way.
+string temporary before anything else runs). Without the float form a float argument arrives
+truncated to a 16-bit integer (Q-33's rule, as for `POKE`).
+
+**The float form (ABI 2.1, item 6.2).** Signature bit 5, `EXT_SIG_FLOAT` (`$20`), with any kind:
+each argument arrives as the **address of a 5-byte float** (the calculator's format: an INT argument
+is converted to its small-integer form `[0][sign][low][high][0]`), and a numeric function's value is
+a float: the function writes the address of its 5 bytes to `EXT_CALL_RESULT` (in its own memory, or
+one of its arguments), and the VM copies them into a float temporary. A string function's value and
+a statement are as without the form. The float form's arguments are all numbers (bits 4-0 must be 0;
+`EXT2_REGISTER` refuses anything else). The five argument values are the calculator's stack slots
+0-4, the package's for the whole call: copies (writing one changes no variable), kept by `FP_OP`,
+undefined after the call.
 
 **Execute** — `OP_CALL_EXT` pops the arguments into `EXT_CALL_ARG0…4`, **pages EXROM out**
 (`BANK_PAGE_EXROM_OUT`), then `call`s the registered entry; on return it pages EXROM back in.
 Contract for an execute routine:
 
 * Entry: arguments in `EXT_CALL_ARGn` (16-bit, little-endian; numeric values are the VM's 16-bit
-  integers, string arguments are string-table indices). Registers: nothing is defined on entry.
+  integers, string arguments are string-table indices; in the float form each is the address of a
+  5-byte float). Registers: nothing is defined on entry.
 * Exit: `ret`. **All registers may be destroyed** -- IY included: since the V2 Enhanced release the
   VM keeps its dispatch address in IY, and `OP_CALL_EXT` re-enters `VM_RUN` (which reloads it)
   after every package call. A statement has no return value; a function writes `EXT_CALL_RESULT`
@@ -148,10 +162,10 @@ Contract for an execute routine:
 Layout in the HOME ROM [M: read back from the emulated ROM by `abi-service-table`]:
 
 ```
-$0092  5A 02 01 11      magic $5A, ABI major 2, minor 1, slot count 17
+$0092  5A 02 01 12      magic $5A, ABI major 2, minor 1, slot count 18
 $0096  C3 lo hi         slot 0  (jp EXT2_REGISTER)
-...    ...              17 slots, 3 bytes each, ending at $00C8
-$00C9–$00EF             blank ($FF): 13 reserved slots (append-only)
+...    ...              18 slots, 3 bytes each, ending at $00CB
+$00CC–$00EF             blank ($FF): 12 reserved slots (append-only)
 $00F0–$00FD             slot code (PKG_NUM_TO_TEXT_SAFE, 14 bytes)
 $00FE–$00FF             blank
 ```
@@ -180,6 +194,7 @@ lost; everything else is preserved.
 | 14 | `$00C0` | `VM_NUM_TO_TEXT` | `HL` = value, `A` = `TAG_INT` (0) **only** | `HL` → NUL-terminated text in `PRINT_BUF` | `AF BC DE HL` | **EXROM-safe wrapper**, see below. The float tag (`HL` = float-table index) is *not* part of ABI 2.0: it reaches the calculator via `RST $28` and has not been exercised through the wrapper |
 | 15 | `$00C3` | `VM_STR_ADDR` | `A` = string-table index | `HL` → record `[len:1][content…, NUL]` | `AF DE HL` | |
 | 16 | `$00C6` | `EXT2_EXPORTS` | `HL` → export table (§2) | carry/`A` | `AF BC DE HL` | ABI 2.1; install-time only |
+| 17 | `$00C9` | `FP_OP` | `A` = operation, `HL` → x, `DE` → y (5-byte floats) | x = the result; `FOP_TRUNC`: `HL`, carry | `AF BC DE HL` | ABI 2.1 (6.2); execute-time only; see below |
 
 **Slot 14 is not a direct jump** (finding **ABI-F1**). `VM_NUM_TO_TEXT` ends in a jump to
 `BASIC_NUM_TO_STRING_EXROM` (`$C09C`), which is EXROM code; a package runs with chunk 6 paged to
@@ -191,15 +206,34 @@ call VM_NUM_TO_TEXT / push hl / call BANK_PAGE_EXROM_OUT / pop hl / ret` (nest-s
 routines keep a depth count). `check_package_abi.py` verifies those exact bytes and refuses to let
 `VM_NUM_TO_TEXT` be exposed any other way.
 
+**Service 17, `FP_OP`** (item 6.2; `rom/v2_pkg_fp.asm`): float arithmetic on 5-byte values anywhere in
+RAM (the package's memory or the float form's arguments). The operations (`include/v2_ext_kinds.inc`):
+
+| `A` | Name | Does | Out |
+|--:|---|---|---|
+| 0-3 | `FOP_ADD`, `FOP_SUB`, `FOP_MUL`, `FOP_DIV` | x = x + y, x − y, x × y, x / y | x; carry clear |
+| 4 | `FOP_INT` | x = the 16-bit signed integer `DE` | x; carry clear |
+| 5 | `FOP_TRUNC` | x truncated toward zero | `HL`; carry set when x is outside −32768..32767 (`HL` then 32767 or −32768) |
+
+A result beyond the range (about 1.7E38) or a division by zero **stops the program with runtime error
+67**, as the same operation in BASIC does: `FP_OP` uses the VM's own calculator stubs, and the error
+unwinds from package code to `VM_RUN`'s caller with the EXROM paged in again (back-port item 2.3) [M:
+`tools/qual/qpkgfn.py`, paging depth 1 afterwards]. So `FP_OP` is for an **execute routine only**, not
+the install. It runs with the EXROM out: the calculator pages itself in and out (`RST $28` through
+`V2_CALC_ENTRY`, depth-counted), `FOP_TRUNC` calls `CALC_FP_TO_INT` between `BANK_PAGE_EXROM_IN` and
+`_OUT`. It works in calculator slots 5-6, so the float form's arguments (slots 0-4) survive it.
+
 **EXROM independence rule.** A service reachable from a package must never transfer control to, or
 read data from, `$C000–$DFFF` unless it pages EXROM in itself. `check_package_abi.py` walks each
 slot's call/jump closure in the HOME listing (§4 of the checker) and fails the build on any such
-edge; the 15 plain slots have **no** EXROM edge [M], slot 14's inner routine has three
+edge; the 16 plain slots have **no** EXROM edge [M], slot 14's inner routine has three
 (`BASIC_NUM_TO_STRING_EXROM`, `CALC_INT_TO_FP`, `BASIC_FLOAT_TO_STRING_EXROM`), all covered by the
-wrapper.
+wrapper. Slot 17 (`FP_OP`) is audited by its own rule: its closure, its indirect call taken as the
+VM's four calculator stubs, reaches the EXROM only through `RST $28` and through `CALC_FP_TO_INT`
+called right after `BANK_PAGE_EXROM_IN` and followed by `BANK_PAGE_EXROM_OUT`.
 
 **Adding a service** (minor bump): append `PKG_SVC name, home_routine` to `PKG_SVC_LIST`, bump
-`PKG_SVC_COUNT` and `PKG_ABI_MINOR`. There are 14 free slots before `$00F0`. A routine that needs
+`PKG_SVC_COUNT` and `PKG_ABI_MINOR`. There are 12 free slots before `$00F0`. A routine that needs
 more than a `jp` must put its few bytes of code in the slot-code area or in HOME proper.
 
 ## 4. Pinned RAM and constants
@@ -238,7 +272,7 @@ scratch block, not add pinned HOME cells.
 ## 5. Memory, banking, ownership rules
 
 1. **EXROM is paged out while a package statement runs** (`BANK_EXROM_DEPTH` = 0). Do not call
-   EXROM code, `BASIC_*_EXROM`, the calculator (`RST $28`), or
+   EXROM code, `BASIC_*_EXROM`, the calculator (`RST $28`; float arithmetic is service 17), or
    `BANK_PAGE_EXROM_IN` (a nested page-in would hide the scratch you are using). The install call
    is the exception: it runs with EXROM *in* — do not rely on chunk 6 RAM there.
 2. **`$C000–$DFFF` is hidden RAM during execute** (only). Contents are undefined between

@@ -6,8 +6,12 @@ its export table, EXT2_EXPORTS) into the production ROM and runs small programs 
 numeric and string functions, their values in expressions, nesting (a function in a function's
 arguments, in a statement's, in LPRINT-shaped string concatenation), five arguments with a string
 among them, an error raised by a function, the binding rules (a name binds only where its kind fits;
-the ROM's built-ins win) and the compile errors of a wrong call. Then the shipped ABI 2.0 packages
-(statements only) are installed and one statement of each is run.
+the ROM's built-ins win) and the compile errors of a wrong call. 6.2: the float form and FP_OP
+(service 17) through rom/v2_package_fptest.asm (FLOAT below): float arguments and values, INTs
+converted, five arguments in order, arguments as copies, nesting, the four operations, the 16-bit
+conversion, error 67 from an operation, a float statement and string function, and EXT2_REGISTER
+refusing the float form with a string argument. Then the shipped ABI 2.0 packages (statements only)
+are installed and one statement of each is run.
 
 Usage: python3 tools/qual/qpkgfn.py [--tree DIR] [--port N]
 """
@@ -61,6 +65,32 @@ CASES = [
     ("numeric argument given a string", ['a = ADD3("a", 2, 3)'], None, -1, 0),
 ]
 
+# 6.2: the float form (rom/v2_package_fptest.asm); a FLOAT prints with four decimals
+FLOAT = [
+    ("float: sum", ["PRINT FADD(1.5, 2.25)", "PRINT 1.5 + 2.25"], ["3.7500", "3.7500"], 0, 0),
+    ("float: INTs converted", ["i = 3", "PRINT FADD(i, 2)", "PRINT FSUB(1, 2.5)"], ["5.0000", "-1.5000"], 0, 0),
+    ("float: the division's value", ["PRINT FDIV(1, 3) = 1 / 3", "PRINT FDIV(1, 3)"], ["1", "0.3333"], 0, 0),
+    ("float: beyond 16 bits", ["a = FADD(100000, 0.5)", "PRINT a", "PRINT a = 100000.5"],
+     ["100000.5000", "1"], 0, 0),
+    ("float: five arguments in order", ["PRINT FPOLY(1, 2, 3, 4, 5)", "PRINT FPOLY(0.5, 0, 0, 0, 0.25)"],
+     ["54321.0000", "2500.5000"], 0, 0),
+    ("float: arguments are copies", ["x = 1.5", "PRINT FADD(x, 1)", "PRINT x"], ["2.5000", "1.5000"], 0, 0),
+    ("float: nested", ["PRINT FADD(FADD(1, 2), FSUB(5, 0.5))"], ["7.5000"], 0, 0),
+    ("float: in an expression with temps", ["PRINT FADD(1.5, 1) * FADD(0.5, 0) + 1 / 4"], ["1.5000"], 0, 0),
+    ("float: in a FOR loop", ["s = 0", "FOR i = 1 TO 4", "s = FADD(s, 0.25)", "NEXT i", "PRINT s"], ["1.0000"], 0, 0),
+    ("float: a float statement", ["FSET 2.5", "PRINT FGET() * 2", "FSET 7", "PRINT FGET()"], ["5.0000", "7.0000"], 0, 0),
+    ("float: a string function", ['PRINT FSGN$(-0.5) + FSGN$(3) + FSGN$(0)'], ["-++"], 0, 0),
+    ("float: FOP_TRUNC", ["PRINT FTI(-7.9)", "PRINT FTI(32767.9)", "PRINT FTI(-32768.5)"],
+     ["-7.0000", "32767.0000", "-32768.0000"], 0, 0),
+    ("float: FOP_TRUNC beyond 16 bits", ["PRINT 1", "PRINT FTI(32768)", "PRINT 2"], ["1"], 0, 15),
+    ("float: division by zero is error 67", ["PRINT 1", "PRINT FDIV(1, 0)", "PRINT 2"], ["1"], 0, 67),
+    ("float: overflow is error 67", ["b = 4294967296 * 4294967296", "e = b * 4294967296 * 1000000000",
+                                     "PRINT FADD(e, e) > e", "PRINT FADD(e * 2, e * 2)", "PRINT 4"], ["1"], 0, 67),
+    ("float: a string argument", ['a = FADD("x", 1)'], None, -1, 0),
+    ("float: the form refuses a string argument", ["PRINT TRYREG(0)"], ["1"], 0, 0),
+    ("float: the form alone registers", ["PRINT TRYREG(1)"], ["0"], 0, 0),
+]
+
 # without the package, the same names are not functions
 UNLOADED = [
     ("unloaded: SEVEN()", ["a = SEVEN()"], None, -1, 0),
@@ -102,13 +132,15 @@ def main():
     try:
         for name, lines, rows, ce, ve in CASES:
             run(name, lines, rows, ce, ve, PKG)
+        for name, lines, rows, ce, ve in FLOAT:
+            run(name, lines, rows, ce, ve, ("fptest",))
         for name, lines, rows, ce, ve in UNLOADED:
             run(name, lines, rows, ce, ve, ())
         for name, pkg, lines, rows, ce, ve in OLD:
             run(name, lines, rows, ce, ve, (pkg,), nrows=1)
     finally:
         m.stop()
-    n = len(CASES) + len(UNLOADED) + len(OLD)
+    n = len(CASES) + len(FLOAT) + len(UNLOADED) + len(OLD)
     print("qpkgfn: %d/%d PASS" % (n - len(fails), n))
     return 1 if fails else 0
 

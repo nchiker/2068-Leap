@@ -11,8 +11,10 @@ stop agreeing.  It is the automated half of docs/PACKAGE_ABI.md:
  3. no pinned ranges overlap each other or the package scratch block, and nothing in
     HOME/EXROM code references the package scratch block;
  4. every service is EXROM-independent: its call/jump closure never reaches chunk 6
-    ($C000-$DFFF) -- packages run with EXROM paged out -- except through the one
-    audited wrapper, PKG_NUM_TO_TEXT_SAFE, which pages EXROM in itself;
+    ($C000-$DFFF) -- packages run with EXROM paged out -- except through the
+    audited wrapper, PKG_NUM_TO_TEXT_SAFE, which pages EXROM in itself, and the float
+    service PKG_FP_OP (6.2): the calculator through RST $28 (which pages itself) in the
+    VM's four calculator stubs, and CALC_FP_TO_INT between BANK_PAGE_EXROM_IN and _OUT;
  5. each package assembles with the ABI file alone (so it cannot name an unlisted HOME
     internal), and every call/jump/memory reference its code makes into HOME ROM or
     the sysvar RAM lands on a service-table slot or a pinned cell;
@@ -40,6 +42,11 @@ PACKAGES = {
 # The wrapper that legitimately reaches EXROM (it brackets the call with BANK_PAGE_EXROM_IN/OUT).
 WRAPPER = "PKG_NUM_TO_TEXT_SAFE"
 WRAPPED = "VM_NUM_TO_TEXT"
+# 6.2: the float service, its indirect call's targets and its one bracketed EXROM call.
+FP_SERVICE = "PKG_FP_OP"
+FP_TRAMPOLINE = "VM_CALL_USR_TRAMPOLINE"
+FP_STUBS = ("VM_CALC_ADD_STUB", "VM_CALC_SUB_STUB", "VM_CALC_MUL_STUB", "VM_CALC_DIV_STUB")
+FP_EXROM_CALL = "CALC_FP_TO_INT"
 # Hardware / always-visible ranges a package may touch without a pin.
 HW_RANGES = [(0x4000, 0x5B00, "screen + attributes"), (0x6000, 0x7B00, "second display file")]
 
@@ -117,7 +124,9 @@ def decode(addr, ins):
     return (nxt if ft else None), targets, refs, dyn
 
 
-def closure(entry, ins, stop=()):
+def closure(entry, ins, stop=(), image=None):
+    """image given: RST $28 is the calculator (it pages the EXROM in and out itself, and resumes
+    after the literal stream's $38)."""
     seen, work, bad = set(), [entry], []
     while work:
         a = work.pop()
@@ -130,6 +139,9 @@ def closure(entry, ins, stop=()):
         nxt, targets, refs, dyn = decode(a, ins)
         if dyn:
             bad.append(("indirect jump", a))
+        if image is not None and ins[a][0] == b"\xEF":
+            nxt = image.index(0x38, a + 1) + 1
+            targets = []
         for t in targets:
             if 0xC000 <= t < 0xE000:
                 bad.append(("transfers into chunk 6 (EXROM)", a, t))
@@ -142,6 +154,34 @@ def closure(entry, ins, stop=()):
         if nxt is not None:
             work.append(nxt)
     return seen, bad
+
+
+def check_fp_service(pkg, hsym, lst, home):
+    """6.2: PKG_FP_OP's closure, its indirect call taken as the four calculator stubs, may reach the
+    EXROM only through RST $28 and through CALC_FP_TO_INT called right after BANK_PAGE_EXROM_IN
+    and followed (within two instructions) by BANK_PAGE_EXROM_OUT."""
+    exrom_call = hsym[FP_EXROM_CALL]
+    stop = {hsym[FP_TRAMPOLINE], exrom_call}
+    calls = []
+    for root in (FP_SERVICE,) + FP_STUBS:
+        seen, bad = closure(hsym[root], lst, stop=stop, image=home)
+        for item in bad:
+            if item[0] == "transfers into chunk 6 (EXROM)" and item[2] == exrom_call:
+                calls.append(item[1])
+                continue
+            fail("service %s (%s): %s at $%04X%s" % (pkg, root, item[0], item[1],
+                                                    " -> $%04X" % item[2] if len(item) > 2 else ""))
+    order = sorted(lst)
+    for a in set(calls):
+        i = order.index(a)
+        before = lst[order[i - 1]][0]
+        after = [lst[x][0] for x in order[i + 1:i + 3]]
+        cin = bytes([0xCD]) + hsym["BANK_PAGE_EXROM_IN"].to_bytes(2, "little")
+        cout = bytes([0xCD]) + hsym["BANK_PAGE_EXROM_OUT"].to_bytes(2, "little")
+        if before != cin or cout not in after:
+            fail("%s: the call to %s at $%04X is not between BANK_PAGE_EXROM_IN and _OUT" % (FP_SERVICE, FP_EXROM_CALL, a))
+    if not calls:
+        fail("%s: no call to %s found (the checker's model of the service is stale)" % (FP_SERVICE, FP_EXROM_CALL))
 
 
 def main():
@@ -216,6 +256,9 @@ def main():
                    + hsym["BANK_PAGE_EXROM_OUT"].to_bytes(2, "little") + bytes([0xE1, 0xC9]))
             if code != exp:
                 fail("%s is not the audited push/IN/pop/call/push/OUT/pop/ret sequence: %s" % (WRAPPER, code.hex()))
+            continue
+        if homename == FP_SERVICE:
+            check_fp_service(pkg, hsym, lst, home)
             continue
         if homename == WRAPPED:
             fail("%s must be exposed only through %s" % (WRAPPED, WRAPPER))
