@@ -54,6 +54,7 @@ Further rules:
 | 5.6 calc mul/div             | **273** | **573** | [M]: EXROM −48 free: `FMUL`/`FDIV` in registers (the alternate set)                                    |
 | 5.7 `SQR` halving            | **278** | **573** | [M]: HOME +5 free: the exponent decremented instead of pushing 2 and dividing                           |
 | 5.8 row clear                | **286** | **573** | [M]: HOME +8 free: `GFX_CLEAR_ROW` fills the attributes and falls into `GFX_CLEAR_ROW_TEXT`            |
+| 5.9 `SIN`/`COS`/`TAN` to the EXROM | **746** | **142** | [M]: HOME +460 free (`SIN` 340, `TAN` 58, `COS` 27, `SIN_PEEK_POP` 27, the divisor table 8); EXROM −431 (the code 413 after bit-identical compaction, 3 slots 18); `SQR`/`PI`/`RAD`/`DEG` stay (no room) |
 | phase 5 (speed)              | ≥ 64    | ≥ 32    | Class B: each item sized and weighed before it is started; 5.0 first if the room is not there                 |
 
 Every [E] is replaced by `make budget`'s figure as each item lands.
@@ -616,6 +617,47 @@ pre-push hook; integrated into `backport/leapc` by fast-forward, owner decision 
   XFAIL + 2 N/A, lifecycle 23, `qvmedge` 120, maint-qual all (ay_beep 59, cbeep 27, di_wait 14,
   cbeep_tape 3). `make doc-examples` 327/327.
 - **Owner decision F18 (2026-10-27):** integrate once the tests pass; done (fast-forward).
+
+Outcome, 5.9 (2026-10-27; prototyped on `proto/5.9-5.10-float-fn-exrom` off `backport/leapc` `0227797`,
+one commit per item; all [M]):
+
+- **What moved.** `SIN`, `COS`, `TAN`, `SIN_PEEK_POP` and the divisor table (460 B) went from the VM core
+  (HOME) to a new `rom/exrom_v2_float_fn.asm`, which the production EXROM assembles behind three slots
+  `V2_EXROM_FN_SIN/COS/TAN_ADDR` (after 5.4's; `V2_KTAB_MAGIC` $1E, $1F without the MAINT build), the
+  targets of `BUILTIN_FN_JUMP_TABLE`; the standalone images (one flat bank, or the two-bank harness)
+  include it from the VM core as before. The HOME routines and cells it uses are exported through
+  `tools/write_v2_crossbank.py` (19 names; `VM_ERR_RANGE` now in every build, `FP_TRUNC_ZERO` an alias of
+  `FP_TRUNC.zero`). `SQR`, `PI`, `RAD` and `DEG` (146 B, and 24 B of slots) stay in HOME: with them the
+  EXROM would fall below phase 6's room.
+- **Fitting it.** Moved as they were, the three cost the EXROM 479 B (94 free, 38 short of the 132 that
+  keep phase 6's 100 B above the reserve). Four bit-identical changes made the room: `SIN_PEEK_POP` takes
+  the slot address from the calculator's `CALC_SP_TO_NEXT_FREE_PTR` and gains a no-pop entry `SIN_PEEK`;
+  x² is `duplicate, duplicate, multiply` on the stack instead of a store and two pushes; the term loop
+  peeks the new power instead of pop-and-push; the final `0 - acc` (three pushes and a subtract) is the
+  sign bit flipped, which is what the subtraction gives for a non-zero general-form number (FADD copies
+  the other operand when one is 0; acc is never 0 where the sign is applied). EXROM 142 free.
+- **Results.** `qfndiff` against `0227797`: `SIN` 1,850 arguments, `COS` 1,850, `TAN` 1,847: 0 results
+  differ (the 24 `TAN` arguments of one program stop with error 15 on both builds: see 5.10).
+- **Where they run.** `qcanary --banking` (667 cases) has a fourth invariant: an EXROM entry slot
+  (`V2_EXROM_CALCULATE_ADDR` to `V2_EXROM_ARRSVC_ADDR`) entered with the EXROM paged out (checked to fire
+  with a `call` to the `SIN` slot at depth 0, and not at depth 1). 0 hits, 0 banking violations, Z80
+  stack low-water mark `$FDE8` as before; the corpus calls `SIN` in 7 cases, `COS` 3, `TAN` 2. A probe
+  stopping at each slot: a program enters `SIN` 5 times, `COS` 4, `TAN` 2, an immediate `PRINT` each once,
+  all at depth 1. The compiler never calls them: it finds a function by name in its own table
+  (`BUILTIN_FN_FIND`) and emits `CALL_FN` and the index; it folds literals only.
+- **Speed** (`qprofile --statements`, T a statement adds, `0227797` → 5.9): `SIN(i)` 126,852 → 125,590
+  (−1.0%: the EXROM calls the calculator directly, not through its slots), `COS(i)` 126,756 → 125,562,
+  `TAN(i)` 291,443 → 288,746, `SIN(2.5)` 138,789 → 137,531, `COS(2.5)` 143,590 → 142,274.
+- **Accuracy** (new `qfndiff --exact`: each result against the exact value at the argument the ROM holds,
+  in units of the last place; the same for `0227797` and 5.9): `SIN` 25.1% correctly rounded, the largest
+  error 16,713 ulp (`630.774`), mean 1,118; `COS` 17.7%, 16,821 ulp but for `COS(32687)`, mean 1.3 M;
+  `TAN` 0.8%, 15,541 ulp, mean 2,519. The five-term series stops at x⁹/9!, whose remainder is ~3.6e-6
+  at 90°: `SIN(90)` is 1.0000036.
+- **Defect found** (Q-35, fixed in 5.10): `COS` adds 90 before reducing mod 360, in 16 bits: `COS(n)` for
+  n = 32678 to 32767 wraps (`COS(32687)` gives sin 1° = 0.01745, not cos 287° = 0.2924), and `COS(x)`,
+  `TAN(x)` of a FLOAT above 32677 stop with error 15 although `SIN` takes up to 32767.
+- **Checks.** `make check`, and the images with the release definitions (`make build EXTRA_DEFS=`: HOME
+  781, EXROM 141 free) assemble.
 
 ## Phase 6: package ABI 2.1 (minor version: old packages keep working)
 

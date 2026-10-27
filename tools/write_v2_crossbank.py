@@ -108,9 +108,29 @@ NAMES = (
     "SA_W",
     "SA_S",
     "SA_TAIL",
+    # 5.9: the float built-ins in the EXROM (rom/exrom_v2_float_fn.asm)
+    "TAG_FLOAT",
+    "BFN_ABS_IDX_TMP",
+    "VM_FLOAT_A_TAG",
+    "VM_FLOAT_A_VAL",
+    "VM_PUSH",
+    "VM_PREPARE_BINARY_OPERANDS",
+    "VM_FLOAT_PUSH_FIRST",
+    "VM_FLOAT_STORE_RESULT",
+    "VM_FLOAT_TEST_ZERO",
+    "VM_CALC_PUSH_AB",
+    "VM_CALC_ADD_STUB",
+    "VM_CALC_SUB_STUB",
+    "VM_CALC_MUL_STUB",
+    "VM_CALC_DIV_STUB",
+    "VM_ERR_RANGE",
+    "VM_ERR_DIVIDE_BY_ZERO",
+    "FP_TRUNC",
+    "FP_TRUNC_ZERO",
+    "MATH_MOD16",
 )
 # MAINT (AY BEEP): exported only when the HOME build has them (rom/v2_ay_beep.asm placement).
-OPTIONAL = ("VM_ERR_RANGE", "AY_BEEP_PERIOD", "AY_BEEP_PLAY", "AY_WAIT_FRAMES")
+OPTIONAL = ("AY_BEEP_PERIOD", "AY_BEEP_PLAY", "AY_WAIT_FRAMES")
 
 
 def main() -> None:

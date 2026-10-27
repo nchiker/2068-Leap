@@ -5,15 +5,24 @@ and for any function but SQR their negatives), every result's tag and 5 bytes co
 that must keep a function's results (5.7 SQR, 5.9 the built-ins moved to the EXROM), or to list what
 a change that may alter the last bits (5.10) does.
 
-  python3 tools/qual/qfndiff.py [--root DIR] cfgA cfgB FN [--port N] [--show N]
+--exact also scores each build's results against the exact value of the function at the argument as
+the ROM holds it (read back from `v = (arg)` on cfgA), as tools/qual/qcalcround.py scores the
+arithmetic: the share correctly rounded (the exact value rounded to the nearest 5-byte float), within
+1 ulp, the largest error in units of the last place and where, and the mean; an exact 0 counts as
+correct only when the result is 0. SIN, COS, TAN (degrees) and SQR.
+
+  python3 tools/qual/qfndiff.py [--root DIR] cfgA cfgB FN [--port N] [--show N] [--exact]
 """
 import argparse
 import os
 import random
 import sys
+from decimal import Decimal, getcontext
+from fractions import Fraction
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from qharness import Machine  # noqa: E402
+from qcalcround import value, nearest  # noqa: E402
 
 PER_PROGRAM = 24
 
@@ -54,6 +63,54 @@ def run(cfgdir, port, fn, args):
     return out
 
 
+PI = Decimal("3.14159265358979323846264338327950288419716939937510582097494459230781640628620899863")
+
+
+def dec(q):
+    return Decimal(q.numerator) / Decimal(q.denominator)
+
+
+def sin_deg(x):
+    """sin(x degrees), x a Fraction, to ~60 digits (the angle reduced exactly first)."""
+    if x % 180 == 0:
+        return Decimal(0)
+    r = dec(x % 360) * PI / 180
+    term, total, k = r, r, 1
+    while abs(term) > Decimal(10) ** -70:
+        term = -term * r * r / ((2 * k) * (2 * k + 1))
+        total += term
+        k += 1
+    return total
+
+
+EXACT = {"SIN": sin_deg, "COS": lambda x: sin_deg(x + 90),
+         "TAN": lambda x: sin_deg(x) / sin_deg(x + 90), "SQR": lambda x: dec(x).sqrt()}
+
+
+def score(fn, argvals, res, show):
+    """Each result against the exact value: (correctly rounded, within 1 ulp, scored, max |ulp|, its argument,
+    mean |ulp|); and the worst few printed."""
+    getcontext().prec = 80
+    errs = []
+    for (a, t, v), x in zip(res, argvals):
+        if v is None or x is None:
+            continue
+        got = value(bytes.fromhex(v)) if t == 1 else Fraction(v - 65536 if v > 32767 else v)
+        ex = EXACT[fn.upper()](x)
+        q = Fraction(ex)
+        want, ulp, _ = nearest(q)
+        if ulp is None:
+            errs.append((a, 0.0 if got == 0 else float("inf"), got == 0))
+            continue
+        errs.append((a, float((got - q) / ulp), value(want) == got))
+    n = len(errs)
+    worst = sorted(errs, key=lambda e: -abs(e[1]))
+    for a, e, _ in worst[:show]:
+        print("    %-24s %+.2f ulp" % (a, e))
+    return (sum(1 for e in errs if e[2]), sum(1 for e in errs if abs(e[1]) <= 1), n,
+            abs(worst[0][1]) if n else 0, worst[0][0] if n else "", sum(abs(e[1]) for e in errs) / max(n, 1))
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("a")
@@ -63,6 +120,7 @@ def main():
                                                    "build", "qual-builds"))
     ap.add_argument("--port", type=int, default=10930)
     ap.add_argument("--show", type=int, default=8)
+    ap.add_argument("--exact", action="store_true")
     a = ap.parse_args()
     args = arguments(a.fn)
     ra = run(os.path.join(a.root, a.a), a.port, a.fn, args)
@@ -73,6 +131,15 @@ def main():
         print("  %-24s %s: %s %s   %s: %s %s" % (x[0], a.a, x[1], x[2], a.b, y[1], y[2]))
     print("qfndiff %s: %d arguments (%d in programs that stopped, on %s), %d results differ"
           % (a.fn, len(args), errors, a.a, len(diff)))
+    if a.exact:
+        xs = [None if v is None else value(bytes.fromhex(v)) if t == 1 else Fraction(v - 65536 if v > 32767 else v)
+              for _, t, v in run(os.path.join(a.root, a.a), a.port, "", args)]
+        for cfg, res in ((a.a, ra), (a.b, rb)):
+            print("  %s, the largest errors:" % cfg)
+            ok, one, n, worst, where, mean = score(a.fn, xs, res, a.show)
+            print("qfndiff --exact %s on %s: %d results, %d correctly rounded (%.1f%%), %d within 1 ulp, "
+                  "largest %.2f ulp (%s), mean %.3f ulp" % (a.fn, cfg, n, ok, 100.0 * ok / max(n, 1), one,
+                                                          worst, where, mean))
     return 1 if diff else 0
 
 

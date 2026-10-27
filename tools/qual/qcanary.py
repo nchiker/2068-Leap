@@ -16,7 +16,9 @@ first that holds stops the case, which is then reported with the invariant's nam
   - the stack in chunk 6 ($C000-$DFFF);
   - a write to chunk 6 while the EXROM is paged in (it would be lost: the EXROM is ROM);
   - a paging depth other than 1 when the VM dispatches an op (VM_RUN.next; VM_RUN.loop before 5.2): the
-    VM runs with the EXROM in, and a package call (depth 0) has returned before the next op.
+    VM runs with the EXROM in, and a package call (depth 0) has returned before the next op;
+  - an EXROM entry slot (V2_EXROM_CALCULATE_ADDR up to V2_EXROM_ARRSVC_ADDR: the calculator, the
+    compiler's peepholes, the float built-ins of 5.9, ...) entered with the EXROM paged out (depth 0).
 """
 import argparse, json, multiprocessing as mp, os, sys
 
@@ -27,7 +29,7 @@ SPANS = [(0xB6EE, 0xB791), (0xB7A8, 0xB7FF), (0xB84C, 0xB84F), (0xB97E, 0xB9E8),
          (0xBA5E, 0xBDCF), (0xBDE1, 0xBE6F), (0xF100, 0xF17F), (0xF328, 0xF3AE)]
 STACK = (0xF800, 0xFEFF)
 CAN = 0xA5
-INV_SLOTS = (9, 10, 11)
+INV_SLOTS = (9, 10, 11, 12)
 
 
 def invariants(S):
@@ -35,7 +37,9 @@ def invariants(S):
     return [("the stack in chunk 6", "SP>BFFFH and SP<E000H"),
             ("a write to chunk 6 with the EXROM paged in", "MWA>BFFFH and MWA<E000H and PEEK(%04XH)<>0" % d),
             ("a paging depth other than 1 at the VM's dispatch",
-             "PC=%04XH and PEEK(%04XH)<>1" % (dispatch(S), d))]
+             "PC=%04XH and PEEK(%04XH)<>1" % (dispatch(S), d)),
+            ("an EXROM entry slot entered with the EXROM paged out",
+             "PC>%04XH and PC<%04XH and PEEK(%04XH)=0" % (S("V2_EXROM_CALCULATE_ADDR") - 1, S("V2_EXROM_ARRSVC_ADDR"), d))]
 
 
 def dispatch(S):

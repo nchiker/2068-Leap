@@ -51,6 +51,7 @@ STATEMENTS = [
     ("empty FOR/NEXT pass", [], []),
     ("x = SQR(i)", [], ["x = SQR(i)"]), ("x = SQR(2.5)", [], ["x = SQR(2.5)"]),
     ("x = SIN(i)", [], ["x = SIN(i)"]), ("x = COS(i)", [], ["x = COS(i)"]), ("x = TAN(i)", [], ["x = TAN(i)"]),
+    ("x = SIN(2.5)", [], ["x = SIN(2.5)"]), ("x = COS(2.5)", [], ["x = COS(2.5)"]),
     ("x = RND(3)", [], ["x = RND(3)"]), ("x = DIV(i, 7)", [], ["x = DIV(i, 7)"]),
     ("x = MOD(i, 7)", [], ["x = MOD(i, 7)"]), ("x = ABS(i)", [], ["x = ABS(i)"]),
     ("x = INT(2.5)", [], ["x = INT(2.5)"]), ("a$ = STR$(i)", [], ["a$ = STR$(i)"]),

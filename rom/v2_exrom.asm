@@ -45,6 +45,9 @@ V2_EXROM_ENTRY:
     V2_EXROM_SLOT V2_EXROM_FUSE_ADD_ADDR, COMPILE_FUSE_ADD_X    ; 5.4
     V2_EXROM_SLOT V2_EXROM_FUSE_CMP_ADDR, COMPILE_FUSE_CMP_X
     V2_EXROM_SLOT V2_EXROM_FUSE_GOTO_ADDR, COMPILE_FUSE_GOTO_X
+    V2_EXROM_SLOT V2_EXROM_FN_SIN_ADDR, BUILTIN_FN_SIN          ; 5.9
+    V2_EXROM_SLOT V2_EXROM_FN_COS_ADDR, BUILTIN_FN_COS
+    V2_EXROM_SLOT V2_EXROM_FN_TAN_ADDR, BUILTIN_FN_TAN
     ASSERT $ == V2_EXROM_ARRSVC_ADDR
     INCLUDE "rom/exrom_v2_arrstore.asm"
 ; V2_VERIFY_KTAB -- the HOME/EXROM contract check every entry slot makes first.
@@ -66,6 +69,7 @@ V2_VERIFY_KTAB:
     ENDIF
     INCLUDE "rom/exrom_format.asm"
     INCLUDE "rom/exrom_calc.asm"
+    INCLUDE "rom/exrom_v2_float_fn.asm"    ; 5.9: the float built-ins
     INCLUDE "rom/exrom_sound.asm"
     IFDEF V2_MAINT_AY_BEEP
     INCLUDE "rom/v2_ay_beep.asm"            ; MAINT (AY BEEP): the EXROM pieces
