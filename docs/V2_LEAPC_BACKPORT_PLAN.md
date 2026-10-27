@@ -50,7 +50,7 @@ Further rules:
 | 5.2 BREAK poll               | **454** | **778** | [M]: HOME +13 free: JMPZ's own jump code gone (a taken JMPZ falls into OP_JMP), polling exits 1 B each   |
 | 5.3 FOR fast path            | **367** | **778** | [M]: HOME −87 free: the integer path in `OP_FOR_NEXT` 80 B, the loop variable's reload on its fallback 7 B   |
 | 5.4 combined ops             | **246** | **621** | [M]: HOME −121 free (VM 117: `CMP_JMPZ` 23, `ADD_VAR_*` 91, `VM_FLOAT_BINARY` 3; compiler 4); EXROM −157 (peepholes) |
-| 5.5 cheaper push/pop (proto.)| **273** | **621** | [M]: HOME +27 free: `VM_PUSH` 45 → 22 B, `VM_POP` 26 → 22 B; RAM `$B685-$B687` free (F15: step 1 only) |
+| 5.5 cheaper push/pop        | **273** | **621** | [M]: HOME +27 free: `VM_PUSH` 45 → 22 B, `VM_POP` 26 → 22 B; RAM `$B685-$B687` free (F15: step 1 only) |
 | phase 5 (speed)              | ≥ 64    | ≥ 32    | Class B: each item sized and weighed before it is started; 5.0 first if the room is not there                 |
 
 Every [E] is replaced by `make budget`'s figure as each item lands.
@@ -455,8 +455,8 @@ fast-forward on 2026-10-27, owner decision F14; all [M]):
   times now. Re-run the tool and update the table and the text before the v2.1 release.
 - **Owner decision F14 (2026-10-27):** integrate all three; fast-forwarded `backport/leapc` to `201b960`.
 
-Outcome, 5.5 (2026-10-27; prototyped on `proto/5.5-vm-push` off `backport/leapc` `3d337c1`; **not integrated**,
-awaiting the owner; all [M] unless marked):
+Outcome, 5.5 (2026-10-27; prototyped on `proto/5.5-vm-push` off `backport/leapc` `3d337c1`, commits `4303cf8`
+and `6af3278`; integrated into `backport/leapc` by fast-forward, owner decision F16; all [M] unless marked):
 
 - **Scope (owner decision F15, 2026-10-27).** Step 1 only: a cheaper `VM_PUSH`/`VM_POP` on the same stack
   layout. Step 2, the top of the stack kept in registers, is not done: sized [E] at +100 to +250 B HOME,
@@ -499,7 +499,7 @@ awaiting the owner; all [M] unless marked):
   checks, prod-regress 127, prod-arrays 101, known-defects 15, saveall 13, micsave 3, qual 663 PASS + 2
   XFAIL + 2 N/A, lifecycle 23, `qvmedge` 120, maint-qual all (ay_beep 59, cbeep 27, di_wait 14,
   cbeep_tape 3). `make doc-examples` 327/327.
-- **Owner decision needed (F16):** integrate 5.5 into `backport/leapc` (fast-forward).
+- **Owner decision F16 (2026-10-27):** integrated; fast-forwarded `backport/leapc` to `6af3278`.
 
 ## Phase 6: package ABI 2.1 (minor version: old packages keep working)
 
@@ -714,7 +714,7 @@ All decided by the owner on 2026-10-25.
 | F13 | Phase 5 grouping                         | 5.2, 5.3 and 5.4 together, one commit per item (2026-10-26)         |
 | F14 | 5.2-5.4 prototype                        | Integrated, fast-forward to `201b960` (2026-10-27)                  |
 | F15 | 5.5 scope                                | Step 1 only (cheaper push/pop); no top of stack in registers (2026-10-27) |
-| F16 | 5.5 prototype                            | Pending (prototype `proto/5.5-vm-push`, 2026-10-27)                 |
+| F16 | 5.5 prototype                            | Integrated, fast-forward to `6af3278` (2026-10-27)                  |
 
 ## Also worth doing
 
