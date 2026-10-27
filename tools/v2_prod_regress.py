@@ -666,8 +666,9 @@ def abi_num_to_text():
     return reached and text == b"123\0" and depth == 0, "reached=%s text=%r bank-depth=%d" % (reached, text, depth)
 
 
+# 6.1: "newer" is the ROM's own package word + 1 (ABI 2.1 now), as for the program format below
 _PKG_WORDS = {"v1-unversioned-0001": 0x0001, "zero": 0x0000, "future-major": 0x8300,
-              "newer-minor": 0x8201, "no-tag-bit": 0x0200, "program-word": 0x8100}
+              "newer-minor": ABI.pkg_word + 1, "no-tag-bit": 0x0200, "program-word": 0x8100}
 _PKG_BLOB = open("build/v2_package_shapes.bin", "rb").read()
 
 
