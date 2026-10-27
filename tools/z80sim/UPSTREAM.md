@@ -5,8 +5,8 @@
 | | |
 |---|---|
 | Repository | https://github.com/nchiker/z80sim (local clone: `~/z80sim`) |
-| Version used here | commit `99638578e06adbf961247b66cefd0b30bb26138d` (`main`) |
-| Vendored files | `sim.py`, `extract_routine.py`, `snapshot.py`, `replay_snapshot.py`, `test_flags.py`, `test_snapshot.py`, `README.md` (byte-identical to that commit) |
+| Version used here | commit `13c9bce9901e7c6dbce28840a232b4580fa8d953` (`main`) |
+| Vendored files | `sim.py`, `extract_routine.py`, `snapshot.py`, `replay_snapshot.py`, `test_flags.py`, `test_snapshot.py`, `README.md` (byte-identical to that commit, except README's LICENSE link, which points at this repository's `../../LICENSE`) |
 | 2068-Leap only | `test_calc_dispatcher.py`, `test_sprite_driver.py`, `test_sprite_basic_driver.py` (they load this project's source tree), this file |
 
 Rules:

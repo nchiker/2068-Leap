@@ -217,6 +217,8 @@ class Z80Sim:
         self.flags = {'Z':0,'C':0,'S':0,'PV':0,'H':0,'N':0}
         self.alt_a = 0             # A' -- see 'ex af,af'' handler below
         self.alt_flags = {'Z':0,'C':0,'S':0,'PV':0,'H':0,'N':0}
+        self.alt_regs = {'B':0,'C':0,'D':0,'E':0,'H':0,'L':0}  # BC' DE' HL' -- see 'exx'
+        self.alt_tuple_regs16 = {}  # tuple_regs16's overlays parked in BC'/DE'/HL'
         self.mem = bytearray(65536)
         self.stack_list = []  # logical push/pop stack -- see push/pop
         self.tuple_regs16 = {}  # overlay for code-address markers held
@@ -953,6 +955,21 @@ class Interp:
             return None
         if mn == 'adc':
             dst, src = parts[0].strip(), parts[1].strip()
+            if dst.lower() == 'hl':
+                # ADC HL,rr: all six documented flags (Zilog UM0080), as SBC HL,rr below
+                carry_in = s.flags['C']
+                b16 = self.get_reg16(src)
+                a16 = self.get_reg16('HL')
+                res = a16 + b16 + carry_in
+                res16 = res & 0xFFFF
+                self.set_reg16('HL', res16)
+                s.flags['C'] = 1 if res > 0xFFFF else 0
+                s.flags['S'] = 1 if res16 & 0x8000 else 0
+                s.flags['Z'] = 1 if res16 == 0 else 0
+                s.flags['H'] = int((a16 & 0x0FFF) + (b16 & 0x0FFF) + carry_in > 0x0FFF)
+                s.flags['PV'] = int((~(a16 ^ b16) & (a16 ^ res16) & 0x8000) != 0)
+                s.flags['N'] = 0
+                return None
             if dst not in ('A', 'a'):
                 raise ValueError(f"unhandled adc destination: {dst!r}")
             val = self.resolve_operand_value(src, scope)
@@ -1118,6 +1135,17 @@ class Interp:
                 return None
             raise ValueError(f"unhandled ex operands: {op}")
 
+        if mn == 'exx':
+            # BC, DE, HL <-> BC', DE', HL'; a pair's code-address overlay moves with it
+            for r in 'BCDEHL':
+                s.regs[r], s.alt_regs[r] = s.alt_regs[r], s.regs[r]
+            main = {k: v for k, v in s.tuple_regs16.items() if k in ('BC', 'DE', 'HL')}
+            for k in main:
+                del s.tuple_regs16[k]
+            s.tuple_regs16.update(s.alt_tuple_regs16)
+            s.alt_tuple_regs16 = main
+            return None
+
         if mn == 'lddr':
             hl = self.get_reg16('HL'); de = self.get_reg16('DE'); bc = self.get_reg16('BC')
             while True:
@@ -1146,6 +1174,11 @@ class Interp:
         if mn == 'scf':
             s.flags['C'] = 1
             s.flags['H'] = s.flags['N'] = 0
+            return None
+        if mn == 'ccf':
+            s.flags['H'] = s.flags['C']     # H = the old carry
+            s.flags['C'] ^= 1
+            s.flags['N'] = 0
             return None
 
         if mn in ('jr','jp'):

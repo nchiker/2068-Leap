@@ -144,6 +144,55 @@ class FlagSemanticsTests(unittest.TestCase):
         self.interp.set_flags_byte(packed)
         self.assertEqual(self.interp.flags_byte(), packed)
 
+    def test_exx_swaps_bc_de_hl_keeps_af_and_moves_overlays(self):
+        self.sim.regs.update({'A': 0x11, 'B': 1, 'C': 2, 'D': 3, 'E': 4, 'H': 5, 'L': 6})
+        self.sim.flags.update({'C': 1, 'Z': 1})
+        self.sim.tuple_regs16['DE'] = ('RETIDX', 7)
+        self.run_op('exx', '')
+        self.assertEqual([self.sim.regs[r] for r in 'BCDEHL'], [0] * 6)
+        self.assertEqual([self.sim.alt_regs[r] for r in 'BCDEHL'], [1, 2, 3, 4, 5, 6])
+        self.assertEqual((self.sim.regs['A'], self.sim.flags['C'], self.sim.flags['Z']), (0x11, 1, 1))
+        self.assertEqual((self.sim.tuple_regs16, self.sim.alt_tuple_regs16), ({}, {'DE': ('RETIDX', 7)}))
+        self.sim.regs.update({'H': 0x12, 'L': 0x34})
+        self.run_op('exx', '')
+        self.assertEqual([self.sim.regs[r] for r in 'BCDEHL'], [1, 2, 3, 4, 5, 6])
+        self.assertEqual((self.sim.alt_regs['H'], self.sim.alt_regs['L']), (0x12, 0x34))
+        self.assertEqual(self.sim.tuple_regs16, {'DE': ('RETIDX', 7)})
+
+    def test_adc_hl_and_ccf(self):
+        self.sim.regs.update({'H': 0x7F, 'L': 0xFF, 'B': 0x00, 'C': 0x00})
+        self.sim.flags['C'] = 1
+        self.run_op('adc', 'hl,bc')                     # 7FFF + 0 + 1: signed overflow, half carry
+        self.assertEqual((self.interp.get_reg16('HL'), self.sim.flags['S'], self.sim.flags['Z'], self.sim.flags['H'],
+                          self.sim.flags['PV'], self.sim.flags['N'], self.sim.flags['C']), (0x8000, 1, 0, 1, 1, 0, 0))
+        self.sim.regs.update({'B': 0x80, 'C': 0x00})
+        self.run_op('adc', 'hl,bc')                     # 8000 + 8000: carry out, zero, overflow
+        self.assertEqual((self.interp.get_reg16('HL'), self.sim.flags['Z'], self.sim.flags['PV'], self.sim.flags['C']),
+                         (0x0000, 1, 1, 1))
+        self.sim.regs.update({'H': 0x12, 'L': 0x34})
+        self.sim.flags['C'] = 0
+        self.run_op('adc', 'hl,hl')
+        self.assertEqual((self.interp.get_reg16('HL'), self.sim.flags['C']), (0x2468, 0))
+        self.sim.flags.update({'S': 1, 'Z': 1, 'PV': 1, 'N': 1, 'C': 1, 'H': 0})
+        self.run_op('ccf', '')
+        self.assertEqual((self.sim.flags['S'], self.sim.flags['Z'], self.sim.flags['PV'], self.sim.flags['N'],
+                          self.sim.flags['H'], self.sim.flags['C']), (1, 1, 1, 0, 1, 0))
+        self.run_op('ccf', '')
+        self.assertEqual((self.sim.flags['H'], self.sim.flags['C']), (0, 1))
+
+    def test_shifts_and_rotates_work_on_hl_memory(self):
+        self.sim.regs.update({'H': 0x80, 'L': 0x00})
+        self.sim.mem[0x8000] = 0x81
+        self.sim.flags['C'] = 0
+        self.run_op('rr', '(HL)')
+        self.assertEqual((self.sim.mem[0x8000], self.sim.flags['C']), (0x40, 1))
+        self.run_op('rl', '(HL)')
+        self.assertEqual((self.sim.mem[0x8000], self.sim.flags['C']), (0x81, 0))
+        self.run_op('srl', '(HL)')
+        self.assertEqual((self.sim.mem[0x8000], self.sim.flags['C']), (0x40, 1))
+        self.run_op('sla', '(HL)')
+        self.assertEqual((self.sim.mem[0x8000], self.sim.flags['C']), (0x80, 0))
+
     def test_ldir_preserves_sz_c_and_clears_hn_pv_on_completion(self):
         self.sim.set16('H', 'L', 0x8000)
         self.sim.set16('D', 'E', 0x9000)
