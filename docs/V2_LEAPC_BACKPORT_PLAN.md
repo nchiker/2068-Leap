@@ -714,6 +714,17 @@ Outcome, 5.10 (2026-10-27; on the same prototype branch, after 5.9; all [M]):
   the reserve and phase 6's 260).
 - **Checks.** `qcanary --banking` (667): 0 hits, 0 violations, stack low-water mark `$FDE8`; the slot
   probe: every entry at depth 1 (program and immediate); `make check`.
+- **Tests** (5.10, on a copy, fast emulation). `make test` all PASS (1,794 s): smoke 9/9, standalone
+  40/40, production and fill checks, prod-regress 127, prod-arrays 101, known-defects 15, saveall 13,
+  micsave (0 failures), qual 666 PASS + 2 XFAIL + 2 N/A (670 cases: the three Q-35 cases are new), lifecycle
+  23, `qvmedge` 120, maint-qual all (ay_beep 59, cbeep 27, di_wait 14, cbeep_tape 3). `qbytecode` against
+  `0227797`: 670/670 programs identical. The release definitions (`EXTRA_DEFS=`): HOME 781, EXROM 170 free.
+  `make doc-examples` 326/327: the spiral (manual 06, section 10) plotted five points one pixel to the
+  right of where they belong. At a = 120° and 240° (+ 360k) `COS(a)` is −0.5 and r·`COS(a)` a whole
+  number (−5, −10, ...); `COS(120)` was −0.49999999988 (1 ulp short, `COS(60)` likewise), so `INT` gave −4
+  for −5; 5.10 gives ±0.5 exactly and the exact positions (simulated: 6 points move, 5 visibly; the
+  screenshot differs in exactly those). `docs/manual/images/spiral.png` rewritten (`--write-shots`); the
+  example passes against it.
 
 ### Item VER: the ROM's version at power-on (owner request F22, 2026-10-27; next after 5.9/5.10)
 

@@ -10,6 +10,10 @@ decisions F1-F22); this file is only where things stand, what comes next and how
   5.1 (decimal literals), R1 (calculator rounding), `SH_VIEW` (ED4), ED3/ED7, 5.2-5.5 (VM speed) and
   5.6-5.8 (calculator multiply/divide in registers, `SQR` halving, the row clear; owner F18: integrated
   once `make test` passed). The merged prototype branches are deleted (owner, 2026-10-27).
+- **Prototype `proto/5.9-5.10-float-fn-exrom`** (off `0227797`, not pushed): 5.9 `edd6beb`, 5.10 `61d9726`,
+  item VER in the plan `74f3d91`, then the tests' record. HOME **746** / EXROM **171** B free; `make test`
+  all PASS, `make doc-examples` 327 with the spiral's image rewritten (5.10's exact `COS(120)`). Waiting
+  for the owner's decision to integrate it (fast-forward); the figures below are `backport/leapc`'s.
 - **Free ROM: HOME 286 B, EXROM 573 B** (`make budget`). Emergency reserve HOME 64 / EXROM 32 (`make check`
   fails below it). Spending is weighted by benefit per byte (F1).
 - **Owner rules for what is left** (2026-10-27): a change must give a *significant speed increase* or
