@@ -23,6 +23,10 @@ Rules:
   done
   ```
 
+- Publish z80sim with the project: push the z80sim commit recorded above before (or with) any 2068-Leap
+  push that carries it. `tools/hooks/pre-push` refuses a 2068-Leap push whose `UPSTREAM.md` names a
+  z80sim commit not yet on z80sim's remote (the clone at `~/z80sim`, or `$Z80SIM_DIR`); install it once per
+  clone with `git config core.hooksPath tools/hooks`.
 - Check that the vendored files still match the recorded commit (clean z80sim clone checked out at it):
   `for f in sim.py extract_routine.py snapshot.py replay_snapshot.py test_flags.py test_snapshot.py README.md; do cmp ~/z80sim/$f tools/z80sim/$f; done`
   (no output means identical).

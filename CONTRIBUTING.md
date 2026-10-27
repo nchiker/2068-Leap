@@ -19,6 +19,10 @@ see [`docs/v1/README.md`](docs/v1/README.md)).
 5. Add or update a test case for language changes (the qualification corpus
    in `tools/qual`, see `docs/TESTING.md`).
 
+Once per clone, `git config core.hooksPath tools/hooks` installs the pre-push check that the
+simulator commit `tools/z80sim` is vendored from is already published (see
+[`tools/z80sim/UPSTREAM.md`](tools/z80sim/UPSTREAM.md)).
+
 Home ROM and EXROM capacity are hard architectural limits. Please include the
 before/after output of `make budget` for changes that add ROM code.
 
