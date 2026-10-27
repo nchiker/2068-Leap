@@ -41,8 +41,10 @@ things stand and how to pick up.
   273 B free; bytecode unchanged; integer programs with expressions 6-13% faster; `make test` all PASS
   (1,742 s), `make doc-examples` 327/327. `proto/5.5-vm-push` can be deleted. The top of the stack in
   registers (step 2) is not to be done. Plan, "Outcome, 5.5".
-- Next: phase 6 (ABI 2.1) for v2.1. Phase 5's remaining candidates (a compare of a variable with
-  a constant fused with the branch, ~45 B HOME; a page-aligned opcode table) are optional.
+- Phase 5 follow-ups (owner F17, 2026-10-27): profiled after 5.5 with the new `tools/qual/qprofile.py`;
+  items 5.6-5.12 in the plan, "Phase 5 follow-ups" (owner rule: significant speed or less HOME/EXROM).
+  5.6 (calculator multiply/divide in registers), 5.7 (`SQR` halving), 5.8 (scroll's bottom-row clear)
+  are being done first, then phase 6 (ABI 2.1) for v2.1.
 
 ## Working rules (owner)
 
@@ -73,6 +75,7 @@ things stand and how to pick up.
 | `tools/qual/qnumcheck.py` | `qliterals` / `qnumparse` output against `NUM_PARSE_CALC`'s sequence replayed through Leap-C's model |
 | `tools/qual/qbench.py` | T-states per program (also `float_add_lit`, `compile_dec`, `compile_int_if`; 5.2-5.4: `int_inc`, `goto_loop`, `if_branch`, `proc_calls`, `sieve`) |
 | `tools/qual/qbreak.py` | BREAK through the real keyboard matrix in 19 loop forms and waits; error 66, the loop left, key-to-message T |
+| `tools/qual/qprofile.py` | where the run time goes: per-instruction profile of 11 workloads (a breakpoint at every dispatch); `--statements`: T one statement adds to a loop |
 | `tools/qual/qvmedge.py` | in `make qual`: 120 edge cases of the integer FOR path, the combined instructions and the operand stack's limit (5.3-5.5), expectations from the manual's rules |
 | `tools/run_v2_standalone_tests.sh --build-only` | in `make check`: assembles all 40 standalone test images |
 | `tools/qual/qeditview.py` | editor per key: view rule, cursor, T-states; `--oracle` (full-redraw screen), `--ref DIR`, `--measure N` |

@@ -501,6 +501,39 @@ and `6af3278`; integrated into `backport/leapc` by fast-forward, owner decision 
   cbeep_tape 3). `make doc-examples` 327/327.
 - **Owner decision F16 (2026-10-27):** integrated; fast-forwarded `backport/leapc` to `6af3278`.
 
+### Phase 5 follow-ups (profiled after 5.5, 2026-10-27)
+
+Owner rule (2026-10-27): a change must give a **significant speed increase** or **use less HOME or EXROM
+space**. Profile of the integrated 5.5 build (`tools/qual/qprofile.py`, new: a breakpoint at every
+dispatch, 11 workloads: the `qbench` programs and `~/2068-rom-benchmarks`' pixel, string and SQR programs
+in V2's dialect; `--statements` for what one statement adds to a loop) [M]:
+
+- Integer loops: dispatch is 19-27% of the run, `LOAD_VAR` the most frequent instruction (468 T).
+- Float and functions: `SQR` ~258,000 T a call (74 ms), `SIN`/`COS` ~251,000, `TAN` ~553,000;
+  `x = i * 0.5` adds 18,300 T, `x = i / 7` 26,500, `x = 2.5 + i` 9,200 (the calculator's multiply and
+  divide loops go through RAM a bit at a time: ~330 T a multiplier bit, ~500 T a quotient bit).
+- Output: a `PRINT` that scrolls adds ~250,000 T (70 ms); `GFX_SCROLL_OUTPUT_UP` is 243,944 T, of which
+  the new bottom row's clear (`GFX_CLEAR_ROW`, 32 `GFX_PUTCHAR` calls) is 33,205 and each row's bitmap
+  copy 6,463.
+- The float built-ins (`SQR`, `PI`, `RAD`, `DEG`, `SIN`, `COS`, `TAN`, `SIN_PEEK_POP`, the divisor table)
+  are 611 B of HOME; they only run while the EXROM is paged in (program runs and immediate statements,
+  under the shell, as the calculator they call).
+
+| #    | Item                                                                                          | Speed [E]                                                              | HOME [E]   | EXROM [E]      | Results            |
+| ---- | --------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- | ---------- | -------------- | ------------------ |
+| 5.6  | Calculator `FMUL`/`FDIV` loops in registers (the alternate set: only the tape code uses AF')  | multiply, divide ~2.5×; `float_loop` −35 to −45%; `SIN`/`COS` ~2.3×     | 0          | +30 to +80     | identical bits     |
+| 5.7  | `SQR` halves its estimate by the exponent, not a float divide by 2 (exact either way)         | `SQR` −43%; ~3.6× with 5.6                                             | ~0         | 0              | identical          |
+| 5.8  | Scroll: the new bottom row cleared by `GFX_CLEAR_ROW_TEXT` and a 32-byte attribute fill        | −26,000 T a scrolled line (−11%)                                       | a few B    | 0              | identical (check INVERSE/OVER) |
+| 5.9  | Float built-ins moved to the EXROM behind slots                                               | ~0 (a slot call against ~250 kT)                                       | up to −611 | +450 to +650   | identical          |
+| 5.10 | `SIN`/`COS`/`TAN`: one multiply by π/180 and a polynomial with stored coefficients (with 5.9)   | `SIN` 251k → ~140k T, ~55k with 5.6                                    | —          | smaller code   | last bits change: owner |
+| 5.11 | Scroll: each screen third's rows copied per scanline in one block, unrolled copy loop          | scroll ~244k → ~175k T with 5.8                                        | +30 to +60 | 0              | identical          |
+| 5.12 | `LOAD v; PUSH k; CMP_JMPZ` as one instruction (handler in the EXROM if that holds up)         | ~1,000 T an `IF i < k`: `goto_loop` −45%, `if_branch` −20%, sieve 0     | ~4 (or 45) | ~70            | identical          |
+
+Below the bar, not to be done: a page-aligned opcode table (30 of the 151 T dispatch: ≤ 5% on tight
+integer loops, ~1% elsewhere, HOME padding); `LOAD_VAR` pushing for itself (~2%); the string and
+procedure-call instructions (1-2 kT each, small gains). Owner decision F17 (2026-10-27): these items go
+in the plan; 5.6, 5.7 and 5.8 first.
+
 ## Phase 6: package ABI 2.1 (minor version: old packages keep working)
 
 | #   | Item                                                                                                                                                                                                    | Notes                                                  |
@@ -690,6 +723,8 @@ fast-forward, owner decision F10).** Option 1, measured:
 - D4 (Leap-C's BREAK model), D7 (C key map; V2 earmarks SS+A/S for page-down/bottom), D9/D11/D12 (Leap-C's
   HOME/EXROM moves), D17-D19 dead-code removals (V2's callers still use those entries), deleting
   `GFX_CLEAR_ROW_TEXT`, `check_platform.py`.
+- After 5.5 (profile, "Phase 5 follow-ups"): the page-aligned opcode table, `LOAD_VAR` pushing for
+  itself, and step 2 of 5.5 (the top of the stack in registers; owner F15).
 - Already in V2: doc examples as tests, the RAM-layout guard, the canary, CI with pinned sjasmplus,
   release packaging.
 
@@ -715,6 +750,7 @@ All decided by the owner on 2026-10-25.
 | F14 | 5.2-5.4 prototype                        | Integrated, fast-forward to `201b960` (2026-10-27)                  |
 | F15 | 5.5 scope                                | Step 1 only (cheaper push/pop); no top of stack in registers (2026-10-27) |
 | F16 | 5.5 prototype                            | Integrated, fast-forward to `6af3278` (2026-10-27)                  |
+| F17 | Phase 5 follow-ups                       | Added (5.6-5.12); 5.6, 5.7, 5.8 first (2026-10-27)                  |
 
 ## Also worth doing
 
