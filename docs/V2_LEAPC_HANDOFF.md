@@ -9,8 +9,7 @@ decisions F1-F19); this file is only where things stand, what comes next and how
 - **Branch `backport/leapc`** (off `v2-development`), not pushed. On it: phases 0-4, the redraw item,
   5.1 (decimal literals), R1 (calculator rounding), `SH_VIEW` (ED4), ED3/ED7, 5.2-5.5 (VM speed) and
   5.6-5.8 (calculator multiply/divide in registers, `SQR` halving, the row clear; owner F18: integrated
-  once `make test` passed). Merged prototype branches that can be deleted: `proto/5.2-5.4-vm-speed`,
-  `proto/5.5-vm-push`, `proto/5.6-5.8-calc-sqr-scroll`.
+  once `make test` passed). The merged prototype branches are deleted (owner, 2026-10-27).
 - **Free ROM: HOME 286 B, EXROM 573 B** (`make budget`). Emergency reserve HOME 64 / EXROM 32 (`make check`
   fails below it). Spending is weighted by benefit per byte (F1).
 - **Owner rules for what is left** (2026-10-27): a change must give a *significant speed increase* or
@@ -68,17 +67,12 @@ language feature.
 
 ## Before pushing (owner, 2026-10-27)
 
-`backport/leapc` now vendors the simulator at `~/z80sim` commit `13c9bce`, which exists **only in the
-local clone** (`~/z80sim` is one commit ahead of `origin/main` on GitHub). Nothing pushes it
-automatically. To publish both:
-
-1. `git -C ~/z80sim push origin main` (first, or in the same sitting);
-2. then push 2068-Leap's branch.
-
-`tools/hooks/pre-push` (installed in this clone: `git config core.hooksPath tools/hooks`) refuses step 2
-until step 1 is done, naming the missing commit and the command. In another clone, set `core.hooksPath`
-once (CONTRIBUTING.md). Branches that still vendor the older, already-published simulator
-(`v2-development`) push as before.
+`backport/leapc` vendors the simulator at z80sim commit `13c9bce`, which is on GitHub (pushed
+2026-10-27, owner). The rule for later simulator changes: push `~/z80sim` (`git -C ~/z80sim push origin
+main`) before, or in the same sitting as, the 2068-Leap branch that vendors them. `tools/hooks/pre-push`
+(installed in this clone: `git config core.hooksPath tools/hooks`; once per clone elsewhere, see
+CONTRIBUTING.md) refuses a 2068-Leap push whose `tools/z80sim/UPSTREAM.md` names a z80sim commit not yet
+on GitHub, and prints that command.
 
 ## Working rules (owner)
 

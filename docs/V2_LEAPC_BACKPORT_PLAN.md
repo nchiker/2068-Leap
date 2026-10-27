@@ -836,7 +836,7 @@ All decided by the owner on 2026-10-25.
 | F15 | 5.5 scope                                | Step 1 only (cheaper push/pop); no top of stack in registers (2026-10-27) |
 | F16 | 5.5 prototype                            | Integrated, fast-forward to `6af3278` (2026-10-27)                  |
 | F17 | Phase 5 follow-ups                       | Added (5.6-5.12); 5.6, 5.7, 5.8 first (2026-10-27)                  |
-| F18 | 5.6-5.8 prototype                        | Integrated (fast-forward, 2026-10-27); simulator: a local commit in `~/z80sim` (owner), pushed with the project (pre-push hook) |
+| F18 | 5.6-5.8 prototype                        | Integrated (fast-forward, 2026-10-27); simulator: z80sim `13c9bce`, pushed to GitHub (owner, 2026-10-27) |
 | F19 | 5.13; room for phase 6                   | 5.13 added; follow-ups keep HOME ~260 / EXROM ~100 B free for phase 6 [E] (2026-10-27) |
 
 ## Also worth doing
