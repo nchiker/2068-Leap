@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Edge cases of the VM's fast paths, items 5.3 and 5.4 of docs/V2_LEAPC_BACKPORT_PLAN.md: whole-number
+"""Edge cases of the VM's fast paths, items 5.3-5.5 of docs/V2_LEAPC_BACKPORT_PLAN.md: whole-number
 FOR/NEXT at the ends of the number range, a loop variable changed in the body, NEXT with no loop, loops
-left by GOTO and EXIT FOR; and the combined instructions (a comparison with its IF's branch; v = v + k,
-v = v - k, v = v + w) beside the forms that must not combine. The expectations follow the language's
+left by GOTO and EXIT FOR; the combined instructions (a comparison with its IF's branch; v = v + k,
+v = v - k, v = v + w) beside the forms that must not combine; and the operand stack's limit. The expectations follow the language's
 rules (docs/manual): whole numbers -32768 to 32767 are exact and an overflow continues in floating
 point; a number that is not a whole number in that range prints with four decimals; a comparison is 1
 or 0; NEXT with no loop is run-time error 7. They are not copied from what the ROM printed.
@@ -158,6 +158,12 @@ case("sieve", ["s = 100", "DIM g(101)", "c = 0", "FOR i = 0 TO s", "g(i) = 1", "
                "IF g(i) = 0 THEN GOTO skip", "r = i + i + 3", "k = i + r", "IF k > s THEN GOTO noclear",
                "clearloop:", "g(k) = 0", "k = k + r", "IF k <= s THEN GOTO clearloop", "noclear:", "c = c + 1",
                "skip:", "NEXT i", "PRINT c"], nums(_sieve(100)))
+
+# ---------------------------------------------------------------- 5.5: the operand stack's bounds
+# 1+(1+(...)) with n levels holds n + 1 operands at once; the stack has room for 41 ($B604-$B67F, 3 bytes
+# each; the manual's limit "about 40"), so 40 levels run and 41 stop with STACK OVERFLOW (run-time 2)
+for n, rows, ve in ((40, nums(41), 0), (41, [], 2)):
+    case("stack-depth-%d" % n, ["x = " + "1+(" * n + "1" + ")" * n, "PRINT x"], rows, ve=ve)
 
 
 def main():

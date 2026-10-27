@@ -237,8 +237,10 @@ VM_STACK_FLOOR:     equ $B604   ; lowest legal SP value (overflow if SP-3 < this
 VM_TOS_TAG:         equ $B682   ; tag of the value last pushed: 0=INT, 1=FLOAT
 VM_ERROR_CODE:      equ $B683   ; 0 = no error; see header for nonzero codes
 VM_HALTED:          equ $B684   ; nonzero once HALT (or an error-halt) executes
-VM_PUSH_VAL_TMP:    equ $B685   ; VM_PUSH scratch (2 bytes)
-VM_PUSH_TAG_TMP:    equ $B687   ; VM_PUSH scratch (1 byte)
+                                ; $B685-$B687: free (5.5: VM_PUSH needs no scratch)
+; 5.5: VM_PUSH and VM_POP move only the low byte of VM_SP, so the pointer, the stack and its
+; floor must share one page (the high byte of VM_SP stays $B6).
+    ASSERT HIGH VM_SP == HIGH VM_STACK_FLOOR && HIGH VM_SP == HIGH VM_STACK_TOP
 ; R10.7 item 7 (re-attempted: see SYMTAB_BASE/CSYMTAB_MAX_ENTRIES's own
 ; header comments for the original revert and the now-fixed, unrelated
 ; VM_ARR_VALUE_TMP/VM_INPUT_COUNT collision that caused it): VM_CALL_STACK
@@ -1111,25 +1113,21 @@ VM_PUSH_STR_RESULT:
 VM_PUSH_INT:                   ; RC shrink: push HL as an INT
         xor a                   ; TAG_INT
 VM_PUSH:                       ; input: HL = value, A = tag
-        ld (VM_PUSH_VAL_TMP),hl
-        ld (VM_PUSH_TAG_TMP),a
-        ld hl,(VM_SP)
-        ld de,-3
-        add hl,de               ; HL = would-be new SP
-        ld de,VM_STACK_FLOOR
-        or a
-        sbc hl,de
-        jp c,VM_ERR_STACK_OVERFLOW   ; new SP < floor
-        ld hl,(VM_SP)
-        ld de,-3
-        add hl,de
-        ld (VM_SP),hl           ; commit the new SP
-        ld de,(VM_PUSH_VAL_TMP)
+                                ; out: DE = value, HL -> the tag byte, A = tag, F as on entry
+        push af                 ; 5.5: one page, low byte only (116 T, was 234)
+        ex de,hl                ; DE = value
+        ld hl,VM_SP             ; H = the stack's page
+        ld a,(hl)
+        sub 3                   ; the new SP's low byte
+        cp LOW VM_STACK_FLOOR
+        jp c,VM_ERR_STACK_OVERFLOW   ; new SP < floor (the error unwinds from VM_RUN_SP)
+        ld (hl),a               ; commit the new SP
+        ld l,a
         ld (hl),e
-        inc hl
+        inc l
         ld (hl),d
-        inc hl
-        ld a,(VM_PUSH_TAG_TMP)
+        inc l
+        pop af
         ld (hl),a
         ret
 
@@ -1152,21 +1150,20 @@ PUSH_INT_CONTINUE:
         call VM_PUSH
         jp (iy)
 
-VM_POP:                        ; output: HL = value, A = tag
-        ld hl,(VM_SP)
-        ld de,VM_STACK_TOP
-        or a
-        sbc hl,de               ; HL = SP - TOP; zero means the stack is empty
-        jp z,VM_ERR_STACK_UNDERFLOW
-        ld hl,(VM_SP)
-        ld e,(hl)
-        inc hl
-        ld d,(hl)
-        inc hl
+VM_POP:                        ; output: HL = value, A = tag, DE = the new SP; CF set, ZF clear
+        ld hl,VM_SP             ; 5.5: H = the stack's page (105 T, was 140)
         ld a,(hl)
-        inc hl
-        ld (VM_SP),hl
-        ex de,hl                ; HL = value; A still holds the tag
+        cp LOW VM_STACK_TOP     ; SP = TOP: the stack is empty (else CF set, ZF clear, as before)
+        jp z,VM_ERR_STACK_UNDERFLOW
+        ld l,a                  ; HL -> the top entry
+        ld e,(hl)
+        inc l
+        ld d,(hl)
+        inc l
+        ld a,(hl)
+        inc l                   ; (inc leaves CF; L <= $80, so ZF stays clear)
+        ex de,hl                ; HL = value; DE = the new SP; A still holds the tag
+        ld (VM_SP),de
         ret
 
 ; VM_POP_CHECK_INT -- shared "pop, then require a plain TAG_INT value"

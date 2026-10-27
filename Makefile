@@ -91,7 +91,7 @@ test: all v2-packages smoke-build
 # RC: the qualification suites on the in-tree build (docs/V2_REGRESSION_REPORT.md): the language
 # corpus with the release-candidate expectations (strict PASS/FAIL/XFAIL/XPASS accounting: any FAIL,
 # XPASS or BLOCKED fails the target), the variable-session lifecycle, and the edge cases of the VM's
-# fast paths (back-port items 5.3 and 5.4: integer FOR/NEXT, the combined instructions).
+# fast paths (back-port items 5.3-5.5: integer FOR/NEXT, the combined instructions, the stack's limit).
 qual: build v2-packages
 	python3 tools/qual/qrun.py --tree . --fixed rc --out build/qual --workers-per-cfg 3
 	python3 tools/qual/qlifecycle.py --tree .
