@@ -60,6 +60,7 @@ Further rules:
 | 6.1 package functions        | **590** | **163** | [M], integrated (F28, fast-forward to `e9423ab`): HOME −100 free (registry 43: the kind filter 18, `EXT2_EXPORTS` 25; VM 32: the count mask 2, the INT push 14, the string copy 16; compiler 25 net); EXROM 0; service slot 16 in the reserved slot area (3 B, not counted); RAM `$BFA9`, `$BA3D-$BA3F` freed |
 | 5.12 `IF v <op> k`           | **542** | **113** | [M], integrated (F29, fast-forward to `45d1bf3`): HOME −48 free (`OP_CMP_VAR_JMPZ` 41, its table entry 2, `COMPILE_IF` passing the condition's start 5); EXROM −50 (`COMPILE_FUSE_CMP` 31 → 81); RAM 0 |
 | 5.13 `PRINT` of a string     | **454** | **113** | [M], integrated (F30): HOME −88 free (`GFX_PRINT_STRING_ATTR` 64 → 168 B, `GFX_PUTCHAR_OVER` 16 removed); EXROM 0; RAM 0 |
+| 5.11 the scroll copy         | **462** | **113** | [M], integrated (F31): HOME +8 free (`GFX_SCROLL_OUTPUT_UP` 32 → 100 B with its LDI block; `GFX_COPY_ROW_BITMAP` 36 and `GFX_SCROLL_TEXT_UP` 40 left to the non-V2 builds); EXROM 0; RAM 0 |
 | phase 5 (speed)              | ≥ 64    | ≥ 32    | Class B: each item sized and weighed before it is started; 5.0 first if the room is not there                 |
 
 Every [E] is replaced by `make budget`'s figure as each item lands.
@@ -854,6 +855,40 @@ integrated into `backport/leapc` by fast-forward, owner decision F30):
   of range tests reordered (lower case first, one subtract per range) would save ~40-60 T a letter, for
   `PRINT` and the editor's redraw alike, at a few bytes.
 
+Outcome, 5.11 (2026-10-27; prototyped on `proto/5.11-scroll-copy` off `backport/leapc` `a9480ad`; all [M];
+integrated into `backport/leapc` by fast-forward, owner decision F31):
+
+- **What changed.** `GFX_SCROLL_OUTPUT_UP` (every scroll of program output: `PRINT`, `INPUT`'s echo, the
+  newline at the bottom) copies a scanline of the 23 rows that move as one stream through the three
+  screen thirds: rows 1-7 → 0-6 inside a third are 224 contiguous bytes, the next third's row 0 → this
+  third's row 7 is 32, and so on (736 bytes a scanline, 8 scanlines), 16 bytes per block of unrolled
+  `LDI`s (16 T a byte, `LDIR`'s 21), and the 23 rows' attributes (linear) the same way; the new bottom
+  row is cleared by `GFX_CLEAR_ROW` as before (5.8), and the sprites invalidated first as before. It was
+  `GFX_SCROLL_TEXT_UP` (a 704-byte attribute `LDIR`, then 22 `GFX_COPY_ROW_BITMAP` calls of 8 `LDIR`s of
+  32 bytes) and one more row copy. Every byte goes forward to a lower address, as a memmove must.
+- **The editor does not share it in V2.** The handoff assumed the editor's scroll used
+  `GFX_COPY_ROW_BITMAP`; the V2 images have no caller of it or of `GFX_SCROLL_TEXT_UP` but
+  `GFX_SCROLL_OUTPUT_UP` (the V2 editor redraws; the caller in `basic/editor_integration.asm` is V1's,
+  not in the V2 images). Both now assemble only without `V2_PRODUCTION`, as `GFX_SCROLL_TEXT_DOWN`
+  already did.
+- **Size.** HOME 454 → **462** B free (+8: 108 B of scroll code became 100, the `LDI` block 36 of
+  them); EXROM 0. Above the reserve and 6.2-6.4's allowance: HOME 338, EXROM 51.
+- **Speed.** `qrtime GFX_SCROLL_OUTPUT_UP`: 218,252 → **142,599 T** (1.53×, −34.7%; est. ~180 kT).
+  `qprofile --statements`: `PRINT 7` that scrolls 223,669 → **146,036 T** a line (−34.7%); the other rows
+  unchanged. The `LDI` blocks are 16.5 T a byte with their loop (5,888 bitmap and 736 attribute bytes:
+  ~109 kT), the bottom row's clear 7.5 kT, the rest the sprite reset and the steps between blocks.
+- **Screens** (`qscrdiff`, 5.13 against 5.11, the 22 programs of 5.8 and 5.13: colours, BRIGHT/FLASH,
+  INVERSE, OVER, wraps, commas, `AT 23`, `PLOT` before a scroll, `CLS`, block graphics and UDGs, every
+  character code, rows of 32, wraps that scroll inside a string, off-screen positions): 0 differ, all ran
+  (ce 0, ve 0).
+- **Editor.** `qeditview --oracle --ref` (5.11 against 5.13): 36 scenarios, 3,762 keys, every screen
+  equal to a full redraw's; the 18 compared with 5.13: 0 of 1,899 screens differ.
+- **Checks.** `make check`; the release definitions (`make build EXTRA_DEFS=`) assemble.
+- **Tests** (on a copy, fast emulation). `make test` all PASS (2,054 s): budget reserve check, smoke 9/9,
+  standalone 40/40, production and fill checks, prod-regress 127, prod-arrays 101, known-defects 15,
+  saveall 13, micsave 3, qual 666 PASS + 2 XFAIL + 2 N/A, lifecycle 23, `qvmedge` 221, maint-qual all
+  (ay_beep 59, cbeep 27, di_wait 14, cbeep_tape 3). `make doc-examples` 327/327.
+
 ### Item VER: the ROM's version at power-on (owner request F22, 2026-10-27; next after 5.9/5.10)
 
 Today nothing tells a user which ROM they run: there is no version text in either image (the release
@@ -1231,6 +1266,7 @@ All decided by the owner on 2026-10-25.
 | F28 | 6.1 package functions                    | Integrated whole (fast-forward to `e9423ab`, 2026-10-27): HOME 100, EXROM 0; next: the phase 5 items, 5.12, 5.13, 5.11 (proposed order) |
 | F29 | 5.12 `IF v <op> k`                       | Integrated (fast-forward to `45d1bf3`, 2026-10-27): HOME 48, EXROM 50; the two-variable form not taken up; next: 5.13 |
 | F30 | 5.13 `PRINT` of a string                | Integrated on a passing `make test` (fast-forward, 2026-10-27): HOME 88, EXROM 0; next: 5.11 |
+| F31 | 5.11 the scroll copy                    | Integrated on a passing `make test` (fast-forward, 2026-10-27): HOME +8, EXROM 0; next (owner): the faster glyph lookup (5.14), a handoff for the v2.1 preparation, push |
 
 ## Also worth doing
 
