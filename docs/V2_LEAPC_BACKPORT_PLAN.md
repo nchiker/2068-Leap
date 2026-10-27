@@ -58,6 +58,7 @@ Further rules:
 | 5.10 `SIN`/`COS`/`TAN` series | **746** | **171** | [M]: EXROM +29 free: the series 136 → 90 B, its constants 8 → 30 (π/180, five coefficients); `COS` 27 → 4 (enters `SIN` with a shift); the reduction +18 (Q-35: the shift, reduced again; the fraction negated by its sign bit) |
 | VER the ROM's version       | **690** | **163** | [M]: HOME −56 free (`rom/v2_version.asm`: the text 15, `V2_VER_STATUS` 18, `V2_VER_SCOPE` 18, the flag set at cold start 5); EXROM −8 (boot head 3, `V2_DRAW_STATUS` 5; `V2_REDRAW`'s scope read became the call, 0); RAM `$BEC6` |
 | 6.1 package functions        | **590** | **163** | [M], integrated (F28, fast-forward to `e9423ab`): HOME −100 free (registry 43: the kind filter 18, `EXT2_EXPORTS` 25; VM 32: the count mask 2, the INT push 14, the string copy 16; compiler 25 net); EXROM 0; service slot 16 in the reserved slot area (3 B, not counted); RAM `$BFA9`, `$BA3D-$BA3F` freed |
+| 5.12 `IF v <op> k` (prototype) | **542** | **113** | [M], prototype `proto/5.12-cmp-var-jmpz` (owner decision pending): HOME −48 free (`OP_CMP_VAR_JMPZ` 41, its table entry 2, `COMPILE_IF` passing the condition's start 5); EXROM −50 (`COMPILE_FUSE_CMP` 31 → 81); RAM 0 |
 | phase 5 (speed)              | ≥ 64    | ≥ 32    | Class B: each item sized and weighed before it is started; 5.0 first if the room is not there                 |
 
 Every [E] is replaced by `make budget`'s figure as each item lands.
@@ -730,6 +731,73 @@ Outcome, 5.10 (2026-10-27; on the same prototype branch, after 5.9; all [M]):
 - **Owner decisions F23-F26 (2026-10-27):** 5.10's changes beyond the last bit accepted (they are the old
   series' error); the Q-35 fix accepted; `SQR`/`PI`/`RAD`/`DEG` stay in HOME (the rest of 5.9 closed);
   integrated into `backport/leapc` by fast-forward.
+
+Outcome, 5.12 (2026-10-27; prototyped on `proto/5.12-cmp-var-jmpz` off `backport/leapc` `23b0bd6`;
+all [M]; owner decision pending):
+
+- **What it is.** `CMP_VAR_JMPZ` (opcode 77, operand `[v][k:2][mask][target:2]`): an IF whose whole
+  condition is `LOAD_VAR v`, `PUSH_I8 k` or `PUSH_I16 k`, and a relational operator, fused with its
+  `JMPZ`; the mask and the target are `CMP_JMPZ`'s (5.4), so `IF … THEN GOTO`'s mask inversion
+  (`COMPILE_FUSE_GOTO`) applies unchanged. An INT `v` is compared with `k` in registers
+  (`MATH_COMPARE16`, nothing pushed) and enters `CMP_JMPZ`'s test; a FLOAT `v` pushes `v` and `k`, as the
+  two instructions did, and runs `CMP_JMPZ` itself. A taken branch polls BREAK (`OP_JMP`). 7 bytes of
+  bytecode for 8 (`PUSH_I8`) or 9 (`PUSH_I16`). The constant may be 8- or 16-bit: `goto_loop`'s
+  `IF i < 2000` is a 16-bit literal, and a negative constant is a folded 16-bit one (`-1` is
+  `PUSH_I16 $FFFF`).
+- **Where.** The handler in HOME beside `CMP_JMPZ` (`rom/exrom_v2_vm_core.asm`; `VM_RUN.next`'s `cp 78`);
+  the peephole in `COMPILE_FUSE_CMP` (EXROM, `rom/exrom_v2_fuse.asm`, production only), the same slot, so
+  no `V2_KTAB_MAGIC` change. It must know where the condition starts: the five or six bytes before the
+  operator can look like `LOAD v; PUSH k` without being the condition (`IF c + d < 8` when d's index is
+  3: `… [3][3][ADD][1][8][CMP]`; `IF d < 5 + c`), so `COMPILE_IF` keeps `EMIT_PTR` on the stack across
+  `COMPILE_EXPR` (a compile error returns, so the pop balances) and passes it in HL; the peephole fuses
+  only when the condition is exactly the three instructions.
+- **Size.** HOME 590 → **542** B free (−48: the handler 41, its table entry 2, `COMPILE_IF` 5); EXROM
+  163 → **113** (−50: `COMPILE_FUSE_CMP` 31 → 81 B). Above the reserve and 6.2-6.4's allowance: HOME 418,
+  EXROM 51 (5.13 and 5.11 go in HOME).
+- **Speed** (`qprofile --statements`, T a statement adds to a FOR loop; new rows for IF):
+
+  | statement                          | `23b0bd6` | 5.12  | change     |
+  | ---------------------------------- | ---------:| -----:| ---------- |
+  | `IF i < 5 THEN` / `ENDIF` (false)  | 1,689     | 703   | 2.40×      |
+  | `IF i < 1000 THEN` / `ENDIF` (true) | 1,583    | 601   | 2.63×      |
+  | `IF i < 0 THEN GOTO z`             | 1,643     | 647   | 2.54×      |
+  | `IF x < 5`, x FLOAT (the fallback) | 7,625     | 7,309 | −4.1%      |
+  | `IF i < j` (two variables, unchanged) | 1,790  | 1,790 | 0          |
+  | everything else                    |           |       | unchanged  |
+
+  `qbench` (T, compile and run): `goto_loop` 4,776,503 → 2,817,565 (**−41.0%**, est. −45%), `if_branch`
+  10,323,982 → 8,337,128 (**−19.3%**, est. −20%), `sieve` +0.004% (its IFs compare two variables or an
+  array element; +336 T of compile), `compile_int_if` +23 T, `compile_dec` +42 T; the other 14 programs
+  identical.
+- **Bytecode review** (the `qbytecode` reset: the corpus' 670 programs and `qvmedge`'s 221, base against
+  5.12, aligned instruction by instruction; each difference accepted only as `LOAD v / PUSH k / CMP_JMPZ`
+  → `CMP_VAR_JMPZ v,k` with `v`, `k` (sign-extended from `PUSH_I8`) and the mask carried over, and every
+  jump operand checked against its relocated target): 634 identical, 102 the same compile error, 155
+  changed, all explained: 1,086 fusions (507 with `PUSH_I8`, 579 with `PUSH_I16`), 1,665 bytes of bytecode
+  fewer; 0 unexplained.
+- **`qvmedge`** (in `make qual`): 221 cases (was 120), 221/221 on 5.12 and on `23b0bd6`. New: each
+  relational operator in an IF block (with ELSE) and in `IF … THEN GOTO` (both branch directions, the
+  inverted mask) for 12 variable values (−32768, −129, −1, 0, 5, 127, 128, 32767, and the FLOATs 2.5,
+  −0.5, 40000 and 2.5 + 2.5, a FLOAT whose value is whole) against 8 constants (0, 5, 127 and 128 either
+  side of the 8-bit literal, 1000, 32767, −1, and 4.5, which does not combine); a variable made FLOAT and
+  INT again inside the loop the IF closes; loops counting down and with a 16-bit limit; near misses that
+  must not combine (a sum on either side, the constant first, two variables, AND, an array element) and
+  `(d) = 4`, which does; an IF in a recursive PROC. Compiled on 5.12, the combined form appears in every
+  case meant to have it (12 per value-and-constant program, none with 4.5) and in none of the near
+  misses. The operand stack is empty at every IF (a statement; nothing runs a statement inside an
+  expression: `DEF FN` is an expression, a PROC runs only from `CALL`), so the fallback's two pushes
+  cannot reach the stack's limit and the INT path's none cannot hide an overflow.
+- **`qbreak`** 19/19 (`if-goto`'s `IF i < 30000 THEN GOTO top` and `if-block-goto` now run the new
+  instruction; key to message 617 and 1,358 T).
+- **Checks.** `make check`; the release definitions (`make build EXTRA_DEFS=`) assemble; `qcanary --banking`
+  (670 cases): 0 canary hits, 0 banking violations, stack low-water mark `$FDE8` as before.
+- **Tests** (on a copy, fast emulation). `make test` all PASS (1,858 s): budget reserve check, smoke 9/9,
+  standalone 40/40, production and fill checks, prod-regress 127, prod-arrays 101, known-defects 15,
+  saveall 13, micsave 3, qual 666 PASS + 2 XFAIL + 2 N/A, lifecycle 23, `qvmedge` 221, maint-qual all
+  (ay_beep 59, cbeep 27, di_wait 14, cbeep_tape 3). `make doc-examples` 327/327 (no manual example
+  documents an IF's bytecode).
+- **Not done (a candidate, [E]).** The same for two variables (`IF k <= s`, the sieve's inner loop: 1,790 T
+  an IF today): a second opcode beside 77, ~20 B HOME and ~15 EXROM.
 
 ### Item VER: the ROM's version at power-on (owner request F22, 2026-10-27; next after 5.9/5.10)
 
