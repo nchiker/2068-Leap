@@ -2,7 +2,7 @@
 
 Written 2026-10-26 at the end of phase 3, updated through phases 4 and 5; this version 2026-10-27, at the
 end of 5.6-5.8. The plan is `docs/V2_LEAPC_BACKPORT_PLAN.md` (the ledger, every item's outcome, the owner
-decisions F1-F19); this file is only where things stand, what comes next and how to pick it up.
+decisions F1-F22); this file is only where things stand, what comes next and how to pick it up.
 
 ## Where things stand
 
@@ -44,9 +44,12 @@ The space arithmetic is the plan's "Room for phase 6": phase 6 is allowed **HOME
    shortens that code and makes `SIN` ~2.3× faster again; it changes the last bits, which the owner
    allows (F20, 2026-10-27): measure its accuracy against exact values (as `qcalcround` does), list what
    changes with `qfndiff`, and record both in the outcome.
-2. **Size 6.1** (package functions with Leap-C's export table and signature bytes) as a prototype, to
+2. **Item VER** (owner F22): the ROM's version on the screen at power-on, while the startup chime
+   plays (the plan's "Item VER": the boot head of `V2_COMMAND_LOOP`, a version constant edited at
+   release, ~25 B HOME [E]).
+3. **Size 6.1** (package functions with Leap-C's export table and signature bytes) as a prototype, to
    replace phase 6's allowance with a measured figure before spending more.
-3. **Then, where the room is** (after 5.9 HOME has it, the EXROM may not):
+4. **Then, where the room is** (after 5.9 HOME has it, the EXROM may not):
    - 5.13, `PRINT` of a string (~3× a character: the addresses worked out once, an unrolled glyph copy);
      the print path runs only with the EXROM in, so either ROM works. Check: `qscrdiff` (same screen).
    - 5.11, the scroll copy (each screen third's rows in one block per scanline, unrolled; ~218 → ~180 kT,
@@ -56,7 +59,7 @@ The space arithmetic is the plan's "Room for phase 6": phase 6 is allowed **HOME
      EXROM only if the dispatch can reach it there (the EXROM is in at every dispatch: `qcanary`'s
      invariant), the compiler side next to 5.4's in `rom/exrom_v2_fuse.asm`. Bytecode changes:
      `qbytecode` review and baseline reset; `qvmedge` cases.
-4. **Phase 6 (ABI 2.1)**, items 6.1-6.6, for v2.1. The manual's speed figures were updated after 5.8
+5. **Phase 6 (ABI 2.1)**, items 6.1-6.6, for v2.1. The manual's speed figures were updated after 5.8
    (`tools/qual/manual_measure.py`, owner F21); re-run it after any later speed change and update
    `04_concepts.md` "Speed" and `FOR`'s note (the Word edition is rebuilt at release).
 

@@ -715,6 +715,38 @@ Outcome, 5.10 (2026-10-27; on the same prototype branch, after 5.9; all [M]):
 - **Checks.** `qcanary --banking` (667): 0 hits, 0 violations, stack low-water mark `$FDE8`; the slot
   probe: every entry at depth 1 (program and immediate); `make check`.
 
+### Item VER: the ROM's version at power-on (owner request F22, 2026-10-27; next after 5.9/5.10)
+
+Today nothing tells a user which ROM they run: there is no version text in either image (the release
+names, `v2.0.2-emu.1` and so on, are git tags and zip names only). `PEEK(147)`, `PEEK(148)` give the
+package ABI (2.0, the same for every v2.0.x), `PEEK(145)` the HOME/EXROM pairing byte (it changes with
+the slot list, not with a release).
+
+- **What.** At power-on the screen shows the ROM's version (e.g. `2068 LEAP V2.1`) **while the startup
+  chime plays** (owner): the text is on the screen before the chime's first note and still there after
+  its last. Proposed: it stays (on the status row) until the first key, which then reaches the editor as
+  usual; only at power-on, like the chime (not on `NEW` or a return to the editor).
+- **Where.** `V2_COMMAND_LOOP`'s one-time head (`rom/exrom_v2_shell.asm`): `GFX_CLS`, `V2_RESET_DISPLAY`,
+  `V2_RESET_EDIT`, `STARTUP_CHIME`, then `.loop` draws the editor. The screen is blank during the chime
+  today: 55 frames in the default build's chime C (attack 27, hold 19, release 9; ~0.9 s at 60 Hz, BREAK
+  ends it with `V2_MAINT_SHARED_WAIT`); the release definitions (`EXTRA_DEFS=`) play the original table
+  chime. The text is printed between `V2_RESET_EDIT` and `STARTUP_CHIME`, so it is up for the whole chime
+  in every build. To work out in the prototype: keeping it past the editor's first redraw (`V2_REDRAW`,
+  `V2_DRAW_STATUS` write row 23) without losing the first key.
+- **The version.** One constant in an include (e.g. `include/v2_version.inc`), edited at each release.
+  Not `git describe`: every commit would build a different ROM (`make repro`, and the comparison of a
+  build with the released images' hashes). The released v2.0.x images are fixed, so it arrives with the
+  next release (v2.1, F4).
+- **Cost [E].** The text ~15 B and its print ~10 B: in HOME (the room is there after 5.9: 746 free, 422
+  above the reserve and phase 6's 260), with a 3-byte call from the EXROM's boot head; the EXROM keeps
+  its ~39 B above phase 6's line. Class C under F1 (more than ~10 B), taken on the owner's request.
+- **Checks.** A probe that boots the ROM and stops at `STARTUP_CHIME`'s entry and at its return: the text
+  on the screen at both; the chime's AY register writes and frame waits unchanged (`maint-qual`'s
+  `ay_beep`, `cbeep`); the first key arrives in the editor; `make repro`. The harness takes its booted
+  snapshot at the first key wait, so the screen-comparing tools (`qeditview`, `qscrdiff`, the editor
+  suites, `doc-examples`) would see the text if it stays until the first key: check them, or clear it
+  before that snapshot's state matters. The manual: where the version is shown (01, 07).
+
 ## Phase 6: package ABI 2.1 (minor version: old packages keep working)
 
 | #   | Item                                                                                                                                                                                                    | Notes                                                  |
@@ -940,6 +972,7 @@ All decided by the owner on 2026-10-25.
 | F19 | 5.13; room for phase 6                   | 5.13 added; follow-ups keep HOME ~260 / EXROM ~100 B free for phase 6 [E] (2026-10-27) |
 | F20 | 5.10's results                           | `SIN`/`COS`/`TAN` may change in the last bit (2026-10-27)           |
 | F21 | Manual speed figures; pushing            | Updated now (5.6-5.8 build); `backport/leapc` may be pushed (2026-10-27) |
+| F22 | The ROM's version                        | Item VER added after 5.9/5.10: the version on the screen at power-on, while the startup chime plays (2026-10-27) |
 
 ## Also worth doing
 
