@@ -863,7 +863,16 @@ reserve and the allowance: HOME **466** (was 366), EXROM **101** (was 31).
   winning, the kind rules and the compile errors above, the names without the package, and one statement
   of each ABI 2.0 package (SHAPES, GRAPHICS, MODE, SPRITE, CBEEP) after it. `qbytecode` `fb57545` vs
   `2970ffd`: 670/670 corpus programs compile to identical bytecode (12,447 B). `make check` OK (the ABI
-  checker: 2.1, 17 slots, 35 pins).
+  checker: 2.1, 17 slots, 35 pins). `make test` on `2970ffd`: one FAIL, `abi-pkg-reject-newer-minor`,
+  pinned to `$8201`, the ROM's own package word now (RC-10's pattern): fixed in the test (`dabc8aa`, the
+  ROM's word + 1, `$8202`), the 20 `abi-*` cases then PASS. The rest: smoke 9/9, standalone 40/40,
+  production checks 21, fill 10, prod-regress 126 + that case, prod-arrays 101, known-defects 15,
+  saveall 13, micsave; `make qual` (run after the fix) 666 PASS + 2 XFAIL (Q-24, Q-26) + 2 N/A of 670,
+  lifecycle 23, `qvmedge` 120; `make qual-maint` all (`ay_beep` 59, `cbeep` 27, `di_wait` 14,
+  `cbeep_tape` 3).
+- **Owner decision pending:** integrate 6.1 (fast-forward) now, at phase 6, or in part (numeric
+  functions alone 54 B; string functions; the export table); and whether the HOME and EXROM room it
+  leaves (466 / 101 above the reserve and phase 6's new allowance) goes to 5.13, 5.11, 5.12.
 
 ## Phase 7: decision gate for a V3 (major: ABI 3.0, new RAM map)
 
