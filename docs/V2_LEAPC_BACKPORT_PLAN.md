@@ -47,9 +47,9 @@ Further rules:
 | R1 calculator rounding       | **441** | **905** | [M]: EXROM +739 Leap-C's float core, −20 three faster loops                                                   |
 | `SH_VIEW` (ED4)              | **441** | **801** | [M]: EXROM −104: `V2_VIEW` 57, `V2_MEASURE` 29, `V2_VIEW_BOUND` 16, `V2_REDRAW_NAV` +7, `V2_REDRAW` −5; RAM 0 |
 | ED3, ED7 (editor fixes)     | **441** | **778** | [M]: EXROM −23: `V2_WRAP` +47, 7 edit-buffer wrap calls −21, `V2_REDRAW_NAV` +2, ED3 −5 |
-| 5.2 BREAK poll (prototype)   | **454** | **778** | [M]: HOME +13 free: JMPZ's own jump code gone (a taken JMPZ falls into OP_JMP), polling exits 1 B each   |
-| 5.3 FOR fast path (proto.)   | **367** | **778** | [M]: HOME −87 free: the integer path in `OP_FOR_NEXT` 80 B, the loop variable's reload on its fallback 7 B   |
-| 5.4 combined ops (proto.)    | **246** | **621** | [M]: HOME −121 free (VM 117: `CMP_JMPZ` 23, `ADD_VAR_*` 91, `VM_FLOAT_BINARY` 3; compiler 4); EXROM −157 (peepholes) |
+| 5.2 BREAK poll               | **454** | **778** | [M]: HOME +13 free: JMPZ's own jump code gone (a taken JMPZ falls into OP_JMP), polling exits 1 B each   |
+| 5.3 FOR fast path            | **367** | **778** | [M]: HOME −87 free: the integer path in `OP_FOR_NEXT` 80 B, the loop variable's reload on its fallback 7 B   |
+| 5.4 combined ops             | **246** | **621** | [M]: HOME −121 free (VM 117: `CMP_JMPZ` 23, `ADD_VAR_*` 91, `VM_FLOAT_BINARY` 3; compiler 4); EXROM −157 (peepholes) |
 | phase 5 (speed)              | ≥ 64    | ≥ 32    | Class B: each item sized and weighed before it is started; 5.0 first if the room is not there                 |
 
 Every [E] is replaced by `make budget`'s figure as each item lands.
@@ -325,7 +325,8 @@ Outcome, 5.1 (2026-10-26, prototyped on `proto/5.1-float5`, merged into `backpor
   `PRINT 5.` shows `5.0000`, `b(2.)` is run-time error 11).
 
 Outcome, 5.2-5.4 (2026-10-27, owner decision F13: one group; prototyped on `proto/5.2-5.4-vm-speed`, one
-commit per item: `fa8e5b9` 5.2, `cae1722` 5.3, `51d4f82` 5.4; **not integrated**, awaiting the owner; all [M]):
+commit per item: `fa8e5b9` 5.2, `cae1722` 5.3, `51d4f82` 5.4; integrated into `backport/leapc` by
+fast-forward on 2026-10-27, owner decision F14; all [M]):
 
 - **5.2 BREAK poll rule.** `VM_RUN` tests `VM_HALTED` at `.loop` only; ordinary handlers end `jp (iy)` at
   `.next` (no test). Polled: every taken jump (`OP_JMP`, which a taken `JMPZ` now falls into, so `JMP`,
@@ -388,7 +389,9 @@ commit per item: `fa8e5b9` 5.2, `cae1722` 5.3, `51d4f82` 5.4; **not integrated**
     equal and ±32767/−32768 operands, in IF/ELSE, IF with a constant, `IF … THEN GOTO` taken and not;
     `v = v ± k` across 32767/−32768, FLOAT `v`, `v + w` with FLOAT and overflowing `w`, and near misses
     left unfused: `v - w`, `1 + v`, `v + 1000`, `v + 1 + 1`, AND/OR/NOT, string compares, a compare's
-    value stored): screens and error codes identical. Bit-exact: 900 FLOAT results of a fused `x = x - k`,
+    value stored): screens and error codes identical. *Correction (2026-10-27):* its 36 `IF … THEN
+    GOTO` programs used a label `out`, which is the keyword `OUT`, so they stopped with compile error 12
+    on both builds and compared nothing; `qvmedge` below runs them with a valid label. Bit-exact: 900 FLOAT results of a fused `x = x - k`,
     `x = x + k`, `x = x + w` against the unfused `z = y - k` (… ) in the same program, random values: all
     identical.
   - Compiles +0.1% to +0.4% (`compile_only`, `compile_int_if`): two peephole checks and a slot call per
@@ -434,8 +437,22 @@ commit per item: `fa8e5b9` 5.2, `cae1722` 5.3, `51d4f82` 5.4; **not integrated**
   per IF. (ii) A cheaper `VM_PUSH` (the operand stack is all in page `$B6`, so the bounds test and the
   pointer need only the low byte: ~254 → ~134 T per push): a step of 5.5. (iii) A page-aligned opcode
   table (~30 T per op, the alignment's padding to be found in HOME).
-- **Owner decision needed (F14):** integrate the group into `backport/leapc` (fast-forward), or drop or
-  rework an item (each is its own commit).
+- **Standing coverage (after F14).** New `tools/qual/qvmedge.py`, in `make qual` (so `make test`), 118
+  cases, ~7 s: the FOR edge programs of the 5.3 differential (the range ends, steps of ±32767/−32768, the
+  variable changed or made FLOAT in the body, NEXT with no loop open: error 7, GOTO out of an inner loop,
+  `EXIT FOR`, `STEP 0`) and the 5.4 programs (the 72 comparison cases, now with a valid label, overflow
+  across 32767/−32768, FLOAT operands, near misses, the sieve). Expectations written from the manual's
+  rules, not from the ROM's output: 118/118 on the integrated build and on the build before 5.2. Compiled
+  on both, the combined forms appear where intended (all 72 comparison programs, every `v = v + k` and
+  `v = v + w` case) and not in the near misses. Found on the way: a negative constant compiles as
+  `0 - magnitude` (unary minus), so `COMPILE_FUSE_ADD`'s guard against `v - (-128)` cannot be reached
+  from source (3 B of EXROM, kept as a guard).
+- **Manual speed figures.** `04_concepts.md` "Speed" and `FOR`'s note (1,107 T per empty pass, the
+  per-statement table) are the release's measurements and predate 5.1, R1 and 5.2-5.4. On `201b960`
+  (`manual_measure.py`, 2026-10-27): an empty pass 827 T (was 1,107); `a = a * 1.0001` adds ~20,900 T
+  (was 55,200), so the text's "whole numbers about twelve times faster than floating point" is about 4.6
+  times now. Re-run the tool and update the table and the text before the v2.1 release.
+- **Owner decision F14 (2026-10-27):** integrate all three; fast-forwarded `backport/leapc` to `201b960`.
 
 ## Phase 6: package ABI 2.1 (minor version: old packages keep working)
 
@@ -648,7 +665,7 @@ All decided by the owner on 2026-10-25.
 | F11 | Float `FOR` counts after R1              | (a): follow the standard; `STEP 0` stays as it is (2026-10-26)      |
 | F12 | Physical TS2068 run                      | Not possible at this time: emulators only (2026-10-26)              |
 | F13 | Phase 5 grouping                         | 5.2, 5.3 and 5.4 together, one commit per item (2026-10-26)         |
-| F14 | 5.2-5.4 prototype                        | Pending (prototype `proto/5.2-5.4-vm-speed`, 2026-10-27)            |
+| F14 | 5.2-5.4 prototype                        | Integrated, fast-forward to `201b960` (2026-10-27)                  |
 
 ## Also worth doing
 
