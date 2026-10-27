@@ -61,6 +61,7 @@ Further rules:
 | 5.12 `IF v <op> k`           | **542** | **113** | [M], integrated (F29, fast-forward to `45d1bf3`): HOME −48 free (`OP_CMP_VAR_JMPZ` 41, its table entry 2, `COMPILE_IF` passing the condition's start 5); EXROM −50 (`COMPILE_FUSE_CMP` 31 → 81); RAM 0 |
 | 5.13 `PRINT` of a string     | **454** | **113** | [M], integrated (F30): HOME −88 free (`GFX_PRINT_STRING_ATTR` 64 → 168 B, `GFX_PUTCHAR_OVER` 16 removed); EXROM 0; RAM 0 |
 | 5.11 the scroll copy         | **462** | **113** | [M], integrated (F31): HOME +8 free (`GFX_SCROLL_OUTPUT_UP` 32 → 100 B with its LDI block; `GFX_COPY_ROW_BITMAP` 36 and `GFX_SCROLL_TEXT_UP` 40 left to the non-V2 builds); EXROM 0; RAM 0 |
+| 5.14 the glyph lookup (prototype) | **500** | **113** | [M], prototype `proto/5.14-glyph-lookup` (owner request, 2026-10-27): HOME +38 free (`LOW_CHAR_TABLE` 33 B replaces the 46-byte pair table; the lookup's code 25 B shorter); EXROM 0; RAM 0 |
 | phase 5 (speed)              | ≥ 64    | ≥ 32    | Class B: each item sized and weighed before it is started; 5.0 first if the room is not there                 |
 
 Every [E] is replaced by `make budget`'s figure as each item lands.
@@ -888,6 +889,32 @@ integrated into `backport/leapc` by fast-forward, owner decision F31):
   standalone 40/40, production and fill checks, prod-regress 127, prod-arrays 101, known-defects 15,
   saveall 13, micsave 3, qual 666 PASS + 2 XFAIL + 2 N/A, lifecycle 23, `qvmedge` 221, maint-qual all
   (ay_beep 59, cbeep 27, di_wait 14, cbeep_tape 3). `make doc-examples` 327/327.
+
+Outcome, 5.14 (2026-10-27; owner request after 5.13: "do the faster glyph lookup for print"; prototyped on
+`proto/5.14-glyph-lookup` off `backport/leapc` `aa1cc31` (5.11 integrated); all [M]):
+
+- **What changed.** `GFX_CHAR_TO_FONT_OFFSET` (`kernel/graphics/graphics.asm`: `PRINT`, the editor's
+  `GFX_PUTCHAR`, package service slot 2) finds the font index of the 33 codes from space to `@` (space,
+  the digits, 22 of the 23 punctuation glyphs) in one direct table, `LOW_CHAR_TABLE`; the letters by one
+  subtract and compare each; `_` by itself; block graphics and UDGs as before; anything else has no
+  glyph (carry). It was a chain of range tests and, for punctuation and for codes with no glyph, a
+  linear scan of 23 (character, index) pairs. The contract is unchanged (in A; out HL and carry clear, or
+  carry; destroys AF, BC, E, HL; D kept). `PUNCT_CHAR_COUNT` stays (23, `check_docs`).
+- **Same results.** All 256 codes on 5.11 and 5.14 (a probe calling the routine with UDGs filled with a
+  pattern): the carry, the 8 glyph bytes and where they are (the font offset, or RAM) equal for every
+  code; D preserved.
+- **Size.** HOME 462 → **500** B free (+38); EXROM 0. Above the reserve and 6.2-6.4's allowance: HOME
+  376, EXROM 51.
+- **Speed** (the routine with its call, T): lower case 200 → 138, upper case 184 → 147, digits 156 →
+  135, `"` 181 → 135, `.` 439 → 135, `_` 1,054 → 177, a code with no glyph 1,064-1,171 → 118-141, block
+  graphics 565 → 548, UDGs 239 → 222; space 47 → **135** (it was the first test; one in front would cost
+  every other code 14 T). The 95 printable codes 39,118 → 13,104 T in all. `qrtime GFX_PRINT_STRING_ATTR`
+  (20 characters) 11,550 → 10,560 T. `qprofile --statements`: `PRINT a$;` (20) 14,843 → 13,792 (−7.1%;
+  510 T a character, 1,293 before 5.13), OVER 1 18,426 → 17,397, `PRINT "x";` 4,164 → 4,101, `PRINT 7;`
+  5,018 → 4,994.
+- **Screens and editor.** `qscrdiff` (5.11 against 5.14): 22 programs, 0 differ. `qeditview --oracle
+  --ref` (5.14 against 5.11): 36 scenarios, 3,762 keys, every screen equal to a full redraw's; 0 of 1,899
+  screens differ; the editor's T a key −2.4% over all keys (typing in a line −3 to −4%).
 
 ### Item VER: the ROM's version at power-on (owner request F22, 2026-10-27; next after 5.9/5.10)
 
