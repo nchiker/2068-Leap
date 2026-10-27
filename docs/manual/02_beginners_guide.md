@@ -6,18 +6,18 @@ Each chapter is short. If you already know BASIC, read Chapter 1 for the editor 
 
 ## Chapter 1 -- Switching on
 
-Switch on the machine. The screen is empty except for one line at the bottom:
+Switch on the machine. A short chime plays, and the screen is empty except for one line at the bottom, which says which version of 2068-Leap the machine is running:
 
 ```keys ex=guide.boot shot=boot_screen
 ```
 ```screen ex=guide.boot
 ...
-LINE 1/0
+2068 LEAP V2.1
 ```
 
 ![The screen after switching on](images/boot_screen.png)
 
-You are in the **editor**. It is where you write programs. The bottom row is the **status line**: it says `LINE 1/0`, meaning "you are on line 1, and the program has 0 lines so far". The three little coloured squares at its right are only decoration. Everything above the status line is for your program and for what it prints.
+You are in the **editor**. It is where you write programs. The bottom row is the **status line**. The version stays there until you press a key; from then on the status line says where you are: `LINE 1/0`, meaning "you are on line 1, and the program has 0 lines so far". The three little coloured squares at its right are only decoration. Everything above the status line is for your program and for what it prints.
 
 There are no line numbers in 2068-Leap V2. A program is simply a list of lines, one under the other, and it runs from the top to the bottom.
 

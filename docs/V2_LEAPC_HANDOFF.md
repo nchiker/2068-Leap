@@ -1,44 +1,42 @@
-# Leap-C back-port: handoff for item VER, the rest of phase 5 and phase 6
+# Leap-C back-port: handoff for sizing 6.1, the rest of phase 5 and phase 6
 
 Written 2026-10-26 at the end of phase 3, updated through phases 4 and 5; this version 2026-10-27, after
-5.9/5.10. The plan is `docs/V2_LEAPC_BACKPORT_PLAN.md` (the ledger, every item's outcome, the owner
-decisions F1-F26); this file is only where things stand, what comes next and how to pick it up.
+item VER. The plan is `docs/V2_LEAPC_BACKPORT_PLAN.md` (the ledger, every item's outcome, the owner
+decisions F1-F27); this file is only where things stand, what comes next and how to pick it up.
 
 ## Where things stand
 
 - **Branch `backport/leapc`** (off `v2-development`). On it: phases 0-4, the redraw item, 5.1 (decimal
   literals), R1 (calculator rounding), `SH_VIEW` (ED4), ED3/ED7, 5.2-5.5 (VM speed), 5.6-5.8 (calculator
   multiply/divide in registers, `SQR` halving, the row clear) and 5.9/5.10 (`SIN`/`COS`/`TAN` in the
-  EXROM, the polynomial, Q-35; owner F26: integrated by fast-forward). GitHub has it up to `0227797`
+  EXROM, the polynomial, Q-35; owner F26: integrated by fast-forward) and item VER (the ROM's version on
+  the status row at power-on, through the chime to the first key; F27). GitHub has it up to `0227797`
   (F21); 5.9/5.10 and later are local until the owner says to push.
-- **Free ROM: HOME 746 B, EXROM 171 B** (`make budget`). Emergency reserve HOME 64 / EXROM 32 (`make check`
+- **Free ROM: HOME 690 B, EXROM 163 B** (`make budget`). Emergency reserve HOME 64 / EXROM 32 (`make check`
   fails below it). Spending is weighted by benefit per byte (F1).
 - **Owner rules for what is left** (2026-10-27): a change must give a *significant speed increase* or
-  *use less HOME or EXROM* (F17); the phase 5 follow-ups must *leave room for phase 6* (F19); item VER
-  is the owner's own request (F22).
+  *use less HOME or EXROM* (F17); the phase 5 follow-ups must *leave room for phase 6* (F19).
 - **What phase 5 gave** [M] (`qbench`, `qprofile --statements`, against the build before 5.2): counter
   and GOTO loops 2.4-2.55×, the sieve 1.53×, IF-heavy loops 1.56×, empty FOR 1.31×; `SQR` 3.0×,
   `SIN`/`COS` 3.0× (2.0× by 5.6, 1.48× more by 5.10), `TAN` 2.7×, a float divide −40% and multiply −37%
   a statement, a scrolling `PRINT` −10.6%. Every result and screen identical to before, except
   `SIN`/`COS`/`TAN` (5.10: within ~2 ulp of exact, were up to 16,713 ulp off; F23) and the Q-35 fix.
-- Last full `make test` (5.10, 2026-10-27, 1,794 s, fast emulation): all PASS (smoke 9/9, standalone
+- Last full `make test` (VER, 2026-10-27, 1,975 s, fast emulation): all PASS (smoke 9/9, standalone
   40/40, prod-regress 127, prod-arrays 101, known-defects 15, saveall 13, micsave, qual 666 PASS + 2 XFAIL
-  + 2 N/A of 670, lifecycle 23, `qvmedge` 120, maint-qual all); `make doc-examples` 327 (the spiral's image
-  rewritten for 5.10). Emulators only (F12): nothing has run on a physical TS2068.
+  + 2 N/A of 670, lifecycle 23, `qvmedge` 120, maint-qual all); `make doc-examples` 327 (the boot screen's image
+  rewritten for VER). Emulators only (F12): nothing has run on a physical TS2068.
 - No stock-ROM-derived code in the images (`tools/check_provenance.py`, empty allow-list); anything
   taken from Leap-C is MIT and goes in `NOTICE.md`.
 
 ## What comes next, in this order
 
 The space arithmetic is the plan's "Room for phase 6": phase 6 is allowed **HOME ~260 B, EXROM ~100 B**
-[E] until 6.1 is sized. Now HOME has 422 B above the reserve and that allowance; the EXROM 39 B. Check
+[E] until 6.1 is sized. Now HOME has 366 B above the reserve and that allowance; the EXROM 31 B. Check
 every item against *free - reserve - phase 6's allowance >= its cost* in the ROM it uses.
 
-1. **Item VER** (owner F22): the ROM's version on the screen at power-on, while the startup chime plays.
-   The plan's "Item VER" has the item; how to pick it up is below.
-2. **Size 6.1** (package functions with Leap-C's export table and signature bytes) as a prototype, to
+1. **Size 6.1** (package functions with Leap-C's export table and signature bytes) as a prototype, to
    replace phase 6's allowance with a measured figure before spending more.
-3. **Then, where the room is** (HOME has it; the EXROM has 39 B above phase 6's line):
+2. **Then, where the room is** (HOME has it; the EXROM has 31 B above phase 6's line):
    - 5.13, `PRINT` of a string (~3× a character: the addresses worked out once, an unrolled glyph copy);
      the print path runs only with the EXROM in, so either ROM works: HOME now. Check: `qscrdiff`.
    - 5.11, the scroll copy (each screen third's rows in one block per scanline, unrolled; ~218 → ~180 kT,
@@ -46,67 +44,24 @@ every item against *free - reserve - phase 6's allowance >= its cost* in the ROM
      `qeditview`. Check: `qscrdiff`, `qrtime`.
    - 5.12, `LOAD v; PUSH k; CMP_JMPZ` as one instruction (~1,000 T an `IF i < k`): the handler in HOME
      (the room is there), the compiler side next to 5.4's in `rom/exrom_v2_fuse.asm` (EXROM, ~70 B [E]:
-     more than the EXROM's 39 B above phase 6's line, so measure, or put it in HOME). Bytecode changes:
+     more than the EXROM's 31 B above phase 6's line, so measure, or put it in HOME). Bytecode changes:
      `qbytecode` review and baseline reset; `qvmedge` cases.
-4. **Phase 6 (ABI 2.1)**, items 6.1-6.6, for v2.1. The manual's speed figures were updated after 5.8
+3. **Phase 6 (ABI 2.1)**, items 6.1-6.6, for v2.1. The manual's speed figures were updated after 5.8
    (`tools/qual/manual_measure.py`, owner F21; it has no `SIN`/`COS`/`TAN` entry); re-run it after any
    later speed change and update `04_concepts.md` "Speed" and `FOR`'s note (the Word edition is rebuilt
    at release).
 
-## Item VER: how to pick it up
+## Pitfalls met in item VER
 
-**Goal (owner F22).** At power-on the screen shows the ROM's version, e.g. `2068 LEAP V2.1`, *while the
-startup chime plays*: on the screen before its first note and still there after its last. Proposed in
-the plan (not decided): it then stays until the first key, which reaches the editor as usual. If keeping
-it past the editor's first redraw costs much or disturbs the tests, ask the owner before settling for
-"during the chime only". Only at power-on, like the chime (not on `NEW` or a return to the editor).
-
-**The boot path today.** `V2_COMMAND_LOOP` (`rom/exrom_v2_shell.asm`, EXROM), its one-time head:
-`KTAB_GFX_CLS`, `V2_RESET_DISPLAY`, `V2_RESET_EDIT`, `STARTUP_CHIME`; then `.loop` (re-entered on `NEW`
-and every return to the editor): `V2_RESET_DISPLAY` (colours, border, mode 0; no clear), `EDITOR_INIT`,
-the hooks, `V2_LOAD_EDIT`, `EDITOR_ENTER` → `EDITOR_REDRAW_SCREEN` (→ `V2_REDRAW`, which ends in
-`V2_DRAW_STATUS`: row 23 cleared and `LINE n/m` printed, with the status-bar attribute) → `EDITOR_LOOP`
-(`KTAB_IO_READ_KEY`). The screen is blank during the chime today.
-- Printing the text between `V2_RESET_EDIT` and `STARTUP_CHIME` puts it up for the whole chime. Row 23 is
-  natural (the status row), but `V2_DRAW_STATUS` overwrites it at the editor's first redraw, right after
-  the chime. Keeping it to the first key needs e.g. a one-shot flag that `V2_DRAW_STATUS` honours (print
-  the version instead of `LINE n/m`) and that the first key clears; check `V2_REDRAW`'s selective paths
-  (`V2_REDRAW_SCOPE`, `V2_REDRAW_NAV`) also redraw the status when the flag clears.
-- `V2_SHOW_MESSAGE` (the status-line messages) is *not* usable as it is: it ends in `jp KTAB_IO_READ_KEY`
-  (it waits for, and takes, a key) and calls `SA_UNBUILD` when `SA_BUILT` is set.
-- The chime: the default (MAINT) build plays chime C (`V2_MAINT_CHIME_C`): attack 27 frames, hold 19,
-  release 9, 55 frames (~0.9 s at 60 Hz; BREAK ends it with `V2_MAINT_SHARED_WAIT`); the release
-  definitions (`make build EXTRA_DEFS=`) play the original table chime; `V2_MAINT_CHIME_B` is a third
-  variant. The text must be up for each of them: print before the call, not inside a variant.
-
-**The version.** One constant in a new include (e.g. `include/v2_version.inc`: the text), edited at each
-release, the next being v2.1 (F4). Not `git describe`: every commit would build a different ROM (`make
-repro`; comparing a build with the released images' hashes). The released v2.0.x images are fixed.
-
-**Where the bytes go.** HOME has the room (746 free): the text and a small print routine in HOME,
-exported to the EXROM through `tools/write_v2_crossbank.py` (`NAMES`; a global name, not a local
-`.label`), called from the boot head (3 B of EXROM). `KTAB_GFX_PRINT_STRING` (HL text, B row, C column)
-and `V2_STATUS_SET_BAR_ATTR` are what the status line uses. Estimate ~25 B HOME. Record `make budget`'s
-figures in the ledger.
-
-**Checks.**
-- A probe (like the 5.9 slot probe, `qharness.Machine`): boot from reset with breakpoints at
-  `STARTUP_CHIME`'s entry and at its return (its caller's next instruction), read the screen
-  (`m.read(0x4000, 6912)`, or the harness's text reader) at both: the version text present. Then a key
-  (`KBD_LASTK`/`KBD_KEYHIT`, as `call_routine` does): it reaches the editor (typed character on screen),
-  and the status row shows `LINE n/m` again.
-- The chime itself unchanged: `make qual-maint` / maint-qual's `ay_beep` and `cbeep` (AY register writes,
-  frame waits).
-- **The test harness's boot snapshot** (`qharness.Machine.start`) is taken at the first `IO_READ_KEY`,
-  i.e. with the text still up if it stays to the first key. Every tool restoring that snapshot then starts
-  from that screen: `qeditview` (its oracle redraws with `V2_REDRAW`), `qscrdiff`, the editor and
-  production suites, `doc-examples` screenshots (`manual_run.py`). Run them; a difference confined to row
-  23 before the first key is expected, anything else is not. If many tools need re-baselining, prefer
-  clearing the flag where the harness's first action would anyway, and say so to the owner.
-- `make check`, `make build EXTRA_DEFS=` (the release definitions assemble), `make repro`, `make test`
-  (subagent, on a copy), `make doc-examples`.
-- The manual: where the version is shown (`01_introduction.md`, `07_appendices.md`); a `doc-examples`
-  case is not needed (it is not a BASIC example).
+- The version text is `include/v2_version.inc`: **edit it at each release** (now `2068 LEAP V2.1`), and
+  the manual's two places that show it (`02_beginners_guide.md` Chapter 1 with `boot_screen.png`,
+  `07_appendices.md` Appendix A); `doc-examples`' `guide.boot` fails until they agree.
+- Every tool's boot snapshot (`qharness.Machine.start`, `v2_prod.boot`, `manual_run`) now has the version
+  on row 23 and `V2_VER_FLAG` = 1: the first redraw after it (any typed key, `EDITOR_ENTER` from
+  `V2_COMMAND_LOOP.loop`) is a full one and puts `LINE n/m` back. A new tool that reads row 23 straight
+  from the snapshot sees the version.
+- `tools/qual/qverboot.py` checks it; `tools/maint/chime_trace.py A B` compares the chime's AY writes.
+- ZEsarUX gives a burst of static as the chime starts (its audio starting up); Fuse plays it clean.
 
 ## Pitfalls met in 5.9/5.10
 

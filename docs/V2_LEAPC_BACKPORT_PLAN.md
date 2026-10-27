@@ -56,6 +56,7 @@ Further rules:
 | 5.8 row clear                | **286** | **573** | [M]: HOME +8 free: `GFX_CLEAR_ROW` fills the attributes and falls into `GFX_CLEAR_ROW_TEXT`            |
 | 5.9 `SIN`/`COS`/`TAN` to the EXROM | **746** | **142** | [M]: HOME +460 free (`SIN` 340, `TAN` 58, `COS` 27, `SIN_PEEK_POP` 27, the divisor table 8); EXROM −431 (the code 413 after bit-identical compaction, 3 slots 18); `SQR`/`PI`/`RAD`/`DEG` stay (no room) |
 | 5.10 `SIN`/`COS`/`TAN` series | **746** | **171** | [M]: EXROM +29 free: the series 136 → 90 B, its constants 8 → 30 (π/180, five coefficients); `COS` 27 → 4 (enters `SIN` with a shift); the reduction +18 (Q-35: the shift, reduced again; the fraction negated by its sign bit) |
+| VER the ROM's version       | **690** | **163** | [M]: HOME −56 free (`rom/v2_version.asm`: the text 15, `V2_VER_STATUS` 18, `V2_VER_SCOPE` 18, the flag set at cold start 5); EXROM −8 (boot head 3, `V2_DRAW_STATUS` 5; `V2_REDRAW`'s scope read became the call, 0); RAM `$BEC6` |
 | phase 5 (speed)              | ≥ 64    | ≥ 32    | Class B: each item sized and weighed before it is started; 5.0 first if the room is not there                 |
 
 Every [E] is replaced by `make budget`'s figure as each item lands.
@@ -761,6 +762,35 @@ the slot list, not with a release).
   suites, `doc-examples`) would see the text if it stays until the first key: check them, or clear it
   before that snapshot's state matters. The manual: where the version is shown (01, 07).
 
+Outcome, VER (2026-10-27; prototyped on `proto/ver-boot-version` off `backport/leapc` `19badd4`; all [M]):
+
+- **What it does.** `include/v2_version.inc` holds the text (`2068 LEAP V2.1`, at most 19 characters),
+  edited at each release. `V2_COLD_START` sets `V2_VER_FLAG` (`$BEC6`, a free cell of the editor gap) to 2;
+  `V2_COMMAND_LOOP`'s one-time head calls `V2_DRAW_STATUS` before `STARTUP_CHIME`, and `V2_DRAW_STATUS`
+  shows the version (through `V2_VER_STATUS`, HOME) while the flag is nonzero. `V2_REDRAW` reads its scope
+  through `V2_VER_SCOPE` (HOME), which counts the flag down: the editor's first redraw (before any key)
+  leaves 1; the redraw after the first key leaves 0 and is a full one, so `LINE n/m` is back. Keys that do
+  not redraw (LEFT, RIGHT, ignored codes) leave the version up. `NEW` and returns to the editor never set
+  the flag. `V2_STATUS_BUF` and `V2_REDRAW_SCOPE` moved to `include/v2_layout.inc` (HOME uses them now).
+- **Bytes** (`make budget`): HOME 746 → 690 free (−56), EXROM 171 → 163 (−8). Above the reserve and phase
+  6's allowance: HOME 366, EXROM 31. More than the ~25 B estimated: the count-down (the boot draw and the
+  editor's first redraw both come before any key) and the copy into the status buffer.
+- **Checks.** `tools/qual/qverboot.py` (new): the version and the status-bar attribute on row 23 at
+  `STARTUP_CHIME`'s entry, at its return and at the first key wait; LEFT leaves it; the first typed key
+  reaches row 0 and brings `LINE 1/0` back; `NEW` does not show it again: 13/13 PASS on the default build
+  and on the release definitions (`EXTRA_DEFS=`). `tools/maint/chime_trace.py` reference vs VER: the same
+  29 AY writes on the same frames. `qscrdiff` 15/15 identical; `qeditview --oracle --ref` 37/37 PASS, T a
+  key within ±1%. `make check`, `make repro` OK. `make test` all PASS (1,975 s: smoke 9/9, standalone
+  40/40, prod-regress 127, prod-arrays 101, known-defects 15, saveall 13, micsave, qual 666 PASS + 2 XFAIL
+  + 2 N/A, lifecycle 23, `qvmedge` 120, maint-qual all). `make doc-examples` 327: the one difference was
+  the expected `guide.boot` (the boot screen); the manual's Chapter 1 and Appendix A updated and
+  `boot_screen.png` rewritten. No other tool needed re-baselining: every suite types or redraws before
+  it reads row 23.
+- **Heard by the owner** (ZEsarUX and Fuse): the version is up during the chime. Static at the chime's
+  start in ZEsarUX only, the same on the build without VER's change in the AY writes, clean in Fuse: the
+  emulator's audio start, not the ROM.
+- **Owner (2026-10-27):** integrate if `make test` passes (F27).
+
 ## Phase 6: package ABI 2.1 (minor version: old packages keep working)
 
 | #   | Item                                                                                                                                                                                                    | Notes                                                  |
@@ -991,6 +1021,7 @@ All decided by the owner on 2026-10-25.
 | F24 | Q-35 (`COS` above 32677)                 | Fix accepted (part of 5.10) (2026-10-27)                            |
 | F25 | `SQR`, `PI`, `RAD`, `DEG`                | Stay in HOME; the rest of 5.9 closed (no EXROM room, HOME no longer short). Revisit only if 6.1's sizing leaves HOME short (2026-10-27) |
 | F26 | 5.9-5.10 prototype                       | Integrated (fast-forward, 2026-10-27); next: item VER               |
+| F27 | Item VER                                 | Integrated on a passing `make test` (fast-forward, 2026-10-27); next: size 6.1 |
 
 ## Also worth doing
 
