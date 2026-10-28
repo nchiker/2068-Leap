@@ -64,6 +64,7 @@ Further rules:
 | 5.14 the glyph lookup        | **500** | **113** | [M], integrated (F32; owner request, 2026-10-27): HOME +38 free (`LOW_CHAR_TABLE` 33 B replaces the 46-byte pair table; the lookup's code 25 B shorter); EXROM 0; RAM 0 |
 | 6.2 floats for packages      | **377** | **113** | [M], integrated (F33, fast-forward to `aa0fcb7`): HOME −123 free (`FP_OP` 83, service 17; `OP_CALL_EXT`'s float form 34: the arguments into calculator slots 0-4, a float value stored as a FLOAT temp; `EXT2_REGISTER` refusing the float form with a string argument 6); EXROM 0; slot 17 takes 3 B of the reserved slot area (not counted); RAM 0 |
 | 6.3 package errors           | **377** | **111** | [M], integrated (F35): HOME 0 (service 18 is a `jp VM_ERR_COMMON` in the reserved slot area, 3 B, not counted); EXROM −2 (`RUNTIME ERROR n`: `V2_RUNTIME_MSG` jumps into `V2_COMPILE_MSG`'s code tail, now `V2_MSG_CODE`, 1; the message's trailing space 1); RAM 0 |
+| 6.4 the reserved slots trap  | **377** | **111** | [M], prototype (`proto/6.4-slot-trap`): HOME 0 (11 `jp VM_ERR_EXTENSION_NOT_FOUND` in the reserved slot area, not counted); EXROM 0; RAM 0 |
 | phase 5 (speed)              | ≥ 64    | ≥ 32    | Class B: each item sized and weighed before it is started; 5.0 first if the room is not there                 |
 
 Every [E] is replaced by `make budget`'s figure as each item lands.
@@ -1171,6 +1172,28 @@ Then phase 6's rest (6.2-6.6) and the manual's speed figures (`tools/qual/manual
   (ay_beep 59, cbeep 27, di_wait 14, cbeep_tape 3); `make doc-examples` 327/327.
 - **Owner decision F35 (2026-10-27):** integrate when the tests pass; then the remaining items, each on
   its own prototype branch (stacked on the one before), the documentation drafted by cheaper models.
+
+### Item 6.4 outcome (prototype, 2026-10-27; `proto/6.4-slot-trap` off `backport/leapc` `9959180`; all [M])
+
+- **What changed:** the 11 reserved package service slots (`$00CF-$00EF`, HOME) were blank `$FF`; each is
+  now `jp VM_ERR_EXTENSION_NOT_FOUND` (`rom/v2_home.asm`, a `DUP` loop after `PKG_SVC_LIST`). A package
+  that calls a service this ROM does not have (e.g. one built for a later minor) stops with runtime
+  error 9, the error of a package name whose registry slot is gone, shown `RUNTIME ERROR 9`, instead of
+  executing `$FF` bytes (`RST $38`). This is F34's 6.4.
+- **Limit:** like service 18, the trap unwinds through `VM_ERR_COMMON`, so it is defined only while a
+  program runs (an execute routine). At install time a package must check the header's minor and slot
+  count; the tape's version word already keeps a package that needs a later minor from loading at all.
+- **ABI.** Still 2.1 (unreleased), no new slot: `docs/PACKAGE_ABI.md` §3 (layout, "The reserved slots
+  trap"), §8. `tools/check_package_abi.py` rule 1 now requires every reserved slot to be exactly `jp
+  VM_ERR_EXTENSION_NOT_FOUND` (it required blank `$FF`); negative control: one trap byte of
+  `build/test_basic.bin` overwritten with `$FF` is reported ("reserved slot area $00CF-$00F0 is not one
+  `jp VM_ERR_EXTENSION_NOT_FOUND` per slot").
+- **Bytes** (`make budget`, `9959180` → `1fccd3c`): HOME 377 (0: the slots were already reserved
+  space); EXROM 111 (0); RAM 0. As sized in 6.3 (HOME 0, EXROM 0).
+- **Checks.** The test package `rom/v2_package_fptest.asm` gained an export `TRAP(n)` (n = 0 calls the
+  first reserved slot, n = 1 the last; it would raise 99 if the slot returned); `tools/qual/qpkgfn.py`
+  67/67 PASS (65 before; 2 new cases in `RAISES`): both give error 9, `RUNTIME ERROR 9`, paging depth 1
+  afterwards. `make check` OK. `make test`: [make test: pending]
 
 ## Phase 7: decision gate for a V3 (major: ABI 3.0, new RAM map)
 

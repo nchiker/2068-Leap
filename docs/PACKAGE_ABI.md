@@ -180,7 +180,7 @@ Layout in the HOME ROM [M: read back from the emulated ROM by `abi-service-table
 $0092  5A 02 01 13      magic $5A, ABI major 2, minor 1, slot count 19
 $0096  C3 lo hi         slot 0  (jp EXT2_REGISTER)
 ...    ...              19 slots, 3 bytes each, ending at $00CE
-$00CF–$00EF             blank ($FF): 11 reserved slots (append-only)
+$00CF–$00EF             11 reserved slots (append-only), each `jp VM_ERR_EXTENSION_NOT_FOUND` (6.4)
 $00F0–$00FD             slot code (PKG_NUM_TO_TEXT_SAFE, 14 bytes)
 $00FE–$00FF             blank
 ```
@@ -246,6 +246,16 @@ on the stack is dropped [M: `tools/qual/qpkgfn.py` `RAISES`: from a function, ne
 package call's arguments and in a statement's, in a loop; depth 1 afterwards]. That `SP` is only
 defined while the program runs: **execute routines only**, never the install. Codes: §2 "Errors".
 
+**The reserved slots trap** (item 6.4): each of the 11 reserved slots (`$00CF–$00EF`) is a `jp
+VM_ERR_EXTENSION_NOT_FOUND` (it was blank `$FF`). A package that calls a service this ROM does not
+have (one built for a later minor) stops with runtime error 9, the error of a package name whose
+registry slot is gone, shown `RUNTIME ERROR 9`, instead of executing `$FF` bytes (`RST $38`). Like
+service 18 the trap unwinds through `VM_ERR_COMMON`, so it exists only while a program runs (an
+execute routine): at install time a package must check the header's minor and slot count itself
+(and the tape's version word already keeps a package that needs a later minor from loading) [M:
+`tools/qual/qpkgfn.py` `RAISES`: fptest `TRAP(0)` calls the first reserved slot, `TRAP(1)` the last;
+both give error 9, `RUNTIME ERROR 9`, paging depth 1 afterwards; had a slot returned, 99].
+
 **EXROM independence rule.** A service reachable from a package must never transfer control to, or
 read data from, `$C000–$DFFF` unless it pages EXROM in itself. `check_package_abi.py` walks each
 slot's call/jump closure in the HOME listing (§4 of the checker) and fails the build on any such
@@ -256,8 +266,9 @@ VM's four calculator stubs, reaches the EXROM only through `RST $28` and through
 called right after `BANK_PAGE_EXROM_IN` and followed by `BANK_PAGE_EXROM_OUT`.
 
 **Adding a service** (minor bump): append `PKG_SVC name, home_routine` to `PKG_SVC_LIST`, bump
-`PKG_SVC_COUNT` and `PKG_ABI_MINOR`. There are 11 free slots before `$00F0`. A routine that needs
-more than a `jp` must put its few bytes of code in the slot-code area or in HOME proper.
+`PKG_SVC_COUNT` and `PKG_ABI_MINOR`. There are 11 reserved slots before `$00F0` (traps, above; a new
+service replaces the next one). A routine that needs more than a `jp` must put its few bytes of code
+in the slot-code area or in HOME proper.
 
 ## 4. Pinned RAM and constants
 
@@ -394,7 +405,7 @@ treating `$E000-$E7FF` as off limits, as in §5.5. `NEW` clears it; `RUN`, `CLEA
 | Guard | Catches |
 |---|---|
 | HOME build `ASSERT`s (`PKG_PIN_LIST`, `PKG_CONST_LIST`, table layout) | any sysvar/constant moving; table overlapping the KTAB or the slot code |
-| `tools/check_package_abi.py` (in `make check`) | table bytes ≠ ABI file; slots not blank; pin overlaps; HOME/EXROM touching the package scratch block; EXROM edges from any service; the wrapper's exact bytes; a package that does not assemble against the ABI file alone; any package call/jump into HOME that is not a slot; any package memory reference outside pinned cells and hardware ranges; literal addresses in package sources; an error code a shipped package raises that §2 does not allow, or one not given as `ld a,n` right before the raise (6.3) |
+| `tools/check_package_abi.py` (in `make check`) | table bytes ≠ ABI file; a reserved slot that is not exactly `jp VM_ERR_EXTENSION_NOT_FOUND` (6.4); pin overlaps; HOME/EXROM touching the package scratch block; EXROM edges from any service; the wrapper's exact bytes; a package that does not assemble against the ABI file alone; any package call/jump into HOME that is not a slot; any package memory reference outside pinned cells and hardware ranges; literal addresses in package sources; an error code a shipped package raises that §2 does not allow, or one not given as `ld a,n` right before the raise (6.3) |
 | `tools/v2_prod_regress.py` `abi-*` | the shipped ROM's table; slot 14 with EXROM out; end-to-end package tape load + run; rejection of 6 package and 6 program header words with no side effects; SAVE stamps; SAVE→LOAD round trips |
 
 Negative controls were run when the checker was written (an unpinned `ld a,($8200)` and a raw
