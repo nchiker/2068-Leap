@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """Build a stock two-block Direct Recording TZX for a loadable extension.
 
+With --v2 the tape carries the package ABI's version word; with --source (the package's .asm) its
+minor is the one the package needs (tools/v2_abi.py needed_minor: 2.0 unless the source names a 2.1
+service, pin or signature constant), so a statement-only package loads on a v2.0.x ROM too. Without
+--source the word is this ROM's own.
+
 With --v2 it also warns (6.6, docs/PACKAGE_ABI.md s2 "Names") about each name the package registers
 that the language already uses: a keyword or a built-in function (the ROM's word always wins, so the
 package's is never reached), a shell command (typed alone as a line, the shell runs it), or a name the
@@ -124,22 +129,30 @@ def pack(bits: list[int]) -> tuple[bytes, int]:
 def main() -> int:
     args = [a for a in sys.argv[1:] if a != "--v2"]
     v2 = len(args) != len(sys.argv) - 1
-    if len(args) != 3:
-        print("usage: make_extension_tzx.py OUTPUT.tzx NAME MODULE.bin [--v2]\n"
+    source = None
+    if "--source" in args:
+        i = args.index("--source")
+        source = args[i + 1] if i + 1 < len(args) else None
+        del args[i:i + 2]
+    if len(args) != 3 or (source and not v2) or ("--source" in sys.argv and not source):
+        print("usage: make_extension_tzx.py OUTPUT.tzx NAME MODULE.bin [--v2 [--source PACKAGE.asm]]\n"
               "  --v2: stamp the V2 package ABI word from include/v2_package_abi.inc "
-              "(default: the legacy V1 value 1)", file=sys.stderr)
+              "(default: the legacy V1 value 1)\n"
+              "  --source: stamp the minor the package needs instead of this ROM's", file=sys.stderr)
         return 2
     output, name, module_path = Path(args[0]), args[1], Path(args[2])
     module = module_path.read_bytes()
     if len(module) > MODULE_WINDOW_MAX:
         raise ValueError(f"module is {len(module)} bytes; limit is {MODULE_WINDOW_MAX}")
     module_size = len(module)
+    abi = v2_abi.load()
+    word = (abi.package_word(source) if source else abi.pkg_word) if v2 else 1
     if v2:
         warn_names(name.upper(), module)
     tape_name = name.upper().encode("ascii")[:10].ljust(10, b" ")
     header_payload = (
         bytes([4]) + tape_name + module_size.to_bytes(2, "little")
-        + (v2_abi.load().pkg_word if v2 else 1).to_bytes(2, "little") + module_size.to_bytes(2, "little")
+        + word.to_bytes(2, "little") + module_size.to_bytes(2, "little")
     )
     bits: list[int] = []
     level = append_block(bits, framed(0x00, header_payload), 0)
@@ -153,7 +166,7 @@ def main() -> int:
     raw += len(packed).to_bytes(3, "little")
     raw += packed
     output.write_bytes(raw)
-    print(f"wrote {output}: {len(module)} payload bytes, {len(bits)} samples")
+    print(f"wrote {output}: {len(module)} payload bytes, {len(bits)} samples" + (f", word ${word:04X}" if v2 else ""))
     return 0
 
 

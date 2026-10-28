@@ -23,7 +23,11 @@ stop agreeing.  It is the automated half of docs/PACKAGE_ABI.md:
  7. (6.3) every runtime error code a package source raises is one a package may raise
     (include/v2_ext_kinds.inc: EXT_ERR_FIRST..EXT_ERR_LAST, EXT_ERR_DIV0/RANGE/FLOAT), given
     as `ld a,n` right before `ld (VM_ERROR_CODE),a`, VM_RAISE_ERROR or a jump to a routine
-    that starts with that store (the shipped packages; the test packages raise any code on purpose).
+    that starts with that store (the shipped packages; the test packages raise any code on purpose);
+ 8. (the tape stamp) every package tape the Makefile writes is stamped from its own source
+    (`make_extension_tzx.py ... --v2 --source rom/v2_package_<name>.asm`), so it carries the minor
+    the package needs; the test packages, which use 2.1, are found to need this ROM's minor (a
+    check of tools/v2_abi.py's needed_minor itself).
 """
 import os
 import re
@@ -70,6 +74,29 @@ def allowed_error_codes():
     k = {m.group(1): int(m.group(2)) for m in re.finditer(r"^(EXT_ERR_\w+)\s+EQU\s+(\d+)",
                                                          (ROOT / "include/v2_ext_kinds.inc").read_text(), re.M)}
     return set(range(k["EXT_ERR_FIRST"], k["EXT_ERR_LAST"] + 1)) | {k["EXT_ERR_DIV0"], k["EXT_ERR_RANGE"], k["EXT_ERR_FLOAT"]}
+
+
+def check_tape_stamps(abi):
+    """Rule 8. Returns [(package, the minor its tape carries)]."""
+    stamped = {}
+    for line in (ROOT / "Makefile").read_text().splitlines():
+        m = re.search(r"make_extension_tzx\.py\s+\S+\s+\S+\s+build/v2_package_(\w+)\.bin\s+--v2(.*)$", line)
+        if m:
+            src = re.search(r"--source\s+(\S+)", m.group(2))
+            stamped[m.group(1)] = src.group(1) if src else None
+    out = []
+    for pkg, src in PACKAGES.items():
+        if pkg not in stamped:
+            fail("Makefile: no `make_extension_tzx.py ... build/v2_package_%s.bin --v2` line" % pkg)
+        elif stamped[pkg] != src:
+            fail("Makefile: the %s tape is not stamped from its source (--source %s; has %s)" % (pkg, src, stamped[pkg]))
+        else:
+            out.append((pkg, abi.needed_minor(src)))
+    for src in ("rom/v2_package_fntest.asm", "rom/v2_package_fptest.asm"):
+        if abi.needed_minor(src) != abi.minor:
+            fail("tools/v2_abi.py needed_minor: %s uses 2.%d's functions but is found to need 2.%d"
+                 % (src, abi.minor, abi.needed_minor(src)))
+    return out
 
 
 def check_error_codes(srcs):
@@ -383,6 +410,9 @@ def main():
     # 7 -- the error codes the packages raise
     nsites = check_error_codes(sorted(srcs))
 
+    # 8 -- each package tape carries the minor its package needs
+    minors = check_tape_stamps(abi)
+
     if errors:
         print("check_package_abi.py: %d problem(s)" % len(errors))
         for e in errors:
@@ -390,6 +420,7 @@ def main():
         return 1
     print("check_package_abi.py: ABI %d.%d -- %d service slots, %d pinned cells, %d constants, %d packages, %d error sites: all checks passed."
           % (abi.major, abi.minor, len(abi.services), len(abi.pins), len(abi.consts), len(PACKAGES), nsites))
+    print("  package tapes: %s" % ", ".join("%s %d.%d" % (p, abi.major, mn) for p, mn in minors))
     return 0
 
 

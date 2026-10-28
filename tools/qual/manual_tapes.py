@@ -37,11 +37,13 @@ MSG = message_texts()
 
 
 def package_blocks(name):
-    """The two tape blocks of a package tape, as tools/make_extension_tzx.py --v2 writes them."""
+    """The two tape blocks of a package tape, as tools/make_extension_tzx.py --v2 --source writes them
+    (the word carries the minor the package needs)."""
     import v2_abi
     module = open(os.path.join(ROOT, "build", "v2_package_%s.bin" % name.lower()), "rb").read()
+    word = v2_abi.load().package_word(os.path.join("rom", "v2_package_%s.asm" % name.lower()))
     hdr = (bytes([4]) + name.upper().encode("ascii")[:10].ljust(10, b" ") + len(module).to_bytes(2, "little")
-           + v2_abi.load().pkg_word.to_bytes(2, "little") + len(module).to_bytes(2, "little"))
+           + word.to_bytes(2, "little") + len(module).to_bytes(2, "little"))
     return [(0x00, hdr), (0xFF, module)]
 
 

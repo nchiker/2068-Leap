@@ -154,12 +154,12 @@ v2-packages: build
 	tools/sjasmplus_strict.sh rom/v2_package_cbeep.asm
 	tools/sjasmplus_strict.sh rom/v2_package_fntest.asm
 	tools/sjasmplus_strict.sh rom/v2_package_fptest.asm
-	python3 tools/make_extension_tzx.py build/extensions/v2_mode.tzx MODE build/v2_package_mode.bin --v2
-	python3 tools/make_extension_tzx.py build/extensions/v2_sprite.tzx SPRITE build/v2_package_sprite.bin --v2
-	python3 tools/make_extension_tzx.py build/extensions/v2_printer.tzx PRINTER build/v2_package_printer.bin --v2
-	python3 tools/make_extension_tzx.py build/extensions/v2_shapes.tzx SHAPES build/v2_package_shapes.bin --v2
-	python3 tools/make_extension_tzx.py build/extensions/v2_graphics.tzx GRAPHICS build/v2_package_graphics.bin --v2
-	python3 tools/make_extension_tzx.py build/extensions/v2_cbeep.tzx CBEEP build/v2_package_cbeep.bin --v2
+	python3 tools/make_extension_tzx.py build/extensions/v2_mode.tzx MODE build/v2_package_mode.bin --v2 --source rom/v2_package_mode.asm
+	python3 tools/make_extension_tzx.py build/extensions/v2_sprite.tzx SPRITE build/v2_package_sprite.bin --v2 --source rom/v2_package_sprite.asm
+	python3 tools/make_extension_tzx.py build/extensions/v2_printer.tzx PRINTER build/v2_package_printer.bin --v2 --source rom/v2_package_printer.asm
+	python3 tools/make_extension_tzx.py build/extensions/v2_shapes.tzx SHAPES build/v2_package_shapes.bin --v2 --source rom/v2_package_shapes.asm
+	python3 tools/make_extension_tzx.py build/extensions/v2_graphics.tzx GRAPHICS build/v2_package_graphics.bin --v2 --source rom/v2_package_graphics.asm
+	python3 tools/make_extension_tzx.py build/extensions/v2_cbeep.tzx CBEEP build/v2_package_cbeep.bin --v2 --source rom/v2_package_cbeep.asm
 
 cplot-extension: build
 	mkdir -p build/extensions
