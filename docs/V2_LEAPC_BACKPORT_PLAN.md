@@ -1197,7 +1197,11 @@ Then phase 6's rest (6.2-6.6) and the manual's speed figures (`tools/qual/manual
 - **Checks.** The test package `rom/v2_package_fptest.asm` gained an export `TRAP(n)` (n = 0 calls the
   first reserved slot, n = 1 the last; it would raise 99 if the slot returned); `tools/qual/qpkgfn.py`
   67/67 PASS (65 before; 2 new cases in `RAISES`): both give error 9, `RUNTIME ERROR 9`, paging depth 1
-  afterwards. `make check` OK. `make test`: [make test: pending]
+  afterwards. `make check` OK. `make test` (on `1fccd3c`, fast emulation, 1,814 s): all PASS: smoke 9/9,
+  standalone 40/40, production checks, fill, prod-regress 127, prod-arrays 101, known-defects 15,
+  saveall 13, micsave 3, qual 666 PASS + 2 XFAIL + 2 N/A of 670, lifecycle 23, `qvmedge` 221, maint-qual
+  all (ay_beep 59, cbeep 27, di_wait 14, cbeep_tape 3); `make doc-examples` 327/327 (recorded on
+  `proto/tape-abi-minor`, the top of the stacked branches).
 
 ### Item 6.5 outcome (prototype, 2026-10-27; `proto/6.5-stack-budget` off `proto/6.4-slot-trap` `d5bb6bb`; all [M])
 
