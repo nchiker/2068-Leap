@@ -24,8 +24,9 @@
 ;
 ; Owns: the screen bitmap/attribute addressing scheme, and character
 ; output (GFX_PUTCHAR, GFX_CLS, GFX_PRINT_STRING, GFX_INVERT_ATTR).
-; FONT_TABLE covers space, 0-9, A-Z, a-z, and 23 punctuation characters
-; (86 glyphs total: " ! @ # $ % & ' ( ) _ : . , = + - ; / * < > ?) — grown
+; FONT_TABLE covers space, 0-9, A-Z, a-z, and 32 punctuation characters
+; (95 glyphs total, all of printable ASCII: " ! @ # $ % & ' ( ) : . , = + - ; / * < > ?,
+; and, Q-26, [ \ ] ^ _ ` after 'Z' and { | } ~ after 'z') — grown
 ; as needed rather than up front. The quote character was added once
 ; PRINT "..." string literals made it a real blocker; most of the rest
 ; cover kernel/io's confirmed-confidence subset of SYMBOL SHIFT's
@@ -430,24 +431,24 @@ GFX_SET_BORDER:
 GFX_CHAR_TO_FONT_OFFSET:
     ; 5.14 (back-port plan): space, the digits and the punctuation from '!' to
     ; '@' through one direct index table (LOW_CHAR_TABLE), the letters by
-    ; arithmetic, '_' by itself; was a chain of range tests and a linear scan
-    ; of (char, index) pairs (439 T for '.', ~1,100 for a code with no glyph).
+    ; arithmetic; was a chain of range tests and a linear scan of (char,
+    ; index) pairs (439 T for '.', ~1,100 for a code with no glyph). Q-26: the
+    ; font has '[' to '`' after 'Z' and '{' to '~' after 'z', so the same
+    ; arithmetic covers them.
     ld   e, a                      ; E = the code (the block-graphics path
                                    ; reads it)
     sub  " "
     cp   "@" - " " + 1
     jr   c, .low_table             ; ' '..'@': A = code - ' '
     sub  "a" - " "
-    cp   26
-    jr   c, .is_lower              ; A = code - 'a'
+    cp   "~" - "a" + 1
+    jr   c, .is_lower              ; 'a'..'~': A = code - 'a'
     add  a, "a" - "A"
-    cp   26
-    jr   c, .is_upper              ; A = code - 'A'
+    cp   "`" - "A" + 1
+    jr   c, .is_upper              ; 'A'..'`': A = code - 'A'
     ld   a, e
-    cp   "_"
-    jr   z, .is_underscore
     cp   128
-    jr   c, .not_found              ; 0-31, [ \ ] ^ ` { | } ~ and 127
+    jr   c, .not_found              ; 0-31 and 127
     cp   UDG_CODE_BASE                  ; 144
     jr   c, .is_block_graphics          ; 128-143
     cp   UDG_CODE_BASE + UDG_COUNT      ; 165
@@ -462,16 +463,13 @@ GFX_CHAR_TO_FONT_OFFSET:
     ld   l, a                      ; (the table does not cross a page)
     ld   a, (hl)                   ; the font index
     jr   .to_offset
-.is_underscore:
-    ld   a, 73
-    jr   .to_offset
 .is_lower:
-    add  a, 37                     ; 37-62 = lower case
+    add  a, 43                     ; 43-72 = 'a'..'~'
     jr   .to_offset
 .is_upper:
-    add  a, 11                     ; 0 space, 1-10 digits, 11-36 upper case
+    add  a, 11                     ; 0 space, 1-10 digits, 11-42 'A'..'`'
 .to_offset:
-    add  a, a                      ; index x 2 (indices <= 85: fits)
+    add  a, a                      ; index x 2 (indices <= 94: fits)
     ld   l, a
     ld   h, 0
     add  hl, hl                    ; x 4
@@ -1659,14 +1657,15 @@ BIT_MASK_TABLE:
 ; formula ----
 LOW_CHAR_TABLE:
     ; 5.14: the font index of each code from ' ' to '@' (GFX_CHAR_TO_FONT_OFFSET):
-    ; 0 space, 1-10 the digits, 63-85 the punctuation ('_' is 73, by itself).
-    DB   0, 64, 63, 66, 67, 68, 69, 70   ;   ! " # $ % & '
-    DB   71, 72, 82, 78, 76, 79, 75, 81   ; ( ) * + , - . /
+    ; 0 space, 1-10 the digits, 73-94 the punctuation (Q-26: after the letters'
+    ; blocks, which now hold [ \ ] ^ _ ` and { | } ~).
+    DB   0, 74, 73, 76, 77, 78, 79, 80   ;   ! " # $ % & '
+    DB   81, 82, 91, 87, 85, 88, 84, 90   ; ( ) * + , - . /
     DB   1, 2, 3, 4, 5, 6, 7, 8   ; 0 1 2 3 4 5 6 7
-    DB   9, 10, 74, 80, 83, 77, 84, 85   ; 8 9 : ; < = > ?
-    DB   65   ; @
+    DB   9, 10, 83, 89, 92, 86, 93, 94   ; 8 9 : ; < = > ?
+    DB   75   ; @
     ASSERT HIGH LOW_CHAR_TABLE == HIGH (LOW_CHAR_TABLE + "@" - " ")
-PUNCT_CHAR_COUNT EQU 23            ; the punctuation glyphs: the 22 above and '_'
+PUNCT_CHAR_COUNT EQU 32            ; the punctuation glyphs: the 22 above and [ \ ] ^ _ ` { | } ~
 
 ; Block-graphics (128-143) and UDG (144-164) character-code ranges —
 ; see GFX_CHAR_TO_FONT_OFFSET's .is_block_graphics/.is_udg. UDG_COUNT
@@ -1759,6 +1758,20 @@ FONT_TABLE:
     DB   $88, $50, $20, $20, $20, $20, $20, $00
     ; 'Z'
     DB   $F8, $08, $10, $20, $40, $80, $F8, $00
+    ; Q-26: '[' to '`' follow 'Z' and '{' to '~' follow 'z', so the letters'
+    ; arithmetic reaches them (GFX_CHAR_TO_FONT_OFFSET); '_' moved here.
+    ; '['
+    DB   $70, $40, $40, $40, $40, $40, $70, $00
+    ; '\'  (the mirror of '/')
+    DB   $00, $40, $20, $10, $08, $04, $00, $00
+    ; ']'
+    DB   $70, $10, $10, $10, $10, $10, $70, $00
+    ; '^'
+    DB   $20, $50, $88, $00, $00, $00, $00, $00
+    ; '_'
+    DB   $00, $00, $00, $00, $00, $00, $F8, $00
+    ; '`'
+    DB   $40, $20, $00, $00, $00, $00, $00, $00
     ; ---- lowercase a-z appended below, same design/review discipline
     ; as the uppercase set above ----
     ; 'a'
@@ -1813,6 +1826,14 @@ FONT_TABLE:
     DB   $00, $00, $88, $88, $88, $78, $08, $70
     ; 'z'
     DB   $00, $00, $F8, $10, $20, $40, $F8, $00
+    ; '{'
+    DB   $18, $20, $20, $40, $20, $20, $18, $00
+    ; '|'
+    DB   $20, $20, $20, $20, $20, $20, $20, $00
+    ; '}'
+    DB   $C0, $20, $20, $10, $20, $20, $C0, $00
+    ; '~'
+    DB   $00, $00, $40, $A8, $10, $00, $00, $00
     ; ---- punctuation, added as needed rather than up front — '"' was
     ; needed the moment PRINT "..." string literals became typeable,
     ; see kernel/io's SYMBOL SHIFT+P addition ----
@@ -1842,8 +1863,6 @@ FONT_TABLE:
     DB   $10, $20, $40, $40, $40, $20, $10, $00
     ; ')'
     DB   $40, $20, $10, $10, $10, $20, $40, $00
-    ; '_'
-    DB   $00, $00, $00, $00, $00, $00, $F8, $00
     ; ':'
     DB   $00, $20, $00, $00, $20, $00, $00, $00
     ; '.'
