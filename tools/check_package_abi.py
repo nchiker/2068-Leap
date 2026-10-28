@@ -18,7 +18,11 @@ stop agreeing.  It is the automated half of docs/PACKAGE_ABI.md:
  5. each package assembles with the ABI file alone (so it cannot name an unlisted HOME
     internal), and every call/jump/memory reference its code makes into HOME ROM or
     the sysvar RAM lands on a service-table slot or a pinned cell;
- 6. no package source uses a literal address outside the reserved scratch block.
+ 6. no package source uses a literal address outside the reserved scratch block;
+ 7. (6.3) every runtime error code a package source raises is one a package may raise
+    (include/v2_ext_kinds.inc: EXT_ERR_FIRST..EXT_ERR_LAST, EXT_ERR_DIV0/RANGE/FLOAT), given
+    as `ld a,n` right before `ld (VM_ERROR_CODE),a`, VM_RAISE_ERROR or a jump to a routine
+    that starts with that store (the shipped packages; the test packages raise any code on purpose).
 """
 import os
 import re
@@ -47,6 +51,7 @@ FP_SERVICE = "PKG_FP_OP"
 FP_TRAMPOLINE = "VM_CALL_USR_TRAMPOLINE"
 FP_STUBS = ("VM_CALC_ADD_STUB", "VM_CALC_SUB_STUB", "VM_CALC_MUL_STUB", "VM_CALC_DIV_STUB")
 FP_EXROM_CALL = "CALC_FP_TO_INT"
+RAISE_SERVICE = "VM_RAISE_ERROR"
 # Hardware / always-visible ranges a package may touch without a pin.
 HW_RANGES = [(0x4000, 0x5B00, "screen + attributes"), (0x6000, 0x7B00, "second display file")]
 
@@ -55,6 +60,63 @@ errors = []
 
 def fail(msg):
     errors.append(msg)
+
+
+def allowed_error_codes():
+    """The codes a package may raise, from include/v2_ext_kinds.inc (6.3)."""
+    k = {m.group(1): int(m.group(2)) for m in re.finditer(r"^(EXT_ERR_\w+)\s+EQU\s+(\d+)",
+                                                         (ROOT / "include/v2_ext_kinds.inc").read_text(), re.M)}
+    return set(range(k["EXT_ERR_FIRST"], k["EXT_ERR_LAST"] + 1)) | {k["EXT_ERR_DIV0"], k["EXT_ERR_RANGE"], k["EXT_ERR_FLOAT"]}
+
+
+def check_error_codes(srcs):
+    """Rule 7: each raise in the package sources names its code as `ld a,n` just before it, and n
+    is allowed. A raise is `ld (VM_ERROR_CODE),a` (unless it starts a raise routine, whose callers
+    are checked instead), VM_RAISE_ERROR, or a jump/call to a raise routine. Returns the count."""
+    ok = allowed_error_codes()
+    files = {}
+    for src in srcs:
+        lines = []
+        for no, line in enumerate(Path(src).read_text().splitlines(), 1):
+            code = line.split(";")[0].strip()
+            m = re.match(r"([A-Za-z_][\w.]*):\s*(.*)", code)
+            label, ins = (m.group(1), m.group(2)) if m else (None, code)
+            lines.append((no, label, re.sub(r"\s*,\s*", ",", re.sub(r"\s+", " ", ins.lower()))))
+        files[src] = lines
+    store = "ld (vm_error_code),a"
+    routines = set()
+    for lines in files.values():
+        insns = [(lb, ins) for _, lb, ins in lines if lb or ins]
+        for i, (lb, ins) in enumerate(insns):
+            if lb and not lb.startswith(".") and (ins or (i + 1 < len(insns) and insns[i + 1][1])):
+                first = ins or insns[i + 1][1]
+                if first == store:
+                    routines.add(lb.lower())
+    n = 0
+    for src, lines in files.items():
+        prev = None
+        entry = None                    # the routine whose first instruction comes next
+        for no, lb, ins in lines:
+            if lb and not lb.startswith("."):
+                entry = lb.lower()
+            if not ins:
+                continue
+            m = re.match(r"(?:jp|jr|call) (?:[a-z]+,)?([a-z_][\w.]*)$", ins)
+            target = m.group(1) if m else None
+            raise_here = (ins == store and entry not in routines) or \
+                target == RAISE_SERVICE.lower() or (target in routines)
+            entry = None
+            if raise_here:
+                n += 1
+                lit = re.match(r"ld a,(\d+|\$[0-9a-f]+)$", prev or "")
+                if not lit:
+                    fail("%s:%d: an error raised without `ld a,n` just before it (%s)" % (src, no, ins))
+                else:
+                    v = int(lit.group(1)[1:], 16) if lit.group(1).startswith("$") else int(lit.group(1))
+                    if v not in ok:
+                        fail("%s:%d: error code %d is not one a package may raise (12-31, 5, 15, 67)" % (src, no, v))
+            prev = ins
+    return n
 
 
 def syms(path):
@@ -312,13 +374,16 @@ def main():
                         fail("%s:%d: literal address $%04X outside the reserved package scratch block: %s" %
                              (src, no, v, line.strip()))
 
+    # 7 -- the error codes the packages raise
+    nsites = check_error_codes(sorted(srcs))
+
     if errors:
         print("check_package_abi.py: %d problem(s)" % len(errors))
         for e in errors:
             print("  -", e)
         return 1
-    print("check_package_abi.py: ABI %d.%d -- %d service slots, %d pinned cells, %d constants, %d packages: all checks passed."
-          % (abi.major, abi.minor, len(abi.services), len(abi.pins), len(abi.consts), len(PACKAGES)))
+    print("check_package_abi.py: ABI %d.%d -- %d service slots, %d pinned cells, %d constants, %d packages, %d error sites: all checks passed."
+          % (abi.major, abi.minor, len(abi.services), len(abi.pins), len(abi.consts), len(PACKAGES), nsites))
     return 0
 
 

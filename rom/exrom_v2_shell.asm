@@ -849,10 +849,12 @@ V2_COMPILE_MSG:
     cpir
     ld hl,V2_MSG_NOMEM
     ret z
-    ld l,a                       ; plan item 4.4: "SYNTAX ERROR n", n = the code (manual appendix B)
-    ld h,0
-    push hl
     ld hl,V2_MSG_SYNTAX
+; V2_MSG_CODE: HL = a message ending in a space, A = the code -> HL = "message n" (V2_STATUS_BUF)
+V2_MSG_CODE:
+    ld e,a                       ; plan item 4.4: "SYNTAX ERROR n", n = the code (manual appendix B)
+    ld d,0
+    push de
     ld de,V2_STATUS_BUF
     call V2_STATUS_APPEND        ; "SYNTAX ERROR " (the string's own trailing space)
     pop hl
@@ -862,7 +864,7 @@ V2_COMPILE_MSG:
 V2_MEMCODES: DB 5,6,45,55,62
 V2_MEMCODES_END:
 ; V2_RUNTIME_MSG: A = VM_ERROR_CODE -> HL = message. 2 and 6 are operand /
-; control stack overflow, 64 is array-arena exhaustion.
+; control stack overflow, 64 is array-arena exhaustion; any other is "RUNTIME ERROR n" (6.3).
 V2_RUNTIME_MSG:
     ld hl,V2_MSG_STACK
     cp 2
@@ -879,7 +881,7 @@ V2_RUNTIME_MSG:
     cp 66
     ret z
     ld hl,V2_MSG_RUNTIME
-    ret
+    jr V2_MSG_CODE
 
 V2_DISPATCH:
     ld hl,EDIT_LINE_BUF
@@ -2453,7 +2455,7 @@ V2_KW_EXT: DB "EXT",0
 V2_KW_ARRAY: DB "ARRAY",0
 V2_KW_ALL: DB "ALL",0
 V2_MSG_SYNTAX: DB "SYNTAX ERROR ",0    ; trailing space: V2_COMPILE_MSG appends the code after it
-V2_MSG_RUNTIME: DB "RUNTIME ERROR",0
+V2_MSG_RUNTIME: DB "RUNTIME ERROR ",0   ; trailing space: V2_RUNTIME_MSG appends the code
 V2_MSG_BREAK: DB "BREAK",0
 V2_MSG_FULL: DB "PROGRAM FULL",0
 V2_MSG_NOMEM: DB "OUT OF MEMORY",0

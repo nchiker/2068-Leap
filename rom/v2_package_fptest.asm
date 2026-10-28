@@ -1,5 +1,5 @@
 ; ============================================================================
-; rom/v2_package_fptest.asm -- 6.2 prototype: a test package for the float form and FP_OP.
+; rom/v2_package_fptest.asm -- 6.2/6.3: a test package for the float form, FP_OP and VM_RAISE_ERROR.
 ;
 ; The float form (EXT_SIG_FLOAT, signature bit 5): the numeric arguments arrive as the addresses
 ; of 5-byte floats (an INT converted), and a numeric function's value is a float (EXT_CALL_RESULT
@@ -17,6 +17,8 @@
 ;   FSGN$(x)             "-" when x < 0, else "+"       a float-form string function
 ;   TRYREG(n)            EXT2_REGISTER of the float form with a string argument (n = 0) or the
 ;                        float form alone (n = 1, as ZZ): 1 if refused, 0 if registered
+;   RAISE(n)             runtime error n through VM_RAISE_ERROR (service 18, 6.3), which does not
+;                        return (error 99 if it did)
 ; ============================================================================
     INCLUDE "include/hardware.inc"
     INCLUDE "include/v2_package_abi.inc"
@@ -55,6 +57,9 @@ FQ_EXPORTS:
     DB 1, EXT_KIND_STR | EXT_SIG_FLOAT
     DB "TRYREG",0
     DW FQ_TRYREG
+    DB 1, EXT_KIND_FN
+    DB "RAISE",0
+    DW FQ_RAISE
     DB 1, EXT_KIND_FN
     DB 0
 
@@ -174,6 +179,15 @@ FQ_TRYREG:
     inc hl
 FQ_INT:
     jp FQ_RESULT
+
+FQ_RAISE:
+    ld a,(EXT_CALL_ARG0)
+    call VM_RAISE_ERROR
+    ld a,99
+    ld (VM_ERROR_CODE),a
+    ld a,1
+    ld (VM_HALTED),a
+    ret
 
 FQ_ZZ:      DB "ZZ",0
 FQ_TEN:     DS 5

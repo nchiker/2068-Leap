@@ -19,4 +19,11 @@ FOP_MUL                 EQU 2       ; x = x * y
 FOP_DIV                 EQU 3       ; x = x / y
 FOP_INT                 EQU 4       ; x = the 16-bit integer DE
 FOP_TRUNC               EQU 5       ; HL = x truncated toward zero (CF: outside -32768..32767)
+; 6.3: the runtime error codes a package may raise (VM_RAISE_ERROR, service 18, or VM_ERROR_CODE):
+; its own, 12-31 (the VM's codes stay outside them), and three VM codes whose meaning it shares
+EXT_ERR_FIRST           EQU 12
+EXT_ERR_LAST            EQU 31
+EXT_ERR_DIV0            EQU 5       ; division by zero
+EXT_ERR_RANGE           EQU 15      ; argument out of range
+EXT_ERR_FLOAT           EQU 67      ; a float result out of range (FP_OP raises it itself)
     ENDIF

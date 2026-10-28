@@ -10,8 +10,11 @@ the ROM's built-ins win) and the compile errors of a wrong call. 6.2: the float 
 (service 17) through rom/v2_package_fptest.asm (FLOAT below): float arguments and values, INTs
 converted, five arguments in order, arguments as copies, nesting, the four operations, the 16-bit
 conversion, error 67 from an operation, a float statement and string function, and EXT2_REGISTER
-refusing the float form with a string argument. Then the shipped ABI 2.0 packages (statements only)
-are installed and one statement of each is run.
+refusing the float form with a string argument. 6.3: VM_RAISE_ERROR (service 18) through fptest's
+RAISE (RAISES below): it stops the program at once with the code (from a function, nested in
+another's arguments, in a statement's, in a loop), the message shows the code ("RUNTIME ERROR n";
+the VM's own messages unchanged), and the EXROM is paged in at depth 1 afterwards. Then the shipped
+ABI 2.0 packages (statements only) are installed and one statement of each is run.
 
 Usage: python3 tools/qual/qpkgfn.py [--tree DIR] [--port N]
 """
@@ -91,6 +94,22 @@ FLOAT = [
     ("float: the form alone registers", ["PRINT TRYREG(1)"], ["0"], 0, 0),
 ]
 
+# 6.3: VM_RAISE_ERROR (fptest's RAISE; 99 if it returned): (name, program, rows, ve, the message)
+RAISES = [
+    ("raise: a package code", ["PRINT 1", "a = RAISE(13)", "PRINT 2"], ["1"], 13, "RUNTIME ERROR 13"),
+    ("raise: the range's ends", ["PRINT RAISE(31)"], [], 31, "RUNTIME ERROR 31"),
+    ("raise: a VM code it shares", ["PRINT RAISE(5)"], [], 5, "RUNTIME ERROR 5"),
+    ("raise: nested in a float call", ["PRINT FADD(1, RAISE(20))"], [], 20, "RUNTIME ERROR 20"),
+    ("raise: in a statement's argument", ["FSET 2", "FSET RAISE(12)", "PRINT FGET()"], [], 12,
+     "RUNTIME ERROR 12"),
+    ("raise: in a loop", ["FOR i = 1 TO 5", "PRINT i", "IF i = 3 THEN", "a = RAISE(i + 20)", "ENDIF", "NEXT i"],
+     ["1", "2", "3"], 23, "RUNTIME ERROR 23"),
+    ("raise: FP_OP's 67 shows its code", ["PRINT FDIV(1, 0)"], [], 67, "RUNTIME ERROR 67"),
+    ("message: a VM error shows its code", ["PRINT 1 / 0"], [], 5, "RUNTIME ERROR 5"),
+    ("message: the VM's own messages stay", ["CALL r(1)", "END", "PROC r(n):", "CALL r(n + 1)", "ENDP"], [], 6,
+     "STACK"),
+]
+
 # without the package, the same names are not functions
 UNLOADED = [
     ("unloaded: SEVEN()", ["a = SEVEN()"], None, -1, 0),
@@ -134,13 +153,24 @@ def main():
             run(name, lines, rows, ce, ve, PKG)
         for name, lines, rows, ce, ve in FLOAT:
             run(name, lines, rows, ce, ve, ("fptest",))
+        for name, lines, rows, ve, msg in RAISES:
+            r = m.run_program(lines, packages=("fptest",), maxi=80_000_000)
+            got = [x.strip() for x in r.rows[:22]]
+            while got and not got[-1]:
+                got.pop()
+            depth = m.read(m.sym("BANK_EXROM_DEPTH"), 1)[0]
+            ok = r.status == "OK" and r.ce == 0 and r.ve == ve and r.msg == msg and got == rows and depth == 1
+            print("%s  %-40s ve=%-3d msg=%-18r depth=%d %s" % ("PASS" if ok else "FAIL", name, r.ve, r.msg, depth,
+                                                              "" if ok else "out=%r status=%s" % (got, r.status)))
+            if not ok:
+                fails.append(name)
         for name, lines, rows, ce, ve in UNLOADED:
             run(name, lines, rows, ce, ve, ())
         for name, pkg, lines, rows, ce, ve in OLD:
             run(name, lines, rows, ce, ve, (pkg,), nrows=1)
     finally:
         m.stop()
-    n = len(CASES) + len(FLOAT) + len(UNLOADED) + len(OLD)
+    n = len(CASES) + len(FLOAT) + len(RAISES) + len(UNLOADED) + len(OLD)
     print("qpkgfn: %d/%d PASS" % (n - len(fails), n))
     return 1 if fails else 0
 
