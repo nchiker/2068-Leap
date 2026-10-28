@@ -9,12 +9,14 @@ left before v2.1 and how to pick it up.
 
 - **Branch `backport/leapc`** (off `v2-development`), at the commit that adds this handoff, **pushed to GitHub** (owner,
   2026-10-27). On it: phases 0-4, the redraw item, 5.1-5.14 (phase 5 is finished), R1, `SH_VIEW`
-  (ED4), ED3/ED7, item VER and 6.1 (package functions, package ABI 2.1). Not merged into
+  (ED4), ED3/ED7, item VER and 6.1 (package functions, package ABI 2.1). **Since (2026-10-27): phase 6
+  finished** (6.2-6.6 and the tape stamp, F33-F36; pushed at `3b612a3`) and the manual's speed figures
+  re-measured; items 1-3 below are done. Not merged into
   `v2-development`, not tagged: no release has been cut since `v2.0.2-emu.1` (`77f1baa`); the plan's
   v2.0.3 (phase 2) and v2.0.4 (phase 3) were never released separately, so v2.1 carries everything.
-- **Free ROM: HOME 500 B, EXROM 113 B** (`make budget`). Emergency reserve HOME 64 / EXROM 32 (`make check`
-  fails below it). Phase 6's remaining allowance (6.2-6.4) HOME ~60 / EXROM ~30 [E]; **above the reserve
-  and that: HOME 376 B, EXROM 51 B.** Spending is weighted by benefit per byte (F1); the owner rule for
+- **Free ROM: HOME 377 B, EXROM 111 B** (`make budget`, after phase 6). Emergency reserve HOME 64 / EXROM 32
+  (`make check` fails below it); nothing more is held for phase 6, so **above the reserve: HOME 313 B,
+  EXROM 79 B.** Spending is weighted by benefit per byte (F1); the owner rule for
   speed items is a *significant* gain or *less* ROM (F17).
 - **The last phase 5 items** [M] (plan, "Outcome, 5.12" to "Outcome, 5.14"):
   - **5.12** `IF v <op> k` as one instruction (`CMP_VAR_JMPZ`, opcode 77): an `IF i < k` 1,689 → 703 T;
@@ -38,7 +40,7 @@ left before v2.1 and how to pick it up.
 
 ## What is left before v2.1, in this order
 
-1. **Phase 6's rest** (plan, "Phase 6"; sizes [E], replace each with `make budget`'s figure):
+1. *Done (F33-F36).* **Phase 6's rest** (plan, "Phase 6"; sizes [E], replace each with `make budget`'s figure):
    - **6.2** a float service slot through an EXROM page-in wrapper (as slot 14 does); a float function
      kind if wanted (~15 B HOME). 
    - **6.3** an error service and a registered package error range (closes R10.8 A3: package codes 12-21
@@ -52,11 +54,11 @@ left before v2.1 and how to pick it up.
      `make test` through a cheaper subagent, the owner's decision. 6.2-6.4 change the package ABI's
      surface: `docs/PACKAGE_ABI.md`, `include/v2_package_abi.inc`, `tools/check_package_abi.py` (in
      `make check`), and `tools/qual/qpkgfn.py`-style probes.
-2. **The open item from 6.1:** each package tape is stamped with the ROM's ABI word
+2. *Done (the tape stamp, F36).* **The open item from 6.1:** each package tape is stamped with the ROM's ABI word
    (`tools/make_extension_tzx.py`), so the shipped packages say `$8201` and a v2.0.x ROM refuses them
    although only the function packages need 2.1. Stamp the minor a package needs (2.0 unless it exports
    functions) and check that a v2.0.2 ROM loads the statement-only packages again.
-3. **The manual's figures** after the last speed change: `tools/qual/manual_measure.py` (the T-state
+3. *Done (re-measured at `3b612a3`: only the two `PRINT` rows changed).* **The manual's figures** after the last speed change: `tools/qual/manual_measure.py` (the T-state
    table of `docs/manual/04_concepts.md` "Speed" and `FOR`'s note; last measured at `0227797`, before
    5.12-5.14), and the bytecode-size table there if an example's bytecode changed (`make doc-examples`
    327/327 today: `mem.compile.1` has no `IF`).
@@ -66,9 +68,9 @@ left before v2.1 and how to pick it up.
    - merging `backport/leapc` into `v2-development` (the earlier releases were tags on `v2-development`)
      and the annotated tag; the GitHub release and its bundle;
    - Q-26 (the nine missing glyphs `[` `\` `]` `^` `` ` `` `{` `|` `}` `~`, ~72-90 B HOME, deferred for want of room on
-     2026-10-11) is now affordable (376 B above the allowance); the two optional phase 5 follow-ups (the
-     two-variable `IF k <= s`, ~20 B HOME / ~15 EXROM, the sieve's inner loop); and whether
-     `make test-legacy` (V1, Fuse) and the hardware checklist are waived again (no hardware, F12).
+     2026-10-11) is now affordable (313 B above the reserve); the two optional phase 5 follow-ups (the
+     two-variable `IF k <= s`, ~20 B HOME / ~15 EXROM, the sieve's inner loop). *Decided:* `make
+     test-legacy` (V1, Fuse) and the hardware checklist are waived (F37).
 5. **The release record and documents**, following `v2.0.2-emu.1` (`77f1baa`; its record is
    `docs/V2_COMPILER_MAINT_RELEASE_STATUS.md`): a new `docs/V2_..._RELEASE_STATUS.md` (what changed since
    `v2.0.2-emu.1`: phases 1-6 of the plan in user terms; the image hashes from `make rc-assets`
@@ -83,7 +85,7 @@ left before v2.1 and how to pick it up.
    version text changes: `doc-examples`' `guide.boot`), then the Word editions (`make manual-v2`).
 6. **Qualification for the record:** `make test`, `make doc-examples`, `make repro` (two fresh trees,
    identical images), `make build EXTRA_DEFS=` (the release definitions), `qcanary --banking`,
-   `qtapetol`, `qpoweron`; the owner's decision on `make test-legacy` and hardware.
+   `qtapetol`, `qpoweron`; `make test-legacy` and hardware are waived (F37).
 
 ## Suggested model and effort
 

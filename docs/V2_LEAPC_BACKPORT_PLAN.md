@@ -472,6 +472,10 @@ fast-forward on 2026-10-27, owner decision F14; all [M]):
   times now. Re-run the tool and update the table and the text before the v2.1 release. *Done*
   (owner, 2026-10-27, on the 5.6-5.8 build): an empty pass 827 T; `a = a * 1.0001` adds 11,500 (5.6),
   so "about three times"; a scrolling `PRINT` 224,000 (5.8), 16 lines a second; the `FOR` note 830 T.
+  *Re-measured after phase 6* (`3b612a3`, 2026-10-27): every row as before except those 5.11 and 5.13
+  changed: a scrolling `PRINT 7` 146,000 T (24 lines a second; the scroll alone ~141,000 T, 40 ms) and
+  `AT 5, 0 : PRINT 7;` 5,000 T (700 a second); an empty pass still 827 T, floating point still about
+  three times slower than whole numbers.
 - **Owner decision F14 (2026-10-27):** integrate all three; fast-forwarded `backport/leapc` to `201b960`.
 
 Outcome, 5.5 (2026-10-27; prototyped on `proto/5.5-vm-push` off `backport/leapc` `3d337c1`, commits `4303cf8`
@@ -1548,6 +1552,7 @@ All decided by the owner on 2026-10-25.
 | F34 | 6.3/6.4 the error design                 | Package codes 12-31 (no renumbering); a package may also raise 5, 15, 67; error service slot 18; the code shown for runtime errors without a message (≤ ~15 B EXROM); reserved slots trap to error 9 |
 | F35 | 6.3 package errors                      | Integrated on a passing `make test` (fast-forward, 2026-10-27): HOME 0, EXROM 2; next: 6.4, 6.5, 6.6 and the tape stamp, each prototyped and tested in turn |
 | F36 | 6.4, 6.5, 6.6, the tape stamp          | Integrated together on passing tests (fast-forward to `cd12c9a`, 2026-10-27): HOME 0, EXROM 0; phase 6 finished; next: the manual's speed figures and the v2.1 release decisions (`docs/V2_LEAPC_HANDOFF.md`) |
+| F37 | Release waivers                          | `make test-legacy` (V1, Fuse) and the hardware checklist are waived for v2.1, as for the earlier releases (F12; owner, 2026-10-27) |
 
 ## Also worth doing
 
