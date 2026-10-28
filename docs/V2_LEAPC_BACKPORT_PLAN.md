@@ -63,6 +63,7 @@ Further rules:
 | 5.11 the scroll copy         | **462** | **113** | [M], integrated (F31): HOME +8 free (`GFX_SCROLL_OUTPUT_UP` 32 → 100 B with its LDI block; `GFX_COPY_ROW_BITMAP` 36 and `GFX_SCROLL_TEXT_UP` 40 left to the non-V2 builds); EXROM 0; RAM 0 |
 | 5.14 the glyph lookup        | **500** | **113** | [M], integrated (F32; owner request, 2026-10-27): HOME +38 free (`LOW_CHAR_TABLE` 33 B replaces the 46-byte pair table; the lookup's code 25 B shorter); EXROM 0; RAM 0 |
 | 6.2 floats for packages      | **377** | **113** | [M], integrated (F33, fast-forward to `aa0fcb7`): HOME −123 free (`FP_OP` 83, service 17; `OP_CALL_EXT`'s float form 34: the arguments into calculator slots 0-4, a float value stored as a FLOAT temp; `EXT2_REGISTER` refusing the float form with a string argument 6); EXROM 0; slot 17 takes 3 B of the reserved slot area (not counted); RAM 0 |
+| 6.3 package errors           | **377** | **111** | [M], integrated (F35): HOME 0 (service 18 is a `jp VM_ERR_COMMON` in the reserved slot area, 3 B, not counted); EXROM −2 (`RUNTIME ERROR n`: `V2_RUNTIME_MSG` jumps into `V2_COMPILE_MSG`'s code tail, now `V2_MSG_CODE`, 1; the message's trailing space 1); RAM 0 |
 | phase 5 (speed)              | ≥ 64    | ≥ 32    | Class B: each item sized and weighed before it is started; 5.0 first if the room is not there                 |
 
 Every [E] is replaced by `make budget`'s figure as each item lands.
@@ -1136,6 +1137,41 @@ Then phase 6's rest (6.2-6.6) and the manual's speed figures (`tools/qual/manual
   - *6.4:* the remaining reserved slots jump to error 9 (extension not found); the checker's rule for
     them becomes that.
 
+### Item 6.3 outcome (2026-10-27; prototyped on `proto/6.3-error-service` off `backport/leapc` `21bfaec`; all [M]; integrated, F35)
+
+- **Design (owner, F34):** runtime codes 12-31 are the packages' (`EXT_ERR_FIRST`/`_LAST`); a package may
+  also raise 5, 15 and 67 (`EXT_ERR_DIV0`/`_RANGE`/`_FLOAT`, `include/v2_ext_kinds.inc`); the VM's
+  new codes go above 67, 32-63 stay unassigned. No package renumbered (MODE 12-14, SPRITE 15-20,
+  CBEEP 15, PRINTER 21 all fall in it). Closes R10.8 A3.
+- **Service 18, `VM_RAISE_ERROR`:** a `jp VM_ERR_COMMON` (the VM core is HOME code; `A` = the code). It
+  unwinds to `VM_RUN`'s caller at once, at paging depth 1 (item 2.3), so it is execute-time only. The
+  2.0 way (the code in `VM_ERROR_CODE`, `VM_HALTED` set, `ret`) stays, and is what a package that must
+  load on a 2.0 ROM uses; the shipped packages are unchanged.
+- **The message:** every runtime error without a message of its own shows its code, `RUNTIME ERROR n`
+  (`V2_RUNTIME_MSG` ends in the shared tail of `SYNTAX ERROR n`, `V2_MSG_CODE`): 2 B EXROM, under the
+  ~15 B the decision allowed. `docs/V2_LANGUAGE_REFERENCE.md` §8 updated; the manual's tables (on its own
+  branch) say `RUNTIME ERROR` and need the code with the release documents.
+- **ABI.** Still 2.1 (unreleased): 19 slots (11 reserved left), `docs/PACKAGE_ABI.md` §2 "Errors", §3
+  service 18, §5, §8, §10. `tools/check_package_abi.py` rule 7: every code a shipped package raises is
+  given as `ld a,n` right before the raise (`ld (VM_ERROR_CODE),a`, `VM_RAISE_ERROR`, or a jump to a
+  routine starting with that store) and is an allowed one: 21 sites; negative controls (MODE's 12 made
+  40, then `ld a,(hl)`) are reported. The test packages raise any code on purpose and are not checked.
+- **Bytes** (`make budget`, `21bfaec` → `d7a68cb`): HOME 377 (0); EXROM 113 → **111** (−2).
+  **Re-sized:** 6.2 HOME 123 [M] (over the ~60 [E] that was held for 6.2-6.4 together), 6.3 HOME 0 /
+  EXROM 2 [M]; 6.4 [E] HOME 0 (its traps are `jp`s in the reserved slot area), EXROM 0. Above the
+  reserve, with nothing more held for phase 6: HOME **313**, EXROM **79** (the handoff's 376 / 51, plus
+  the 60 / 30 held for 6.2-6.4, less 6.2-6.3's measured 123 / 2).
+- **Checks.** `tools/qual/qpkgfn.py` 65/65 (56 before; 9 in `RAISES` through fptest's new `RAISE(n)`,
+  which would raise 99 if the service returned): a package code, the range's end, a shared VM code,
+  nested in a float-form call's arguments, in a statement's argument, in a loop, `FP_OP`'s 67, the
+  message `RUNTIME ERROR n` for a VM error, the VM's own `STACK OVERFLOW` unchanged; paging depth 1
+  after each. `make check` OK. `make test` (fast emulation, 2,015 s): all PASS: smoke 9/9, standalone
+  40/40, production checks, fill, prod-regress 127, prod-arrays 101, known-defects 15, saveall 13,
+  micsave 3, qual 666 PASS + 2 XFAIL + 2 N/A of 670, lifecycle 23, `qvmedge` 221, maint-qual all
+  (ay_beep 59, cbeep 27, di_wait 14, cbeep_tape 3); `make doc-examples` 327/327.
+- **Owner decision F35 (2026-10-27):** integrate when the tests pass; then the remaining items, each on
+  its own prototype branch (stacked on the one before), the documentation drafted by cheaper models.
+
 ## Phase 7: decision gate for a V3 (major: ABI 3.0, new RAM map)
 
 Only after phases 1-6, and only with the owner's go-ahead. Everything here breaks the package ABI.
@@ -1359,6 +1395,7 @@ All decided by the owner on 2026-10-25.
 | F32 | 5.14 the glyph lookup                   | Requested and integrated on a passing `make test` (fast-forward, 2026-10-27): HOME +38, EXROM 0; phase 5 finished; `backport/leapc` pushed; next: phase 6's rest and the v2.1 preparation (`docs/V2_LEAPC_HANDOFF.md`) |
 | F33 | 6.2 floats for packages                 | Integrated on a passing `make test` (fast-forward to `aa0fcb7`, 2026-10-27): HOME 123, EXROM 0; next: 6.3 |
 | F34 | 6.3/6.4 the error design                 | Package codes 12-31 (no renumbering); a package may also raise 5, 15, 67; error service slot 18; the code shown for runtime errors without a message (≤ ~15 B EXROM); reserved slots trap to error 9 |
+| F35 | 6.3 package errors                      | Integrated on a passing `make test` (fast-forward, 2026-10-27): HOME 0, EXROM 2; next: 6.4, 6.5, 6.6 and the tape stamp, each prototyped and tested in turn |
 
 ## Also worth doing
 
