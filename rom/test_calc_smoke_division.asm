@@ -40,7 +40,12 @@
 ; Sequence and expected state after each step (CALC_SP reset to 2
 ; before each, since division consumes 2 operands -> 1 result):
 ;   1. 32761/181=181       -> slot0 = 88 35 00 00 00
-;   2. 1/3=0.333... (truncated, not rounded) -> slot0 = 7F 2A AA AA AA
+;   2. 1/3=0.333... (rounded to nearest) -> slot0 = 7F 2A AA AA AB
+;
+; R1 (2026-10-26, docs/V2_LEAPC_BACKPORT_PLAN.md): the calculator's arithmetic
+; is now 2068-Leap-C's float core, which rounds to nearest, so case 2 ends in
+; $AB (the exact quotient continues ...AA|AA..., above half an ulp), not the
+; truncated $AA the history above describes. Case 1 is exact either way.
 ;
 ; Signal: GREEN if both match, RED on the first mismatch.
 ;
@@ -185,7 +190,7 @@ COLD_START:
     jp   nz, FAIL
     inc  hl
     ld   a, (hl)
-    cp   $AA
+    cp   $AB                        ; R1: rounded to nearest (was $AA, truncated)
     jp   nz, FAIL
 
     ; ---- all passed ---------------------------------------------------

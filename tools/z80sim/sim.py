@@ -217,6 +217,8 @@ class Z80Sim:
         self.flags = {'Z':0,'C':0,'S':0,'PV':0,'H':0,'N':0}
         self.alt_a = 0             # A' -- see 'ex af,af'' handler below
         self.alt_flags = {'Z':0,'C':0,'S':0,'PV':0,'H':0,'N':0}
+        self.alt_regs = {'B':0,'C':0,'D':0,'E':0,'H':0,'L':0}  # BC' DE' HL' -- see 'exx'
+        self.alt_tuple_regs16 = {}  # tuple_regs16's overlays parked in BC'/DE'/HL'
         self.mem = bytearray(65536)
         self.stack_list = []  # logical push/pop stack -- see push/pop
         self.tuple_regs16 = {}  # overlay for code-address markers held
@@ -339,6 +341,7 @@ class Program:
         current_scope = None
         context_label = None
         source_override = None
+        pending_equs = []
         with open(path) as f:
             for source_line, raw in enumerate(f, 1):
                 source_text = raw.rstrip("\r\n")
@@ -370,6 +373,14 @@ class Program:
                 # unresolvable global-label lookup at the FIRST caller,
                 # far from this actual gap). The local-label regex just
                 # below already tolerated this; the global one didn't.
+                # `NAME EQU expr` (R1, 2026-10-26: rom/exrom_calc.asm names its working cells and
+                # field offsets this way): a constant, not an instruction. It joins SYSVARS once
+                # the file is read, if its value resolves (a name a test registered, a number, an
+                # earlier EQU, + and -); a name already registered keeps its value.
+                m = re.match(r'^([A-Za-z_][A-Za-z0-9_]*):?\s+(?i:equ)\s+([^;]+?)\s*(;.*)?$', line)
+                if m:
+                    pending_equs.append((m.group(1), m.group(2)))
+                    continue
                 m = re.match(r'^([A-Za-z_][A-Za-z0-9_]*):(\s*;.*)?$', line)
                 if m:
                     name = m.group(1)
@@ -399,6 +410,13 @@ class Program:
                     continue
                 self._append_line((current_scope, None, mn, op), row_source_path,
                                   row_source_line, current_scope, context_label, row_source_text)
+        for name, expr in pending_equs:
+            if name in SYSVARS:
+                continue
+            try:
+                SYSVARS[name] = parse_val(expr, None, None)
+            except ValueError:
+                pass                    # e.g. an EQU of a code label: not a constant here
 
     def load_symbols(self, path):
         """Load SjASMPlus `NAME: EQU 0x...` symbols for trace annotation."""
@@ -560,6 +578,14 @@ def parse_val(token, sim, prog_scope):
         base = ord(ch)
         offset = int(offset)
         return base + offset if op == '+' else base - offset
+    terms = re.split(r'\s*([+-])\s*', token)
+    if len(terms) > 1 and terms[0]:
+        # NAME + NAME + 3 (an EQU's field offsets): each term on its own
+        value = parse_val(terms[0], sim, prog_scope)
+        for op, term in zip(terms[1::2], terms[2::2]):
+            v = parse_val(term, sim, prog_scope)
+            value = value + v if op == '+' else value - v
+        return value
     raise ValueError(f"cannot parse value token: {token!r}")
 
 REG16_PAIRS = {'BC': ('B','C'), 'DE': ('D','E'), 'HL': ('H','L')}
@@ -929,6 +955,21 @@ class Interp:
             return None
         if mn == 'adc':
             dst, src = parts[0].strip(), parts[1].strip()
+            if dst.lower() == 'hl':
+                # ADC HL,rr: all six documented flags (Zilog UM0080), as SBC HL,rr below
+                carry_in = s.flags['C']
+                b16 = self.get_reg16(src)
+                a16 = self.get_reg16('HL')
+                res = a16 + b16 + carry_in
+                res16 = res & 0xFFFF
+                self.set_reg16('HL', res16)
+                s.flags['C'] = 1 if res > 0xFFFF else 0
+                s.flags['S'] = 1 if res16 & 0x8000 else 0
+                s.flags['Z'] = 1 if res16 == 0 else 0
+                s.flags['H'] = int((a16 & 0x0FFF) + (b16 & 0x0FFF) + carry_in > 0x0FFF)
+                s.flags['PV'] = int((~(a16 ^ b16) & (a16 ^ res16) & 0x8000) != 0)
+                s.flags['N'] = 0
+                return None
             if dst not in ('A', 'a'):
                 raise ValueError(f"unhandled adc destination: {dst!r}")
             val = self.resolve_operand_value(src, scope)
@@ -1049,39 +1090,33 @@ class Interp:
             s.regs['A'] = ((a << 1) | oldc) & 0xFF
             s.flags['H'] = s.flags['N'] = 0
             return None
-        if mn == 'sla':
+        if mn in ('sla', 'srl', 'rr', 'rl'):
+            # a register or (HL) (R1: the float core's byte loops shift memory in place)
             r = parts[0].strip()
-            v = s.regs[r]
-            s.flags['C'] = (v >> 7) & 1
-            s.regs[r] = (v << 1) & 0xFF
-            s.set_szp(s.regs[r])
-            s.flags['H'] = s.flags['N'] = 0
-            return None
-        if mn == 'srl':
-            r = parts[0].strip()
-            v = s.regs[r]
-            s.flags['C'] = v & 1
-            s.regs[r] = (v >> 1) & 0xFF
-            s.set_szp(s.regs[r])
-            s.flags['H'] = s.flags['N'] = 0
-            return None
-        if mn == 'rr':
-            r = parts[0].strip()
-            v = s.regs[r]
+            v = s.rb(self.get_reg16('HL')) if r == '(HL)' else s.regs[r]
             oldc = s.flags['C']
-            s.flags['C'] = v & 1
-            s.regs[r] = ((v >> 1) | (oldc << 7)) & 0xFF
-            s.set_szp(s.regs[r])
+            if mn in ('sla', 'rl'):
+                s.flags['C'] = (v >> 7) & 1
+                res = ((v << 1) | (oldc if mn == 'rl' else 0)) & 0xFF
+            else:
+                s.flags['C'] = v & 1
+                res = ((v >> 1) | ((oldc << 7) if mn == 'rr' else 0)) & 0xFF
+            if r == '(HL)':
+                s.wb(self.get_reg16('HL'), res)
+            else:
+                s.regs[r] = res
+            s.set_szp(res)
             s.flags['H'] = s.flags['N'] = 0
             return None
-        if mn == 'rl':
-            r = parts[0].strip()
-            v = s.regs[r]
-            oldc = s.flags['C']
-            s.flags['C'] = (v >> 7) & 1
-            s.regs[r] = ((v << 1) | oldc) & 0xFF
-            s.set_szp(s.regs[r])
-            s.flags['H'] = s.flags['N'] = 0
+        if mn in ('set', 'res'):
+            bit_n = int(parts[0].strip())
+            r = parts[1].strip()
+            v = s.rb(self.get_reg16('HL')) if r == '(HL)' else s.regs[r]
+            v = v | (1 << bit_n) if mn == 'set' else v & ~(1 << bit_n) & 0xFF
+            if r == '(HL)':
+                s.wb(self.get_reg16('HL'), v)
+            else:
+                s.regs[r] = v
             return None
 
         if mn == 'ex':
@@ -1100,6 +1135,28 @@ class Interp:
                 return None
             raise ValueError(f"unhandled ex operands: {op}")
 
+        if mn == 'exx':
+            # BC, DE, HL <-> BC', DE', HL'; a pair's code-address overlay moves with it
+            for r in 'BCDEHL':
+                s.regs[r], s.alt_regs[r] = s.alt_regs[r], s.regs[r]
+            main = {k: v for k, v in s.tuple_regs16.items() if k in ('BC', 'DE', 'HL')}
+            for k in main:
+                del s.tuple_regs16[k]
+            s.tuple_regs16.update(s.alt_tuple_regs16)
+            s.alt_tuple_regs16 = main
+            return None
+
+        if mn == 'lddr':
+            hl = self.get_reg16('HL'); de = self.get_reg16('DE'); bc = self.get_reg16('BC')
+            while True:
+                s.wb(de, s.rb(hl))
+                hl = (hl-1)&0xFFFF; de=(de-1)&0xFFFF; bc=(bc-1)&0xFFFF
+                if bc == 0:
+                    break
+            self.set_reg16('HL', hl); self.set_reg16('DE', de); self.set_reg16('BC', bc)
+            s.flags['H'] = s.flags['N'] = 0
+            s.flags['PV'] = 0
+            return None
         if mn == 'ldir':
             hl = self.get_reg16('HL'); de = self.get_reg16('DE'); bc = self.get_reg16('BC')
             # LDIR with BC=0 performs 65,536 transfers before BC wraps
@@ -1117,6 +1174,11 @@ class Interp:
         if mn == 'scf':
             s.flags['C'] = 1
             s.flags['H'] = s.flags['N'] = 0
+            return None
+        if mn == 'ccf':
+            s.flags['H'] = s.flags['C']     # H = the old carry
+            s.flags['C'] ^= 1
+            s.flags['N'] = 0
             return None
 
         if mn in ('jr','jp'):

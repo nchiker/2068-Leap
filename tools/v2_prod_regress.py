@@ -61,6 +61,178 @@ def editor_delete_line():
     return P.store() == ["a = 1", "c = 3"], "store=%s" % P.store()
 
 
+# ------------------------------------- the cursor's line whole on screen (plan item SH_VIEW, ED4)
+# The view: up to 20 lines above the cursor's line, fewer when they do not fit on rows 0-22 with it.
+# tools/qual/qeditview.py runs the long scenarios (every key, a full-redraw oracle, timings).
+def _rows(text, edit=False):
+    """Screen rows of a line as EDITOR_WRAP_CALC wraps it (at the last space of 32 characters); the
+    edit buffer (`edit`) has one more, empty, row after a last row of 32 characters (V2_WRAP_EDIT, ED7)."""
+    n = 1
+    while len(text) > 32 and n < 8:
+        sp = text[:32].rfind(" ")
+        text = text[32:] if sp < 0 else text[sp + 1:]
+        n += 1
+    return n + (edit and len(text) == 32)
+
+
+def _edit_at(lines, idx):
+    """Boot, store `lines`, enter the editor on line `idx` (the append line when idx = len(lines))."""
+    P.boot()
+    P.put_store(lines)
+    pos = sym("PROG_AREA_START") + sum(len(l) + 3 for l in lines[:idx]) if idx < len(lines) else 0xFFFF
+    P.poke16(sym("CUR_EDIT_INDEX"), idx)
+    P.poke16(sym("CUR_EDIT_POS"), pos)
+    return P.call(RET)
+
+
+def _view(keys=()):
+    """After the entry and after each key: the view rule's top and active row, the line whole, the
+    cursor cell the only inverted attribute on rows 0-22, in the line's rows."""
+    seen = []
+    for k in (None,) + tuple(keys):
+        if k is not None:
+            P.key(k)
+        h = [_rows(l) for l in P.store()]
+        idx, ha = P.cur_index(), _rows(P.edit_line().decode("latin-1"), True)
+        top = max(0, idx - 20)
+        while sum(h[top:idx]) + ha > 23:
+            top += 1
+        row = sum(h[top:idx])
+        got = (w16(sym("VIEW_TOP_INDEX")), read(sym("BASIC_ACTIVE_ROW"), 1)[0])
+        cur = [i // 32 for i, a in enumerate(read(0x5800, 23 * 32)) if a != 0x38]
+        seen.append("%d:%d@%d%s" % (idx, got[0], got[1], cur))
+        if got != (top, row) or row + ha > 23 or len(cur) != 1 or not row <= cur[0] < row + ha:
+            return False, "line %d: top/row %s (want %d/%d), cursor rows %s; %s" % (idx, got, top, row, cur,
+                                                                                  " ".join(seen))
+    return True, " ".join(seen)
+
+
+SHORT = ["v%d = %d" % (i, i) for i in range(20)]
+WRAP2 = ["PRINT \"line %d is long enough to wrap\"; %d" % (i, i) for i in range(20)]   # 2 rows each
+
+
+@case("ED4-long-line-low", "a 4-row line starting on row 20 scrolls the view to show it whole")
+def ed4_long_line_low():
+    _edit_at(SHORT + ["x" * 100, "y = 1"], 20)
+    return _view([KEY_DOWN] * 4 + [KEY_UP])        # three rows down inside it, then the line below
+
+
+@case("ED4-wrapped-above", "20 two-row lines above: lines are dropped from the top until the cursor's fits")
+def ed4_wrapped_above():
+    _edit_at(WRAP2 + ["y = 1"], 20)
+    return _view([KEY_UP, KEY_UP, KEY_DOWN, KEY_DOWN])
+
+
+@case("ED4-grow-past-22", "typing that makes a line on rows 20-22 a 4th row scrolls; DELETE scrolls it back")
+def ed4_grow_past_22():
+    _edit_at(SHORT + ["x" * 96], 20)
+    return _view([ord("z"), KEY_DELETE])
+
+
+@case("ED4-down-onto-tall", "DOWN onto a 4-row line on row 20 scrolls the view to show it whole")
+def ed4_down_onto_tall():
+    _edit_at(SHORT + ["x" * 100], 19)
+    return _view([KEY_DOWN, KEY_UP])
+
+
+# ED7: the cursor after a last row of exactly 32 characters was at column 32, off the screen (and LEFT
+# from there whitened the first cell of the row below).  The edit buffer now has an empty row after it.
+def _cursor_cell():
+    cells = [(i // 32, i % 32) for i, a in enumerate(read(0x5800, 23 * 32)) if a != 0x38]
+    return cells[0] if len(cells) == 1 else cells
+
+
+@case("ED7-cursor-after-32", "after 32 typed characters the cursor shows at the start of the line's next row")
+def ed7_cursor_after_32():
+    P.boot()
+    for ch in "x" * 32:
+        P.key(ord(ch))
+    row = read(sym("BASIC_ACTIVE_ROW"), 1)[0]
+    at32 = _cursor_cell()
+    P.key(KEY_LEFT)
+    left = _cursor_cell()
+    P.key(KEY_RIGHT)
+    right = _cursor_cell()
+    P.key(ord("y"))
+    at33 = _cursor_cell()
+    ok = (at32, left, right, at33) == ((row + 1, 0), (row, 31), (row + 1, 0), (row + 1, 1))
+    return ok, "row %d: cursor at 32 %s, LEFT %s, RIGHT %s, at 33 %s" % (row, at32, left, right, at33)
+
+
+@case("ED7-edit-row-low", "a 64-character line on rows 21-22: its edit row does not fit, so the view scrolls")
+def ed7_edit_row_low():
+    _edit_at(WRAP2[:1] + SHORT[:19] + ["q" * 63], 20)
+    for _ in range(63):
+        P.key(KEY_RIGHT)
+    return _view([ord("q"), KEY_DELETE, KEY_UP, KEY_DOWN])
+
+
+# ED3: a command typed over a program line ran nowhere and replaced the line (only the last line
+# dispatched commands).  Now ENTER carries a command out on any line and the line keeps its text.
+def _over_line(lines, idx, command):
+    """Edit `lines`, go to line `idx`, delete its text, type `command` and ENTER."""
+    P.boot()
+    for t in lines:
+        P.type_text(t)
+    for _ in range(len(lines) - idx):
+        P.key(KEY_UP)
+    for _ in lines[idx]:
+        P.key(KEY_RIGHT)
+    for _ in lines[idx]:
+        P.key(KEY_DELETE)
+    return P.type_text(command)
+
+
+ED3_PROG = ["x = 5", "y = x * 2", "z = y + 1"]
+
+
+@case("ED3-run-over-a-line", "RUN typed over line 1 runs the program; line 1 keeps its text")
+def ed3_run():
+    _over_line(ED3_PROG, 0, "run")
+    v = P.variables(3)
+    P.key(0x20)                              # the run's end: any key back to the editor
+    st, idx, line = P.store(), P.cur_index(), P.edit_line()
+    ok = [x[1] for x in v] == [5, 10, 11] and st == ED3_PROG and idx == 0 and line == b"x = 5"
+    return ok, "vars=%s store=%s cursor=%d line=%r" % (v, st, idx, line)
+
+
+@case("ED3-list-over-a-line", "LIST typed over line 2 lists; the program is unchanged")
+def ed3_list():
+    _over_line(ED3_PROG, 1, "LIST")
+    shown = read(0x5800, 1) is not None
+    P.key(0x20)
+    st, idx, line = P.store(), P.cur_index(), P.edit_line()
+    return shown and st == ED3_PROG and idx == 1 and line == b"y = x * 2", \
+        "store=%s cursor=%d line=%r" % (st, idx, line)
+
+
+@case("ED3-immediate-over-a-line", "`: statement` typed over a line runs it; the line keeps its text")
+def ed3_immediate():
+    _over_line(ED3_PROG, 2, ": q = 7")
+    P.key(0x20)
+    st, idx, line = P.store(), P.cur_index(), P.edit_line()
+    return st == ED3_PROG and idx == 2 and line == b"z = y + 1", "store=%s cursor=%d line=%r" % (st, idx, line)
+
+
+@case("ED3-new-over-a-line", "NEW typed over a line wipes the program, as on the last line")
+def ed3_new():
+    _over_line(ED3_PROG, 1, "new")
+    return P.store() == [] and P.cur_index() == 0, "store=%s cursor=%d" % (P.store(), P.cur_index())
+
+
+@case("ED3-text-still-stored", "text that is not a command (`run = 4`, `listing = 2`) still replaces the line")
+def ed3_text():
+    _over_line(ED3_PROG, 0, "run = 4")
+    P.key(KEY_UP)
+    for _ in "run = 4":
+        P.key(KEY_RIGHT)
+    for _ in "run = 4":
+        P.key(KEY_DELETE)
+    P.type_text("listing = 2")
+    st = P.store()
+    return st == ["listing = 2", "y = x * 2", "z = y + 1"], "store=%s" % st
+
+
 # ------------------------------------------------------------- tape (LOAD/VERIFY)
 @case("tape-load-ok", "a well-formed program tape LOADs through the real receiver")
 def tape_load_ok():
@@ -271,6 +443,7 @@ def save_header():
         sp = r["SP"]
         ret = P.read(sp, 2)
         D("set-register", "SP", hex(sp + 2))
+        D("set-register", "AF", hex(r["AF"] | 1))  # the real sender's success: carry set (STORAGE_SAVE stops on carry clear)
         D("set-register", "PC", hex(ret[0] | ret[1] << 8))
     msg = P.to_prompt()
     hdr = blocks[0][1]
@@ -280,6 +453,47 @@ def save_header():
           and int.from_bytes(hdr[13:15], "little") == ABI.fmt_word
           and blocks[1][1] == src and msg == "SAVED")
     return ok, "msg=%s header=%s word=%04X" % (msg, hdr.hex(), int.from_bytes(hdr[13:15], "little"))
+
+
+def _save_with_space(blocks_before):
+    """A real SAVE through the dispatcher and the real sender; SPACE goes down in the emulated
+    keyboard matrix once `blocks_before` + 1 blocks have started. Returns (message, a later block
+    started)."""
+    P.boot()
+    P.put_store(PROG)
+    P.poke(P.sym("EDIT_LINE_BUF"), b'save "PROG"\0')
+    D("mem-write", "0xFF00", struct.pack("<H", RET).hex())
+    D("set-register", "SP", "0xFF00")
+    D("set-register", "PC", hex(P.sym("V2_DISPATCH")))
+    send = P.sym("STORAGE_SEND_BLOCK")
+    for _ in range(blocks_before + 1):
+        assert P.run_to(send, 40_000_000), "STORAGE_SEND_BLOCK not reached"
+        D("step")
+    P.zr("send-keys-event 128 1")                   # SPACE down
+    try:
+        D("break", "V2_SHOW_MESSAGE", "--index", "2")
+        D("break", hex(send), "--index", "3")
+        D("run", "--until", hex(IOK), "--max-instructions", "200000000", t=1800)
+        D("pause")
+        at = P.pc()
+        msg = P.msg_name(P.regs()["HL"]) if at == P.sym("V2_SHOW_MESSAGE") else None
+    finally:
+        P.zr("send-keys-event 128 0")
+        D("clear-break", "--index", "2")
+        D("clear-break", "--index", "3")
+    return msg, at == send
+
+
+@case("save-space-abort-header", "SPACE during SAVE's header -> ABORTED, the data block is never sent")
+def save_space_header():
+    msg, later = _save_with_space(0)
+    return msg == "ABORTED" and not later, "msg=%s data block started=%s" % (msg, later)
+
+
+@case("save-space-abort-data", "SPACE during SAVE's data block -> ABORTED, not SAVED")
+def save_space_data():
+    msg, later = _save_with_space(1)
+    return msg == "ABORTED" and not later, "msg=%s another block started=%s" % (msg, later)
 
 
 # ----------------------------------------------------------------- packages
@@ -410,6 +624,7 @@ def _capture_save(command, prepare):
         sp = r["SP"]
         ret = P.read(sp, 2)
         D("set-register", "SP", hex(sp + 2))
+        D("set-register", "AF", hex(r["AF"] | 1))  # the real sender's success: carry set (STORAGE_SAVE stops on carry clear)
         D("set-register", "PC", hex(ret[0] | ret[1] << 8))
     return blocks, P.to_prompt()
 
@@ -451,8 +666,9 @@ def abi_num_to_text():
     return reached and text == b"123\0" and depth == 0, "reached=%s text=%r bank-depth=%d" % (reached, text, depth)
 
 
+# 6.1: "newer" is the ROM's own package word + 1 (ABI 2.1 now), as for the program format below
 _PKG_WORDS = {"v1-unversioned-0001": 0x0001, "zero": 0x0000, "future-major": 0x8300,
-              "newer-minor": 0x8201, "no-tag-bit": 0x0200, "program-word": 0x8100}
+              "newer-minor": ABI.pkg_word + 1, "no-tag-bit": 0x0200, "program-word": 0x8100}
 _PKG_BLOB = open("build/v2_package_shapes.bin", "rb").read()
 
 

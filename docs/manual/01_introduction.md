@@ -2,7 +2,7 @@
 
 **For the Timex Sinclair 2068 with the 2068-Leap V2 Enhanced ROMs.**
 
-*Edition for release v2.0.2-emu.1* (maintained on branch `v2-development`). It describes the current emulator-qualified release, **v2.0.2-emu.1**. The previous release, v2.0.1-emu.1, has a smaller memory pool: 8397 bytes, and `FREE()` on an empty machine is 8153, where v2.0.2-emu.1 has 9211 and 8967 (see the concept [Memory](04_concepts.md#memory)); everything else applies to both. The manual exactly as published with the release is inside `2068-Leap-V2-v2.0.2-emu.1.zip` (`docs/manual/`).
+*Edition for release v2.1.0-emu.1* (maintained on branch `v2-development`). This manual describes v2.1.0-emu.1, the current emulator-qualified release. The earlier releases lack some of what it describes: v2.0.2-emu.1 has the same memory pool (9211 bytes, `FREE()` on an empty machine 8967) but not v2.1's speed-ups, package functions, `RUNTIME ERROR n` messages or glyphs for all printable ASCII characters; v2.0.1-emu.1 has a smaller pool, 8397 bytes and `FREE()` 8153 (see the concept [Memory](04_concepts.md#memory)). The manual exactly as published with the release is inside `2068-Leap-V2-v2.1.0-emu.1.zip` (`docs/manual/`).
 
 ---
 

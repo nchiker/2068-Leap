@@ -1,4 +1,4 @@
-# 2068-Leap V2 — Package ABI 2.0 and tape-format versions
+# 2068-Leap V2 — Package ABI 2.1 and tape-format versions
 
 **Status:** implemented in R10.9 Phase 1 (working tree, not committed). **Single source of truth:**
 [`include/v2_package_abi.inc`](../include/v2_package_abi.inc) — every number in this document is
@@ -23,12 +23,15 @@ LOAD was `header word == 1`. Any later change to HOME code or the sysvar layout 
 addresses, and an old package tape still passed the check and then called into the wrong code
 (R10.8 finding **R1**).
 
-ABI 2.0 fixes the three things a "jump table" alone cannot:
+ABI 2.0 fixes the three things a "jump table" alone cannot (ABI 2.1, back-port item 6.1, adds
+package *functions*: §2 "Functions", service 16, the `EXT_CALL_RESULT` pin; item 6.2 adds floats:
+§2 "The float form", service 17 `FP_OP`; item 6.3 registers the package error codes and adds an
+error service: §2 "Errors", service 18 `VM_RAISE_ERROR`):
 
 | Layer | Mechanism | Enforced by |
 |---|---|---|
-| **Callable services** | 16 fixed 3-byte `jp` slots in the HOME ROM at `$0096…` (the unused padding after the KTAB) | HOME build (the table is generated from the ABI file); `check_package_abi.py` §1; test `abi-service-table` |
-| **Shared RAM** | 34 package-visible sysvar cells + 11 constants *pinned* to absolute addresses | HOME build `ASSERT`s every pin; `check_package_abi.py` §2–3 |
+| **Callable services** | 19 fixed 3-byte `jp` slots in the HOME ROM at `$0096…` (the unused padding after the KTAB) | HOME build (the table is generated from the ABI file); `check_package_abi.py` §1; test `abi-service-table` |
+| **Shared RAM** | 35 package-visible sysvar cells + 11 constants *pinned* to absolute addresses | HOME build `ASSERT`s every pin; `check_package_abi.py` §2–3 |
 | **Data formats / banking / lifecycle** | tape header version word, record formats, banking and ownership rules (this document) | `STORAGE_LOAD` rejects a wrong word *before any byte is stored*; tests `abi-pkg-reject-*`, `abi-prog-reject-*`; `check_package_abi.py` §4–6 |
 
 Packages are assembled with **only** `include/hardware.inc` and `include/v2_package_abi.inc`.
@@ -50,7 +53,7 @@ tell *unversioned* (bit 15 clear, or major 0) from *versioned*.
 | Tape | Header type | Current word | Meaning |
 |---|---|---|---|
 | Program | 0 | **`$8100`** | program format 1.0: the line store verbatim, `[len:2][text][CR]` records (§7.1) |
-| Package (`SAVE/LOAD … EXT`) | 4 | **`$8200`** | package ABI 2.0 (this document). Major 1 was the unversioned raw-address ABI |
+| Package (`SAVE/LOAD … EXT`) | 4 | **`$8201`** (the ROM's own); a package tape carries the minor its package needs, **`$8200`** for the six shipped ones | package ABI 2.1 (this document; 2.0 tapes, `$8200`, still load). A package tape is stamped with the minor its package needs (2.0 unless it uses a 2.1 service, pin or constant, §7.2), so a 2.0 ROM loads the statement-only packages; `SAVE … EXT` stamps the running ROM's word. Major 1 was the unversioned raw-address ABI. 2.1 is not yet released, so its later additions (6.2's float form and service 17, 6.3's error range and service 18) are still 2.1 |
 | Array (`… ARRAY`) | 8 | **`$8100`** | array format 1.0. Array persistence is an intentional V2 feature (the replacement for `DATA/READ/RESTORE`). R10.9 Phase 2C implements the persistent Array Store (§7.3): the header type, version word and check are unchanged, `SAVE ... ARRAY` now actually writes type 8 (D13) |
 
 **Acceptance rule** (`STORAGE_LOAD`, `.name_ok`): *tag bit and major must equal the ROM's; the tape's
@@ -78,40 +81,116 @@ $F400  jp  <install>          ; image entry (3 bytes); the rest is code + privat
 **Install** — `V2_LOAD` calls `$F400` once after a successful LOAD, **with EXROM paged in** and
 interrupts enabled. The routine registers its statements and returns *carry clear* on success,
 *carry set* on any failure (a failure unregisters everything and zeroes `V2_PACKAGE_LEN`). It may
-call `EXT2_REGISTER` (service 0, below) and nothing else in HOME.
+call `EXT2_REGISTER` (service 0, below) and `EXT2_EXPORTS` (service 16, ABI 2.1) and nothing else in HOME.
 
 `EXT2_REGISTER` — In: `HL` = NUL-terminated upper-case name (≤ 8 significant characters; a literal
 `$` is allowed), `DE` = execute entry point, `B` = argument count 0–5, `C` = argument-type bitmask
-(bit *n* set ⇒ argument *n* is a string expression, delivered as a string-table index). Out: carry
-clear + `A` = slot, or carry set + `A = $FF` (registry full — 12 slots — or `B > 5`). Destroys
+(bit *n* set ⇒ argument *n* is a string expression, delivered as a string-table index; ABI 2.1: bits
+7-6 are the *kind*, below, 0 for a statement; bit 5 the *float form*, below). Out: carry
+clear + `A` = slot, or carry set + `A = $FF` (registry full — 12 slots — `B > 5`, or the float form
+with a string argument). Destroys
 `AF BC DE HL`. Each registration receives a rolling, never-zero *generation* that the compiler
 bakes into the bytecode; `OP_CALL_EXT` raises runtime error 9 if the slot's generation changed
 (package replaced or cleared) — this part of the mechanism is unchanged and sound.
 
+`EXT2_EXPORTS` (ABI 2.1) — In: `HL` → an export table: per export its NUL-terminated name, its entry
+(2 B), its argument count (1 B) and its signature (1 B, `EXT2_REGISTER`'s `C`); a `0` byte ends the
+table. Registers each export as `EXT2_REGISTER` does; out: carry clear when all are registered, carry set
++ `A = $FF` at the first that is not. An install can be `ld hl,table / jp EXT2_EXPORTS` (each export
+then costs its name + 5 bytes). Destroys `AF BC DE HL`.
+
 **Syntax a package gets.** `NAME expr, expr, …` — the name is matched only by a typed word of exactly its stored length (at most 8 characters, so a longer keyword can never be typed: CBEEP, not CLASSICBEEP); exactly `B` comma-separated expressions, no
-parentheses, no optional arguments, no result (statements only; `COMPILE_EXT_CALL` is generic and
-unchanged). Names are matched case-insensitively against the registry at *compile* time, so a
+parentheses, no optional arguments, no result (`COMPILE_EXT_CALL` is generic). Names are matched case-insensitively against the registry at *compile* time, so a
 package must be registered before the program that uses it is compiled (every `RUN` recompiles).
+
+**Functions (ABI 2.1).** The signature's bits 7-6 (`include/v2_ext_kinds.inc`) are the name's kind:
+`EXT_KIND_STMT` `$00` a statement (every ABI 2.0 package), `EXT_KIND_FN` `$40` a numeric function,
+`EXT_KIND_STR` `$C0` a string function (`$80` is reserved). A function is called in an expression as
+`NAME(expr, …)` (a string function as `NAME$(…)`, registered without the `$`), parsed as a built-in
+function call: exactly `B` arguments, each a string or a number as the signature's bits 4-0 say, the
+built-ins' compile errors (29 no `(`, 30 too few, 31 too many, 3 a wrong argument type). A name binds
+only where its kind fits: a function is not a statement (a function name at the start of a statement
+is compiled as an assignment), a statement name in an expression is a variable or an array, and a
+built-in of the same name wins over a package function. Execute routines are the statements', plus
+the value: a numeric function writes it to `EXT_CALL_RESULT` (16 bits, pushed as an integer); a string
+function writes there the address of `[length 0-31][text]` in its own memory (copied by the VM into a
+string temporary before anything else runs). Without the float form a float argument arrives
+truncated to a 16-bit integer (Q-33's rule, as for `POKE`).
+
+**The float form (ABI 2.1, item 6.2).** Signature bit 5, `EXT_SIG_FLOAT` (`$20`), with any kind:
+each argument arrives as the **address of a 5-byte float** (the calculator's format: an INT argument
+is converted to its small-integer form `[0][sign][low][high][0]`), and a numeric function's value is
+a float: the function writes the address of its 5 bytes to `EXT_CALL_RESULT` (in its own memory, or
+one of its arguments), and the VM copies them into a float temporary. A string function's value and
+a statement are as without the form. The float form's arguments are all numbers (bits 4-0 must be 0;
+`EXT2_REGISTER` refuses anything else). The five argument values are the calculator's stack slots
+0-4, the package's for the whole call: copies (writing one changes no variable), kept by `FP_OP`,
+undefined after the call.
+
+**Names** (item 6.6). `EXT2_REGISTER` accepts any name; it never refuses one for clashing with the
+language, and names are matched without regard to case (a statement `ZZ` is called by `zz 1` too) [M]. A
+name the language already uses is registered but not always reached [M]:
+
+* *A keyword wins.* The lexer classifies a whole identifier against the compiler's `KEYWORD_TABLE`
+  first (`LEX_CLASSIFY_KEYWORD`: whole-word match, case folded); only identifiers are looked up in the
+  registry. A statement `PRINT` is never reached (`PRINT 5` prints 5); one named `AND` or `TO` makes the
+  line a compile error (64, UNEXPECTED TOKEN).
+* *A built-in function wins* over a package function of the same name: a package `LEN` is never called
+  (`LEN("abc")` is 3), likewise a package `ABS` (the "built-in wins" case of `tools/qual/qpkgfn.py`).
+* *A name that only contains a keyword is fine:* a statement `STEPS` works.
+* *Shell commands* (`RUN LIST NEW SAVE LOAD VERIFY EXT ARRAY ALL`) are not compiler keywords: inside a
+  program a package statement `RUN` or `LIST` is called normally, but a line that is just `RUN`, `LIST`
+  or `NEW`, typed in the editor, is taken by the shell as its command (`V2_DISPATCH` matches the whole line first;
+  a command runs on any line). Such a statement can be entered only with arguments or beside other text.
+* *`LPRINT`, `LPRINT$` and `LLIST`* are keywords whose compiler code (`COMPILE_LPRINT`) looks the registry
+  up by name (`LPRINT$` for a string argument): a package that registers those names takes the keywords
+  over from PRINTER (a statement `LPRINT` registered by another package ran instead of PRINTER's).
+
+`tools/make_extension_tzx.py --v2` warns on stderr for each such name (§8), and never fails the build.
+Choose a name that is not a keyword, a built-in function or a shell command.
 
 **Execute** — `OP_CALL_EXT` pops the arguments into `EXT_CALL_ARG0…4`, **pages EXROM out**
 (`BANK_PAGE_EXROM_OUT`), then `call`s the registered entry; on return it pages EXROM back in.
 Contract for an execute routine:
 
 * Entry: arguments in `EXT_CALL_ARGn` (16-bit, little-endian; numeric values are the VM's 16-bit
-  integers, string arguments are string-table indices). Registers: nothing is defined on entry.
+  integers, string arguments are string-table indices; in the float form each is the address of a
+  5-byte float). Registers: nothing is defined on entry.
 * Exit: `ret`. **All registers may be destroyed** -- IY included: since the V2 Enhanced release the
   VM keeps its dispatch address in IY, and `OP_CALL_EXT` re-enters `VM_RUN` (which reloads it)
-  after every package call. There is no return value (statement packages only; no extension
-  *functions*).
-* Errors: write a package error code to `VM_ERROR_CODE` and `1` to `VM_HALTED` and `ret`
-  (`VM_RUN` stops on its next iteration). Codes 12–14 (MODE) and 15–20 (SPRITE; 21 is PRINTER's non-production LLIST) are
-  in use; they overlap the VM's own numbering (R10.8 A3) and are not yet a registered range.
+  after every package call. A statement has no return value; a function writes `EXT_CALL_RESULT`
+  (ABI 2.1, above).
+* Errors (ABI 2.1, item 6.3, closing R10.8 A3). **The codes a package may raise:** its own, **12–31**
+  (`EXT_ERR_FIRST`..`EXT_ERR_LAST` in `include/v2_ext_kinds.inc`; the VM's own codes stay outside
+  them: 1–11 and 64 up, its new ones above 67, 32–63 unassigned), and three of the VM's whose meaning
+  it shares: **5** division by zero, **15** argument out of range, **67** a float result out of range
+  (`EXT_ERR_DIV0`, `EXT_ERR_RANGE`, `EXT_ERR_FLOAT`). In use: 12–14 (MODE), 15–20 (SPRITE), 15
+  (CBEEP), 21 (PRINTER's non-production LLIST). Compile errors are numbered apart and do not collide.
+  The screen shows `RUNTIME ERROR n` (every runtime error without a message of its own).
+  **Two ways to raise one:**
+  - *ABI 2.0 (and 2.1):* write the code to `VM_ERROR_CODE` and `1` to `VM_HALTED`, and `ret`
+    (`VM_RUN` stops on its next iteration; a function's value is not used). A package that must also
+    load on a 2.0 ROM uses this.
+  - *ABI 2.1:* `ld a,code` / `call VM_RAISE_ERROR` (service 18). It does not return: it unwinds to
+    `VM_RUN`'s caller at once, from any depth of the package's own calls, with the EXROM paged in
+    again (§3). Execute-time only.
+
+  The code must not be 0 (that would stop the program with no error). `check_package_abi.py` checks
+  every code the shipped packages raise (§8).
 * Interrupts are **enabled** (IM 1, `RST $38` → `KBD_ISR_TICK`). The ISR touches only chunk-4/7
   state and the machine stack.
 * Stack: the machine stack grows down from `$FF00`; `$F800–$FEFF` (1,792 bytes) is stack only. SP
-  at package entry measured **`$FEFC`** under the test harness [M]; the production command-loop path
-  adds a few frames. **Design allowance for a package: 512 bytes** (conservative; not a measured
-  worst case).
+  at a package's entry is **`$FEFC`** under the test harness (`V2_RUN_STORED` called with SP = `$FF00`)
+  and **`$FEF8`** in the command loop, for `RUN` and an immediate statement alike, also inside a
+  `DEF FN`, a recursive `PROC` and a deep expression (the VM keeps its own stacks in memory) [M:
+  `tools/qual/qpkgstack.py`]. Measured depth of an execute call below its entry SP, its return
+  address, the services it calls and an interrupt taken meanwhile included [M]: SHAPES 32, SPRITE 26,
+  MODE 22, GRAPHICS 26, PRINTER 32, CBEEP 10; test packages 4–22; installs 2–6. The interrupt routine
+  alone takes 18 (the pushed PC included). So the deepest call is **32 bytes, 50 with an interrupt**,
+  and the lowest a shipped package reaches is about `$FEF8 − 50 = $FEC6`. **Design allowance for a
+  package: 128 bytes** below its entry SP, the services it calls and an interrupt included (2.5× the
+  measured worst; replaces the earlier unmeasured 512). The probe is not part of `make check`; run
+  it after changing a package.
 
 | Event | Registry (12 slots) | Window / `V2_PACKAGE_LEN` |
 |---|---|---|
@@ -128,10 +207,10 @@ Contract for an execute routine:
 Layout in the HOME ROM [M: read back from the emulated ROM by `abi-service-table`]:
 
 ```
-$0092  5A 02 00 10      magic $5A, ABI major 2, minor 0, slot count 16
+$0092  5A 02 01 13      magic $5A, ABI major 2, minor 1, slot count 19
 $0096  C3 lo hi         slot 0  (jp EXT2_REGISTER)
-...    ...              16 slots, 3 bytes each, ending at $00C5
-$00C6–$00EF             blank ($FF): 14 reserved slots (append-only)
+...    ...              19 slots, 3 bytes each, ending at $00CE
+$00CF–$00EF             11 reserved slots (append-only), each `jp VM_ERR_EXTENSION_NOT_FOUND` (6.4)
 $00F0–$00FD             slot code (PKG_NUM_TO_TEXT_SAFE, 14 bytes)
 $00FE–$00FF             blank
 ```
@@ -159,6 +238,9 @@ lost; everything else is preserved.
 | 13 | `$00BD` | `VM_COMPUTE_PRINT_ATTR` | — | `A` = attribute byte from `CURRENT_INK/PAPER/BRIGHT/FLASH/INVERSE` | `AF BC` | |
 | 14 | `$00C0` | `VM_NUM_TO_TEXT` | `HL` = value, `A` = `TAG_INT` (0) **only** | `HL` → NUL-terminated text in `PRINT_BUF` | `AF BC DE HL` | **EXROM-safe wrapper**, see below. The float tag (`HL` = float-table index) is *not* part of ABI 2.0: it reaches the calculator via `RST $28` and has not been exercised through the wrapper |
 | 15 | `$00C3` | `VM_STR_ADDR` | `A` = string-table index | `HL` → record `[len:1][content…, NUL]` | `AF DE HL` | |
+| 16 | `$00C6` | `EXT2_EXPORTS` | `HL` → export table (§2) | carry/`A` | `AF BC DE HL` | ABI 2.1; install-time only |
+| 17 | `$00C9` | `FP_OP` | `A` = operation, `HL` → x, `DE` → y (5-byte floats) | x = the result; `FOP_TRUNC`: `HL`, carry | `AF BC DE HL` | ABI 2.1 (6.2); execute-time only; see below |
+| 18 | `$00CC` | `VM_RAISE_ERROR` | `A` = the error code (§2 "Errors") | does not return | — | ABI 2.1 (6.3); execute-time only; see below |
 
 **Slot 14 is not a direct jump** (finding **ABI-F1**). `VM_NUM_TO_TEXT` ends in a jump to
 `BASIC_NUM_TO_STRING_EXROM` (`$C09C`), which is EXROM code; a package runs with chunk 6 paged to
@@ -170,16 +252,53 @@ call VM_NUM_TO_TEXT / push hl / call BANK_PAGE_EXROM_OUT / pop hl / ret` (nest-s
 routines keep a depth count). `check_package_abi.py` verifies those exact bytes and refuses to let
 `VM_NUM_TO_TEXT` be exposed any other way.
 
+**Service 17, `FP_OP`** (item 6.2; `rom/v2_pkg_fp.asm`): float arithmetic on 5-byte values anywhere in
+RAM (the package's memory or the float form's arguments). The operations (`include/v2_ext_kinds.inc`):
+
+| `A` | Name | Does | Out |
+|--:|---|---|---|
+| 0-3 | `FOP_ADD`, `FOP_SUB`, `FOP_MUL`, `FOP_DIV` | x = x + y, x − y, x × y, x / y | x; carry clear |
+| 4 | `FOP_INT` | x = the 16-bit signed integer `DE` | x; carry clear |
+| 5 | `FOP_TRUNC` | x truncated toward zero | `HL`; carry set when x is outside −32768..32767 (`HL` then 32767 or −32768) |
+
+A result beyond the range (about 1.7E38) or a division by zero **stops the program with runtime error
+67**, as the same operation in BASIC does: `FP_OP` uses the VM's own calculator stubs, and the error
+unwinds from package code to `VM_RUN`'s caller with the EXROM paged in again (back-port item 2.3) [M:
+`tools/qual/qpkgfn.py`, paging depth 1 afterwards]. So `FP_OP` is for an **execute routine only**, not
+the install. It runs with the EXROM out: the calculator pages itself in and out (`RST $28` through
+`V2_CALC_ENTRY`, depth-counted), `FOP_TRUNC` calls `CALC_FP_TO_INT` between `BANK_PAGE_EXROM_IN` and
+`_OUT`. It works in calculator slots 5-6, so the float form's arguments (slots 0-4) survive it.
+
+**Service 18, `VM_RAISE_ERROR`** (item 6.3): a `jp` to the VM's own `VM_ERR_COMMON`, the routine every
+runtime error goes through. It stores `A` in `VM_ERROR_CODE`, sets `VM_HALTED`, resets `SP` to the one
+`VM_RUN` was entered with and pages the EXROM in at depth 1 (item 2.3), so whatever the package had
+on the stack is dropped [M: `tools/qual/qpkgfn.py` `RAISES`: from a function, nested in another
+package call's arguments and in a statement's, in a loop; depth 1 afterwards]. That `SP` is only
+defined while the program runs: **execute routines only**, never the install. Codes: §2 "Errors".
+
+**The reserved slots trap** (item 6.4): each of the 11 reserved slots (`$00CF–$00EF`) is a `jp
+VM_ERR_EXTENSION_NOT_FOUND` (it was blank `$FF`). A package that calls a service this ROM does not
+have (one built for a later minor) stops with runtime error 9, the error of a package name whose
+registry slot is gone, shown `RUNTIME ERROR 9`, instead of executing `$FF` bytes (`RST $38`). Like
+service 18 the trap unwinds through `VM_ERR_COMMON`, so it exists only while a program runs (an
+execute routine): at install time a package must check the header's minor and slot count itself
+(and the tape's version word already keeps a package that needs a later minor from loading) [M:
+`tools/qual/qpkgfn.py` `RAISES`: fptest `TRAP(0)` calls the first reserved slot, `TRAP(1)` the last;
+both give error 9, `RUNTIME ERROR 9`, paging depth 1 afterwards; had a slot returned, 99].
+
 **EXROM independence rule.** A service reachable from a package must never transfer control to, or
 read data from, `$C000–$DFFF` unless it pages EXROM in itself. `check_package_abi.py` walks each
 slot's call/jump closure in the HOME listing (§4 of the checker) and fails the build on any such
-edge; the 15 plain slots have **no** EXROM edge [M], slot 14's inner routine has three
+edge; the 17 plain slots have **no** EXROM edge [M], slot 14's inner routine has three
 (`BASIC_NUM_TO_STRING_EXROM`, `CALC_INT_TO_FP`, `BASIC_FLOAT_TO_STRING_EXROM`), all covered by the
-wrapper.
+wrapper. Slot 17 (`FP_OP`) is audited by its own rule: its closure, its indirect call taken as the
+VM's four calculator stubs, reaches the EXROM only through `RST $28` and through `CALC_FP_TO_INT`
+called right after `BANK_PAGE_EXROM_IN` and followed by `BANK_PAGE_EXROM_OUT`.
 
 **Adding a service** (minor bump): append `PKG_SVC name, home_routine` to `PKG_SVC_LIST`, bump
-`PKG_SVC_COUNT` and `PKG_ABI_MINOR`. There are 14 free slots before `$00F0`. A routine that needs
-more than a `jp` must put its few bytes of code in the slot-code area or in HOME proper.
+`PKG_SVC_COUNT` and `PKG_ABI_MINOR`. There are 11 reserved slots before `$00F0` (traps, above; a new
+service replaces the next one). A routine that needs more than a `jp` must put its few bytes of code
+in the slot-code area or in HOME proper.
 
 ## 4. Pinned RAM and constants
 
@@ -191,6 +310,7 @@ noted); **H** HOME state the package may read.
 |---|---|---|
 | `EXT_CALL_ARG0…3` | `$BED8,$BEDA,$BEDC,$BEDE` (2 B each) | H→P: written by `OP_CALL_EXT` |
 | `EXT_CALL_ARG4` | `$BEEC` (2 B) | H→P: 5th argument, *not* contiguous |
+| `EXT_CALL_RESULT` | `$BEE0` (2 B) | P→H: a function's value (ABI 2.1, §2) |
 | `VM_ERROR_CODE`, `VM_HALTED` | `$B683`, `$B684` | P→H (package error reporting; also written by the VM) |
 | `CURRENT_OVER` | `$8106` | H: current `OVER` state (INK/PAPER/etc. are read through service 13) |
 | `GFX_CIRCLE_XC…GFX_CIRCLE_D` | `$8140–$8148` (9 B) | P: SHAPES `CIRCLE` scratch |
@@ -216,7 +336,7 @@ scratch block, not add pinned HOME cells.
 ## 5. Memory, banking, ownership rules
 
 1. **EXROM is paged out while a package statement runs** (`BANK_EXROM_DEPTH` = 0). Do not call
-   EXROM code, `BASIC_*_EXROM`, the calculator (`RST $28`), or
+   EXROM code, `BASIC_*_EXROM`, the calculator (`RST $28`; float arithmetic is service 17), or
    `BANK_PAGE_EXROM_IN` (a nested page-in would hide the scratch you are using). The install call
    is the exception: it runs with EXROM *in* — do not rely on chunk 6 RAM there.
 2. **`$C000–$DFFF` is hidden RAM during execute** (only). Contents are undefined between
@@ -232,8 +352,8 @@ scratch block, not add pinned HOME cells.
    write below `SPRITE_SLOT_IMG_BUF` in chunk 7.
 6. A package must not modify `EXT2_*`, the compile/run tables, the line store or any HOME variable
    not listed in §4. It may read the line store only through services 8–9.
-7. Errors are reported only through §2's mechanism; a package must not leave `VM_HALTED` set
-   without an error code.
+7. Errors are reported only through §2's mechanisms, with the codes §2 allows; a package must not
+   leave `VM_HALTED` set without an error code.
 
 ## 6. How the version check works (and what it does not do)
 
@@ -246,11 +366,11 @@ defined (the production EXROM, `rom/v2_exrom.asm`); the legacy V1 chain and the 
 component tests assemble byte-identically to before.
 
 It does **not** (and cannot) check that a package binary was built against the ABI it claims: the
-header word is the builder's claim. `make v2-packages` stamps it from the ABI file
-(`tools/make_extension_tzx.py --v2`), and `check_package_abi.py` proves the shipped sources
-reference nothing outside the ABI. `SAVE … EXT` stamps the *ROM's* current ABI word on whatever is
-in the window; the window can only contain a package that passed the check, so this is at worst
-over-conservative on a later, lower-minor ROM.
+header word is the builder's claim. `make v2-packages` stamps it from the ABI file and the package's
+source (`tools/make_extension_tzx.py --v2 --source`, the minor the package needs, §7.2), and
+`check_package_abi.py` proves the shipped sources reference nothing outside the ABI. `SAVE … EXT`
+stamps the *ROM's* current ABI word on whatever is in the window; the window can only contain a
+package that passed the check, so this is at worst over-conservative on a later, lower-minor ROM.
 
 ## 7. Compatibility consequences
 
@@ -290,6 +410,25 @@ are rebuilt by that target and their `.tzx` stamped `$8200`. This is a one-time,
 (R10.8 plan M-6). Package *sizes* are unchanged (mode 165, sprite 832, printer 345, shapes 795,
 graphics 467 bytes) [M].
 
+ABI 2.1 (6.1): `make v2-packages` first stamped every package tape with the ROM's word, now `$8201`,
+so packages built here no longer loaded on v2.0.x ROMs although the shipped ones use nothing of 2.1.
+Now (tape stamp): each package tape carries the minor its package needs, `$8200` (2.0) unless it uses
+2.1. `make v2-packages` passes `--source rom/v2_package_<name>.asm` to `tools/make_extension_tzx.py
+--v2`; `tools/v2_abi.py` `needed_minor(source)` scans that source and the `rom/` files it `INCLUDE`s
+(comments and strings ignored) for the names that came in with 2.1 and `package_word(source)` is
+`$8200` plus the highest minor found. The names are the service slots 16-18 and the `EXT_CALL_RESULT`
+pin (each carries an "ABI 2.N" note in its comment in `include/v2_package_abi.inc`, which the reader
+records) and the constants `EXT_KIND_FN`, `EXT_KIND_STR`, `EXT_SIG_FLOAT`. The minor comes from the
+source, not the image's bytes: a byte scan read GRAPHICS as needing 2.1 (`jr c,.row` is `38 CA`,
+`ret` is `C9`, and with the data byte `00` after them, `CA C9 00` reads as `jp z,$00C9`, `FP_OP`'s slot). Without
+`--source` the tool stamps this ROM's word as before and prints the word it wrote. All six shipped
+packages are now `$8200`; the test packages `fntest` and `fptest` use 2.1 and are `$8201`.
+`tools/qual/manual_tapes.py` (`make doc-examples`) stamps the same way.
+
+Limit (needs ROM): `SAVE … EXT` stamps the running ROM's own word, so a statement-only package saved
+from a 2.1 ROM says `$8201` and a 2.0 ROM refuses it. The shipped tapes come from `make v2-packages`,
+not from `SAVE`.
+
 ### 7.3 Array tapes and the Array Store (R10.9 Phase 2C)
 
 Array tapes keep header type 8 and the `$8100` format word; **the format did not change**, so ABI 2.0 and the tape
@@ -310,8 +449,12 @@ treating `$E000-$E7FF` as off limits, as in §5.5. `NEW` clears it; `RUN`, `CLEA
 | Guard | Catches |
 |---|---|
 | HOME build `ASSERT`s (`PKG_PIN_LIST`, `PKG_CONST_LIST`, table layout) | any sysvar/constant moving; table overlapping the KTAB or the slot code |
-| `tools/check_package_abi.py` (in `make check`) | table bytes ≠ ABI file; slots not blank; pin overlaps; HOME/EXROM touching the package scratch block; EXROM edges from any service; the wrapper's exact bytes; a package that does not assemble against the ABI file alone; any package call/jump into HOME that is not a slot; any package memory reference outside pinned cells and hardware ranges; literal addresses in package sources |
+| `tools/check_package_abi.py` (in `make check`) | table bytes ≠ ABI file; a reserved slot that is not exactly `jp VM_ERR_EXTENSION_NOT_FOUND` (6.4); pin overlaps; HOME/EXROM touching the package scratch block; EXROM edges from any service; the wrapper's exact bytes; a package that does not assemble against the ABI file alone; any package call/jump into HOME that is not a slot; any package memory reference outside pinned cells and hardware ranges; literal addresses in package sources; an error code a shipped package raises that §2 does not allow, or one not given as `ld a,n` right before the raise (6.3) |
+| `tools/check_package_abi.py` rule 8 (in `make check`) | a shipped package's tape line in the Makefile that does not pass `--source` with its own source ("the cbeep tape is not stamped from its source"); `needed_minor` itself: the test packages `fntest` and `fptest` must be found to need 2.1. It prints each tape's minor (`$8200` for the six shipped) |
+| `tools/qual/qpkgtape.py` (a probe; **not** in `make check`) | the stamp end to end: makes each package's tape blocks as `make v2-packages` does and `LOAD … EXT`s them through each given ROM's real tape receiver (`--rom TREE`); a package the ROM's minor covers must load, install and run one statement with no error, one it does not must say BAD TAPE VERSION. 16/16 on this ROM (2.1: all eight load) and on a v2.0.2-emu.1 tree (the six shipped load and run; `fntest` and `fptest` are refused) |
 | `tools/v2_prod_regress.py` `abi-*` | the shipped ROM's table; slot 14 with EXROM out; end-to-end package tape load + run; rejection of 6 package and 6 program header words with no side effects; SAVE stamps; SAVE→LOAD round trips |
+| `tools/qual/qpkgstack.py` (a probe; **not** in `make check`) | the machine stack each package's execute routine and install use, canary-measured, and the interrupt's own depth: backs the §2 stack allowance |
+| `tools/make_extension_tzx.py --v2` (in `make v2-packages`; a **warning** on stderr, not a failure) | a registered name the language already uses: a keyword, a built-in function, a shell command, or `LPRINT`/`LPRINT$`/`LLIST` (§2 "Names", 6.6). The names are the export table's (a package that starts `ld hl,table / jp EXT2_EXPORTS`), otherwise every NUL-terminated name-like string in the image (a warning may then be a string that is not a name); the reserved words are read from `KEYWORD_TABLE`, `BUILTIN_FN_TABLE` and the shell's `V2_KW_*`, so the list follows the ROM. None on the six shipped packages (PRINTER's own `LPRINT`/`LPRINT$`/`LLIST` are expected, not reported); one on the test package `fntest`, its deliberate `ABS` |
 
 Negative controls were run when the checker was written (an unpinned `ld a,($8200)` and a raw
 `call $0FBA` in a package are both reported; moving a pinned cell fails the HOME build).
@@ -326,7 +469,10 @@ Negative controls were run when the checker was written (an unpinned `ld a,($820
 5. Never call EXROM code. Never assume chunk 6 contents between statements.
 6. Add the package to `PACKAGES` in `tools/check_package_abi.py`, to `make v2-packages`, and add a
    production test next to `pkg-*` in `tools/v2_prod_regress.py`.
-7. Build with `make v2-packages` (stamps the ABI word) and run `make check test`.
+7. Choose names that are not a keyword, a built-in function or a shell command (§2 "Names"); a clash
+   is a warning from `make v2-packages`, not a failure.
+8. Build with `make v2-packages` (stamps the minor the package needs, from its source; add the
+   `--source` to the target's line, `make check` fails without it) and run `make check test`.
 
 ## 10. Inventory (what each shipped package uses)
 
@@ -341,4 +487,5 @@ Negative controls were run when the checker was written (an unpinned `ld a,($820
 
 Hardware ports used directly by packages (`$BF3B`, `$FF3B`, `$FB`, `$FE`) are hardware, not HOME, and are
 outside the ABI. R10.8's open item A4 (a documented clobber contract for execute routines) is
-closed by §2; A3 (error-code namespace) is documented but not yet redesigned.
+closed by §2; A3 (error-code namespace) is closed by §2 "Errors" (item 6.3): 12–31 registered for
+packages, no package renumbered.

@@ -5,18 +5,29 @@ Fails when the HOME image, the five package images and include/v2_package_abi.in
 stop agreeing.  It is the automated half of docs/PACKAGE_ABI.md:
 
  1. the service table in the built HOME image matches the ABI file (header bytes, slot
-    count, every slot is `jp <the named HOME routine>`), and fits the KTAB padding;
+    count, every slot is `jp <the named HOME routine>`), and fits the KTAB padding; every
+    reserved slot is `jp VM_ERR_EXTENSION_NOT_FOUND` (6.4);
  2. every pinned RAM cell / constant is where the ABI file says (the HOME build ASSERTs
     this too; this re-checks the shipped symbols);
  3. no pinned ranges overlap each other or the package scratch block, and nothing in
     HOME/EXROM code references the package scratch block;
  4. every service is EXROM-independent: its call/jump closure never reaches chunk 6
-    ($C000-$DFFF) -- packages run with EXROM paged out -- except through the one
-    audited wrapper, PKG_NUM_TO_TEXT_SAFE, which pages EXROM in itself;
+    ($C000-$DFFF) -- packages run with EXROM paged out -- except through the
+    audited wrapper, PKG_NUM_TO_TEXT_SAFE, which pages EXROM in itself, and the float
+    service PKG_FP_OP (6.2): the calculator through RST $28 (which pages itself) in the
+    VM's four calculator stubs, and CALC_FP_TO_INT between BANK_PAGE_EXROM_IN and _OUT;
  5. each package assembles with the ABI file alone (so it cannot name an unlisted HOME
     internal), and every call/jump/memory reference its code makes into HOME ROM or
     the sysvar RAM lands on a service-table slot or a pinned cell;
- 6. no package source uses a literal address outside the reserved scratch block.
+ 6. no package source uses a literal address outside the reserved scratch block;
+ 7. (6.3) every runtime error code a package source raises is one a package may raise
+    (include/v2_ext_kinds.inc: EXT_ERR_FIRST..EXT_ERR_LAST, EXT_ERR_DIV0/RANGE/FLOAT), given
+    as `ld a,n` right before `ld (VM_ERROR_CODE),a`, VM_RAISE_ERROR or a jump to a routine
+    that starts with that store (the shipped packages; the test packages raise any code on purpose);
+ 8. (the tape stamp) every package tape the Makefile writes is stamped from its own source
+    (`make_extension_tzx.py ... --v2 --source rom/v2_package_<name>.asm`), so it carries the minor
+    the package needs; the test packages, which use 2.1, are found to need this ROM's minor (a
+    check of tools/v2_abi.py's needed_minor itself).
 """
 import os
 import re
@@ -40,6 +51,14 @@ PACKAGES = {
 # The wrapper that legitimately reaches EXROM (it brackets the call with BANK_PAGE_EXROM_IN/OUT).
 WRAPPER = "PKG_NUM_TO_TEXT_SAFE"
 WRAPPED = "VM_NUM_TO_TEXT"
+# 6.2: the float service, its indirect call's targets and its one bracketed EXROM call.
+FP_SERVICE = "PKG_FP_OP"
+FP_TRAMPOLINE = "VM_CALL_USR_TRAMPOLINE"
+FP_STUBS = ("VM_CALC_ADD_STUB", "VM_CALC_SUB_STUB", "VM_CALC_MUL_STUB", "VM_CALC_DIV_STUB")
+FP_EXROM_CALL = "CALC_FP_TO_INT"
+RAISE_SERVICE = "VM_RAISE_ERROR"
+# 6.4: where each reserved slot jumps.
+TRAP = "VM_ERR_EXTENSION_NOT_FOUND"
 # Hardware / always-visible ranges a package may touch without a pin.
 HW_RANGES = [(0x4000, 0x5B00, "screen + attributes"), (0x6000, 0x7B00, "second display file")]
 
@@ -48,6 +67,86 @@ errors = []
 
 def fail(msg):
     errors.append(msg)
+
+
+def allowed_error_codes():
+    """The codes a package may raise, from include/v2_ext_kinds.inc (6.3)."""
+    k = {m.group(1): int(m.group(2)) for m in re.finditer(r"^(EXT_ERR_\w+)\s+EQU\s+(\d+)",
+                                                         (ROOT / "include/v2_ext_kinds.inc").read_text(), re.M)}
+    return set(range(k["EXT_ERR_FIRST"], k["EXT_ERR_LAST"] + 1)) | {k["EXT_ERR_DIV0"], k["EXT_ERR_RANGE"], k["EXT_ERR_FLOAT"]}
+
+
+def check_tape_stamps(abi):
+    """Rule 8. Returns [(package, the minor its tape carries)]."""
+    stamped = {}
+    for line in (ROOT / "Makefile").read_text().splitlines():
+        m = re.search(r"make_extension_tzx\.py\s+\S+\s+\S+\s+build/v2_package_(\w+)\.bin\s+--v2(.*)$", line)
+        if m:
+            src = re.search(r"--source\s+(\S+)", m.group(2))
+            stamped[m.group(1)] = src.group(1) if src else None
+    out = []
+    for pkg, src in PACKAGES.items():
+        if pkg not in stamped:
+            fail("Makefile: no `make_extension_tzx.py ... build/v2_package_%s.bin --v2` line" % pkg)
+        elif stamped[pkg] != src:
+            fail("Makefile: the %s tape is not stamped from its source (--source %s; has %s)" % (pkg, src, stamped[pkg]))
+        else:
+            out.append((pkg, abi.needed_minor(src)))
+    for src in ("rom/v2_package_fntest.asm", "rom/v2_package_fptest.asm"):
+        if abi.needed_minor(src) != abi.minor:
+            fail("tools/v2_abi.py needed_minor: %s uses 2.%d's functions but is found to need 2.%d"
+                 % (src, abi.minor, abi.needed_minor(src)))
+    return out
+
+
+def check_error_codes(srcs):
+    """Rule 7: each raise in the package sources names its code as `ld a,n` just before it, and n
+    is allowed. A raise is `ld (VM_ERROR_CODE),a` (unless it starts a raise routine, whose callers
+    are checked instead), VM_RAISE_ERROR, or a jump/call to a raise routine. Returns the count."""
+    ok = allowed_error_codes()
+    files = {}
+    for src in srcs:
+        lines = []
+        for no, line in enumerate(Path(src).read_text().splitlines(), 1):
+            code = line.split(";")[0].strip()
+            m = re.match(r"([A-Za-z_][\w.]*):\s*(.*)", code)
+            label, ins = (m.group(1), m.group(2)) if m else (None, code)
+            lines.append((no, label, re.sub(r"\s*,\s*", ",", re.sub(r"\s+", " ", ins.lower()))))
+        files[src] = lines
+    store = "ld (vm_error_code),a"
+    routines = set()
+    for lines in files.values():
+        insns = [(lb, ins) for _, lb, ins in lines if lb or ins]
+        for i, (lb, ins) in enumerate(insns):
+            if lb and not lb.startswith(".") and (ins or (i + 1 < len(insns) and insns[i + 1][1])):
+                first = ins or insns[i + 1][1]
+                if first == store:
+                    routines.add(lb.lower())
+    n = 0
+    for src, lines in files.items():
+        prev = None
+        entry = None                    # the routine whose first instruction comes next
+        for no, lb, ins in lines:
+            if lb and not lb.startswith("."):
+                entry = lb.lower()
+            if not ins:
+                continue
+            m = re.match(r"(?:jp|jr|call) (?:[a-z]+,)?([a-z_][\w.]*)$", ins)
+            target = m.group(1) if m else None
+            raise_here = (ins == store and entry not in routines) or \
+                target == RAISE_SERVICE.lower() or (target in routines)
+            entry = None
+            if raise_here:
+                n += 1
+                lit = re.match(r"ld a,(\d+|\$[0-9a-f]+)$", prev or "")
+                if not lit:
+                    fail("%s:%d: an error raised without `ld a,n` just before it (%s)" % (src, no, ins))
+                else:
+                    v = int(lit.group(1)[1:], 16) if lit.group(1).startswith("$") else int(lit.group(1))
+                    if v not in ok:
+                        fail("%s:%d: error code %d is not one a package may raise (12-31, 5, 15, 67)" % (src, no, v))
+            prev = ins
+    return n
 
 
 def syms(path):
@@ -117,7 +216,9 @@ def decode(addr, ins):
     return (nxt if ft else None), targets, refs, dyn
 
 
-def closure(entry, ins, stop=()):
+def closure(entry, ins, stop=(), image=None):
+    """image given: RST $28 is the calculator (it pages the EXROM in and out itself, and resumes
+    after the literal stream's $38)."""
     seen, work, bad = set(), [entry], []
     while work:
         a = work.pop()
@@ -130,6 +231,9 @@ def closure(entry, ins, stop=()):
         nxt, targets, refs, dyn = decode(a, ins)
         if dyn:
             bad.append(("indirect jump", a))
+        if image is not None and ins[a][0] == b"\xEF":
+            nxt = image.index(0x38, a + 1) + 1
+            targets = []
         for t in targets:
             if 0xC000 <= t < 0xE000:
                 bad.append(("transfers into chunk 6 (EXROM)", a, t))
@@ -142,6 +246,34 @@ def closure(entry, ins, stop=()):
         if nxt is not None:
             work.append(nxt)
     return seen, bad
+
+
+def check_fp_service(pkg, hsym, lst, home):
+    """6.2: PKG_FP_OP's closure, its indirect call taken as the four calculator stubs, may reach the
+    EXROM only through RST $28 and through CALC_FP_TO_INT called right after BANK_PAGE_EXROM_IN
+    and followed (within two instructions) by BANK_PAGE_EXROM_OUT."""
+    exrom_call = hsym[FP_EXROM_CALL]
+    stop = {hsym[FP_TRAMPOLINE], exrom_call}
+    calls = []
+    for root in (FP_SERVICE,) + FP_STUBS:
+        seen, bad = closure(hsym[root], lst, stop=stop, image=home)
+        for item in bad:
+            if item[0] == "transfers into chunk 6 (EXROM)" and item[2] == exrom_call:
+                calls.append(item[1])
+                continue
+            fail("service %s (%s): %s at $%04X%s" % (pkg, root, item[0], item[1],
+                                                    " -> $%04X" % item[2] if len(item) > 2 else ""))
+    order = sorted(lst)
+    for a in set(calls):
+        i = order.index(a)
+        before = lst[order[i - 1]][0]
+        after = [lst[x][0] for x in order[i + 1:i + 3]]
+        cin = bytes([0xCD]) + hsym["BANK_PAGE_EXROM_IN"].to_bytes(2, "little")
+        cout = bytes([0xCD]) + hsym["BANK_PAGE_EXROM_OUT"].to_bytes(2, "little")
+        if before != cin or cout not in after:
+            fail("%s: the call to %s at $%04X is not between BANK_PAGE_EXROM_IN and _OUT" % (FP_SERVICE, FP_EXROM_CALL, a))
+    if not calls:
+        fail("%s: no call to %s found (the checker's model of the service is stale)" % (FP_SERVICE, FP_EXROM_CALL))
 
 
 def main():
@@ -171,9 +303,12 @@ def main():
             fail("slot %d: HOME routine %s not in build/test_basic.sym" % (i, homename))
         elif got != bytes([0xC3, want & 0xFF, want >> 8]):
             fail("slot %d (%s): bytes %s != jp %s ($%04X)" % (i, pkg, got.hex(), homename, want))
-    pad = home[end:abi.code]
-    if any(x != 0xFF for x in pad):
-        fail("reserved slot area $%04X-$%04X is not blank ($FF)" % (end, abi.code))
+    # 6.4: every reserved slot traps (jp VM_ERR_EXTENSION_NOT_FOUND, runtime error 9)
+    trap = hsym.get(TRAP)
+    if trap is None:
+        fail("%s not in build/test_basic.sym" % TRAP)
+    elif (abi.code - end) % 3 or home[end:abi.code] != bytes([0xC3, trap & 0xFF, trap >> 8]) * ((abi.code - end) // 3):
+        fail("reserved slot area $%04X-$%04X is not one `jp %s` per slot" % (end, abi.code, TRAP))
     if any(x != 0xFF for x in home[abi.code + 14:0x100]):
         fail("bytes after the slot code up to $0100 are not blank ($FF)")
     w = hsym.get(WRAPPER)
@@ -216,6 +351,9 @@ def main():
                    + hsym["BANK_PAGE_EXROM_OUT"].to_bytes(2, "little") + bytes([0xE1, 0xC9]))
             if code != exp:
                 fail("%s is not the audited push/IN/pop/call/push/OUT/pop/ret sequence: %s" % (WRAPPER, code.hex()))
+            continue
+        if homename == FP_SERVICE:
+            check_fp_service(pkg, hsym, lst, home)
             continue
         if homename == WRAPPED:
             fail("%s must be exposed only through %s" % (WRAPPED, WRAPPER))
@@ -269,13 +407,20 @@ def main():
                         fail("%s:%d: literal address $%04X outside the reserved package scratch block: %s" %
                              (src, no, v, line.strip()))
 
+    # 7 -- the error codes the packages raise
+    nsites = check_error_codes(sorted(srcs))
+
+    # 8 -- each package tape carries the minor its package needs
+    minors = check_tape_stamps(abi)
+
     if errors:
         print("check_package_abi.py: %d problem(s)" % len(errors))
         for e in errors:
             print("  -", e)
         return 1
-    print("check_package_abi.py: ABI %d.%d -- %d service slots, %d pinned cells, %d constants, %d packages: all checks passed."
-          % (abi.major, abi.minor, len(abi.services), len(abi.pins), len(abi.consts), len(PACKAGES)))
+    print("check_package_abi.py: ABI %d.%d -- %d service slots, %d pinned cells, %d constants, %d packages, %d error sites: all checks passed."
+          % (abi.major, abi.minor, len(abi.services), len(abi.pins), len(abi.consts), len(PACKAGES), nsites))
+    print("  package tapes: %s" % ", ".join("%s %d.%d" % (p, abi.major, mn) for p, mn in minors))
     return 0
 
 

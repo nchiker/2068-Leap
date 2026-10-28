@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Static regression checks for the stock-derived tape contract."""
+"""Static regression checks for the tape contract.
+
+Since back-port plan item 3.1 the block I/O is kernel/storage/tapeblock.asm (clean-room, from
+2068-Leap-C); this checks the header layout and framing it carries, the LOAD failure contract, the
+clean-room timing constants against the signal specification, and that the stock-derived block I/O
+(and its EDGE/timing constants) is gone.
+"""
 
 import re
 from functools import reduce
@@ -8,6 +14,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SOURCE = ROOT / "kernel" / "storage" / "storage.asm"
+BLOCKS = ROOT / "kernel" / "storage" / "tapeblock.asm"
 
 
 def equ(text: str, name: str) -> int:
@@ -23,14 +30,16 @@ def main() -> int:
     code = re.sub(r";[^\n]*", "", source)
     basic_source = (ROOT / "basic" / "basic.asm").read_text()
 
-    # The real LD-EDGE-2 is CALL LD-EDGE-1 / RET NC and then deliberately
-    # falls through into LD-EDGE-1 again. A RET inserted here was the root
-    # cause of the real LOAD failure found on 2026-08-26.
-    edge_pattern = re.compile(
-        r"^\.edge2:\s*\n\s*call\s+\.edge1\s*\n\s*ret\s+nc\s*\n\s*\.edge1:",
-        re.M | re.I,
-    )
-    assert edge_pattern.search(code), "EDGE2 no longer falls through into EDGE1"
+    blocks = BLOCKS.read_text()
+    # The stock-derived block I/O must not come back (NOTICE.md, tools/check_provenance.py).
+    for gone in ("STORAGE_LEADER_GAP", "STORAGE_BIT_COMPARE", ".edge2:", "SA-BYTES M0068"):
+        assert gone not in code, f"stock-derived tape code is back: {gone}"
+    assert re.search(r"^STORAGE_SEND_BLOCK\s+EQU\s+TAPE_SEND_BLOCK", source, re.M)
+    assert re.search(r"^STORAGE_RECEIVE_BLOCK\s+EQU\s+TAPE_RECV_BLOCK", source, re.M)
+    # The clean-room signal (Leap-C docs/TAPE_SIGNAL_SPEC.md 2): pilot lengths and the receiver's budget.
+    for name, value in {"TS_HDR_PILOT": 8063, "TS_DATA_PILOT": 3223, "TR_TICKS": 1870}.items():
+        actual = equ(blocks, name)
+        assert actual == value, f"{name}: expected {value}, found {actual}"
 
     expected = {
         "STORAGE_HEADER_TYPE_OFF": 0,
@@ -41,8 +50,6 @@ def main() -> int:
         "STORAGE_HEADER_PAYLOAD_LEN": 17,
         "STORAGE_TYPE_HEADER": 0x00,
         "STORAGE_TYPE_DATA": 0xFF,
-        "STORAGE_LEADER_GAP": 0xA0,
-        "STORAGE_BIT_COMPARE": 0xCB,
     }
     for name, value in expected.items():
         actual = equ(source, name)
@@ -81,13 +88,6 @@ def main() -> int:
     block = bytes([0]) + header
     checksum = reduce(xor, block, 0)
     assert len(header) == 17 and reduce(xor, block + bytes([checksum]), 0) == 0
-
-    stock = ROOT / "OfficalROM" / "tc2068-1.rom"
-    if stock.exists():
-        data = stock.read_bytes()
-        assert data[0x189:0x18E] == bytes.fromhex("cd8d01d03e"), (
-            "stock LD-EDGE-2 reference bytes changed or reference ROM is unexpected"
-        )
 
     print("check_storage_contract.py: all checks passed.")
     return 0

@@ -261,14 +261,12 @@ PROC_PARAM_INDEX_TMP: equ $BA31  ; COMPILE_PROC scratch (1 byte): the
 ; own separate SYMTAB/STRTAB split (rom/exrom_v2_vm_core.asm). ---
                                   ; entries 0-3 (unchanged address/size)
 
-; --- R6 addition: decimal literals ---
-CNUM_DIVISOR_TMP:   equ $BA39   ; LEX_SCAN_NUMBER scratch (2 bytes): running
-                                  ; 10^(fractional digits) accumulator
-TOK_FLOAT_DIVISOR:  equ $BA3B   ; token field (2 bytes): companion to
-                                  ; TOK_VAL for a TOK_FLOAT_NUMBER token
-CEXT_SLOT:          equ $BA3D   ; R7.5 (COMPILE_EXT_CALL) scratch, 1
-CEXT_GEN:           equ $BA3E   ; byte each: the matched extension's own
-CEXT_ARGCOUNT:      equ $BA3F   ; slot id/generation/argcount (read by .emit)
+; --- R6 addition: decimal literals ($BA39-$BA3A were the divisor scratch until 5.1) ---
+    INCLUDE "include/v2_ext_kinds.inc"   ; 6.1: EXT_KIND_* (also where the registry is stubbed)
+CMP_END:            equ $BA39   ; 5.4: EMIT_PTR just after the last relational operator emitted (2 bytes);
+                                ; 0 at the start of every compile (a stale value could equal EMIT_PTR)
+LEX_NUM_START:      equ $BA3B   ; LEX_SCAN_NUMBER: the literal's first character (2 bytes)
+; $BA3D-$BA3F: free (6.1: COMPILE_EXT_CALL keeps the slot, count and signature in registers)
 
 ; R8.5 Group 4 -- DIM/array grammar. Arrays are a SEPARATE compile-time
 ; name table from CSYMTAB/STRSYMTAB (own lexical namespace, like strings
@@ -388,7 +386,7 @@ TOK_KW_ENDP:        equ 21
 TOK_KW_CALL:        equ 22
 TOK_STRING:         equ 23   ; a "quoted" string literal (R5 addition)
 TOK_STR_IDENT:      equ 24   ; a NAME$ string-variable identifier (R5)
-TOK_FLOAT_NUMBER:   equ 25   ; a decimal literal, e.g. "10.5" (R6 addition)
+                             ; 25: was TOK_FLOAT_NUMBER (decimal literals are TOK_FLOAT5 since 5.1)
 TOK_COMMA:          equ 26   ; ',' — argument separator (R7 addition,
                                ; needed for PLOT x,y; nothing before R7
                                ; had a multi-argument statement)
@@ -452,7 +450,6 @@ TOK_KW_CLEAR:       equ 64   ; R10.7
 TOK_KW_OUT:         equ 65   ; STUDY
 TOK_FLOAT5:         equ 67   ; RC: a literal held as a 5-byte value (TOK_FLOAT5_BUF)
 TOK_FLOAT5_BUF:     equ CALC_STACK + 35   ; calculator slot 7 (unused at compile time)
-LEX_NUM_START:      equ TOK_FLOAT_DIVISOR ; LEX_SCAN_NUMBER's start (the field is set only at its end)
 TOK_SEMI:           equ 66   ; STUDY: ';' (PRINT/INPUT separator)
 
 ; ---------------------------------------------------------------------------
@@ -476,6 +473,7 @@ COMPILER_INIT_COMMON:
         ld h,a                   ; R10.9 2D: restart the source-line counter
         ld l,a
         ld (LEX_LINE),hl
+        ld (CMP_END),hl          ; 5.4: no relational operator emitted yet
         ret
 
 ; ===========================================================================
@@ -750,119 +748,45 @@ LEX_NEXT_TOKEN_CORE:
         ld (SRC_PTR),hl
         ret
 
-; LEX_SCAN_NUMBER — R6 addition: also recognizes an optional '.' followed
-; by more digits (a decimal literal). The integer and fractional digits
-; accumulate into the SAME running value DE (i.e. "10.5" accumulates as
-; if scanning "105"); a separate CNUM_DIVISOR_TMP tracks 10^(number of
-; fractional digits seen), starting at 1 (meaning "no fractional part").
-; If the divisor is still 1 when digit-scanning ends, this is a plain
-; TOK_NUMBER (unchanged behavior, unchanged token type, for every program
-; that predates R6); otherwise it's TOK_FLOAT_NUMBER, with TOK_VAL holding
-; the digits and TOK_FLOAT_DIVISOR holding the divisor — COMPILE_FACTOR
-; combines them into a real float at runtime via the calculator, not at
-; compile time (this compiler never decodes or encodes the calculator's
-; own float byte format itself).
+; LEX_SCAN_NUMBER -- an integer literal 0..65535 accumulates into TOK_VAL (TOK_NUMBER).
+; 5.1: a '.' and a digit (a decimal literal) or a value above 65535 hands the whole literal, from
+; LEX_NUM_START, to LEX_NUMBER_TOO_BIG, which parses it once at compile time into its 5-byte
+; value (TOK_FLOAT5): a decimal literal costs a 5-byte copy at run time, not a division.
+; A '.' without a digit after it ends the literal: "5." is the INT 5, as before 5.1.
 LEX_SCAN_NUMBER:
         ld hl,(SRC_PTR)
         ld (LEX_NUM_START),hl
         ld de,0
-        ld hl,1
-        ld (CNUM_DIVISOR_TMP),hl
 .int_digit_loop:
         ld hl,(SRC_PTR)
         ld a,(hl)
-        cp '0'
-        jr c,.check_dot
-        cp '9'+1
-        jr nc,.check_dot
-        inc hl
-        ld (SRC_PTR),hl
-        sub '0'
-        call LEX_ACCUM_DIGIT     ; STUDY (D11): shared, range-checked accumulate
-        jr nc,.int_digit_loop
-        jr LEX_NUMBER_TOO_BIG
-.check_dot:
-        ld hl,(SRC_PTR)
-        ld a,(hl)
         cp '.'
-        jr nz,.done
-        inc hl
-        ld (SRC_PTR),hl
-.frac_digit_loop:
-        ld hl,(SRC_PTR)
-        ld a,(hl)
-        cp '0'
-        jr c,.done
-        cp '9'+1
+        jr z,.dot
+        sub '0'
+        cp 10
         jr nc,.done
         inc hl
         ld (SRC_PTR),hl
+        call LEX_ACCUM_DIGIT     ; STUDY (D11): shared, range-checked accumulate
+        jr nc,.int_digit_loop
+        jr LEX_NUMBER_TOO_BIG
+.dot:
+        inc hl
+        ld a,(hl)
         sub '0'
-        call LEX_ACCUM_DIGIT
+        cp 10
         jr c,LEX_NUMBER_TOO_BIG
-        ld hl,(CNUM_DIVISOR_TMP)
-        ld a,h                   ; QUAL (Q-09): the divisor 10^k is 16-bit; a 5th fractional digit
-        cp $27                   ; (divisor already 10000 = $2710) wrapped it (0.00001 -> -3.2183 after
-        jr nc,LEX_NUMBER_TOO_BIG ; *100000): error 64, as for an over-long mantissa (L-A)
-        ld b,h
-        ld c,l
-        add hl,hl
-        add hl,hl
-        add hl,bc
-        add hl,hl               ; divisor *= 10
-        ld (CNUM_DIVISOR_TMP),hl
-        jr .frac_digit_loop
+        ld (SRC_PTR),hl          ; consume the '.'
 .done:
         ld (TOK_VAL),de
-        ld hl,(CNUM_DIVISOR_TMP)
-        ld a,l
-        cp 1
-        jr nz,.is_float
-        ld a,h
-        or a
-        jr nz,.is_float
         ld a,TOK_NUMBER
         ld (TOK_TYPE),a
         ret
-.is_float:
-        bit 7,d                  ; STUDY: a decimal mantissa >= 32768 would become negative
-        jr nz,LEX_NUMBER_TOO_BIG
-        ld (TOK_FLOAT_DIVISOR),hl
-        ld a,TOK_FLOAT_NUMBER
-        ld (TOK_TYPE),a
-        ret
 
-; STUDY (D11, literal policy L-A): DE = DE*10 + A (A = digit 0-9).  Carry set = the value would exceed 65535
-; (the literal no longer fits the 16-bit TOK_VAL: before, it wrapped modulo 65536 without a word).
-; 32768..65535 stay accepted as 16-bit address patterns (POKE 65000,... / USR(61440) keep working);
-; a decimal literal's mantissa is limited to 32767 in LEX_SCAN_NUMBER (it is divided as a SIGNED INT16).
-; Destroys AF BC HL.
-LEX_ACCUM_DIGIT:
-        ld c,a
-        ld hl,6554
-        or a
-        sbc hl,de               ; DE >= 6554 -> x10 cannot fit
-        jr c,.ovf
-        jr z,.ovf
-        ld h,d
-        ld l,e
-        add hl,hl
-        add hl,hl
-        add hl,de
-        add hl,hl               ; HL = DE*10 (<= 65530)
-        ld b,0
-        add hl,bc
-        jr c,.ovf
-        ex de,hl
-        or a
-        ret
-.ovf:
-        scf
-        ret
 ; The oversized literal is reported where it is: an unexpected token, error 64, on its own line.
-; RC (literal rule L-C, completed): a literal outside the 16-bit and value/divisor forms (more than
-; 65535, more than 4 decimals, a mantissa above 32767) is parsed whole by the shared number parser
-; into a 5-byte value (was error 64): 1000.25, 3.14159265, 100000 are literals.
+; RC (literal rule L-C, completed): a literal above 65535 or with a '.' (5.1: every decimal) is
+; parsed whole by the shared number parser into a 5-byte value (was error 64): 0.5, 1000.25,
+; 3.14159265, 100000 are literals.
 LEX_NUMBER_TOO_BIG:
         ld hl,.ovf
         push hl
@@ -1615,41 +1539,30 @@ COMPILE_RELATIONAL:
         jr z,.do_ne
         ret
 .do_lt:
-        rst $08
-        call COMPILE_ADDITIVE
-        ld a,10        ; QUAL shrink: inlined EMIT_OP_CMP_LT (tail)
-        rst $20
-        ret                      ; RC shrink: tail call through the RST (was jp EMIT_BYTE)
+        ld a,10                  ; CMP_LT
+        jr .emit
 .do_le:
-        rst $08
-        call COMPILE_ADDITIVE
-        ld a,40        ; QUAL shrink: inlined EMIT_OP_CMP_LE (tail)
-        rst $20
-        ret                      ; RC shrink: tail call through the RST (was jp EMIT_BYTE)
+        ld a,40                  ; CMP_LE
+        jr .emit
 .do_eq:
-        rst $08
-        call COMPILE_ADDITIVE
-        ld a,11        ; QUAL shrink: inlined EMIT_OP_CMP_EQ (tail)
-        rst $20
-        ret                      ; RC shrink: tail call through the RST (was jp EMIT_BYTE)
+        ld a,11                  ; CMP_EQ
+        jr .emit
 .do_ge:
-        rst $08
-        call COMPILE_ADDITIVE
-        ld a,42        ; QUAL shrink: inlined EMIT_OP_CMP_GE (tail)
-        rst $20
-        ret                      ; RC shrink: tail call through the RST (was jp EMIT_BYTE)
+        ld a,42                  ; CMP_GE
+        jr .emit
 .do_gt:
-        rst $08
-        call COMPILE_ADDITIVE
-        ld a,41        ; QUAL shrink: inlined EMIT_OP_CMP_GT (tail)
-        rst $20
-        ret                      ; RC shrink: tail call through the RST (was jp EMIT_BYTE)
+        ld a,41                  ; CMP_GT
+        jr .emit
 .do_ne:
+        ld a,43                  ; CMP_NE
+.emit:                           ; 5.4: one tail for the six (was six copies)
+        push af
         rst $08
         call COMPILE_ADDITIVE
-        ld a,43        ; QUAL shrink: inlined EMIT_OP_CMP_NE (tail)
-        rst $20
-        ret                      ; RC shrink: tail call through the RST (was jp EMIT_BYTE)
+        pop af
+        rst $20                  ; EMIT_BYTE: HL = EMIT_PTR after it
+        ld (CMP_END),hl          ; 5.4: a JMPZ emitted right here fuses with it (COMPILE_FUSE_CMP)
+        ret
 
 COMPILE_ADDITIVE:
         call COMPILE_TERM
@@ -1711,8 +1624,6 @@ COMPILE_FACTOR:
         jr z,.paren
         cp TOK_NUMBER
         jr z,.number
-        cp TOK_FLOAT_NUMBER
-        jr z,.float_number
         cp TOK_FLOAT5
         jr z,.float5
         cp TOK_IDENT
@@ -1761,10 +1672,6 @@ COMPILE_FACTOR:
         rst $30
 .number:
         call COMPILE_NUMBER_LITERAL
-        rst $08
-        ret                      ; RC shrink: tail call through the RST (was jp LEX_NEXT_TOKEN)
-.float_number:
-        call COMPILE_FLOAT_LITERAL
         rst $08
         ret                      ; RC shrink: tail call through the RST (was jp LEX_NEXT_TOKEN)
 .float5:
@@ -1825,6 +1732,8 @@ COMPILE_FACTOR:
         bit 7,e
         jr z,.fn_call
 .not_builtin_fn:
+        ld c,EXT_KIND_FN
+        call EXT_FN_TRY          ; 6.1: a package's numeric function (compiled, and returns, if one)
         ld hl,(SRC_PTR)          ; RC (N-4): an array name is read as the array only when '(' follows;
 .peek:                           ; otherwise it is the scalar of the same name (separate namespaces)
         ld a,(hl)
@@ -1915,6 +1824,8 @@ COMPILE_FACTOR:
         rst $30
 .fn_have_rparen:
         rst $08                        ; consume ')'
+        bit 7,d                        ; 6.1: D = $80 + slot: a package function
+        jp nz,COMPILE_EXT_EMIT
         ld a,39        ; QUAL shrink: inlined EMIT_OP_CALL_FN
         rst $20
         ld a,d
@@ -2317,26 +2228,6 @@ COMPILE_INT_LITERAL:                       ; DE = a signed 16-bit value
         rst $20
         ret                      ; RC shrink: tail call through the RST (was jp EMIT_BYTE)
 
-; COMPILE_FLOAT_LITERAL — emits PUSH_FLOAT_LIT's 4-byte operand: TOK_VAL
-; (the literal's digits) then TOK_FLOAT_DIVISOR (10^fractional-digits),
-; both as plain 2-byte little-endian values. The VM computes value/
-; divisor as a real float at runtime, via the calculator — this compiler
-; never encodes a float itself.
-COMPILE_FLOAT_LITERAL:
-        ld a,22        ; QUAL shrink: inlined EMIT_BYTE_OP_PUSH_FLOAT_LIT
-        rst $20
-        ld de,(TOK_VAL)
-        ld a,e
-        rst $20
-        ld a,d
-        rst $20
-        ld de,(TOK_FLOAT_DIVISOR)
-        ld a,e
-        rst $20
-        ld a,d
-        rst $20
-        ret                      ; RC shrink: tail call through the RST (was jp EMIT_BYTE)
-
 COMPILE_IDENT_LOAD:
         ld hl,(TOK_NAME)
         ld a,(TOK_LEN)
@@ -2444,13 +2335,24 @@ COMPILE_ASSIGN_CONTINUED:
 .have_assign:
         rst $08                 ; consume '='
         push bc                 ; C = the target's index -- the expression's own
+    IFDEF V2_PRODUCTION
+        ld hl,(EMIT_PTR)
+        push hl                 ; 5.4: where the expression starts
+        call COMPILE_EXPR       ; symbol lookups use C, so it rides the stack
+        pop hl
+        pop bc
+        call COMPILE_FUSE_ADD   ; 5.4 (EXROM): v = v + k / v - k / v + w, one opcode that stores (NC)
+        ret nc
+    ELSE
         call COMPILE_EXPR       ; symbol lookups use C, so it rides the stack
         pop bc
+    ENDIF
         ld a,4        ; QUAL shrink: inlined EMIT_BYTE_OP_STORE_VAR
         rst $20
         ld a,c
         rst $20
         ret                      ; RC shrink: tail call through the RST (was jp EMIT_BYTE)
+
 
 ; ===========================================================================
 ; R8.5 Group 4 -- DIM/array grammar.
@@ -3027,6 +2929,8 @@ COMPILE_STR_FACTOR:
                                        ; so no separate string-context
                                        ; emit path is needed
 .plain_str_ident:
+        ld c,EXT_KIND_STR
+        call EXT_FN_TRY          ; 6.1: a package's string function (compiled, and returns, if one)
         ; Dynamic Data Phase 2 -- a string-array NAME used as a value is
         ; a string-array read, "STR_IDENT(expr)". Checked by NAME lookup
         ; (STRARRSYMTAB is a separate lexical namespace from STRSYMTAB),
@@ -3478,18 +3382,18 @@ COMPILE_LPRINT:
         cp TOK_STR_IDENT
         jr z,.str_arg
         ld hl,LPRINT_NUM_NAME
-        ld b,LPRINT_NUM_NAME_LEN
+        ld bc,LPRINT_NUM_NAME_LEN << 8 | EXT_KIND_STMT
         call EXT2_LOOKUP
         jr c,.not_loaded
-        call COMPILE_LPRINT_RESOLVE_SLOT
+        push af                  ; 6.1: the slot, kept on the stack across the argument
         call COMPILE_EXPR
         jr COMPILE_LPRINT_EMIT
 .str_arg:
         ld hl,LPRINT_STR_NAME
-        ld b,LPRINT_STR_NAME_LEN
+        ld bc,LPRINT_STR_NAME_LEN << 8 | EXT_KIND_STMT
         call EXT2_LOOKUP
         jr c,.not_loaded
-        call COMPILE_LPRINT_RESOLVE_SLOT
+        push af
         call COMPILE_STR_EXPR
         jr COMPILE_LPRINT_EMIT
 .not_loaded:
@@ -3501,39 +3405,19 @@ LPRINT_NUM_NAME_LEN: equ $-LPRINT_NUM_NAME-1
 LPRINT_STR_NAME: db "LPRINT$",0
 LPRINT_STR_NAME_LEN: equ $-LPRINT_STR_NAME-1
 
-; COMPILE_LPRINT_RESOLVE_SLOT -- input: A = slot id (from EXT2_LOOKUP).
-; Parks CEXT_SLOT/CEXT_GEN exactly like COMPILE_EXT_CALL's own entry
-; does, reused here since COMPILE_LPRINT_EMIT's own tail is otherwise
-; identical to COMPILE_EXT_CALL's `.emit:`. Destroys: AF, HL.
-COMPILE_LPRINT_RESOLVE_SLOT:
-        ld (CEXT_SLOT),a
-        call EXT2_SLOT_ADDR
-        ld a,(hl)
-        ld (CEXT_GEN),a
-        ld a,1
-        ld (CEXT_ARGCOUNT),a    ; bounded ROM consolidation pass: set
-                                  ; here so COMPILE_LPRINT_EMIT below can
-                                  ; just reuse COMPILE_EXT_CALL's own
-                                  ; `.emit:` tail instead of duplicating
-                                  ; its 3x "ld a,(CEXT_x):call EMIT_BYTE"
-                                  ; sequence
-        ret
-
 ; COMPILE_LPRINT_EMIT -- shared tail for both COMPILE_LPRINT branches:
 ; checks COMPILE_ERROR_CODE (set by the just-compiled argument
-; expression), then emits OP_CALL_EXT [slot][gen][argcount=1] -- same
-; operand shape COMPILE_EXT_CALL's own `.emit:` produces, so .op_call_
-; ext's existing generic decompile path needs no LPRINT-specific code
-; at all.
+; expression), then emits OP_CALL_EXT [slot][gen][argcount=1] through
+; COMPILE_EXT_EMIT, so .op_call_ext's existing generic decompile path
+; needs no LPRINT-specific code at all. 6.1: the slot comes off the
+; stack (a package function in the argument would have overwritten the
+; old CEXT_* cells).
 COMPILE_LPRINT_EMIT:
+        pop de                   ; D = the slot
         call CHK_ERR           ; RC shrink: return if a compile error is pending
-        jp COMPILE_EXT_CALL.emit  ; CEXT_SLOT/CEXT_GEN/CEXT_ARGCOUNT
-                                     ; already set (COMPILE_LPRINT_
-                                     ; RESOLVE_SLOT above) -- reuses the
-                                     ; SAME 3x "ld a,(CEXT_x):call
-                                     ; EMIT_BYTE" tail COMPILE_EXT_CALL's
-                                     ; own generic path already has,
-                                     ; rather than a second copy
+        ld b,1                   ; one argument
+        ld e,b                   ; signature: a statement (bits 7-6 clear)
+        jp COMPILE_EXT_EMIT
 
 ; COMPILE_GOTO — GOTO <label>
 COMPILE_GOTO:
@@ -3570,9 +3454,17 @@ COMPILE_GOTO:
 ; mixed, so this one-token peek is sufficient and unambiguous.
 COMPILE_IF:
         rst $08                 ; consume IF
+    IFDEF V2_PRODUCTION
+        ld hl,(EMIT_PTR)
+        push hl                 ; 5.12: the condition's start (a compile error returns, so it pops)
+    ENDIF
         call COMPILE_EXPR       ; RC (L-STR): string relations are ordinary factors now
-.condition_done:
+    IFDEF V2_PRODUCTION
+        pop hl
+        call COMPILE_FUSE_CMP   ; 5.4 (EXROM): A = 12 (JMPZ) or a CMP_JMPZ's mask (5.12: HL = the start)
+    ELSE
         ld a,12        ; QUAL shrink: inlined EMIT_OP_JMPZ
+    ENDIF
         rst $20
         call EMIT_PLACEHOLDER_16   ; HL = patch address for the "skip" target
         ld (IF_SKIP_PATCH_TMP),hl
@@ -3598,6 +3490,10 @@ COMPILE_IF:
         ld a,12
         rst $30
 .have_target:
+    IFDEF V2_PRODUCTION
+        call COMPILE_FUSE_GOTO  ; 5.4 (EXROM): NC = the CMP_JMPZ now jumps to the label, HL = its operand
+        jp nc,COMPILE_BRANCH_TARGET   ; (no JMP, nothing to skip)
+    ENDIF
         ld a,6        ; QUAL shrink: inlined EMIT_OP_JMP
         rst $20
         call EMIT_PLACEHOLDER_16   ; HL = patch address for the real target
@@ -4218,10 +4114,8 @@ COMPILE_STATEMENT_LIST:
         ; already imposes (see the regression suite's own `*_unloaded`
         ; tests). If nothing matches, this identifier is genuinely just
         ; a variable/label, exactly as before this addition.
-        ld hl,(TOK_NAME)
-        ld a,(TOK_LEN)
-        ld b,a
-        call EXT2_LOOKUP
+        ld c,EXT_KIND_STMT
+        call EXT_FIND_TOK        ; 6.1: a statement only (a function name is not one)
         jr c,.not_extension
         call COMPILE_EXT_CALL
         jr .after_stmt
@@ -4657,16 +4551,13 @@ COMPILE_DEF_FN:
 ; and DECOMPILE-TIME (how to render the fragment back) concern.
 ; ===========================================================================
 COMPILE_EXT_CALL:
-        ld (CEXT_SLOT),a
+        push af
         call EXT2_SLOT_ADDR      ; HL -> registry record
-        ld a,(hl)                  ; generation
-        ld (CEXT_GEN),a
-        ld de,12
-        add hl,de
-        ld a,(hl)                   ; argcount
-        ld (CEXT_ARGCOUNT),a
-        ld b,a                      ; B = argcount, C = arguments remaining,
-        ld c,a                      ; E = argtypes: pushed across each
+        pop de                   ; D = slot (6.1: in a register, as a function's
+        ld bc,12                 ; call nested in an argument would overwrite a cell)
+        add hl,bc
+        ld b,(hl)                   ; B = argcount, C = arguments remaining,
+        ld c,b                      ; D = slot, E = argtypes: pushed across each
         inc hl                      ; argument compile below
         ld e,(hl)                   ; argtypes bitmask
         rst $08                     ; consume the extension keyword
@@ -4708,15 +4599,57 @@ COMPILE_EXT_CALL:
         rst $08                     ; consume ','
         jr .arg_loop
 .emit:
+; COMPILE_EXT_EMIT -- OP_CALL_EXT [slot][generation][argcount byte] for a package
+; statement or function (6.1). In: D = slot (bit 7 ignored: COMPILE_FACTOR.fn_call's
+; $80 + slot), B = argument count, E = signature (bits 7-6, the kind, go into the
+; argcount byte: OP_CALL_EXT pushes a function's value). Destroys AF, BC, HL.
+COMPILE_EXT_EMIT:
+        ld a,e
+        and EXT_KIND_MASK | EXT_SIG_FLOAT   ; 6.2: the float form travels with the kind
+        or b
+        ld c,a                   ; C = the argcount byte
         ld a,34        ; QUAL shrink: inlined EMIT_OP_CALL_EXT
         rst $20
-        ld a,(CEXT_SLOT)
-        rst $20
-        ld a,(CEXT_GEN)
-        rst $20
-        ld a,(CEXT_ARGCOUNT)
+        ld a,d
+        and $7F
+        rst $20                  ; slot (A kept: EMIT_BYTE preserves it)
+        push bc
+        call EXT2_SLOT_ADDR
+        pop bc
+        ld a,(hl)
+        rst $20                  ; generation
+        ld a,c
         rst $20
         ret                      ; RC shrink: tail call through the RST (was jp EMIT_BYTE)
+
+; EXT_FN_TRY -- 6.1: the identifier token as a package function of kind C
+; (EXT_KIND_FN from a numeric factor, EXT_KIND_STR from a string factor).
+; Not one: returns with carry set. One: NAME(args) is compiled by
+; COMPILE_FACTOR.fn_call exactly as a built-in's call (the arguments typed
+; by the signature's bits 4-0), with D = $80 + slot, and this returns for
+; its CALLER (the return address is dropped). Destroys AF, BC, DE, HL.
+EXT_FN_TRY:
+        call EXT_FIND_TOK
+        ret c
+        push af
+        call EXT2_SLOT_ADDR
+        ld de,12
+        add hl,de
+        ld b,(hl)                ; B = argument count
+        inc hl
+        ld e,(hl)                ; E = signature
+        pop af
+        pop hl                   ; drop the return address
+        or $80                   ; A = $80 + slot (fn_call: D)
+        jp COMPILE_FACTOR.fn_call
+
+; EXT_FIND_TOK -- 6.1: EXT2_LOOKUP of the current identifier token. In: C =
+; the kind wanted. Out and Destroys as EXT2_LOOKUP.
+EXT_FIND_TOK:
+        ld hl,(TOK_NAME)
+        ld a,(TOK_LEN)
+        ld b,a
+        jp EXT2_LOOKUP
 
 ; COMPILE_TEST_ARGTYPE_BIT removed (bounded ROM consolidation pass) --
 ; was byte-identical to rom/exrom_v2_decompiler.asm's own DECOMP_TEST_

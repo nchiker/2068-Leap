@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Report current ROM and integrated R9 source/code/workspace budgets."""
+"""Report current ROM and integrated R9 source/code/workspace budgets.
+
+With `--check HOME_MIN EXROM_MIN`, fail (exit 1) when either ROM's free space is below its minimum:
+the emergency reserve of docs/V2_LEAPC_BACKPORT_PLAN.md section 0, kept for bug fixes.
+"""
 
 import re
 import sys
@@ -31,9 +35,15 @@ def symbols(path: Path) -> dict[str, int]:
 
 
 def main() -> int:
-    if len(sys.argv) != 4:
-        print("usage: report_budget.py HOME.lst EXROM.lst HOME.sym", file=sys.stderr)
+    args = sys.argv[1:]
+    minimum = None
+    if args[:1] == ["--check"] and len(args) >= 3:
+        minimum = (int(args[1]), int(args[2]))
+        args = args[3:]
+    if len(args) != 3:
+        print("usage: report_budget.py [--check HOME_MIN EXROM_MIN] HOME.lst EXROM.lst HOME.sym", file=sys.stderr)
         return 2
+    sys.argv[1:] = args
     home_end = end_before_padding(Path(sys.argv[1]), 0x4000)
     exrom_end = end_before_padding(Path(sys.argv[2]), 0xE000)
     syms = symbols(Path(sys.argv[3]))
@@ -55,6 +65,14 @@ def main() -> int:
         f"Fixed V2: {code_end:#06x}-{fixed_end-1:#06x}, {fixed_end-code_end} bytes "
         f"(incl. compile zone {stage_start:#06x}-{stage_start+zone_size-1:#06x}, {zone_size} bytes)"
     )
+    if minimum is not None:
+        short = [f"{name} {free} B free, below its {need} B reserve"
+                 for name, free, need in (("HOME", 0x4000 - home_end, minimum[0]),
+                                          ("EXROM", 0xE000 - exrom_end, minimum[1])) if free < need]
+        if short:
+            print("ROM reserve check FAILED: " + "; ".join(short), file=sys.stderr)
+            return 1
+        print(f"ROM reserve check: OK (HOME >= {minimum[0]} B, EXROM >= {minimum[1]} B)")
     return 0
 
 

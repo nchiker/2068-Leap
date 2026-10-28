@@ -2,12 +2,17 @@
 
 | Command | What it runs | Launches Fuse / X11? |
 |---|---|---|
-| `make check` | assemble/lint of every build, doc and fixture checks, `tools/check_test_targets.sh` | **No** |
+| `make check` | assemble/lint of every build (including the 40 V2 standalone test images: `tools/run_v2_standalone_tests.sh --build-only`), doc and fixture checks, `tools/check_test_targets.sh` | **No** |
 | `make test` | **default, fully headless** (ts2068-debug/ZEsarUX, no display): kernel smoke ROMs, V2 standalone component tests (`tools/run_v2_standalone_tests.sh`), production-ROM checks (`tools/v2_production_checks.py`), FILL checks, (R10.9) the production-ROM regression gate + strict known-defect suite (`tools/run_v2_prod_tests.sh`), `make qual`, and the maintenance suites (`make qual-maint`) | **No** |
 | `make qual-maint` | the maintenance-release suites (`tools/maint/run_maint_qual.sh`): AY `BEEP`, `SOUND` 0..16, the shared frame wait (BREAK during `BEEP`/`PAUSE`, the `PAUSE` rollover), the cbeep package (pitch/length model, timing, border, errors, real tape LOAD) and `PAUSE`/`BEEP`/`CBEEP` with the frame interrupt unavailable; also the last step of `make test` | **No** |
 | `make test-prod` | only the last item above (production gate, Array Store gate and known-defect suite, concurrently) | **No** |
 | `make test-legacy` | the V1 tests that drive a real Fuse window under X11: `run_editor_auto_test.sh` (wrap, insert) and the `run_storage_named_load_test.sh` family | **Yes** |
 | `make test-all` | `test` then `test-legacy` | Yes |
+
+**Emulation speed.** ZEsarUX runs fast by default (ts2068-debug adds `--emulatorspeed 1000
+--frameskip 49`; owner decision 2026-10-26, plan item 0.10). The emulated machine is unchanged (T-states
+per frame, interrupts), so cycle-counted results are the same; set `TS2068_DEBUG_ZESARUX_FAST=0` to run
+at real speed, e.g. for a test that waits on the host clock.
 
 **Why this exists.** `make test` used to run the V1 editor_auto and storage tests, which
 open a real Fuse window. Every session that ran `make test` for V2 work therefore launched

@@ -24,7 +24,7 @@
 #                                          already on a numbered release are
 #                                          never replaced. To cut one, after
 #                                          qualification:
-#                                            git tag -a v2.0.2-emu.1 && git push origin v2.0.2-emu.1
+#                                            git tag -a v2.1.0-emu.1 && git push origin v2.1.0-emu.1
 name: Source checks
 
 on:
@@ -119,7 +119,7 @@ jobs:
           title="V2 development build ($VERSION) — unqualified"
           notes=$(printf '%s\n\n%s\n\n%s' \
             "**Unqualified development build** of the 2068-Leap V2 development branch \`v2-development\` at ${GITHUB_SHA} — a moving target, rebuilt automatically on every push. It has **not** been through the release qualification and is not a release." \
-            "**For the qualified ROMs use the latest numbered release** (currently [v2.0.2-emu.1](https://github.com/${GITHUB_REPOSITORY}/releases/tag/v2.0.2-emu.1), emulator-qualified on ZEsarUX, not hardware-qualified). The [releases page](https://github.com/${GITHUB_REPOSITORY}/releases) lists them all." \
+            "**For the qualified ROMs use the latest numbered release** (currently [v2.1.0-emu.1](https://github.com/${GITHUB_REPOSITORY}/releases/tag/v2.1.0-emu.1), emulator-qualified on ZEsarUX, not hardware-qualified). The [releases page](https://github.com/${GITHUB_REPOSITORY}/releases) lists them all." \
             "Download **2068-Leap-latest.zip** below (the V2 ROMs, the six packages, the user manual and the documents of this commit; \`BUILD_INFO.txt\` inside names the commit).")
 
           if gh release view latest >/dev/null 2>&1; then

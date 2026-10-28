@@ -3,7 +3,6 @@
     DEFINE V2_COMPACT_SYSVARS   ; R10.7 P5: drop V1-only sysvars (see include/sysvars.inc)
     DEFINE V2_PRODUCTION        ; RC: leave out the legacy-only routines (as rom/v2_home.asm)
     DEFINE V2_FAST_REDRAW       ; STUDY: selective redraw of the active line while typing
-V2_REDRAW_SCOPE EQU $BEC0       ; STUDY: 1 = only the active line changed (set by EDITOR_LOOP, cleared by V2_REDRAW)
 V2_RD_WRAPS     EQU $BEC1       ; STUDY: wrap-row count of the active line at the last full/selective redraw
 V2_RD_INDEX     EQU $BEC2       ; STUDY: CUR_EDIT_INDEX at the last redraw (2 bytes)
 V2_RD_NEWROW    EQU $BEC4       ; STUDY: scratch of the two-line path
@@ -42,6 +41,12 @@ V2_EXROM_ENTRY:
     IFDEF V2_MAINT_AY_BEEP
     V2_EXROM_SLOT V2_EXROM_AY_BEEP_ADDR, AY_BEEP
     ENDIF
+    V2_EXROM_SLOT V2_EXROM_FUSE_ADD_ADDR, COMPILE_FUSE_ADD_X    ; 5.4
+    V2_EXROM_SLOT V2_EXROM_FUSE_CMP_ADDR, COMPILE_FUSE_CMP_X
+    V2_EXROM_SLOT V2_EXROM_FUSE_GOTO_ADDR, COMPILE_FUSE_GOTO_X
+    V2_EXROM_SLOT V2_EXROM_FN_SIN_ADDR, BUILTIN_FN_SIN          ; 5.9
+    V2_EXROM_SLOT V2_EXROM_FN_COS_ADDR, BUILTIN_FN_COS
+    V2_EXROM_SLOT V2_EXROM_FN_TAN_ADDR, BUILTIN_FN_TAN
     ASSERT $ == V2_EXROM_ARRSVC_ADDR
     INCLUDE "rom/exrom_v2_arrstore.asm"
 ; V2_VERIFY_KTAB -- the HOME/EXROM contract check every entry slot makes first.
@@ -52,6 +57,7 @@ V2_VERIFY_KTAB:
 .mismatch:
     jr .mismatch
 
+    INCLUDE "rom/exrom_v2_fuse.asm"        ; 5.4: the compiler's combined-opcode peepholes
     INCLUDE "kernel/storage/storage.asm"
     IFDEF STORAGE_TEST_FAKE_RECEIVE
         INCLUDE "rom/exrom_storage_test.asm"
@@ -62,6 +68,7 @@ V2_VERIFY_KTAB:
     ENDIF
     INCLUDE "rom/exrom_format.asm"
     INCLUDE "rom/exrom_calc.asm"
+    INCLUDE "rom/exrom_v2_float_fn.asm"    ; 5.9: the float built-ins
     INCLUDE "rom/exrom_sound.asm"
     IFDEF V2_MAINT_AY_BEEP
     INCLUDE "rom/v2_ay_beep.asm"            ; MAINT (AY BEEP): the EXROM pieces

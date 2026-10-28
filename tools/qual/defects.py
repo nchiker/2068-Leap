@@ -90,6 +90,12 @@ D = {
  "Q-33": ("HIGH", "all", "A FLOAT argument of a package statement arrives as its slot index (r = 33/2: CIRCLE 128,96,r draws radius ~1)",
           "OP_CALL_EXT pops the arguments with VM_POP and ignores the tag",
           "arguments through VM_POP_ADDR [M] HOME -2 (study/proto-lc 7372441)"),
+ "Q-34": ("HIGH", "all", "The calculator never rounds: INT(3.1*10) = 30, INT(0.7*10) = 6, 1/10*10 <> 1 (divide 41% correctly rounded, up to 1.95 ulp low)",
+          "CALC_OP_DIV keeps 32 quotient bits and drops the dividend's low bit on its pre-shift; CALC_OP_MUL truncates the product; CALC_ADDSUB_ENGINE aligns without guard bits; CALC_PACK does not round",
+          "FIXED (R1, backport/leapc 3164936): Leap-C's 40-bit float core behind V2's literal interface, rounded to nearest, bit-exact with Leap-C's model [M] EXROM +719 (saves) (tools/qual/qcalcround.py measures)"),
+ "Q-35": ("MEDIUM", "all", "COS(n) for n = 32678..32767 is wrong (COS(32687) = 0.0175, not 0.2924); COS and TAN of a FLOAT above 32677 are error 15 (SIN takes up to 32767)",
+          "BUILTIN_FN_COS adds 90 to the argument (in 16 bits for an INT, a float add for a FLOAT) before SIN reduces it mod 360",
+          "FIXED (5.10, proto/5.9-5.10-float-fn-exrom): the 90 added after the reduction mod 360, then reduced again; part of 5.10's rewrite, which saves EXROM"),
  "DD-1": ("DOC", "all", "Manual: a string array element holds 31 characters; the default width is 16 (15 characters)",
           "docs/v1/user_manual.md section 6", "correct the manual or the default"),
  "DEC-PLOT": ("DECISION", "all", "PLOT/POINT coordinates above 255 wrap modulo 256 (y > 191 is clamped)", "OP_PLOT uses L only", "decide: wrap / clamp / error"),
@@ -126,5 +132,5 @@ FIX = {k: v[4] for k, v in D.items()}
 # V2_DEFECT_REGISTER.md). L-INSTR and L-ELIF are decisions, not fixes: their corpus cases now expect
 # the V2 behaviour (a compile error) directly. DD-1 was the manual's error (corrected).
 RC_FIXED = ("Q-01 Q-02 Q-03 Q-04 Q-05 Q-06 Q-07 Q-08 Q-09 Q-10 Q-11 Q-12 Q-13 Q-14 Q-15 Q-16 Q-17 Q-18 Q-19 Q-20 "
-            "Q-21 Q-22 Q-23 Q-25 Q-27 Q-28 Q-29 Q-30 Q-31 Q-32 Q-33 D10 D11-EXT D11-DISP L-STR L-SC L-A L3 L-NEXT "
-            "N-4 DEC-PLOT DD-1").split()
+            "Q-21 Q-22 Q-23 Q-25 Q-26 Q-27 Q-28 Q-29 Q-30 Q-31 Q-32 Q-33 D10 D11-EXT D11-DISP L-STR L-SC L-A L3 L-NEXT "
+            "N-4 DEC-PLOT DD-1 Q-34 Q-35").split()

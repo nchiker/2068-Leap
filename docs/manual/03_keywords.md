@@ -634,7 +634,7 @@ PRINT LEN(w$(0))
 
 | Mistake | What happens |
 |---|---|
-| index below 0 or at/above *size* | run-time error (RUNTIME ERROR) |
+| index below 0 or at/above *size* | run-time error (RUNTIME ERROR 10) |
 | `a(2) = 40000` or `a(2) = 1.5` | run-time error |
 | a variable as the size (`DIM a(n)`) | compile error (SYNTAX ERROR) |
 | a size of 0 | compile error |
@@ -904,7 +904,7 @@ NEXT
 22
 ```
 
-**Whole-number and fractional loops.** If the start, limit and step are all whole numbers the loop counts with whole numbers. If any of them is a fraction, the loop is a floating-point loop: the step is **added each time**, and the result keeps the rounding errors of floating-point arithmetic, so the number of times round the loop for a fractional step is only as exact as the arithmetic (the 25 loops of the qualification test were all exact, but do not rely on it). When the count matters, use a whole-number loop and divide inside it:
+**Whole-number and fractional loops.** If the start, limit and step are all whole numbers the loop counts with whole numbers. If any of them is a fraction, the loop is a floating-point loop, run as the BASIC standards define it (ECMA-55 and ANSI Minimal and Full BASIC): the step is **added each time**, and the loop ends as soon as the variable is past the limit, compared exactly. A step that is a binary fraction (0.5, 0.25, 0.125 ...) adds exactly:
 
 ```basic ex=kw.for.5
 FOR x = 0 TO 1 STEP 0.25
@@ -921,12 +921,27 @@ NEXT x
 
 (The first value is the whole number 0, so it prints without decimals.)
 
+Most decimal fractions, 0.1 among them, have no exact binary form: each addition is rounded to the nearest number the computer can hold, and the last pass can be lost. Here the tenth addition ends a hair above 1, so the loop runs 10 times, not 11:
+
 ```basic ex=kw.for.6
+n = 0
+FOR i = 0 TO 1 STEP 0.1
+  n = n + 1
+NEXT i
+PRINT n
+```
+```output ex=kw.for.6
+10
+```
+
+When the count matters, use a whole-number loop and divide inside it:
+
+```basic ex=kw.for.7
 FOR k = 0 TO 4
   PRINT k / 4
 NEXT k
 ```
-```output ex=kw.for.6
+```output ex=kw.for.7
 0
 0.2500
 0.5000
@@ -940,7 +955,7 @@ NEXT k
 * Jumping out of a loop with `GOTO` is allowed; jumping **into** one is not (the `NEXT` then stops the program with a run-time error).
 * A `FOR` with no matching `NEXT` is a compile error, and so is a `NEXT` for a different variable than the innermost open `FOR`.
 * Any loop variable name may be used, including a long one.
-* A `FOR`/`NEXT` pass with nothing inside costs about 1100 to 1200 T-states: roughly 3 000 empty passes per second. See the concept [Speed](04_concepts.md#speed).
+* A whole-number `FOR`/`NEXT` pass with nothing inside costs about 830 T-states: roughly 4 200 empty passes per second. See the concept [Speed](04_concepts.md#speed).
 
 **See also** NEXT, STEP, TO, EXIT FOR, GOTO.
 
@@ -2188,7 +2203,7 @@ PRINT a
 ```
 ```output ex=kw.randomise.1
 1
-2
+668
 ```
 
 **See also** RND.
@@ -2248,9 +2263,9 @@ PRINT RND(1)
 PRINT RND(0)
 ```
 ```output ex=kw.rnd.1
+4
 3
 1
-0
 0
 0
 ```
@@ -2290,7 +2305,7 @@ PRINT 1 +
 PRINT 2
 RUN
 ...
-SYNTAX ERROR
+SYNTAX ERROR 3
 ```
 
 **See also** LIST, NEW, CLEAR, STOP, the concept [Sessions](04_concepts.md#sessions).

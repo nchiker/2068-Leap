@@ -152,7 +152,7 @@ def _parse_session(body, tape=False):
             flush()
             out = []
             m = re.match(r"^(.*?)\s+\[(ce|ve):(\d+)\]\s*$", ln)
-            mm = re.match(r"^(.*?)\s+\[([A-Z][A-Z ]+)\]\s*$", ln) if tape and not m else None
+            mm = re.match(r"^(.*?)\s+\[([A-Z][A-Z0-9 ]+)\]\s*$", ln) if tape and not m else None   # "SYNTAX ERROR 2"
             if m:
                 cur = (m.group(1), (m.group(2), int(m.group(3))))
             elif mm:

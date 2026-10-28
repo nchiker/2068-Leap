@@ -7,6 +7,8 @@ STORAGE_TEST_CAPTURE_DATA   EQU $E100
 STORAGE_TEST_CAPTURE_FLAGS  EQU $E300
 
     IFDEF STORAGE_TEST_FAKE_SEND
+; The real sender's convention: carry set = the block was sent whole, clear = not
+; (SPACE); STORAGE_SAVE stops on a clear carry (back-port plan item 2.1).
 STORAGE_TEST_SEND_BLOCK:
     cp   STORAGE_TYPE_HEADER
     jr   z, .header
@@ -20,7 +22,7 @@ STORAGE_TEST_SEND_BLOCK:
     ldir
     ld   a, 2
     ld   (STORAGE_TEST_CAPTURE_FLAGS), a
-    or   a
+    scf
     ret
 .header:
     push ix
@@ -30,10 +32,10 @@ STORAGE_TEST_SEND_BLOCK:
     ldir
     ld   a, 1
     ld   (STORAGE_TEST_CAPTURE_FLAGS), a
-    or   a
+    scf
     ret
 .fail:
-    scf
+    or   a
     ret
     ENDIF
 

@@ -1,6 +1,6 @@
 # 2068-Leap V2 -- language reference (V2 Enhanced release)
 
-The compact, precise description of the language the V2 Enhanced release implements (tag `v2.0.0-emu.1`; the language is unchanged in the maintenance release `v2.0.1-emu.1` apart from the sound changes it lists, and in `v2.0.2-emu.1` apart from the M-4 fix and the larger memory pool, whose figures this copy gives). It is derived from the ROM source, the package modules and the qualification evidence, and every statement in it was checked on the release image. The teaching version, with a worked example for every keyword, is the **user manual**: [`manual/01_introduction.md`](manual/01_introduction.md); its keyword part ([`manual/03_keywords.md`](manual/03_keywords.md)) is this reference with examples, and its examples are tests (`make doc-examples`). The language conformance corpus (`tools/qual/corpus.py`, 667 cases, `make qual`) is the historical release record and is unchanged. Where an older document (`docs/v1/user_manual.md`, `docs/v1/basic_language_reference.md`, the V1 manuals) disagrees with this one, this one wins. Corrections made to the previous version of this file are listed in [`V2_DOCUMENTATION_FINDINGS.md`](V2_DOCUMENTATION_FINDINGS.md). Features that are deliberately not in V2 are in section 12 and in `V2_FEATURE_MATRIX.md`.
+The compact, precise description of the language the V2 Enhanced release implements (tag `v2.0.0-emu.1`; the language is unchanged in the maintenance release `v2.0.1-emu.1` apart from the sound changes it lists, in `v2.0.2-emu.1` apart from the M-4 fix and the larger memory pool, and in the current release, `v2.1.0-emu.1`, apart from the changes its record lists (`V2_1_RELEASE_STATUS.md`): a faster interpreter, a correctly rounded calculator, package functions and floating-point packages (ABI 2.1), the `RUNTIME ERROR n` message, glyphs for all printable ASCII characters. This copy gives the figures of the current release). It is derived from the ROM source, the package modules and the qualification evidence, and every statement in it was checked on the release image. The teaching version, with a worked example for every keyword, is the **user manual**: [`manual/01_introduction.md`](manual/01_introduction.md); its keyword part ([`manual/03_keywords.md`](manual/03_keywords.md)) is this reference with examples, and its examples are tests (`make doc-examples`). The language conformance corpus (`tools/qual/corpus.py`, 667 cases, `make qual`) is the historical release record and is unchanged. Where an older document (`docs/v1/user_manual.md`, `docs/v1/basic_language_reference.md`, the V1 manuals) disagrees with this one, this one wins. Corrections made to the previous version of this file are listed in [`V2_DOCUMENTATION_FINDINGS.md`](V2_DOCUMENTATION_FINDINGS.md). Features that are deliberately not in V2 are in section 12 and in `V2_FEATURE_MATRIX.md`.
 
 ## 1. Programs, lines and labels
 
@@ -110,7 +110,7 @@ Functions are always written with brackets, even without an argument.
 
 ## 8. Errors
 
-The screen shows a **message**, never a number. Compile errors stop before anything runs; run-time errors stop the program (its variables are kept). The messages: `SYNTAX ERROR`, `UNEXPECTED TOKEN`, `NAME TOO LONG`, `NESTING TOO DEEP`, `TOO MANY VARIABLES`, `OUT OF MEMORY`, `STACK OVERFLOW`, `RUNTIME ERROR`, `ARRAY SIZE MISMATCH`, `BREAK`, `PROGRAM FULL`, and the tape messages `SAVED`, `LOADED`, `VERIFIED`, `VERIFY FAILED`, `LOAD FAILED`, `NO VARIABLES`, `BAD TAPE VERSION`, `ABORTED`, `NO PACKAGE`, `ARRAY NOT DIMD`, `ARRAY STORE FULL`, `BAD ARRAY TAPE`. Appendix A of the manual explains each.
+The screen shows a **message**; `SYNTAX ERROR` adds its compile code (`SYNTAX ERROR 3`) and `RUNTIME ERROR` its run-time code (`RUNTIME ERROR 5`). Compile errors stop before anything runs; run-time errors stop the program (its variables are kept). The messages: `SYNTAX ERROR`, `UNEXPECTED TOKEN`, `NAME TOO LONG`, `NESTING TOO DEEP`, `TOO MANY VARIABLES`, `OUT OF MEMORY`, `STACK OVERFLOW`, `RUNTIME ERROR`, `ARRAY SIZE MISMATCH`, `BREAK`, `PROGRAM FULL`, and the tape messages `SAVED`, `LOADED`, `VERIFIED`, `VERIFY FAILED`, `LOAD FAILED`, `NO VARIABLES`, `BAD TAPE VERSION`, `ABORTED`, `NO PACKAGE`, `ARRAY NOT DIMD`, `ARRAY STORE FULL`, `BAD ARRAY TAPE`. Appendix A of the manual explains each.
 
 Internal codes (as used by the tests and the source). **Compile errors**, each with a program that causes it in Appendix B of the manual (`app.cerr.*`, run by `make doc-examples`):
 
@@ -145,17 +145,19 @@ Internal codes (as used by the tests and the source). **Compile errors**, each w
 | Code | Cause | Message |
 |---|---|---|
 | 2, 6 | expression stack (2) / control stack, i.e. recursion or nested loops (6) overflow | `STACK OVERFLOW` |
-| 5 | division by zero (also `TAN(90)`) | `RUNTIME ERROR` |
-| 7 | `NEXT` / return without a frame (jump into a loop; after `CLEAR` inside a loop) | `RUNTIME ERROR` |
-| 10, 11 | array index out of range (10); non-integer or out-of-range value stored in, or used as an index of, a numeric array (11) | `RUNTIME ERROR` |
-| 8 | `SOUND` register 17 or more | `RUNTIME ERROR` |
-| 15 | argument out of range (`CHR$`, `STICK`, `SQR` of a negative number, an address of 65536 or more, `BEEP` out of range) | `RUNTIME ERROR` |
+| 5 | division by zero (also `TAN(90)`) | `RUNTIME ERROR n` |
+| 7 | `NEXT` / return without a frame (jump into a loop; after `CLEAR` inside a loop) | `RUNTIME ERROR n` |
+| 10, 11 | array index out of range (10); non-integer or out-of-range value stored in, or used as an index of, a numeric array (11) | `RUNTIME ERROR n` |
+| 8 | `SOUND` register 17 or more | `RUNTIME ERROR n` |
+| 15 | argument out of range (`CHR$`, `STICK`, `SQR` of a negative number, an address of 65536 or more, `BEEP` out of range) | `RUNTIME ERROR n` |
 | 64, 65 | out of array memory (64); `DIM` differs from the stored array (65) | `OUT OF MEMORY`, `ARRAY SIZE MISMATCH` |
 | 66 | BREAK | `BREAK` |
-| 67 | a float result beyond about 1.7E38 | `RUNTIME ERROR` |
-| 12, 13, 14 | mode package: bad `MODE`, `ULAPLUS`, `PALETTE` | `RUNTIME ERROR` |
-| 15 .. 20 | sprite package: slot; row / column / size; never grabbed; already shown; not shown; does not fit | `RUNTIME ERROR` |
-| 15 | cbeep package: `CBEEP` out of range | `RUNTIME ERROR` |
+| 67 | a float result beyond about 1.7E38 | `RUNTIME ERROR n` |
+| 12, 13, 14 | mode package: bad `MODE`, `ULAPLUS`, `PALETTE` | `RUNTIME ERROR n` |
+| 15 .. 20 | sprite package: slot; row / column / size; never grabbed; already shown; not shown; does not fit | `RUNTIME ERROR n` |
+| 15 | cbeep package: `CBEEP` out of range | `RUNTIME ERROR n` |
+
+Codes 12-31 belong to packages (a package may also raise 5, 15 and 67); `docs/PACKAGE_ABI.md` §2 "Errors".
 
 ## 9. Variable sessions
 

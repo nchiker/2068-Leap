@@ -93,7 +93,7 @@ INV = [
     ("lit.int", "literal", "decimal integer 0..32767", ALL, "LEX_SCAN_NUMBER, COMPILE_NUMBER_LITERAL", "manual 6", "ID", ["literal.integer"], ""),
     ("lit.int.large", "literal", "integer literal > 32767", ALL, "LEX_ACCUM_DIGIT (L-A in Ess/Enh)", "cost study G.1", "PI", ["literal.integer.large", "literal.integer.address"],
      "L-A: 32768..65535 are 16-bit patterns (PRINT 40000 -> -25536; -32768 -> +32768.0000, Q-05); >= 65536 error 64; Baseline wraps"),
-    ("lit.dec", "literal", "decimal literal n.ddd", ALL, "LEX_SCAN_NUMBER, OP_PUSH_FLOAT_LIT", "R10.8", "PI", ["literal.decimal", "literal.decimal.precision"],
+    ("lit.dec", "literal", "decimal literal n.ddd", ALL, "LEX_SCAN_NUMBER, NUM_PARSE_CALC, OP_PUSH_FLOAT5", "R10.8", "PI", ["literal.decimal", "literal.decimal.precision"],
      "mantissa <= 32767 (L-A); 5+ fractional digits overflow the 16-bit divisor silently (Q-09)"),
     ("lit.str", "literal", '"text" (0..31 chars)', ALL, "LEX_SCAN_STRING, COMPILE_STR_FACTOR", "manual 6", "ID", ["literal.string", "literal.string.limit"], "longer literal silently cut to 31 (L3)"),
     ("lit.hex", "literal", "$FF / 1E3", ALL, "-", "R10.8", "NS", ["literal.hex", "literal.exponent"], ""),

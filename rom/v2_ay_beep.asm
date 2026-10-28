@@ -157,7 +157,7 @@ AY_BEEP_PLAY:
 ; AY_WAIT_FRAMES -- waits DE (1..65535) display interrupts. Out: A = 0, DE = 0. Needs interrupts
 ; enabled (as PAUSE and the editor do). Destroys AF, DE only.
 ; MAINT (shared wait): also PAUSE n's wait; returns early, A <> 0, once BREAK has halted the
-; program (VM_HALTED, set by the ISR); the caller's `jp (iy)` then stops the VM.
+; program (VM_HALTED, set by the ISR); the caller's `jp VM_RUN.loop` then stops the VM.
     MACRO AY_WAIT_FRAMES_BODY
 AY_WAIT_FRAMES:
     IFDEF V2_MAINT_SHARED_WAIT

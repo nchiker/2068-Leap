@@ -60,7 +60,7 @@ KW_SPAN_MAX: equ 8
 ; the keyword-bolding block above (also originally claimed $BE84
 ; independently).
 V2_LINE_COUNT EQU $BEA6
-V2_STATUS_BUF EQU $BEA8
+                              ; V2_STATUS_BUF ($BEA8): include/v2_layout.inc (VER)
 ; ($BEA8 + 20 = $BEBC -- 28 bytes of the original 84-byte gap
 ; ($BE84-$BED7) remain free after all three R10 editor additions)
 
@@ -78,6 +78,8 @@ V2_COMMAND_LOOP:
     call KTAB_GFX_CLS
     call V2_RESET_DISPLAY        ; STUDY (U6): the same reset now also runs on every return to the editor
     call V2_RESET_EDIT
+    call V2_DRAW_STATUS          ; VER: the ROM's version on row 23 (V2_VER_FLAG, armed by V2_COLD_START), up
+                                 ; before the chime's first note and kept to the first key's redraw
     call STARTUP_CHIME          ; R10.7: one-time boot chime -- this is
                                   ; V2_COMMAND_LOOP's own one-time head,
                                   ; reached only from V2_EXROM_ENTRY, NOT
@@ -112,10 +114,8 @@ V2_COMMAND_LOOP:
     ld a,(EDIT_LINE_BUF)
     or a
     jr z,.loop
-    call V2_POS_IS_APPEND
-    jr nz,.store
-    call V2_DISPATCH
-    jr nc,.loop
+    call V2_DISPATCH             ; ED3: a command runs on any line, not only the last; the line's record
+    jr nc,.loop                  ; is not touched (.loop reloads its text)
 .store:
     call V2_STORE_EDIT           ; STUDY: the store sequence is now shared with V2_NAV_COMMIT
     jr c,.no_space
@@ -521,8 +521,7 @@ V2_NAV:
     cp EDIR_DOWN
     ret nz
 .wrap_down:
-    ld hl,EDIT_LINE_BUF
-    call EDITOR_WRAP_CALC
+    call V2_WRAP_EDIT
     call EDITOR_WRAP_OFFSET_TO_ROWCOL
     ld a,(EDIT_WRAP_COUNT)
     dec a
@@ -535,8 +534,7 @@ V2_NAV:
     ld (EDIT_BUF_OFFSET+1),a
     ret
 .wrap_up:
-    ld hl,EDIT_LINE_BUF
-    call EDITOR_WRAP_CALC
+    call V2_WRAP_EDIT
     call EDITOR_WRAP_OFFSET_TO_ROWCOL
     ld a,b
     or a
@@ -852,11 +850,21 @@ V2_COMPILE_MSG:
     ld hl,V2_MSG_NOMEM
     ret z
     ld hl,V2_MSG_SYNTAX
+; V2_MSG_CODE: HL = a message ending in a space, A = the code -> HL = "message n" (V2_STATUS_BUF)
+V2_MSG_CODE:
+    ld e,a                       ; plan item 4.4: "SYNTAX ERROR n", n = the code (manual appendix B)
+    ld d,0
+    push de
+    ld de,V2_STATUS_BUF
+    call V2_STATUS_APPEND        ; "SYNTAX ERROR " (the string's own trailing space)
+    pop hl
+    call V2_STATUS_NUM
+    ld hl,V2_STATUS_BUF
     ret
 V2_MEMCODES: DB 5,6,45,55,62
 V2_MEMCODES_END:
 ; V2_RUNTIME_MSG: A = VM_ERROR_CODE -> HL = message. 2 and 6 are operand /
-; control stack overflow, 64 is array-arena exhaustion.
+; control stack overflow, 64 is array-arena exhaustion; any other is "RUNTIME ERROR n" (6.3).
 V2_RUNTIME_MSG:
     ld hl,V2_MSG_STACK
     cp 2
@@ -873,7 +881,7 @@ V2_RUNTIME_MSG:
     cp 66
     ret z
     ld hl,V2_MSG_RUNTIME
-    ret
+    jr V2_MSG_CODE
 
 V2_DISPATCH:
     ld hl,EDIT_LINE_BUF
@@ -1211,8 +1219,11 @@ V2_SAVE:
     ld b,a
     ld hl,(V2_NAME_PTR)
     call STORAGE_SAVE
+.saved_or_aborted:              ; carry set: SPACE stopped the SAVE (plan item 2.1)
     ei
     ld hl,V2_MSG_SAVED
+    jp nc,V2_SHOW_MESSAGE
+    ld hl,V2_MSG_ABORTED
     jp V2_SHOW_MESSAGE
 .missing_package:
     ld hl,V2_MSG_NO_PACKAGE
@@ -1314,9 +1325,7 @@ V2_SAVE_ARRAY:
     ld a,STORAGE_ARRAY_TYPE
     ld (STORAGE_REQUEST_TYPE),a   ; D13
     call STORAGE_SAVE
-    ei
-    ld hl,V2_MSG_SAVED
-    jp V2_SHOW_MESSAGE
+    jp V2_SAVE.saved_or_aborted
 .not_dimd:
     jp ARR_SAVE_STORE
 
@@ -1567,13 +1576,48 @@ V2_COPY_RECORD:
     ld (de),a
     ret
 
+; V2_WRAP_EDIT -- EDITOR_WRAP_CALC on EDIT_LINE_BUF, with one more, empty, row after a last row of 32
+; characters: the cursor after the last character goes there (its column 32 is off the screen).
+; V2_WRAP -- the same for the text at HL: only the edit buffer gets that row (a settled line has no
+; cursor).  Out: Z = the row was added.  Destroys AF BC DE HL IX.
+V2_WRAP_EDIT:
+    ld hl,EDIT_LINE_BUF
+V2_WRAP:
+    push hl
+    call EDITOR_WRAP_CALC
+    pop de
+    ld hl,EDIT_LINE_BUF
+    or a
+    sbc hl,de
+    ret nz
+    ld a,(EDIT_WRAP_COUNT)
+    ld l,a
+    ld h,0
+    ld de,EDIT_WRAP_LEN-1
+    add hl,de                    ; HL = the last row's length
+    ld a,(hl)
+    cp 32
+    ret nz
+    inc hl
+    ld (hl),0                    ; the new row: no characters ...
+    ld de,EDIT_WRAP_START-EDIT_WRAP_LEN-1
+    add hl,de
+    ld a,(hl)
+    add a,32
+    inc hl
+    ld (hl),a                    ; ... from the end of the text (a 127-character line takes at most 7
+    ld hl,EDIT_WRAP_COUNT        ; rows, so the eighth table entry is free)
+    inc (hl)
+    cp a                         ; Z: added
+    ret
+
 ; Draw a null-terminated line using the canonical editor's wrap table.
 ; B = starting physical row. V2_DRAW_ROW returns the next free row.
 V2_DRAW_TEXT:
     ld (V2_DRAW_PTR),hl
     ld a,b
     ld (V2_DRAW_ROW),a
-    call EDITOR_WRAP_CALC
+    call V2_WRAP
     xor a
     ld (V2_DRAW_SUBROW),a
 .row:
@@ -1867,7 +1911,8 @@ V2_KW_OFFSET_BOLD:
 
 ; The editor hook redraws the authoritative source view.
 V2_REDRAW:
-    ld a,(V2_REDRAW_SCOPE)       ; STUDY (flicker): typing/backspace only changed the active line
+    call V2_VER_SCOPE            ; A = V2_REDRAW_SCOPE (STUDY (flicker): typing/backspace only changed the
+                                 ; active line); VER: 0 when the version leaves the status row
     or a
     jr z,.full
     ld b,a
@@ -1877,36 +1922,45 @@ V2_REDRAW:
     jr nz,.nav
     call V2_REDRAW_ACTIVE
     ret nc                       ; done, carry clear
-    jr .full
+    ; Plan item (Class B): the active line changed height (A = its rows, HL = V2_RD_WRAPS: before).
+    ; When the view stays (V2_VIEW), the rows above it stay: redraw from its first row down through the
+    ; main loop. Taller: the view stays if the line still ends above row 23. Shorter: it stays unless
+    ; lines were dropped from the top (VIEW_TOP_INDEX above max(0, index - 20)); then more may fit, and
+    ; the full redraw decides.
+    cp (hl)
+    jr c,.shorter
+    ld hl,V2_ACTIVE_ROW
+    add a,(hl)
+    cp 24
+    jr nc,.full                  ; it would reach the status row: the view moves
+    jr .below
+.shorter:
+    call V2_VIEW_BOUND
+    ld de,(VIEW_TOP_INDEX)
+    or a
+    sbc hl,de
+    jr nz,.full
+.below:
+    ld a,(V2_ACTIVE_ROW)
+    ld (V2_DRAW_ROW),a
+    ld c,23                      ; to the bottom (V2_RD_CLEAR_ROWS stops at row 23)
+    call V2_RD_CLEAR_ROWS
+    call V2_POS_IS_APPEND        ; HL = the active record ...
+    jr nz,.record
+    ld hl,0                      ; ... or 0: the append line (the loop's sentinel)
+    jr .record
 .nav:
     call V2_REDRAW_NAV
     ret nc
 .full:
     call KTAB_GFX_CLS
     ld a,22
-    ld (V2_ACTIVE_ROW),a
+    ld (V2_ACTIVE_ROW),a         ; (a guard only: with V2_VIEW the loop always reaches the active line)
     call V2_COUNT_LINES
     ld (V2_LINE_COUNT),de   ; R10: was already computed here and
                               ; discarded every redraw; now cached for
                               ; V2_DRAW_STATUS below, no extra traversal
-    ld hl,(CUR_EDIT_INDEX)
-    ld a,h
-    or a
-    jr nz,.scroll
-    ld a,l
-    cp 20
-    jr c,.top
-.scroll:
-    ld de,20
-    or a
-    sbc hl,de
-    jr .view_ready
-.top:
-    ld hl,0
-.view_ready:
-    ld (VIEW_TOP_INDEX),hl
-    ex de,hl
-    call V2_FIND_INDEX
+    call V2_VIEW                 ; VIEW_TOP_INDEX; HL = its record
     xor a
     ld (V2_DRAW_ROW),a
 .record:
@@ -1961,8 +2015,7 @@ V2_REDRAW:
                                ; row 23 -- runs on every redraw,
                                ; regardless of which exit path below
                                ; this block takes
-    ld hl,EDIT_LINE_BUF
-    call EDITOR_WRAP_CALC
+    call V2_WRAP_EDIT
     ld a,(EDIT_WRAP_COUNT)       ; STUDY: remembered for the selective paths' geometry checks
     ld (V2_RD_WRAPS),a
     ld hl,(CUR_EDIT_INDEX)
@@ -2033,8 +2086,7 @@ V2_RD_DRAW_ACTIVE:
 
 ; Cursor cell of the active line (inverted attribute), if it is on screen.
 V2_RD_CURSOR:
-    ld hl,EDIT_LINE_BUF
-    call EDITOR_WRAP_CALC
+    call V2_WRAP_EDIT
     call EDITOR_WRAP_OFFSET_TO_ROWCOL
     ld a,(V2_ACTIVE_ROW)
     add a,b
@@ -2045,8 +2097,7 @@ V2_RD_CURSOR:
 
 ; Typing / backspace: same record, same view, same row count -> redo only the active line's rows.
 V2_REDRAW_ACTIVE:
-    ld hl,EDIT_LINE_BUF
-    call EDITOR_WRAP_CALC
+    call V2_WRAP_EDIT
     ld a,(EDIT_WRAP_COUNT)
     ld hl,V2_RD_WRAPS
     cp (hl)
@@ -2059,8 +2110,10 @@ V2_REDRAW_ACTIVE:
     jr V2_RD_DRAW_ACTIVE
 
 ; UP/DOWN.  (a) same record (cursor moved between wrapped rows): the cursor only.  (b) the neighbouring
-; record while both indices are <= 20 (the view top stays 0) and neither line changes height: redraw the
-; old line as a settled (keyword-bold) line, the new one as the active line, the status, the cursor.
+; record while the view stays (V2_VIEW would give VIEW_TOP_INDEX again: UP from a view at line 0; DOWN
+; to a line at most 20 below the view's top that ends above row 23) and the old line's record is as tall
+; as its buffer was: redraw the old line as a settled (keyword-bold) line, the new one as the active
+; line, the status, the cursor.
 V2_REDRAW_NAV:
     ld hl,(CUR_EDIT_INDEX)
     ld de,(V2_RD_INDEX)
@@ -2082,14 +2135,18 @@ V2_REDRAW_NAV:
     jp nz,.full
     inc b
 .dir:
-    ld hl,(CUR_EDIT_INDEX)
-    ld de,21
+    ld de,(VIEW_TOP_INDEX)
+    inc b
+    dec b
+    jr z,.down                   ; UP keeps only a view at line 0 (a view further down could show
+    ld a,d                       ; the line above it now; deciding that would mean measuring it)
+    or e
+    jp nz,.full
+.down:                           ; DOWN keeps any view whose top is at most 20 lines above the new
+    ld hl,(CUR_EDIT_INDEX)       ; line (and the fit test below)
     or a
     sbc hl,de
-    jp nc,.full                  ; new index > 20: the view may scroll
-    ld hl,(V2_RD_INDEX)
     ld de,21
-    or a
     sbc hl,de
     jp nc,.full
     push bc                      ; B = direction
@@ -2108,8 +2165,8 @@ V2_REDRAW_NAV:
     cp (hl)
     jr nz,.full_pop              ; the old line is not drawn the way the record would be
 .old_blank:
-    ld hl,EDIT_LINE_BUF
-    call EDITOR_WRAP_CALC        ; the NEW line's height
+    call V2_WRAP_EDIT        ; the NEW line's height
+    jr z,.full_pop               ; it gains the edit row as the active line: the lines below it move
     ld a,(EDIT_WRAP_COUNT)
     ld (V2_RD_NEWH),a
     pop bc
@@ -2118,8 +2175,6 @@ V2_REDRAW_NAV:
     jr z,.up
     ld hl,V2_RD_WRAPS            ; DOWN: new row = old row + old height
     add a,(hl)
-    cp 23
-    jr nc,.full
     jr .rows
 .up:
     ld hl,V2_RD_NEWH             ; UP: new row = old row - new height
@@ -2127,6 +2182,10 @@ V2_REDRAW_NAV:
     jr c,.full
 .rows:
     ld (V2_RD_NEWROW),a
+    ld hl,V2_RD_NEWH
+    add a,(hl)
+    cp 24
+    jr nc,.full                  ; the new line would reach the status row: the view moves
     ld a,(V2_ACTIVE_ROW)         ; the old line: clear its rows, redraw it settled
     ld hl,V2_RD_WRAPS
     ld c,(hl)
@@ -2160,6 +2219,83 @@ V2_REDRAW_NAV:
     scf
     ret
 
+; ---- Plan item SH_VIEW (from Leap-C's SH_VIEW, MIT; fixes audit ED4) ---------------------------------
+; V2_VIEW -- VIEW_TOP_INDEX, the first line on the screen: up to 20 lines above the cursor's line (as
+; before), fewer when they need more rows than there are above it, so that the cursor's line is always
+; whole on rows 0-22.  No table of heights: a line dropped from the top is measured again.
+; Out: HL = the record at VIEW_TOP_INDEX (0: an empty program).  Destroys AF BC DE IX.
+V2_VIEW:
+    call V2_WRAP_EDIT
+    call V2_VIEW_BOUND
+    ld (VIEW_TOP_INDEX),hl
+    ld a,(EDIT_WRAP_COUNT)
+    ld b,a                       ; B = the rows needed: the cursor line's ...
+    push bc
+    ex de,hl
+    call V2_FIND_INDEX           ; its record
+    pop bc
+    push hl
+    inc c
+    jr .count
+.walk:                           ; ... and those of the C lines above it
+    call V2_MEASURE
+    add a,b
+    ld b,a
+.count:
+    dec c
+    jr nz,.walk
+    pop hl
+.trim:                           ; lines off the top until all fit on rows 0-22
+    ld a,b
+    cp 24
+    ret c
+    call V2_MEASURE
+    neg
+    add a,b
+    ld b,a
+    ld de,(VIEW_TOP_INDEX)
+    inc de
+    ld (VIEW_TOP_INDEX),de
+    jr .trim
+
+; HL = max(0, CUR_EDIT_INDEX - 20), the view's top by the line count alone; C = the lines from it to the
+; cursor's line, B = 0.  Destroys AF.
+V2_VIEW_BOUND:
+    ld hl,(CUR_EDIT_INDEX)
+    ld bc,20
+    or a
+    sbc hl,bc
+    ret nc
+    add hl,bc
+    ld c,l
+    ld hl,0
+    ret
+
+; In: HL = a record.  Out: A = its screen rows (as V2_DRAW_TEXT draws its copy), HL = the next record
+; (not checked against PROG_END: V2_VIEW stays above the cursor's line).  Keeps BC.  Destroys DE IX.
+V2_MEASURE:
+    ld e,(hl)
+    inc hl
+    ld d,(hl)
+    inc hl                       ; HL = the text, DE = its length + 1 (the CR)
+    push hl
+    add hl,de
+    ex (sp),hl                   ; (SP) = the next record
+    dec e                        ; E = the characters (a record holds at most 127, no CR or NUL among them)
+    ld a,e
+    cp 33
+    ld a,1
+    jr c,.done                   ; 32 or fewer: one row
+    push bc
+    ld (WRAP_TEXT_PTR),hl
+    ld b,e
+    call EDITOR_WRAP_CALC_LEN    ; wrapped in place, no copy
+    pop bc
+    ld a,(EDIT_WRAP_COUNT)
+.done:
+    pop hl
+    ret
+
 ; V2_DRAW_STATUS -- R10 addition. Composes "LINE n/m" (n = 1-based
 ; cursor line position, m = total line count) into V2_STATUS_BUF and
 ; draws it on row 23, the one row V2_REDRAW's own main draw loop never
@@ -2168,27 +2304,20 @@ V2_REDRAW_NAV:
 ; V2's own generic line-store state (CUR_EDIT_INDEX/V2_LINE_COUNT), not
 ; restored V1 position-addressed tracking.
 V2_DRAW_STATUS:
+    call V2_VER_STATUS        ; VER: NZ = the version is in V2_STATUS_BUF instead
+    jr nz,.show
     ld hl,V2_STATUS_PREFIX
     ld de,V2_STATUS_BUF
     call V2_STATUS_APPEND
-    push de
     ld hl,(CUR_EDIT_INDEX)
     inc hl                    ; n = CUR_EDIT_INDEX + 1 (1-based)
-    ex de,hl
-    call BASIC_NUM_TO_STRING_EXROM  ; HL -> formatted n text
-    pop de
-    call V2_STATUS_APPEND
+    call V2_STATUS_NUM
     ld a,'/'
     ld (de),a
     inc de
-    push de
     ld hl,(V2_LINE_COUNT)
-    ex de,hl
-    call BASIC_NUM_TO_STRING_EXROM  ; HL -> formatted m text
-    pop de
-    call V2_STATUS_APPEND
-    xor a
-    ld (de),a
+    call V2_STATUS_NUM        ; m
+.show:
     ld b,23
     call KTAB_GFX_CLEAR_ROW_TEXT    ; R10.7: bitmap-only clear -- leaves
                                       ; the status-bar attribute (set by
@@ -2214,6 +2343,17 @@ V2_STATUS_APPEND:
     inc hl
     inc de
     jr V2_STATUS_APPEND
+
+; V2_STATUS_NUM: HL = number -> its decimal text at (de), null-terminated; DE ends on the null.
+V2_STATUS_NUM:
+    push de
+    ex de,hl
+    call BASIC_NUM_TO_STRING_EXROM  ; HL -> formatted text
+    pop de
+    call V2_STATUS_APPEND
+    xor a
+    ld (de),a
+    ret
 
 V2_STATUS_PREFIX: DB "LINE ",0
 
@@ -2254,35 +2394,23 @@ V2_ATTR_SWATCH_BLUE  EQU $08   ; PAPER 1 (blue),  INK 0
 ; first, same anti-flicker ordering V1's own BASIC_PRINT_STATUS_TEXT
 ; used. Idempotent and cheap enough to call unconditionally every time
 ; rather than tracking whether it's already set.
-; In: none  Out: none  Destroys: AF, BC
+; Writes row 23's attribute bytes directly (GFX_SET_ATTR is a plain
+; ATTR_ADDR + row*32 + col store; 32 calls through the KTAB cost 25 B more).
+; In: none  Out: none  Destroys: B, HL
 ; ============================================================================
 V2_STATUS_SET_BAR_ATTR:
-    ld   c, 0
+    ld   hl, ATTR_ADDR + 23*32
+    ld   b, 29
 .bar_loop:
-    push bc
-    ld   a, V2_ATTR_STATUS_BAR
-    ld   b, 23
-    call KTAB_GFX_SET_ATTR
-    pop  bc
-    inc  c
-    ld   a, c
-    cp   29
-    jr   c, .bar_loop
-    push bc
-    ld   a, V2_ATTR_SWATCH_RED
-    ld   b, 23
-    call KTAB_GFX_SET_ATTR
-    pop  bc
-    inc  c
-    push bc
-    ld   a, V2_ATTR_SWATCH_GREEN
-    ld   b, 23
-    call KTAB_GFX_SET_ATTR
-    pop  bc
-    inc  c
-    ld   a, V2_ATTR_SWATCH_BLUE
-    ld   b, 23
-    jp   KTAB_GFX_SET_ATTR
+    ld   (hl), V2_ATTR_STATUS_BAR
+    inc  l
+    djnz .bar_loop
+    ld   (hl), V2_ATTR_SWATCH_RED
+    inc  l
+    ld   (hl), V2_ATTR_SWATCH_GREEN
+    inc  l
+    ld   (hl), V2_ATTR_SWATCH_BLUE
+    ret
 
 ; R10 correction: previously cleared the WHOLE screen before showing an
 ; error/status message, hiding the program view (compile-time errors)
@@ -2326,8 +2454,8 @@ V2_KW_VERIFY: DB "VERIFY",0
 V2_KW_EXT: DB "EXT",0
 V2_KW_ARRAY: DB "ARRAY",0
 V2_KW_ALL: DB "ALL",0
-V2_MSG_SYNTAX: DB "SYNTAX ERROR",0
-V2_MSG_RUNTIME: DB "RUNTIME ERROR",0
+V2_MSG_SYNTAX: DB "SYNTAX ERROR ",0    ; trailing space: V2_COMPILE_MSG appends the code after it
+V2_MSG_RUNTIME: DB "RUNTIME ERROR ",0   ; trailing space: V2_RUNTIME_MSG appends the code
 V2_MSG_BREAK: DB "BREAK",0
 V2_MSG_FULL: DB "PROGRAM FULL",0
 V2_MSG_NOMEM: DB "OUT OF MEMORY",0

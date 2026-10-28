@@ -72,12 +72,18 @@ LABEL_POS_SIZE      EQU 2
 ; commonly zero RAM, but real hardware and accuracy-oriented emulators may
 ; supply arbitrary values.  Clear the complete $8000-$BFFF system/program
 ; region before MEM_INIT or interrupts; the stack at $FF00 and display RAM are
-; deliberately outside this range.
+; deliberately outside this range.  The UDG table (codes 144-164, in chunk 7)
+; is cleared too: nothing else writes it before a program POKEs it, so power-on
+; RAM showed through those characters (back-port plan item 2.2, found by
+; tools/qual/qpoweron.py as 2068-Leap-C found it).  NEW does not clear it.
 ; In: none
-; Out: $8000..PROG_AREA_MAX-1 = 0
+; Out: $8000..PROG_AREA_MAX-1 = 0, UDG_TABLE = 0
 ; Destroys: AF, BC, DE, HL
 ; ============================================================================
 MEM_COLD_INIT:
+    ld   hl, UDG_TABLE
+    ld   bc, UDG_COUNT * 8
+    call MEM_FILL_ZERO
     ld   hl, $8000
     ld   bc, PROG_AREA_MAX - $8000
     jr   MEM_FILL_ZERO

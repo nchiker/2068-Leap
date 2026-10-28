@@ -12,14 +12,11 @@ case ids (`tools/qual/corpus.py`) or suite case names. Source of the Q-/D-/L-/N-
 | Id | Sev | Defect | Why open | Evidence |
 |---|---|---|---|---|
 | Q-24 | LOW | `CALL` of a plain label (not a `PROC`) is accepted: it jumps there, and the code runs on without returning | deferred: needs a label-kind check in the compiler; no ROM reserve; **accepted LOW limitation** (owner, 2026-10-11) | `proc.goto_label` (XFAIL) |
-| Q-26 | LOW | the nine characters `[` `\` `]` `^` `` ` `` `{` `\|` `}` `~` print as blanks (no glyphs in the ROM font) | deferred: 9 glyphs cost ~72-90 bytes of HOME; **accepted LOW limitation** (owner, 2026-10-11) | `print.font_brackets` (XFAIL) |
 | RC-O1 | LOW | A literal beyond the float range (~1.7E38) is compile error 64, whose message reads "UNEXPECTED TOKEN" | cosmetic; a "NUMBER TOO BIG" message costs ~20 bytes | `lit.float.too_big` (passes on the code) |
 | RC-O2 | LIMIT | `SAVE ... ALL` refuses (`OUT OF MEMORY`) when bytecode + segment 2 + 53 bytes exceed the bytecode area plus free memory | the in-place layout must end at `V2_CODE_LIMIT` | `sa-no-room` |
 | RC-O3 | LIMIT | A `SAVE ... ALL` tape restores its variables only on the exact ROM build, with the same package registration, that wrote it (otherwise: program only, `NO VARIABLES`) | by design: the image includes bytecode, layout and package references | `sa-other-rom`, `sa-package-mismatch` |
 | RC-O4 | LIMIT | Numeric array elements are 16-bit integers: storing a float or a value outside -32768..32767 is runtime error 11 | V2 array format | `arr.float_value` (OkOrErr) |
-| RC-O5 | RESERVE | ROM reserve 54 (HOME) / 25 (EXROM) bytes free in the release, below the provisional 200 / 150 targets (`v2.0.1-emu.1`: 19 / 26; `v2.0.2-emu.1`: 275 / 26) | **accepted by the owner (2026-10-11)**; the provisional targets are dropped and the ROM is not to be changed to recover them; `V2_ROM_RAM_BUDGET.md` keeps the options for reference | `make budget` |
-| RC-O6 | PERF | A bare `FOR`/`NEXT` iteration costs ~1190 T-states, ~45 % more than in production `7ae0599` (817 T); loops with real bodies differ by 0.3-1.5 % | measured cause (bisected with `qbench`): the qualification FOR-frame redesign that fixes Q-07/Q-19/Q-20 (NEXT works through its own control-stack frame) +36 %, D11 overflow-checked add +2 %, float FOR variant D +5 %. A correctness cost, kept; a faster INT-only NEXT path would need ROM space; **accepted as a correctness trade-off** (owner, 2026-10-11) | `V2_REGRESSION_REPORT.md` s6 |
-| RC-O7 | SPACE | `EDITOR_BLOCK_DELETE` (3 bytes, EXROM `$D0CE`, a `jp` to the line-range delete) is unreachable in the production EXROM: its only caller, `rom/exrom_checker.asm`, is not in the image | found at the closeout by `production_reachability.py`; not changed (no ROM changes after acceptance) | the tool's report on the release listings |
+| RC-O6 | PERF | A bare `FOR`/`NEXT` iteration cost ~1190 T-states in `v2.0.2-emu.1`, ~45 % more than in production `7ae0599` (817 T); loops with real bodies differ by 0.3-1.5 %. **`v2.1.0-emu.1`: 911 T (`qbench` `for_empty`, after item 5.3's integer path), 827 T by the manual's measurement (`manual_measure.py`)**, still above 817 T | measured cause (bisected with `qbench`): the qualification FOR-frame redesign that fixes Q-07/Q-19/Q-20 (NEXT works through its own control-stack frame) +36 %, D11 overflow-checked add +2 %, float FOR variant D +5 %. A correctness cost, kept; the INT-only NEXT path is the v2.1 item 5.3 (HOME 87 B); **accepted as a correctness trade-off** (owner, 2026-10-11) | `V2_REGRESSION_REPORT.md` s6 |
 | T-3 | TEST | 15 legacy component-test sources (`call_fn`, the `compiler_r2` to `compiler_r7` series, `decompiler_phase2`, `editor_integration`, `ext_concurrent`, `graphics_module_ram`, `graphics_pixel`, `print`, `sprite_module`, `sqr`) are in no runner | test debt, unchanged from the study | `tools/run_v2_standalone_tests.sh` |
 
 ## Fixed or decided in the V2 Enhanced release
@@ -49,6 +46,7 @@ case ids (`tools/qual/corpus.py`) or suite case names. Source of the Q-/D-/L-/N-
 | Q-22 | LOW | SQR of a negative returned 0 | Fixed (error 15) | `fn.sqr.neg` |
 | Q-23 | LOW | STICK(n) out of range returned a value | Fixed (error 15) | `hw.stick_bad` |
 | Q-25 | LOW | string comparison not usable in AND/OR | Fixed | `str.cmp_and` |
+| Q-26 | LOW | the nine characters `[` `\` `]` `^` `` ` `` `{` `\|` `}` `~` printed as blanks (no glyphs in the ROM font) | Fixed (owner decision 2026-10-27, `8a52ab9`), released in `v2.1.0-emu.1`: nine new 8x8 glyphs; the font is reordered so the letters' arithmetic reaches them; all of printable ASCII (codes 32-126) has a glyph; HOME -64. Deferred on 2026-10-11 as an accepted limitation | `print.font_brackets` |
 | Q-27 | HIGH | PRINT of a string-function result showed a stale tail | Fixed | `strrec.stale_tail*` |
 | Q-28 | CRITICAL | 31-character strings corrupted array 0 | Fixed | `strrec.31_*` |
 | Q-29 | HIGH | SPRITE MOVE garbage (package) | Fixed | sprite package checks |
@@ -56,6 +54,8 @@ case ids (`tools/qual/corpus.py`) or suite case names. Source of the Q-/D-/L-/N-
 | Q-31 | LOW | MID$ start used its low byte | Fixed (clamped) | `str.mid_*` |
 | Q-32 | CRITICAL | addresses above 32767 saturated (POKE wrote the wrong byte) | Fixed | `lit.addr.*`, `hw.*` |
 | Q-33 | HIGH | package float arguments were slot indexes | Fixed | package cases |
+| Q-34 | HIGH | the calculator never rounded (`INT(3.1*10)` = 30, `1/10*10` <> 1) | Fixed (R1: Leap-C's float core, rounds to nearest), released in `v2.1.0-emu.1` | `tools/qual/qcalcround.py` |
+| Q-35 | MEDIUM | `COS(n)` for n = 32678..32767 was wrong (`COS(32687)` = 0.0175, not 0.2924); `COS`/`TAN` of a FLOAT above 32677 were error 15 | Fixed (5.10: the 90 of `COS(x)` = `SIN(x + 90)` added after the reduction mod 360), released in `v2.1.0-emu.1` | `fn.cos.int_big`, `fn.cos.float_big`, `fn.tan.float_big`; `tools/qual/qfndiff.py --exact` |
 | D10 | MEDIUM | float display truncated the 4th decimal | Fixed (exact formatter, rounded) | `arith.f.*`, `print.multi_float` |
 | D11 / D11-EXT / D11-DISP | HIGH..LOW | 16-bit overflow wrapped; edge cases; big-float display | Fixed (promotion, exact display) | `arith.*`, `lit.*` |
 | L-A | DECISION | literal rule | Superseded by **L-C** (owner decision 3): 32768..65535 are positive floats, addresses still work | `lit.int.*` |
@@ -67,6 +67,12 @@ case ids (`tools/qual/corpus.py`) or suite case names. Source of the Q-/D-/L-/N-
 | DEC-PLOT | DECISION | PLOT/POINT coordinates wrapped | Decided: clamped to the screen | `gfx.plot_clamp` |
 | L-INSTR | LOW | INSTR documented, absent | **Decided**: not in V2 (no ROM room); manual entry withdrawn | `str.instr` (expects the compile error) |
 | L-ELIF | LOW | ELSEIF documented, absent | **Decided**: not in V2; `ELSE` + nested `IF` | `if.elseif_kw`, `if.else_if_nested` |
+| F11 | DECISION | float `FOR` counts after R1's rounding (`FOR i = 0 TO 1 STEP 0.1` runs 10 times) | **Decided** (released in `v2.1.0-emu.1`): the BASIC standards' loop, step accumulated, exact end test (ECMA-55 §13.4, ANSI X3.113 §8.3.4); manual FOR | `ffor.count.*`, manual `kw.for.6` |
+| ED4 | LOW | the cursor's line could fall below row 22 and lose its cursor (a 97+ character line starting low, or wrapped lines above it: the view always showed 20 lines above) | Fixed (`SH_VIEW`: `V2_VIEW`, Leap-C's view rule), released in `v2.1.0-emu.1` | `ED4-*` (prod-regress), `tools/qual/qeditview.py` |
+| ED3 | MEDIUM | a command typed on any line but the empty last one was stored as program text (`RUN` typed over line 12 replaced it) | Fixed, released in `v2.1.0-emu.1`: ENTER carries a command out on any line; the line keeps its text | `ED3-*` (prod-regress), manual `con.edit.5` |
+| ED7 | LOW | the cursor after a last row of exactly 32 characters was at column 32, off the screen; LEFT/RIGHT from there whitened the status bar's first cell | Fixed, released in `v2.1.0-emu.1`: the edit buffer gets an empty row after a full last row | `ED7-*` (prod-regress), `tools/qual/qeditview.py` |
+| RC-O7 | SPACE | `EDITOR_BLOCK_DELETE` (3 bytes, EXROM `$D0CE`, a `jp` to the line-range delete) is unreachable in the production EXROM: its only caller, `rom/exrom_checker.asm`, is not in the image | Resolved in `v2.1.0-emu.1` (plan item 1.1): `EDITOR_BLOCK_DELETE` is no longer in the production EXROM | the tool's report on the release listings |
+| RC-O5 | RESERVE | ROM reserve 54 (HOME) / 25 (EXROM) bytes free in the release, below the provisional 200 / 150 targets (`v2.0.1-emu.1`: 19 / 26; `v2.0.2-emu.1`: 275 / 26; `v2.1.0-emu.1`: 313 / 111) | Resolved in `v2.1.0-emu.1` (plan, `V2_LEAPC_BACKPORT_PLAN.md`): the owner replaced the fixed targets by a 64 / 32 B emergency reserve (F1), enforced by `make check`; the release has HOME 313 / EXROM 111 B free | `make budget` |
 | DD-1 | DOC | manual: string array elements hold 31 characters | **Doc**: V2's design is 16-byte (15-character) elements by default; manual corrected | `arr.str_default_width` |
 | T-1, T-2 | TEST | component-test images silently truncated / over size | Fixed (strict builds) | standalone runner |
 | T-4 | TEST | test decompiler gaps | Fixed for opcodes 71-73 (string `>`, short-circuit AND/OR); 70 (5-byte float literal) is not decompiled | `relational` |
@@ -107,6 +113,19 @@ Found after `v2.0.1-emu.1` and fixed in `v2.0.2-emu.1` (`V2_COMPILER_MAINT_RELEA
 | Id | Sev | Defect | Status | Evidence |
 |---|---|---|---|---|
 | M-4 | MEDIUM | **An array access whose subscript or assigned value reads an array of the other kind was compiled as the wrong kind.** The two array-read paths and the array assignment shared one "string?" flag cell, and a nested read of the other kind overwrote it: `PRINT names$(pick(0))` read the *numeric* array table (a wrong value, no error), `pick(1) = LEN(w$(0))` stored with the string opcode (a wrong value), and `names$(pick(0)) = "x"` or `pick(LEN(w$(0))) = 1` were rejected as `SYNTAX`. Plain subscripts (`names$(k)`) and same-kind nesting (`a(b(0))`) were correct. Present in `v2.0.0-emu.1` and `v2.0.1-emu.1` | Fixed in `v2.0.2-emu.1` (`f40ffed`): the read kind travels in a register across the subscript compile; only the (statement-level) assignment uses the flag | `arr-nested-kind` (`tools/v2_prod_arrays.py`) |
+
+## Speed and package functions release `v2.1.0-emu.1`
+
+Found in the back-port of 2068-Leap-C's improvements (`V2_LEAPC_BACKPORT_PLAN.md`) and fixed in `v2.1.0-emu.1` (`V2_1_RELEASE_STATUS.md`), with the rows of the tables above that say "released in `v2.1.0-emu.1`" (Q-26, Q-34, Q-35, ED3, ED4, ED7, F11, RC-O5, RC-O7). Ids are the plan's item numbers.
+
+| Id | Sev | Defect | Status | Evidence |
+|---|---|---|---|---|
+| BP-2.1 | MEDIUM | **SPACE during `SAVE` was ignored.** `STORAGE_SAVE` sent the data block after an aborted header and the shell showed `SAVED` (the hardware checklist already expected `ABORTED`). Present in every earlier release | Fixed in `v2.1.0-emu.1` (plan 2.1): the save stops after an aborted header and returns carry set; `SAVE` and `SAVE ... ARRAY` show `ABORTED` | `save-space-abort-header`, `save-space-abort-data` (prod-regress); on the old ROM the data case shows `SAVED` |
+| BP-2.2 | LOW | **The UDG table was not cleared at cold start** (`MEM_COLD_INIT` cleared `$8000-$BFFF`; the table is outside it), so `CHR$ 144-164` showed power-on RAM | Fixed in `v2.1.0-emu.1` (plan 2.2): `MEM_COLD_INIT` clears it | `tools/qual/qpoweron.py` (0 failures) |
+| BP-2.3 | LOW | **The paging depth was not reset on the error unwind.** Latent: every path was balanced, nothing enforced it | Fixed in `v2.1.0-emu.1` (plan 2.3): `VM_ERR_COMMON` (production) resets the depth and pages the EXROM in before returning to the shell | `qcanary --banking` (depth invariants); `qpkgfn` (depth 1 after errors raised in a package) |
+| BP-1.4 | MEDIUM | **`BANK_PAGE_EXROM_IN/OUT` disabled interrupts**, so frame interrupts were lost in float code (Fuse: 47 of 11,232 frames in a float loop; ZEsarUX cannot show it) | Fixed in `v2.1.0-emu.1` (plan 1.4, after Leap-C D14): the `di` is removed; one frame (the sampling offset) is lost in the same loop | `tools/qual/fuse_frames_probe.py` (Fuse, on request) |
+| BP-1.2 | LOW | **`RND` was correlated.** The one-bit LFSR step made each state the previous one shifted right (`RANDOMISE 7`: `RND(6)` gave 3, 1, 0) | Fixed in `v2.1.0-emu.1` (plan 1.2): 16-bit xorshift (Leap-C's), period 65,535, the R seeding and MOD scaling kept; seeded sequences change | `tools/qual/qrnd.py` |
+| BP-6.3 | MEDIUM | **Package error codes 12-21 overlapped the VM's** (R10.8 A3) | Fixed in `v2.1.0-emu.1` (plan 6.3, ABI 2.1): runtime codes 12-31 are the packages' (the shipped packages keep theirs), a package may also raise 5, 15 and 67, the VM's new codes go above 67; error service 18; runtime errors without a message show their number | `tools/check_package_abi.py` rule 7; `qpkgfn` |
 
 ## Hardware
 

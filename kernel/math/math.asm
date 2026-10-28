@@ -49,104 +49,69 @@
 
 ; ============================================================================
 ; MATH_UMUL16
-; Unsigned 16x16->16 multiply via shift-and-add (Z80 has no hardware
-; multiply). Verified via Python simulation against many values before
-; being trusted — see this file's header.
+; Unsigned 16x16->16 multiply, shift-and-add from the multiplier's top
+; bit (HL = HL * 2 (+ DE) per bit), registers only. 2068-Leap-C's RT_UMUL
+; (back-port plan item 1.5), replacing a version that pushed and popped
+; its counter every step; checked against Python on corpus-scale random
+; and edge pairs by tools/qual/qmuldiv.py.
 ; In:  DE = multiplicand, BC = multiplier
 ; Out: HL = product (truncated to 16 bits)
-; Destroys: AF, BC, DE
+; Destroys: AF, BC (DE kept, which the old contract did not promise)
 ; ============================================================================
 MATH_UMUL16:
     ld   hl, 0
     ld   a, 16
 .loop:
-    push af
-    srl  b                  ; shift BC right by 1; bit0 of B goes into
-    rr   c                    ; carry, then into bit7 of C via rr — the
-                             ; carry OUT of rr c is BC's original bit0
+    add  hl, hl
+    rl   c
+    rl   b
     jr   nc, .no_add
-    add  hl, de                ; result += multiplicand
+    add  hl, de
 .no_add:
-    sla  e                       ; shift DE (multiplicand) left by 1,
-    rl   d                         ; making room for the next bit position
-    pop  af
     dec  a
     jr   nz, .loop
     ret
 
 ; ============================================================================
 ; MATH_UDIV16
-; Unsigned 16-bit divide via 16-iteration shift-and-subtract (restoring
-; division) — generalizes basic/'s own DIV10 to an arbitrary runtime
-; divisor rather than a fixed constant. DIV10 could use B/DJNZ for its
-; loop counter since 10 never needed a register; here BC is needed for
-; the divisor throughout all 16 iterations, so the counter lives in
-; memory (DIV_COUNTER) instead. Verified via Python simulation against
-; 16,165 dividend/divisor combinations before being trusted — see this
-; file's header.
+; Unsigned 16-bit restoring division, 16 steps, registers only: HL holds
+; the dividend shifting out at the top while the quotient shifts in at
+; the bottom; DE is the remainder. 2068-Leap-C's RT_UDIV (back-port plan
+; item 1.5), replacing a version that kept the dividend, quotient and
+; counter in memory (DIV_DIVIDEND, DIV_QUOT, DIV_COUNTER, now unused):
+; 60000/7 3,584 T -> 1,479 T (measured in Leap-C). No 17th remainder bit
+; is needed: before step i the remainder is below 2^(i-1).
 ; In:  HL = dividend, BC = divisor
-; Out: HL = quotient, DE = remainder; if BC = 0 (divide by zero), HL =
-;      DE = 0 rather than the nonsense all-1s quotient the algorithm
-;      would otherwise produce — checked explicitly up front
-; Destroys: AF
+; Out: HL = quotient, DE = remainder; HL = DE = 0 if BC = 0 (divide by
+;      zero, see this file's header)
+; Destroys: AF (BC kept)
 ; ============================================================================
 MATH_UDIV16:
     ld   a, b
     or   c
     jr   nz, .divisor_ok
-    ld   hl, 0                     ; divide by zero — safe default,
-    ld   de, 0                       ; see this file's header
+    ld   h, a
+    ld   l, a
+    ld   d, a
+    ld   e, a
     ret
 .divisor_ok:
-    ld   (DIV_DIVIDEND), hl
-    ld   hl, 0
-    ld   (DIV_QUOT), hl
     ld   de, 0
     ld   a, 16
-    ld   (DIV_COUNTER), a
-
 .loop:
-    ld   hl, (DIV_DIVIDEND)
-    add  hl, hl                    ; shift dividend left; carry = old bit15
-    ld   (DIV_DIVIDEND), hl
-
-    rl   e                          ; shift that bit into the remainder
-    rl   d
-
-    ld   hl, (DIV_QUOT)
-    add  hl, hl                      ; shift the quotient-in-progress
-    ld   (DIV_QUOT), hl                ; left too, making room for this
-                                      ; iteration's bit
-
-    push de                            ; copy the remainder into HL for
-    pop  hl                              ; the comparison below, without
-                                        ; destroying DE (push/pop copies,
-                                        ; unlike EX DE,HL which swaps)
-    or   a
-    sbc  hl, bc                          ; HL = remainder - divisor;
-                                        ; carry set if remainder < divisor
-    jr   c, .no_sub
-
-    ; remainder >= divisor: commit the subtraction and set this bit
-    ex   de, hl                            ; DE = new remainder (HL held
-                                          ; remainder-divisor); HL = old
-                                          ; DE, unused from here
-    ld   hl, (DIV_QUOT)
-    inc  hl                                  ; set the quotient's LSB —
-                                            ; safe because the shift
-                                            ; above guarantees bit0 is
-                                            ; currently 0, same reasoning
-                                            ; as DIV10's own "inc hl is
-                                            ; safe" comment
-    ld   (DIV_QUOT), hl
-
-.no_sub:
-    ld   a, (DIV_COUNTER)
+    add  hl, hl
+    ex   de, hl
+    adc  hl, hl                         ; remainder * 2 + the dividend's next bit
+    sbc  hl, bc                         ; (carry is clear: adc cannot overflow, see above)
+    jr   nc, .one
+    add  hl, bc                         ; restore
+    jr   .next
+.one:
+    inc  e                              ; the quotient's bit (DE is the dividend/quotient here)
+.next:
+    ex   de, hl
     dec  a
-    ld   (DIV_COUNTER), a
     jr   nz, .loop
-
-    ld   hl, (DIV_QUOT)
     ret
 
 ; ============================================================================
@@ -574,50 +539,26 @@ MATH_SQRT16:
 ; x<=0 (signed) returns 0 — no error mechanism at this layer, same
 ; safe-default convention as MATH_DIVIDE16's divide-by-zero.
 ;
-; Generator: a 16-bit maximal-length Galois-tap-free "Fibonacci form"
-; LFSR (feedback = XOR of bit positions 1,2,4,13 of the current state;
-; new state = state shifted right 1, with that feedback bit inserted
-; at bit 15). Exhaustively verified in Python before any Z80: the taps
-; used here were found by a systematic search over candidate tap sets
-; (rather than trusting an unverified "standard" constant from memory
-; — an earlier attempt using a commonly-cited tap mask, applied as a
-; single-mask Galois-style feedback, turned out to have only a
-; 73-state cycle, not the full 65,535; a second attempt using several
-; textbook-cited Fibonacci tap sets hit the degenerate all-zero state
-; entirely, because none of them included tap position 1 — required
-; for the transition to be invertible and avoid the zero-trap). The
-; tap set actually used here (positions 1,2,4,13) was verified by
-; direct simulation to visit all 65,535 nonzero 16-bit states exactly
-; once before returning to its start — genuinely maximal length, not
-; assumed. The exact register-level bit-extraction sequence below
-; (shift-and-mask each tap bit individually, XOR-fold them, then a
-; real 16-bit logical shift with a conditional bit-15 set) was then
-; separately checked against the reference recurrence for all 65,536
-; possible states — zero mismatches — to catch any transcription
-; error between the verified design and this Z80 form.
+; Generator: a 16-bit xorshift, HL ^= HL << 7; HL ^= HL >> 9; HL ^= HL << 8
+; (back-port plan item 1.2, the generator of 2068-Leap-C's rand()), period
+; 65,535 over the nonzero states. It replaced a one-bit Fibonacci LFSR step,
+; whose consecutive states were each the previous one shifted right by one
+; bit: consecutive RND results were strongly correlated (from state 1 the
+; states ran $8000, $4000, $2000 and RANDOMISE 7 then RND(6) gave 3, 1, 0).
+; Checked on the real routine under
+; ZEsarUX by tools/qual/qrnd.py: the full 65,535 period from state 1, and
+; the first 255 states and results against the reference recurrence.
 ;
-; RND_STATE (a persistent sysvar, not a register — must survive
-; between separate BASIC statements) is never 0: a maximal-length LFSR
-; treats 0 as a degenerate fixed point that never advances. MEM_INIT
-; zeroes all of RAM at cold start, so RND_STATE reading as 0 doubles
-; as "never seeded yet" — the first RND(x) call seeds it from the Z80
-; R register (the classic, well-established technique for this: R
-; increments on every instruction fetch, so its value at the moment of
-; the call depends on how many instructions have executed since reset
-; — genuinely unpredictable from a BASIC program's perspective, though
-; NOT cryptographically random) OR'd with 1 to guarantee it isn't 0
-; itself. This seeding step is hardware-timing-dependent and can't be
-; meaningfully verified by tools/z80sim (which has no real timing
-; model — same category of gap as the tape-signal primitives in
-; kernel/storage); only the deterministic LFSR step and the range-
-; scaling below it were verified there.
+; RND_STATE (a persistent sysvar) is never 0 after a step: 0 is xorshift's
+; fixed point. MEM_INIT zeroes it at cold start, and RANDOMISE 0 sets it to
+; 0, so 0 means "never seeded yet": the next RND(x) seeds from the Z80 R
+; register (it increments on every instruction fetch, so its value depends
+; on how many instructions have run since reset; not cryptographically
+; random), the low byte OR'd with 1 so the seed is not 0.
 ;
-; Range-scaling: the raw 16-bit LFSR state, with its sign bit masked
-; off (0-32767, since the sign bit is just ordinary LFSR noise, not
-; meaningful), is fed as the dividend to this file's own MATH_MOD16 —
-; already-verified, and safe here since both operands are guaranteed
-; non-negative (the mask above; x's own sign already checked before
-; this point), so MOD16's dividend-sign handling never triggers.
+; Range-scaling: the new state with its top bit cleared (0-32767) is the
+; dividend of this file's MATH_MOD16; both operands are non-negative (x's
+; sign is checked first), so MOD16's dividend-sign handling never triggers.
 ; In:  HL = x (signed; x<=0 returns 0)
 ; Out: HL = pseudo-random value in [0, x-1] (or 0 if x<=0)
 ; Destroys: AF, BC, DE, HL
@@ -626,91 +567,37 @@ MATH_RND16:
     ld   a, h
     or   a
     jp   m, .zero_result                ; x negative -> 0
-    ld   a, h
     or   l
-    jr   z, .zero_result                  ; x = 0 -> 0
-
-    push hl                                ; save x across the LFSR
-                                          ; step below (no calls happen
-                                          ; before the matching pop, so
-                                          ; this is a simple balanced
-                                          ; save — not the recursive-
-                                          ; call-survival case the rest
-                                          ; of this project usually
-                                          ; means by this comment)
-
+    jr   z, .zero_result                ; x = 0 -> 0
+    push hl                             ; x, for the MOD below
     ld   hl, (RND_STATE)
     ld   a, h
     or   l
-    jr   nz, .seeded
-
-    ; never seeded (still 0, from MEM_INIT's cold-start zeroing) —
-    ; seed from the R register, guaranteed nonzero via OR 1
-    ld   a, r
+    jr   nz, .step
+    ld   a, r                           ; never seeded: seed from R
     or   1
     ld   l, a
-    ld   a, r                              ; a second read for the high
-    ld   h, a                                ; byte too, for more spread
-                                            ; than R's own 128-value
-                                            ; cycle alone would give
-.seeded:
-    ; feedback = bit0(L) ^ bit1(L) ^ bit3(L) ^ bit12(H's bit4)
-    ld   a, l
-    and  1
-    ld   b, a
-
-    ld   a, l
-    srl  a
-    and  1
-    xor  b
-    ld   b, a
-
-    ld   a, l
-    srl  a
-    srl  a
-    srl  a
-    and  1
-    xor  b
-    ld   b, a
-
+    ld   a, r
+    ld   h, a
+.step:                                  ; HL ^= HL << 7; HL ^= HL >> 9; HL ^= HL << 8
     ld   a, h
-    srl  a
-    srl  a
-    srl  a
-    srl  a
-    and  1
-    xor  b                                 ; A = feedback bit (0 or 1)
-    ld   c, a                                ; stash it — B is about to
-                                            ; be overwritten by the
-                                            ; actual state shift below
-
-    srl  h                                   ; HL >>= 1 (logical;
-    rr   l                                     ; discards old bit0)
-
-    ld   a, c
-    or   a
-    jr   z, .no_set_bit
+    rra
+    ld   a, l
+    rra
+    xor  h
+    ld   h, a
+    ld   a, l
+    rra
     ld   a, h
-    or   $80                                 ; set bit 15 (the
-    ld   h, a                                  ; feedback bit)
-.no_set_bit:
-    ld   (RND_STATE), hl                     ; commit the new state
-
-    ld   a, h
-    and  $7F                                 ; mask off the sign bit —
-    ld   h, a                                  ; it's just ordinary LFSR
-                                              ; noise, not meaningful;
-                                              ; guarantees a non-
-                                              ; negative dividend below
-
-    pop  de                                    ; DE = x (saved earlier)
-    jp   MATH_MOD16                              ; HL MOD DE — both
-                                                ; operands non-negative
-                                                ; here, so this is a
-                                                ; plain modulo, MOD16's
-                                                ; dividend-sign handling
-                                                ; never triggers; tail
-                                                ; call -- 1 byte saved
+    rra
+    xor  l
+    ld   l, a
+    xor  h
+    ld   h, a
+    ld   (RND_STATE), hl
+    res  7, h                           ; 0-32767: a non-negative dividend
+    pop  de                             ; DE = x
+    jp   MATH_MOD16                     ; HL MOD DE (tail call)
 
 .zero_result:
     ld   hl, 0

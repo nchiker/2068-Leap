@@ -27,8 +27,8 @@ V2_RST_38:
     DS V2_KTAB_MAGIC_ADDR - $, $FF
     DB V2_KTAB_MAGIC
 ; R10.9 Phase 1: versioned package service table (docs/PACKAGE_ABI.md), in what used
-; to be unused $FF padding -- zero HOME-budget cost.  Header, 16 `jp` slots, room for 14
-; more slots (append-only), then the one slot that needs a few bytes of code of its own.
+; to be unused $FF padding -- zero HOME-budget cost.  Header, the `jp` slots, the reserved slots
+; (append-only; each a trap, 6.4), then the one slot that needs a few bytes of code of its own.
     ASSERT $ == PKG_SVC_HEADER
     DB PKG_SVC_MAGIC, PKG_ABI_MAJOR, PKG_ABI_MINOR, PKG_SVC_COUNT
     ASSERT $ == PKG_SVC_ENTRIES
@@ -36,7 +36,12 @@ V2_RST_38:
     ASSERT PKG_SVC_INDEX == PKG_SVC_COUNT
     ASSERT $ == PKG_SVC_ENTRIES + 3*PKG_SVC_COUNT
     ASSERT $ <= PKG_SVC_MAX_END
-    DS PKG_SVC_CODE - $, $FF
+; 6.4: each reserved slot traps: a package calling a service this ROM does not have stops with
+; runtime error 9 (as a package name that is gone does), instead of running the $FF padding.
+    ASSERT (PKG_SVC_CODE - $) % 3 == 0
+    DUP (PKG_SVC_CODE - $) / 3
+    jp VM_ERR_EXTENSION_NOT_FOUND
+    EDUP
     ASSERT $ == PKG_SVC_CODE
 ; VM_NUM_TO_TEXT ends in a jump to EXROM code (BASIC_NUM_TO_STRING_EXROM, $C09C), but a
 ; package runs with chunk 6 paged to RAM (OP_CALL_EXT), so calling it directly executes
@@ -67,6 +72,8 @@ V2_COLD_START:
     call KBD_ISR_INIT
     im 1
     ei
+    ld a,2
+    ld (V2_VER_FLAG),a               ; VER: the version stays for the boot draw and the editor's first redraw
     call BANK_PAGE_EXROM_IN
     jp V2_EXROM_ENTRY_ADDR           ; EXROM resident production shell
 
@@ -90,6 +97,12 @@ BASIC_NUM_TO_STRING_EXROM EQU V2_EXROM_NUM_TO_STRING_ADDR
 BASIC_FLOAT_TO_STRING_EXROM EQU V2_EXROM_FLOAT_TO_STRING_ADDR
 DECOMP_END_ADDR EQU V2_DECOMP_END_ADDR
 MEM_CLEAR_V2 EQU V2_EXROM_CLEAR_ADDR
+COMPILE_FUSE_ADD EQU V2_EXROM_FUSE_ADD_ADDR     ; 5.4 (rom/exrom_v2_fuse.asm)
+COMPILE_FUSE_CMP EQU V2_EXROM_FUSE_CMP_ADDR
+COMPILE_FUSE_GOTO EQU V2_EXROM_FUSE_GOTO_ADDR
+BUILTIN_FN_SIN EQU V2_EXROM_FN_SIN_ADDR         ; 5.9 (rom/exrom_v2_float_fn.asm)
+BUILTIN_FN_COS EQU V2_EXROM_FN_COS_ADDR
+BUILTIN_FN_TAN EQU V2_EXROM_FN_TAN_ADDR
     IFDEF V2_MAINT_AY_BEEP
 AY_BEEP EQU V2_EXROM_AY_BEEP_ADDR        ; MAINT (AY BEEP)
     ENDIF
@@ -111,6 +124,8 @@ AY_BEEP EQU V2_EXROM_AY_BEEP_ADDR        ; MAINT (AY BEEP)
     INCLUDE "rom/exrom_v2_compiler.asm"
     INCLUDE "rom/v2_saveall.asm"            ; RC: SAVE ... ALL (owner decision 2)
     INCLUDE "rom/v2_session_undo.asm"
+    INCLUDE "rom/v2_version.asm"            ; VER: the ROM's version on the status row at power-on
+    INCLUDE "rom/v2_pkg_fp.asm"             ; 6.2: FP_OP, package service 17
 ; R10.9: the package ABI pins -- every package-visible sysvar / constant must still live
 ; where include/v2_package_abi.inc says (a mismatch fails the build).
     INCLUDE "rom/v2_lowrom_fill.asm"        ; RC shrink: small routines in the RST-slot padding

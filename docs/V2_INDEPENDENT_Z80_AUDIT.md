@@ -1,5 +1,7 @@
 # 2068-Leap V2 — Independent Z80 audit and shrink review (qualification study, Phase B)
 
+> **Later note (2026-10-27):** defect **Q-26** (the nine characters: brackets, braces, backslash, caret, backquote, bar and tilde print blank), listed as open below, is **fixed in `v2.1.0-emu.1`** (nine new glyphs, HOME 64 bytes; `V2_DEFECT_REGISTER.md`, `V2_1_RELEASE_STATUS.md`). The report as delivered is unchanged.
+
 > **Addendum (2026-10-11, owner-decision review — `docs/V2_OWNER_DECISIONS_REVIEW.md`).** Two more defects were found after this report.
 > **Q-32** (CRITICAL, Essential/Enhanced): an address computed above 32767 is saturated to 32767 by `POKE/PEEK/USR/IN/OUT`. It was **introduced by
 > the overnight D11 promotion prototype**, so this report's statement that no defect came from the prototypes no longer holds.

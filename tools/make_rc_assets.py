@@ -10,7 +10,7 @@ The CI workflow publishes that archive for a release tag (.github/workflows/chec
 RELEASE_VERSION to the tag (or a dev string), which overrides VERSION below.
 
 RELEASE / VERSION name what this tree builds. A numbered release is a v* tag (its own copy of this
-script labels it; v2.0.0-emu.1, v2.0.1-emu.1 and v2.0.2-emu.1 were built that way). Anything else -- the rolling
+script labels it; v2.0.0-emu.1 to v2.0.2-emu.1 and v2.1.0-emu.1 were built that way). Anything else -- the rolling
 "latest" build of v2-development, a workflow artifact, a local `make rc-assets` off a tag -- is an
 UNQUALIFIED DEVELOPMENT BUILD and is labelled so in its name, BUILD_INFO.txt and README.txt.
 
@@ -27,11 +27,12 @@ import sys
 
 OUT = "build/release-v2-rc"
 PACKAGES = ("mode", "sprite", "printer", "shapes", "graphics", "cbeep")
-LATEST_QUALIFIED = "v2.0.2-emu.1"
+LATEST_QUALIFIED = "v2.1.0-emu.1"
 # numbered releases: designation and release record (docs/)
 RELEASES = {
     "v2.0.1-emu.1": ("Sound Maintenance Release", "V2_MAINT_RELEASE_STATUS.md"),
     "v2.0.2-emu.1": ("Compiler Maintenance Release", "V2_COMPILER_MAINT_RELEASE_STATUS.md"),
+    "v2.1.0-emu.1": ("Speed and Package Functions Release", "V2_1_RELEASE_STATUS.md"),
 }
 RELEASE_TAG = re.compile(r"v\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?")   # what the CI publishes as a numbered release
 

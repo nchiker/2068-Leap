@@ -133,12 +133,12 @@ families. Operand forms are intentionally narrower than the full Z80 ISA:
 
 | Family | Implemented forms |
 | --- | --- |
-| Data movement | `LD` for 8-bit registers, supported indirect byte reads/writes, 16-bit register pairs and indexed registers, immediate values, and absolute memory operands; `LDIR` |
-| Arithmetic and logic | 8-bit `INC`/`DEC`; `ADD HL/IX/IY,rr`; `ADD A,r/n`; `ADC A,r/n`; implicit-A `SUB/AND/OR/XOR/CP`; `SBC A,r/n` and `SBC HL,rr` |
-| Bit and shifts | `BIT n,r/(HL)`, register forms of `SLA`, `SRL`, `RL`, `RR`, accumulator rotates `RLCA/RRCA/RLA/RRA` |
+| Data movement | `LD` for 8-bit registers, supported indirect byte reads/writes, 16-bit register pairs and indexed registers, immediate values, and absolute memory operands; `LDIR`, `LDDR`; `NAME EQU expr` constants (numbers, known names, `+`/`-`) |
+| Arithmetic and logic | 8-bit `INC`/`DEC`; `ADD HL/IX/IY,rr`; `ADD A,r/n`; `ADC A,r/n` and `ADC HL,rr`; implicit-A `SUB/AND/OR/XOR/CP`; `SBC A,r/n` and `SBC HL,rr` |
+| Bit and shifts | `BIT n,r/(HL)`, `SET`/`RES`, `SLA`, `SRL`, `RL`, `RR` on a register or `(HL)`, accumulator rotates `RLCA/RRCA/RLA/RRA` |
 | Control flow | `JR` with `Z/NZ/C/NC`; `JP`, `CALL`, and `RET` with `Z/NZ/C/NC/M/P/PE/PO`; `DJNZ` |
-| Stack and exchange | `PUSH`, `POP`, `EX DE,HL`, `EX AF,AF'` |
-| Other | `SCF`, `DI`, `EI`, and recorded `OUT (n),A` |
+| Stack and exchange | `PUSH`, `POP`, `EX DE,HL`, `EX AF,AF'`, `EXX` (BC/DE/HL with BC'/DE'/HL', saved in snapshots) |
+| Other | `SCF`, `CCF`, `DI`, `EI`, and recorded `OUT (n),A` |
 
 For supported forms, the modeled documented flags are `S`, `Z`, `H`,
 `PV`, `N`, and `C`. Eight-bit arithmetic computes sign, zero, half-carry
@@ -149,9 +149,10 @@ listed as unspecified in Zilog's manual, so the simulator's chosen values
 must not be treated as portable hardware evidence ([Zilog Z80 CPU User
 Manual, UM0080](https://www.zilog.com/docs/z80/um0080.pdf)). `INC`/`DEC`
 preserve carry. `ADD HL/IX/IY,rr` updates `H/N/C`
-and preserves `S/Z/PV`; `SBC HL,rr` computes all six documented flags.
+and preserves `S/Z/PV`; `ADC HL,rr` and `SBC HL,rr` compute all six documented flags.
 Accumulator-only rotates preserve `S/Z/PV` and update `H/N/C`;
-`SCF` preserves `S/Z/PV` and sets `C` while clearing `H/N`.
+`SCF` preserves `S/Z/PV` and sets `C` while clearing `H/N`; `CCF` preserves `S/Z/PV`, copies the old
+`C` to `H`, inverts `C` and clears `N`.
 Completed `LDIR` preserves `S/Z/C`, clears `H/N`, and leaves `PV` clear.
 
 `PUSH AF`/`POP AF` pack and restore those six flags. Undocumented flag

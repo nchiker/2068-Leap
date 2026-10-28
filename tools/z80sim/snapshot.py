@@ -9,6 +9,7 @@ VERSION = 1
 FLAG_NAMES = ("S", "Z", "H", "PV", "N", "C")
 REG8_NAMES = ("A", "B", "C", "D", "E", "H", "L")
 REG16_NAMES = ("IX", "IY", "SP")
+ALT_REG_NAMES = ("B", "C", "D", "E", "H", "L")   # BC', DE', HL'
 
 
 def _valid_int(value, minimum, maximum, what):
@@ -74,6 +75,11 @@ def capture_state(sim, entry_scope, entry_label, memory_ranges):
         "flags": {name: int(sim.flags[name]) for name in FLAG_NAMES},
         "alt_a": int(sim.alt_a),
         "alt_flags": {name: int(sim.alt_flags[name]) for name in FLAG_NAMES},
+        "alt_regs": {name: int(sim.alt_regs[name]) for name in ALT_REG_NAMES},
+        "alt_tuple_regs16": {
+            name: _encode_stack_value(value)
+            for name, value in sim.alt_tuple_regs16.items()
+        },
         "stack": [_encode_stack_value(value) for value in sim.stack_list],
         "tuple_regs16": {
             name: _encode_stack_value(value)
@@ -131,6 +137,15 @@ def restore_state(snapshot, sim=None):
             sim_flags = sim.flags if key == "flags" else sim.alt_flags
             sim_flags[name] = _valid_int(value, 0, 1, f"{key}.{name}")
     sim.alt_a = _valid_int(cpu.get("alt_a"), 0, 0xFF, "alternate A")
+    alt_regs = cpu.get("alt_regs", {name: 0 for name in ALT_REG_NAMES})   # optional: older snapshots
+    if not isinstance(alt_regs, dict) or set(alt_regs) != set(ALT_REG_NAMES):
+        raise ValueError("snapshot alt_regs must contain exactly " + ", ".join(ALT_REG_NAMES))
+    for name, value in alt_regs.items():
+        sim.alt_regs[name] = _valid_int(value, 0, 0xFF, f"alternate {name}")
+    alt_overlays = cpu.get("alt_tuple_regs16", {})
+    if not isinstance(alt_overlays, dict) or not set(alt_overlays) <= {"BC", "DE", "HL"}:
+        raise ValueError("snapshot alt_tuple_regs16 contains an invalid register")
+    sim.alt_tuple_regs16 = {name: _decode_stack_value(value) for name, value in alt_overlays.items()}
 
     stack = cpu.get("stack")
     if not isinstance(stack, list):
@@ -182,6 +197,8 @@ def restore_state(snapshot, sim=None):
         target_sim.flags = sim.flags
         target_sim.alt_a = sim.alt_a
         target_sim.alt_flags = sim.alt_flags
+        target_sim.alt_regs = sim.alt_regs
+        target_sim.alt_tuple_regs16 = sim.alt_tuple_regs16
         target_sim.stack_list = sim.stack_list
         target_sim.tuple_regs16 = sim.tuple_regs16
         target_sim.io_writes = sim.io_writes

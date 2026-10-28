@@ -8,7 +8,17 @@ stack byte touched (SP starts at $FF00, as in qharness), and the source / byteco
 "dead" span means the span is not dead: do not reuse it.  Not part of make test (about 10 minutes).
 
   python3 tools/qual/qcanary.py . build/qcanary.jsonl [--workers 4] [--port 10700] [--filter s]
-      [--spans B6EE-B791,...]
+      [--spans B6EE-B791,...] [--banking]
+
+--banking (docs/V2_LEAPC_BACKPORT_PLAN.md item 0.7, after 2068-Leap-C's tools/memguard.py) also arms
+ZEsarUX breakpoint conditions, evaluated after every instruction, in slots the harness does not use; the
+first that holds stops the case, which is then reported with the invariant's name:
+  - the stack in chunk 6 ($C000-$DFFF);
+  - a write to chunk 6 while the EXROM is paged in (it would be lost: the EXROM is ROM);
+  - a paging depth other than 1 when the VM dispatches an op (VM_RUN.next; VM_RUN.loop before 5.2): the
+    VM runs with the EXROM in, and a package call (depth 0) has returned before the next op;
+  - an EXROM entry slot (V2_EXROM_CALCULATE_ADDR up to V2_EXROM_ARRSVC_ADDR: the calculator, the
+    compiler's peepholes, the float built-ins of 5.9, ...) entered with the EXROM paged out (depth 0).
 """
 import argparse, json, multiprocessing as mp, os, sys
 
@@ -19,9 +29,44 @@ SPANS = [(0xB6EE, 0xB791), (0xB7A8, 0xB7FF), (0xB84C, 0xB84F), (0xB97E, 0xB9E8),
          (0xBA5E, 0xBDCF), (0xBDE1, 0xBE6F), (0xF100, 0xF17F), (0xF328, 0xF3AE)]
 STACK = (0xF800, 0xFEFF)
 CAN = 0xA5
+INV_SLOTS = (9, 10, 11, 12)
 
 
-def worker(tree, port, cids, outp, spans):
+def invariants(S):
+    d = S("BANK_EXROM_DEPTH")
+    return [("the stack in chunk 6", "SP>BFFFH and SP<E000H"),
+            ("a write to chunk 6 with the EXROM paged in", "MWA>BFFFH and MWA<E000H and PEEK(%04XH)<>0" % d),
+            ("a paging depth other than 1 at the VM's dispatch",
+             "PC=%04XH and PEEK(%04XH)<>1" % (dispatch(S), d)),
+            ("an EXROM entry slot entered with the EXROM paged out",
+             "PC>%04XH and PC<%04XH and PEEK(%04XH)=0" % (S("V2_EXROM_CALCULATE_ADDR") - 1, S("V2_EXROM_ARRSVC_ADDR"), d))]
+
+
+def dispatch(S):
+    """Every op passes VM_RUN.next since 5.2 (VM_RUN.loop, the BREAK poll, falls into it); before, .loop."""
+    try:
+        return S("VM_RUN.next")
+    except KeyError:
+        return S("VM_RUN.loop")
+
+
+def arm(m):
+    for slot, (_, cond) in zip(INV_SLOTS, invariants(m.sym)):
+        m.cmd("set-breakpoint %d %s" % (slot, cond))
+
+
+def fired(m):
+    out = []
+    for name, cond in invariants(m.sym):
+        try:
+            if int(m.cmd("evaluate " + cond).strip().split()[0]):
+                out.append(name)
+        except (ValueError, IndexError):
+            pass
+    return out
+
+
+def worker(tree, port, cids, outp, spans, banking=False):
     sys.path.insert(0, os.path.join(tree, "tools", "qual"))
     import corpus
     from qharness import Machine
@@ -41,7 +86,11 @@ def worker(tree, port, cids, outp, spans):
                 m.put_store(c.lines)
                 if c.prepare:
                     c.prepare(m)
+                if banking:
+                    arm(m)
                 r = m.call_routine("V2_RUN_STORED", keys=c.keys, maxi=c.maxi)
+                if banking:
+                    rec["invariants"] = fired(m) if r.status == "HUNG" else []
                 hits = []
                 for a, b in spans:
                     d = m.read(a, b - a + 1)
@@ -74,6 +123,7 @@ def main():
     ap.add_argument("--port", type=int, default=10700)
     ap.add_argument("--filter", default="")
     ap.add_argument("--spans", default="", help="lo-hi,lo-hi (hex) instead of the default list")
+    ap.add_argument("--banking", action="store_true", help="also check the banking invariants (see above)")
     a = ap.parse_args()
     tree = os.path.abspath(a.tree)
     sys.path.insert(0, os.path.join(tree, "tools", "qual"))
@@ -84,7 +134,7 @@ def main():
     ids = [c.cid for c in corpus.CASES if a.filter in c.cid or a.filter in c.feature]
     if os.path.exists(a.out):
         os.remove(a.out)
-    ps = [mp.Process(target=worker, args=(tree, a.port + w, ids[w::a.workers], a.out, spans))
+    ps = [mp.Process(target=worker, args=(tree, a.port + w, ids[w::a.workers], a.out, spans, a.banking))
           for w in range(a.workers)]
     for p in ps:
         p.start()
@@ -94,12 +144,15 @@ def main():
     bad = [r for r in recs if r.get("nhits")]
     err = [r for r in recs if "error" in r]
     lows = [int(r["stack_low"], 16) for r in recs if r.get("stack_low")]
-    print("cases %d  canary-hits %d  errors %d" % (len(recs), len(bad), len(err)))
+    inv = [r for r in recs if r.get("invariants")]
+    print("cases %d  canary-hits %d  errors %d  banking-violations %d" % (len(recs), len(bad), len(err), len(inv)))
+    for r in inv[:30]:
+        print("  BANKING", r["cid"], "; ".join(r["invariants"]))
     for r in bad[:30]:
         print("  HIT", r["cid"], r["nhits"], r["hits"][:8])
     if lows:
         print("lowest stack byte touched: %04X (%d bytes below $FF00)" % (min(lows), 0xFF00 - min(lows)))
-    return 0
+    return 1 if (bad or err or inv) else 0
 
 
 if __name__ == "__main__":

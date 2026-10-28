@@ -1,6 +1,6 @@
 # 2068-Leap V2 Enhanced — Emulator-Qualified Release: status
 
-> **Later releases:** `v2.0.1-emu.1`, the sound maintenance release (`V2_MAINT_RELEASE_STATUS.md`), and `v2.0.2-emu.1`, the compiler maintenance release (`V2_COMPILER_MAINT_RELEASE_STATUS.md`), both emulator-qualified, not hardware-qualified. This document remains the record of `v2.0.0-emu.1`, which is unchanged.
+> **Later releases:** `v2.0.1-emu.1`, the sound maintenance release (`V2_MAINT_RELEASE_STATUS.md`), `v2.0.2-emu.1`, the compiler maintenance release (`V2_COMPILER_MAINT_RELEASE_STATUS.md`), and `v2.1.0-emu.1`, the speed and package functions release, the current release (`V2_1_RELEASE_STATUS.md`), all emulator-qualified, not hardware-qualified. This document remains the record of `v2.0.0-emu.1`, which is unchanged.
 
 **Start here.** This is the entry document for the accepted V2 release: what was built, where it
 is, how it was qualified, and what is still open.

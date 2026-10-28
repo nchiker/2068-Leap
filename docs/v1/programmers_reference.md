@@ -411,7 +411,7 @@ Caps Lock) is what actually asserts CAPS SHIFT for testing purposes.
 punctuation table: the full digit row (`!@#$%&'()_`) plus `Z`=`:`,
 `M`=`.`, `N`=`,`, `L`=`=`, `K`=`+`, `J`=`-`, `O`=`;`, `V`=`/`, `B`=`*`,
 `R`=`<`, `T`=`>`, `C`=`?` — 23 characters total, each with a font glyph now too
-(`kernel/graphics`'s `FONT_TABLE` grew to 86 glyphs). `V` and `B` were
+(`kernel/graphics`'s `FONT_TABLE` grew; it has 95 glyphs since Q-26). `V` and `B` were
 added once `basic/`'s expression evaluator actually needed `/` and `*`
 for division and multiplication; `R` and `T` were added once `basic/`'s
 new IF/ELSEIF relational operators needed `<` and `>` — all four
@@ -473,8 +473,8 @@ testing *which* key was detected needs a way to display it, which needs
 
 Owns the screen bitmap/attribute addressing and character output
 (`GFX_CLS`, `GFX_PUTCHAR`, `GFX_PUTCHAR_BOLD`, `GFX_PRINT_STRING`,
-`GFX_INVERT_ATTR`). Covers space, 0-9, A-Z, a-z, and 23 punctuation
-characters (86 glyphs total) — see `docs/hardware_notes.md`'s SYMBOL
+`GFX_INVERT_ATTR`). Covers space, 0-9, A-Z, a-z, and 32 punctuation
+characters (95 glyphs total, all of printable ASCII since Q-26) — see `docs/hardware_notes.md`'s SYMBOL
 SHIFT table for exactly which punctuation and why that specific subset.
 `?` (glyph index 85) is the newest addition, alongside `kernel/io`'s
 new `SYMBOL SHIFT+C` mapping — a hook shape reusing `2`'s top curve,
@@ -667,7 +667,7 @@ their own hardware confirmation.
 **CPLOT** — coarse 2x2-per-cell block-graphics plot. Originally scoped
 in the graphics design conversation as "wraps existing `GFX_PUTCHAR`,
 no new drawing engine" — checking that assumption against the actual
-font (`FONT_TABLE`, 86 glyphs, all text characters, indexed by ASCII
+font (`FONT_TABLE`, 95 glyphs, all text characters, indexed by ASCII
 code through `GFX_CHAR_TO_FONT_OFFSET`) found it was wrong: there are
 no block-graphics quadrant glyphs to wrap. Rather than add 16 new
 glyphs and route them through the character-code machinery (which

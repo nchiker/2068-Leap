@@ -1,4 +1,4 @@
-.PHONY: all build check smoke-build test qual qual-maint doc-examples manual-v2 rc-assets test-prod test-legacy test-all budget audit-basic manual clean cplot-extension block-extension frame-extension invert-extension ayreg-extension out-extension sprite-extension shapes-extension v2-packages v2-standalone-test release-assets
+.PHONY: all build check repro smoke-build test qual qual-maint doc-examples manual-v2 rc-assets test-prod test-legacy test-all budget audit-basic manual clean cplot-extension block-extension frame-extension invert-extension ayreg-extension out-extension sprite-extension shapes-extension v2-packages v2-standalone-test release-assets
 
 all: check build
 
@@ -19,8 +19,15 @@ build:
 	tools/make_eightyone_dck.sh build/exrom.bin build/exrom.dck
 	tools/sjasmplus_strict.sh rom/zesarux_combined.asm
 
+# ROM reserves kept for bug fixes (docs/V2_LEAPC_BACKPORT_PLAN.md section 0).
+HOME_RESERVE ?= 64
+EXROM_RESERVE ?= 32
+
 check: build
+	python3 tools/report_budget.py --check $(HOME_RESERVE) $(EXROM_RESERVE) build/test_basic.lst build/exrom.lst build/test_basic.sym
 	python3 tools/check_asm.py
+	python3 tools/check_provenance.py > build/provenance.log; rc=$$?; tail -1 build/provenance.log; \
+	  if [ $$rc = 2 ]; then echo "provenance check skipped: no stock ROMs"; elif [ $$rc != 0 ]; then grep 'NOT ACCOUNTED' build/provenance.log; exit 1; fi
 	python3 tools/check_docs.py
 	python3 tools/check_ram_aliases.py build/test_basic.sym
 	python3 tools/check_ram_layout.py build/test_basic.lst build/exrom.lst build/test_basic.sym build/exrom.sym
@@ -42,6 +49,7 @@ check: build
 	# z80sim flag semantics + snapshot/replay (run in-directory: they import sim/snapshot as siblings)
 	cd tools/z80sim && python3 -m unittest test_flags test_snapshot
 	tools/build_smoke_roms.sh
+	tools/run_v2_standalone_tests.sh --build-only
 	# Assemble-only guard for the non-production legacy/component-test
 	# fixture (basic/basic.asm + rom/exrom_build.asm, see docs/
 	# R10_7_DORMANT_ARCHITECTURE_AUDIT.md sec3/sec6.4): this chain shares
@@ -82,10 +90,12 @@ test: all v2-packages smoke-build
 
 # RC: the qualification suites on the in-tree build (docs/V2_REGRESSION_REPORT.md): the language
 # corpus with the release-candidate expectations (strict PASS/FAIL/XFAIL/XPASS accounting: any FAIL,
-# XPASS or BLOCKED fails the target) and the variable-session lifecycle.
+# XPASS or BLOCKED fails the target), the variable-session lifecycle, and the edge cases of the VM's
+# fast paths (back-port items 5.3-5.5: integer FOR/NEXT, the combined instructions, the stack's limit).
 qual: build v2-packages
 	python3 tools/qual/qrun.py --tree . --fixed rc --out build/qual --workers-per-cfg 3
 	python3 tools/qual/qlifecycle.py --tree .
+	python3 tools/qual/qvmedge.py --tree .
 
 # V2 maintenance qualification: AY BEEP, SOUND 0, the shared frame wait (BREAK, PAUSE rollover), the
 # cbeep package (model, tape, interrupts off). Headless; logs in build/maint-qual/.
@@ -142,12 +152,14 @@ v2-packages: build
 	tools/sjasmplus_strict.sh rom/v2_package_shapes.asm
 	tools/sjasmplus_strict.sh rom/v2_package_graphics.asm
 	tools/sjasmplus_strict.sh rom/v2_package_cbeep.asm
-	python3 tools/make_extension_tzx.py build/extensions/v2_mode.tzx MODE build/v2_package_mode.bin --v2
-	python3 tools/make_extension_tzx.py build/extensions/v2_sprite.tzx SPRITE build/v2_package_sprite.bin --v2
-	python3 tools/make_extension_tzx.py build/extensions/v2_printer.tzx PRINTER build/v2_package_printer.bin --v2
-	python3 tools/make_extension_tzx.py build/extensions/v2_shapes.tzx SHAPES build/v2_package_shapes.bin --v2
-	python3 tools/make_extension_tzx.py build/extensions/v2_graphics.tzx GRAPHICS build/v2_package_graphics.bin --v2
-	python3 tools/make_extension_tzx.py build/extensions/v2_cbeep.tzx CBEEP build/v2_package_cbeep.bin --v2
+	tools/sjasmplus_strict.sh rom/v2_package_fntest.asm
+	tools/sjasmplus_strict.sh rom/v2_package_fptest.asm
+	python3 tools/make_extension_tzx.py build/extensions/v2_mode.tzx MODE build/v2_package_mode.bin --v2 --source rom/v2_package_mode.asm
+	python3 tools/make_extension_tzx.py build/extensions/v2_sprite.tzx SPRITE build/v2_package_sprite.bin --v2 --source rom/v2_package_sprite.asm
+	python3 tools/make_extension_tzx.py build/extensions/v2_printer.tzx PRINTER build/v2_package_printer.bin --v2 --source rom/v2_package_printer.asm
+	python3 tools/make_extension_tzx.py build/extensions/v2_shapes.tzx SHAPES build/v2_package_shapes.bin --v2 --source rom/v2_package_shapes.asm
+	python3 tools/make_extension_tzx.py build/extensions/v2_graphics.tzx GRAPHICS build/v2_package_graphics.bin --v2 --source rom/v2_package_graphics.asm
+	python3 tools/make_extension_tzx.py build/extensions/v2_cbeep.tzx CBEEP build/v2_package_cbeep.bin --v2 --source rom/v2_package_cbeep.asm
 
 cplot-extension: build
 	mkdir -p build/extensions
@@ -242,6 +254,10 @@ audit-basic: build
 manual:
 	python3 tools/build_user_manual_docx.py
 	python3 tools/build_whats_new_docx.py
+
+# Two fresh copies of the tree built at different paths must give identical images (tools/check_repro.sh).
+repro:
+	tools/check_repro.sh
 
 clean:
 	rm -rf build

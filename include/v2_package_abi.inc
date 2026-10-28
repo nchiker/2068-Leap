@@ -27,13 +27,16 @@
 ; ============================================================================
     IFNDEF V2_PACKAGE_ABI_INC
     DEFINE V2_PACKAGE_ABI_INC
+    INCLUDE "include/v2_ext_kinds.inc"
 
 ; ---- versions (tape header "autostart" word; see docs/PACKAGE_ABI.md s6) ----
 ; word = $8000 | (major << 8) | minor.  Bit 15 set keeps the field a legal "no
 ; autostart" value for stock BASIC tooling; major 0 / bit 15 clear = unversioned.
 V2_TAPE_TAG             EQU $8000
 PKG_ABI_MAJOR           EQU 2          ; "1" was the unversioned raw-address ABI (R7.5-R10.8)
-PKG_ABI_MINOR           EQU 0
+PKG_ABI_MINOR           EQU 1          ; 6.1: 2.1 = package functions (EXT2_EXPORTS, EXT_CALL_RESULT, EXT_KIND_*);
+                                       ; 6.2: + the float form (EXT_SIG_FLOAT) and FP_OP;
+                                       ; 6.3: + VM_RAISE_ERROR, the error range (unreleased, so still 2.1)
 PKG_ABI_WORD            EQU V2_TAPE_TAG | (PKG_ABI_MAJOR << 8) | PKG_ABI_MINOR
 V2_FORMAT_MAJOR         EQU 1          ; program (type 0) and array (type 8) tapes
 V2_FORMAT_MINOR         EQU 1          ; RC: 1 = a program tape may carry its variables (SAVE ... ALL)
@@ -46,7 +49,7 @@ PKG_SVC_MAGIC           EQU $5A
 PKG_SVC_ENTRIES         EQU $0096
 PKG_SVC_MAX_END         EQU $00F0      ; slots stay below this; $00F0-$00FF holds slot code
 PKG_SVC_CODE            EQU $00F0
-PKG_SVC_COUNT           EQU 16
+PKG_SVC_COUNT           EQU 19
 
 ; PKG_SVC <name the package uses>, <HOME routine the slot jumps to>
 ; Slot numbers are the order below.  APPEND ONLY.
@@ -78,6 +81,9 @@ PKG_SVC_INDEX           DEFL 0
     PKG_SVC VM_COMPUTE_PRINT_ATTR, VM_COMPUTE_PRINT_ATTR    ; 13
     PKG_SVC VM_NUM_TO_TEXT, PKG_NUM_TO_TEXT_SAFE            ; 14 (EXROM-safe wrapper, below)
     PKG_SVC VM_STR_ADDR, VM_STR_ADDR                        ; 15
+    PKG_SVC EXT2_EXPORTS, EXT2_EXPORTS                      ; 16 (ABI 2.1: an export table)
+    PKG_SVC FP_OP, PKG_FP_OP                                ; 17 (ABI 2.1: float arithmetic, 6.2)
+    PKG_SVC VM_RAISE_ERROR, VM_ERR_COMMON                   ; 18 (ABI 2.1: raise an error, 6.3)
     ENDM
 
 ; ---- reserved package scratch (not a HOME symbol: the SPRITE package addresses it with
@@ -126,6 +132,7 @@ name EQU addr
     PKG_PIN EXT_CALL_ARG2, $BEDC, 2
     PKG_PIN EXT_CALL_ARG3, $BEDE, 2
     PKG_PIN EXT_CALL_ARG4, $BEEC, 2                ; non-contiguous 5th argument
+    PKG_PIN EXT_CALL_RESULT, $BEE0, 2              ; ABI 2.1: a function's value (string: -> [len][text])
     ; -- error reporting: written by the package, read by VM_RUN's loop --
     PKG_PIN VM_ERROR_CODE, $B683, 1                ; 1 B
     PKG_PIN VM_HALTED, $B684, 1                    ; 1 B

@@ -1,9 +1,23 @@
 #!/usr/bin/env python3
-"""Build a stock two-block Direct Recording TZX for a loadable extension."""
+"""Build a stock two-block Direct Recording TZX for a loadable extension.
+
+With --v2 the tape carries the package ABI's version word; with --source (the package's .asm) its
+minor is the one the package needs (tools/v2_abi.py needed_minor: 2.0 unless the source names a 2.1
+service, pin or signature constant), so a statement-only package loads on a v2.0.x ROM too. Without
+--source the word is this ROM's own.
+
+With --v2 it also warns (6.6, docs/PACKAGE_ABI.md s2 "Names") about each name the package registers
+that the language already uses: a keyword or a built-in function (the ROM's word always wins, so the
+package's is never reached), a shell command (typed alone as a line, the shell runs it), or a name the
+LPRINT/LLIST keywords look up (the package then takes them over from PRINTER). The names are read from
+the export table of a package that starts `ld hl,table / jp EXT2_EXPORTS`, otherwise from every
+NUL-terminated name-like string in the image (a warning may then be a string that is not a name).
+"""
 
 from functools import reduce
 from operator import xor
 from pathlib import Path
+import re
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -26,6 +40,53 @@ MODULE_WINDOW_MAX = 1024  # EXTENSION_MODULE_LIMIT - EXTENSION_MODULE_BASE
                           # ~132 bytes) doesn't pay to transfer 1024
                           # bytes of padding just because the window
                           # allows a bigger one.
+
+
+ROOT = Path(__file__).resolve().parent.parent
+NAME_RE = re.compile(rb"(?<![A-Za-z0-9$])([A-Z][A-Z0-9]{0,7}\$?)\0")
+PRINTER_NAMES = {"LPRINT", "LPRINT$", "LLIST"}          # COMPILE_LPRINT / LLIST look these up by name
+
+
+def reserved_words() -> dict[str, str]:
+    """{word: why a package may not use it}, read from the compiler and shell sources."""
+    comp = (ROOT / "rom/exrom_v2_compiler.asm").read_text(encoding="latin-1")
+    shell = (ROOT / "rom/exrom_v2_shell.asm").read_text(encoding="latin-1")
+    out = {}
+    a = comp.index("\nKEYWORD_TABLE:")
+    for m in re.finditer(r'db\s+\d+,\s*"([A-Z$]+)",\s*TOK_KW_', comp[a:a + 4000]):
+        out[m.group(1)] = "a keyword: the package's name is never reached"
+    b = comp.index("\nBUILTIN_FN_TABLE:")
+    for m in re.finditer(r'^\s+db\s+\d+,\s*"([A-Z]+)",', comp[b:b + 6000], re.M):
+        out.setdefault(m.group(1), "a built-in function: the built-in wins")
+    for m in re.finditer(r'^V2_KW_\w+:\s+DB\s+"([A-Z]+)"', shell, re.M):
+        out.setdefault(m.group(1), "a shell command: typed alone as a line, the shell runs it")
+    for n in PRINTER_NAMES:
+        out.setdefault(n, "looked up by LPRINT/LLIST: the package takes them over from PRINTER")
+    return out
+
+
+def package_names(module: bytes, base: int = 0xF400, exports: int = 0x00C6) -> list[str]:
+    """The names a package registers: its export table (ABI 2.1), else its name-like strings."""
+    if len(module) >= 6 and module[0] == 0x21 and module[3:6] == bytes([0xC3, exports & 0xFF, exports >> 8]):
+        i, names = (module[1] | module[2] << 8) - base, []
+        while 0 <= i < len(module) and module[i]:
+            j = module.index(0, i)
+            names.append(module[i:j].decode("latin-1"))
+            i = j + 5                                   # the NUL, exec:2, argcount, signature
+        return names
+    return [m.group(1).decode("latin-1") for m in NAME_RE.finditer(module)]
+
+
+def warn_names(tape_name: str, module: bytes) -> int:
+    words, n = reserved_words(), 0
+    for name in package_names(module):
+        bare = name.rstrip("$")
+        why = words.get(name) or (words.get(bare) if name not in PRINTER_NAMES else None)
+        if why and not (tape_name == "PRINTER" and name in PRINTER_NAMES):
+            print(f"warning: {tape_name}: the name {name} is {why} (docs/PACKAGE_ABI.md s2 \"Names\")",
+                  file=sys.stderr)
+            n += 1
+    return n
 
 
 def framed(flag: int, payload: bytes) -> bytes:
@@ -68,20 +129,30 @@ def pack(bits: list[int]) -> tuple[bytes, int]:
 def main() -> int:
     args = [a for a in sys.argv[1:] if a != "--v2"]
     v2 = len(args) != len(sys.argv) - 1
-    if len(args) != 3:
-        print("usage: make_extension_tzx.py OUTPUT.tzx NAME MODULE.bin [--v2]\n"
+    source = None
+    if "--source" in args:
+        i = args.index("--source")
+        source = args[i + 1] if i + 1 < len(args) else None
+        del args[i:i + 2]
+    if len(args) != 3 or (source and not v2) or ("--source" in sys.argv and not source):
+        print("usage: make_extension_tzx.py OUTPUT.tzx NAME MODULE.bin [--v2 [--source PACKAGE.asm]]\n"
               "  --v2: stamp the V2 package ABI word from include/v2_package_abi.inc "
-              "(default: the legacy V1 value 1)", file=sys.stderr)
+              "(default: the legacy V1 value 1)\n"
+              "  --source: stamp the minor the package needs instead of this ROM's", file=sys.stderr)
         return 2
     output, name, module_path = Path(args[0]), args[1], Path(args[2])
     module = module_path.read_bytes()
     if len(module) > MODULE_WINDOW_MAX:
         raise ValueError(f"module is {len(module)} bytes; limit is {MODULE_WINDOW_MAX}")
     module_size = len(module)
+    abi = v2_abi.load()
+    word = (abi.package_word(source) if source else abi.pkg_word) if v2 else 1
+    if v2:
+        warn_names(name.upper(), module)
     tape_name = name.upper().encode("ascii")[:10].ljust(10, b" ")
     header_payload = (
         bytes([4]) + tape_name + module_size.to_bytes(2, "little")
-        + (v2_abi.load().pkg_word if v2 else 1).to_bytes(2, "little") + module_size.to_bytes(2, "little")
+        + word.to_bytes(2, "little") + module_size.to_bytes(2, "little")
     )
     bits: list[int] = []
     level = append_block(bits, framed(0x00, header_payload), 0)
@@ -95,7 +166,7 @@ def main() -> int:
     raw += len(packed).to_bytes(3, "little")
     raw += packed
     output.write_bytes(raw)
-    print(f"wrote {output}: {len(module)} payload bytes, {len(bits)} samples")
+    print(f"wrote {output}: {len(module)} payload bytes, {len(bits)} samples" + (f", word ${word:04X}" if v2 else ""))
     return 0
 
 

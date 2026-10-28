@@ -83,6 +83,7 @@
 ; address range" audit this project always runs before a new placement
 ; decision (checked: nothing else claims $980C-$9820 today).
 ; ---------------------------------------------------------------------------
+    INCLUDE "include/v2_ext_kinds.inc"
 EXT2_MAX:            equ 12       ; up to 12 registered extensions --
                                     ; SPRITE(4)+MODE/ULAPLUS/PALETTE(3)
                                     ; already used 7 of the old 8-slot
@@ -135,6 +136,7 @@ EXT2_REG_SLOT:        equ $BEE8   ; (1 byte): the slot index being filled
 EXT2_REG_SLOTPTR:     equ $BEE9   ; (2 bytes): a moving write cursor
                                     ; into the slot being filled
 EXT2_REG_NAMELEN:     equ $BEEB   ; (1 byte)
+EXT2_LOOKUP_KIND:     equ $BFA9   ; 6.1 (1 byte): EXT2_LOOKUP's wanted kind (C on entry)
 EXT2_REG_ARGTYPES:    equ $BFA8   ; (1 byte) -- EXT2_REGISTER's own copy
                                     ; of its new C=argtypes input,
                                     ; stashed at entry before C is reused
@@ -205,7 +207,8 @@ EXT2_NAME_LEN:
 ; set = argument N is a STRING expression; 0 = every argument numeric,
 ; the only value every pre-printer-package extension uses). Out: carry
 ; set + A=0xFF on failure (table full, or argcount>5); carry clear +
-; A=slot id on success. Destroys: AF, BC, DE, HL.
+; A=slot id on success. Destroys: AF, BC, DE, HL. (6.2: a signature with
+; EXT_SIG_FLOAT and a string argument also fails.)
 ;
 ; Cap raised 4->5 (2068-Leap's own post-R8.5 sprite-module reconciliation
 ; -- see docs/ARCHITECTURE_B_IMPLEMENTATION_PLAN.md's own SPRITE
@@ -226,6 +229,9 @@ EXT2_REGISTER:
         ld (EXT2_REG_EXEC),de
         ld a,c
         ld (EXT2_REG_ARGTYPES),a
+        and EXT_SIG_FLOAT | $1F     ; 6.2: the float form's arguments are all numbers
+        cp EXT_SIG_FLOAT + 1
+        jr nc,.fail
         ld a,b
         cp 6
         jr nc,.fail
@@ -328,6 +334,41 @@ EXT2_REGISTER:
         ret
 
 ; ===========================================================================
+; EXT2_EXPORTS — 6.1 (package ABI 2.1, service 16): registers a package's
+; export table, Leap-C's model (its spec.md §7.2) in V2's registry. In: HL
+; -> the table: per export its NUL-terminated upper-case name, its entry
+; (2 bytes), its argument count (1) and its signature byte (1: bits 7-6
+; the kind, EXT_KIND_*; bits 4-0 the argument types, as EXT2_REGISTER's
+; C); a 0 byte (an empty name) ends it. Out: carry clear when every export
+; is registered; carry set + A = $FF at the first that is not (registry
+; full, more than 5 arguments). Install-time only, as EXT2_REGISTER.
+; Destroys: AF, BC, DE, HL.
+; ===========================================================================
+EXT2_EXPORTS:
+        ld a,(hl)
+        or a
+        ret z                   ; the end (carry clear)
+        push hl                 ; the name
+.skip:
+        ld a,(hl)
+        inc hl
+        or a
+        jr nz,.skip
+        ld e,(hl)
+        inc hl
+        ld d,(hl)               ; DE = entry
+        inc hl
+        ld b,(hl)               ; B = argument count
+        inc hl
+        ld c,(hl)               ; C = signature
+        inc hl
+        ex (sp),hl              ; HL = the name; the next export kept
+        call EXT2_REGISTER
+        pop hl
+        jr nc,EXT2_EXPORTS
+        ret
+
+; ===========================================================================
 ; EXT2_SLOT_ADDR — input: A = slot id (0-11). Output: HL = record
 ; address (EXT2_TABLE + id*14, EXT2_REC_LEN having grown 13->14 for the
 ; printer-package's own argtypes byte -- see EXT2_REC_LEN's own header).
@@ -375,7 +416,10 @@ EXT2_LOOKUP_SLOT:     equ $BEEF   ; (1 byte)
 ; ===========================================================================
 ; EXT2_LOOKUP — In: HL = name pointer, B = length (a compiler token's
 ; own (TOK_NAME,TOK_LEN) — NOT necessarily null-terminated, unlike
-; EXT2_REGISTER's own input convention). Out: carry set if no match;
+; EXT2_REGISTER's own input convention), C = the kind wanted (6.1, ABI
+; 2.1: bits 7-6 of the signature byte, EXT_KIND_*: $00 a statement, $40
+; a numeric function, $C0 a string function; a record of another kind
+; never matches, so a name binds only where its kind fits). Out: carry set if no match;
 ; carry clear + A = slot id, and the matched slot's own generation/
 ; argcount readable via EXT2_SLOT_ADDR(A) by the caller (kept simple —
 ; this routine does not also return those fields itself, since its only
@@ -387,6 +431,8 @@ EXT2_LOOKUP:
         ld (EXT2_LOOKUP_NAME),hl
         ld a,b
         ld (EXT2_LOOKUP_LEN),a
+        ld a,c
+        ld (EXT2_LOOKUP_KIND),a
         xor a
         ld (EXT2_LOOKUP_SLOT),a
 .loop:
@@ -398,6 +444,14 @@ EXT2_LOOKUP:
                                     ; a real match
         or a
         jr z,.next
+        push hl                     ; 6.1: the record's kind (signature
+        ld de,13                    ; bits 7-6) must be the one wanted
+        add hl,de
+        ld a,(EXT2_LOOKUP_KIND)
+        xor (hl)
+        and EXT_KIND_MASK
+        pop hl
+        jr nz,.next
         inc hl
         ld a,(hl)                   ; stored name_len
         ld c,a

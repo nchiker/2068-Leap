@@ -57,6 +57,10 @@
 ; shared file both already INCLUDE, same reasoning STRFUNC_ID_* used
 ; there. ----
 
+; V2_PRODUCTION: the shell sets both hooks after every EDITOR_INIT (V2_COMMAND_LOOP.loop), so the
+; built-in fallbacks for an unset hook can never run there and are left out (back-port plan item 1.1,
+; after 2068-Leap-C deltas D15-D17). The legacy fixtures and editor tests still assemble them.
+
 ; ============================================================================
 ; EDITOR_INIT
 ; Clears editor state. Call once at cold start (and again on NEW).
@@ -71,11 +75,13 @@ EDITOR_INIT:
     xor  a
     ld   hl, 0
     ld   (EDIT_BUF_OFFSET), hl
+    IFNDEF V2_PRODUCTION            ; (production: the shell sets both hooks next)
     ld   (EDITOR_REDRAW_HOOK), hl    ; also 0 — default rendering unless
                                     ; a caller (e.g. basic/) sets this
     ld   (EDITOR_NAV_HOOK), hl        ; also 0 — default (no-op)
                                     ; UP/DOWN handling unless a caller
                                     ; sets this
+    ENDIF
     ld   hl, EDIT_LINE_BUF
     ld   bc, EDIT_LINE_BUF_LEN
     jp KTAB_MEM_FILL_ZERO
@@ -126,10 +132,12 @@ EDITOR_LOOP:
     jp   z, .delete_line_key
     cp   KEY_INSERT_LINE
     jp   z, .insert_line
+    IFNDEF V2_PRODUCTION            ; (production: no handler; codes < $20 are ignored below)
     cp   KEY_NEXT_ERROR
     jp   z, .next_error
     cp   KEY_PREV_ERROR
     jp   z, .prev_error
+    ENDIF
     cp   $20
     jr   c, EDITOR_LOOP            ; STUDY (D5b): was `or a / jp z` (A=0 only); every
                                    ; code < $20 that has no handler above (BREAK $10 ...)
@@ -218,6 +226,11 @@ EDITOR_LOOP:
     ld   hl, V2_REDRAW_SCOPE
     ld   (hl), b                   ; STUDY: UP/DOWN -> the redraw hook may take the cursor-only /
     ENDIF                          ; two-line path (it verifies the geometry itself)
+    IFDEF V2_PRODUCTION
+.do_nav_only:                     ; production: every hook key (UP, DOWN, delete and insert
+                                  ; line) shares this dispatch; A = its EDIR_* code
+    ld   hl, (EDITOR_NAV_HOOK)
+    ELSE
     push af                       ; save direction across the hook check
     ld   hl, (EDITOR_NAV_HOOK)
     ld   a, h
@@ -232,6 +245,7 @@ EDITOR_LOOP:
 
 .use_nav_hook:
     pop  af                           ; A = EDIR_UP/EDIR_DOWN, for the hook
+    ENDIF
     ; Z80 has no indirect CALL instruction — only indirect JP. The
     ; standard idiom: push the address we want control to return to,
     ; then JP (HL); the hook's own RET pops that pushed address and
@@ -287,6 +301,7 @@ EDITOR_LOOP:
     ld   a, EDIR_INSERT_LINE
     jr   .do_nav_only
 
+    IFNDEF V2_PRODUCTION
 .next_error:
     ld   a, EDIR_NEXT_ERROR
     jr   .do_nav_only
@@ -322,6 +337,7 @@ EDITOR_LOOP:
     jr   .hook_returned            ; identical tail to .hook_returned above
                                    ; (redraw, then back to the loop) — jump
                                    ; there instead of duplicating it
+    ENDIF
 
 ; ============================================================================
 ; EDITOR_EXIT
@@ -532,10 +548,12 @@ EDITOR_MOVE_CURSOR:
     jr   z, .left
     cp   EDIR_RIGHT
     jr   z, .right
+    IFNDEF V2_PRODUCTION            ; (production: no key produces EDIR_HOME/END)
     cp   EDIR_HOME
     jr   z, .home
     cp   EDIR_END
     jr   z, .end
+    ENDIF
     ret                              ; UP/DOWN/TOP/BOTTOM: no-op, see header
 
 .left:
@@ -565,6 +583,7 @@ EDITOR_MOVE_CURSOR:
     ld   (EDIT_BUF_OFFSET), hl
     ret
 
+    IFNDEF V2_PRODUCTION
 .home:
     ld   hl, 0
     ld   (EDIT_BUF_OFFSET), hl
@@ -607,6 +626,7 @@ EDITOR_BLOCK_DELETE:
     ; this guarantee is still an open TODO once basic/ exists, not just
     ; an implementation detail to fill in here.
     jp KTAB_MEM_LINE_DELETE_RANGE
+    ENDIF                           ; (.home, .end and EDITOR_BLOCK_DELETE: no production caller)
 
 ; ============================================================================
 ; EDITOR_REDRAW_SCREEN (internal)
@@ -627,6 +647,7 @@ EDITOR_BLOCK_DELETE:
 ; ============================================================================
 EDITOR_REDRAW_SCREEN:
     ld   hl, (EDITOR_REDRAW_HOOK)
+    IFNDEF V2_PRODUCTION            ; (production: the hook is always set)
     ld   a, h
     or   l
     jr   nz, .use_hook
@@ -647,6 +668,7 @@ EDITOR_REDRAW_SCREEN:
     jp KTAB_GFX_INVERT_ATTR
 
 .use_hook:
+    ENDIF
     jp   (hl)                     ; Home address — safe regardless of
                                   ; chunk 6's own paging state, see this
                                   ; file's own header
@@ -685,6 +707,9 @@ EDITOR_WRAP_CALC:
     ; already holds this scan's own text pointer for the rest of this
     ; routine, not HL itself.
     call EDITOR_SCAN_LEN_CORE
+; EDITOR_WRAP_CALC_LEN -- the same for a text of known length, no terminator needed (the V2 shell
+; measures a stored record in place). In: WRAP_TEXT_PTR = the text, B = its length (<= 127)
+EDITOR_WRAP_CALC_LEN:
     ld   a, b
     ld   (WRAP_REMAIN), a
 

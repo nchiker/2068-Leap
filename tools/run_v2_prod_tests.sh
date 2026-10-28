@@ -27,15 +27,16 @@ sjasmplus --sym=build/v2_package_shapes.sym rom/v2_package_shapes.asm >/dev/null
 rm -f v2_package_shapes.bin
 export V2_FILL_NO_REBUILD=1
 
-run_suite() {   # name port script
-    TS2068_DEBUG_STATE_DIR="$tmp/state-$1" TS2068_V2_PORT="$2" python3 "$3" >"$tmp/$1.log" 2>&1
+run_suite() {   # name port script [args]
+    TS2068_DEBUG_STATE_DIR="$tmp/state-$1" TS2068_V2_PORT="$2" python3 "${@:3}" >"$tmp/$1.log" 2>&1
     echo $? >"$tmp/$1.rc"
 }
-mkdir -p "$tmp/state-gate" "$tmp/state-defects" "$tmp/state-arrays" "$tmp/state-saveall"
+mkdir -p "$tmp/state-gate" "$tmp/state-defects" "$tmp/state-arrays" "$tmp/state-saveall" "$tmp/state-micsave"
 run_suite gate 10241 tools/v2_prod_regress.py &
 run_suite defects 10242 tools/v2_known_defects.py &
 run_suite arrays 10243 tools/v2_prod_arrays.py &
 run_suite saveall 10244 tools/v2_saveall_checks.py &     # RC: SAVE ... ALL round trips and refusals
+run_suite micsave 10245 tools/qual/qmicsave.py --port 10246 &   # the real tape sender, captured at MIC
 wait
 
 echo "===== production-ROM regression gate (tools/v2_prod_regress.py) ====="
@@ -49,9 +50,13 @@ cat "$tmp/defects.log"
 echo
 echo "===== SAVE ... ALL suite (tools/v2_saveall_checks.py) ====="
 cat "$tmp/saveall.log"
+echo
+echo "===== SAVE captured at the MIC line (tools/qual/qmicsave.py) ====="
+cat "$tmp/micsave.log"
 rc=0
 [ "$(cat "$tmp/gate.rc")" = 0 ] || { echo "GATE FAILED" >&2; rc=1; }
 [ "$(cat "$tmp/arrays.rc")" = 0 ] || { echo "ARRAY STORE GATE FAILED" >&2; rc=1; }
 [ "$(cat "$tmp/defects.rc")" = 0 ] || { echo "KNOWN-DEFECT SUITE: unexpected result (FAIL or XPASS)" >&2; rc=1; }
 [ "$(cat "$tmp/saveall.rc")" = 0 ] || { echo "SAVE ... ALL SUITE FAILED" >&2; rc=1; }
+[ "$(cat "$tmp/micsave.rc")" = 0 ] || { echo "MIC CAPTURE FAILED" >&2; rc=1; }
 exit $rc

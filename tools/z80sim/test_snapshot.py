@@ -22,6 +22,8 @@ class SnapshotTests(unittest.TestCase):
         sim.alt_flags.update({'S': 0, 'Z': 1, 'H': 0, 'PV': 1, 'N': 0, 'C': 1})
         sim.stack_list = [('HALT', None), ('RETIDX', 17), 0xBEEF]
         sim.tuple_regs16['HL'] = ('RETIDX', 23)
+        sim.alt_regs.update({'B': 1, 'C': 2, 'D': 3, 'E': 4, 'H': 5, 'L': 6})
+        sim.alt_tuple_regs16['BC'] = ('RETIDX', 9)
         sim.io_writes = [(0xFE, 0xAA)]
         sim.allow_rom_writes = True
         sim.mem[0x8000:0x8003] = b'abc'
@@ -37,6 +39,11 @@ class SnapshotTests(unittest.TestCase):
         self.assertEqual(restored.alt_flags, sim.alt_flags)
         self.assertEqual(restored.stack_list, sim.stack_list)
         self.assertEqual(restored.tuple_regs16, sim.tuple_regs16)
+        self.assertEqual(restored.alt_regs, sim.alt_regs)
+        self.assertEqual(restored.alt_tuple_regs16, sim.alt_tuple_regs16)
+        older = json.loads(json.dumps(captured))      # a snapshot from before BC'/DE'/HL'
+        del older['cpu']['alt_regs'], older['cpu']['alt_tuple_regs16']
+        self.assertEqual(restore_state(older)[0].alt_regs, {r: 0 for r in 'BCDEHL'})
         self.assertEqual(restored.io_writes, sim.io_writes)
         self.assertTrue(restored.allow_rom_writes)
         self.assertEqual(restored.mem[0x8000:0x8003], b'abc')

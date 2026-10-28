@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# pre-push: a commit is not pushed while the z80sim commit its vendored simulator names
+# (tools/z80sim/UPSTREAM.md, "Version used here") is missing from z80sim's own remote, so the
+# simulator's changes are always published with the project that needs them.
+# Installed by `git config core.hooksPath tools/hooks` (once per clone; see tools/z80sim/UPSTREAM.md).
+# The z80sim clone is ~/z80sim, or $Z80SIM_DIR.
+set -uo pipefail
+z80sim=${Z80SIM_DIR:-$HOME/z80sim}
+zero=0000000000000000000000000000000000000000
+fetched=
+fail=0
+while read -r local_ref local_sha remote_ref remote_sha; do
+    [ "$local_sha" = "$zero" ] && continue                      # a branch being deleted
+    rec=$(git show "$local_sha:tools/z80sim/UPSTREAM.md" 2>/dev/null |
+          sed -n 's/^| Version used here | commit `\([0-9a-f]\{40\}\)`.*/\1/p' | head -1)
+    [ -n "$rec" ] || continue                                   # no vendored simulator there
+    if [ ! -d "$z80sim/.git" ]; then
+        echo "pre-push: $local_ref uses z80sim ${rec:0:7}, and there is no z80sim clone at $z80sim" >&2
+        echo "          to check that it is published (set Z80SIM_DIR)." >&2
+        fail=1
+        continue
+    fi
+    if [ -z "$fetched" ]; then
+        git -C "$z80sim" fetch -q origin 2>/dev/null || echo "pre-push: could not fetch z80sim; checking its last known remote state" >&2
+        fetched=1
+    fi
+    if ! git -C "$z80sim" cat-file -e "$rec^{commit}" 2>/dev/null; then
+        echo "pre-push: $local_ref uses z80sim ${rec:0:7}, which $z80sim does not have." >&2
+        fail=1
+    elif [ -z "$(git -C "$z80sim" branch -r --contains "$rec" 2>/dev/null)" ]; then
+        echo "pre-push: $local_ref uses z80sim ${rec:0:7} (tools/z80sim/UPSTREAM.md), which is not on" >&2
+        echo "          z80sim's remote yet. Push it first:  git -C $z80sim push origin main" >&2
+        fail=1
+    fi
+done
+exit $fail

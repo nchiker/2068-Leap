@@ -174,7 +174,7 @@ BREAK works in tight loops, in `PAUSE` and during a `BEEP`. It does **not** work
 | `CONTINUE` | yes | none: `: GOTO label` restarts at a label |
 | `RUN` | line-by-line | whole program compiled first; mistakes reported before anything happens |
 | tapes | Sinclair tapes | V2 tapes; Sinclair and V1 tapes are refused |
-| characters | full set | nine characters have no glyph (see [Appendix C](07_appendices.md#appendix-c-the-character-set)); 21 [user-defined characters](#user-defined-characters), defined by `POKE` at 61824, printed with `CHR$(144)` to `CHR$(164)`; no `USR "a"` |
+| characters | full set | every printable character, codes 32 to 126, has a glyph (see [Appendix C](07_appendices.md#appendix-c-the-character-set)); 21 [user-defined characters](#user-defined-characters), defined by `POKE` at 61824, printed with `CHR$(144)` to `CHR$(164)`; no `USR "a"` |
 
 ---
 
@@ -196,7 +196,7 @@ PRINT 2 +
 PRINT "three"
 RUN
 ...
-SYNTAX ERROR
+SYNTAX ERROR 3
 ```
 
 **Run-time errors** happen while the program is running: dividing by zero, an array index out of range, a number too big, a bad argument. The program stops, the screen shows the message on the status line, and the program's variables are kept.
@@ -210,19 +210,19 @@ PRINT "after"
 before
 ```
 
-The screen shows only the **message** (`RUNTIME ERROR`), not a number. The numbers used inside the system are listed in [Appendix B](07_appendices.md#appendix-b-error-codes) for the curious.
+The screen shows the **message**; `SYNTAX ERROR` and `RUNTIME ERROR` add their number (`RUNTIME ERROR 5` for a division by zero), because many different mistakes share each of those messages. (Before v2.1 `RUNTIME ERROR` showed no number.) The numbers are listed in [Appendix B](07_appendices.md#appendix-b-error-codes) for the curious.
 
 The messages you can meet are in [Appendix A](07_appendices.md#appendix-a-messages). The commonest:
 
 | Message | Usual cause |
 |---|---|
-| `SYNTAX ERROR` | a statement is not written correctly, or uses a name that does not exist (a package statement without its package) |
+| `SYNTAX ERROR n` | a statement is not written correctly, or uses a name that does not exist (a package statement without its package); `n` is the error code |
 | `UNEXPECTED TOKEN` | something that cannot go there: a stray `ENDIF`, a missing `:`, an unterminated string |
 | `NAME TOO LONG` | a name of more than 31 characters |
 | `NESTING TOO DEEP` | too many brackets, `IF`s or loops inside each other |
 | `TOO MANY VARIABLES` | more than 251 numeric, 251 string or 255 array names |
 | `OUT OF MEMORY` | the program, its variables and arrays do not fit |
-| `RUNTIME ERROR` | division by zero, index out of range, bad argument, number too big ... |
+| `RUNTIME ERROR n` | division by zero, index out of range, bad argument, number too big ...; `n` is the error code |
 | `STACK OVERFLOW` | expressions or procedure calls nested too deeply |
 | `BREAK` | you pressed CAPS SHIFT + SPACE |
 
@@ -319,7 +319,7 @@ When you type `RUN` (or an immediate statement after a colon), V2 **compiles** t
 
 So a line's cost has two parts, which you must not confuse: **the text** (length + 3, in the pool, always) and **the code** (a few bytes in the code area, only while compiled). The code is usually *smaller* than the text. Here is a small program and what the compiler makes of it:
 
-```basic ex=mem.compile.1 code=31 source=73
+```basic ex=mem.compile.1 code=27 source=73
 total = 0
 FOR i = 1 TO 10
 total = total + i
@@ -334,14 +334,14 @@ PRINT total
 |---|---|---|
 | `total = 0` (12) | push 0, store in variable 0 | 4 |
 | `FOR i = 1 TO 10` (18) | push 1 (start), push 10 (limit), push 1 (step), start the loop on variable 1 | 10 |
-| `total = total + i` (20) | load `total`, load `i`, add, store `total` | 7 |
+| `total = total + i` (20) | add variable 1 to variable 0 in place (one instruction) | 3 |
 | `NEXT i` (9) | next of variable 1: add the step, go round again | 4 |
 | (after the loop) | drop the loop's frame | 1 |
 | `PRINT total` (14) | load `total`, print the number, new line | 4 |
 | (end of program) | halt | 1 |
-| **Total** | **73 bytes of text** | **31 bytes of code** |
+| **Total** | **73 bytes of text** | **27 bytes of code** |
 
-Typical figures: a small assignment such as `x = 1` is 4 bytes of code; `x = 1.5` is 7 (a fractional number takes five bytes); `x = 40000` is 8; `PRINT "hello"` is 9 (the five letters are in the code); a label or a `REM` takes none; `PROC` 8 and `DEF FN` 10. The code area holds 4011 bytes, which is about a thousand lines of `x = 1`: that is the **second limit** on program size (the program stops compiling with `OUT OF MEMORY` when the code does not fit). The first limit, usually reached sooner, is the pool.
+Typical figures: a small assignment such as `x = 1` is 4 bytes of code; `x = x + 1`, `x = x - 1` and `x = x + y` are 3 (one instruction adds in place); `x = 1.5` is 7 (a fractional number takes five bytes); `x = 40000` is 8; `PRINT "hello"` is 9 (the five letters are in the code); a label or a `REM` takes none; `PROC` 8 and `DEF FN` 10. The code area holds 4011 bytes, which is about a thousand lines of `x = 1`: that is the **second limit** on program size (the program stops compiling with `OUT OF MEMORY` when the code does not fit). The first limit, usually reached sooner, is the pool.
 
 ### The main memory pool
 
@@ -790,24 +790,24 @@ The TS2068's **loudspeaker** -- the beeper of the Spectrum -- is not used by the
 
 ## Speed
 
-V2 compiles the program before it runs it, so it is much faster than an interpreter that reads the text again every time. Here is what things cost on the release, measured in the emulator by `tools/qual/manual_measure.py` (T-states of the Z80, which runs at about 3.5 MHz, so a million T-states is about 0.29 seconds). Each figure is what one extra statement adds to a loop; the loop's own `FOR`/`NEXT` pass costs 1107 T-states, about 3000 passes a second.
+V2 compiles the program before it runs it, so it is much faster than an interpreter that reads the text again every time. Here is what things cost on the release, measured in the emulator by `tools/qual/manual_measure.py` (T-states of the Z80, which runs at about 3.5 MHz, so a million T-states is about 0.29 seconds). Each figure is what one extra statement adds to a loop; the loop's own `FOR`/`NEXT` pass costs 827 T-states, about 4200 passes a second.
 
 | Statement in the loop | Adds (T-states) | About, per second |
 |---|---|---|
-| `a = i` | 1 240 | 2 800 |
-| `a = i * 2 + 1` (whole numbers) | 4 600 | 760 |
-| `a = a * 1.0001` (floating point) | 55 200 | 63 |
-| `t(3) = i : x = t(3)` (array store and load) | 4 500 | 780 |
-| `a$ = LEFT$(a$ + "x", 20)` | 9 300 | 380 |
-| `PLOT 100, 100` | 2 800 | 1 250 |
-| `CALL p(1)` (an empty procedure) | 3 800 | 920 |
-| `AT 5, 0 : PRINT 7;` | 5 800 | 600 |
-| `PRINT 7` when the screen **scrolls** | 250 000 | 14 |
+| `a = i` | 1 040 | 3 400 |
+| `a = i * 2 + 1` (whole numbers) | 3 700 | 950 |
+| `a = a * 1.0001` (floating point) | 11 500 | 300 |
+| `t(3) = i : x = t(3)` (array store and load) | 3 700 | 930 |
+| `a$ = LEFT$(a$ + "x", 20)` | 8 400 | 420 |
+| `PLOT 100, 100` | 2 500 | 1 400 |
+| `CALL p(1)` (an empty procedure) | 3 500 | 990 |
+| `AT 5, 0 : PRINT 7;` | 5 000 | 700 |
+| `PRINT 7` when the screen **scrolls** | 146 000 | 24 |
 
 Things to take from the table:
 
-* **Whole-number arithmetic is much faster than floating point** -- about twelve times here. Use whole numbers for counters, indices and scaled values (work in hundredths instead of fractions of a unit).
-* **Scrolling is expensive**: moving the whole screen up one line costs about 245 000 T-states, 70 milliseconds. A program that prints line after line to a full screen is limited to about 14 lines a second; one that prints at fixed positions with `AT` is not.
+* **Whole-number arithmetic is much faster than floating point** -- about three times here. Use whole numbers for counters, indices and scaled values (work in hundredths instead of fractions of a unit).
+* **Scrolling is expensive**: moving the whole screen up one line costs about 141 000 T-states, 40 milliseconds. A program that prints line after line to a full screen is limited to about 24 lines a second; one that prints at fixed positions with `AT` is not.
 * `PAUSE n` and `BEEP` count display frames (69 888 T-states each in the emulator, 1/60 second on a TS2068): `PAUSE 100` took 6 985 733 T-states, `BEEP 1, 0` 60 frames.
 * Compilation itself takes a moment for a long program; `RUN` then starts.
 
@@ -963,7 +963,22 @@ The program is a list of lines. You type a line and press ENTER to store it. Key
 
 Moving up or down puts the cursor at the **start** of the line it arrives on. You cannot move below the empty line after the last program line -- the **last line** -- and you cannot go above line 1.
 
-The commands `RUN`, `LIST`, `NEW`, `SAVE`, `LOAD`, `VERIFY`, and the immediate statements (`: statement`) are typed on that empty last line. Typed on any other line they would simply be stored as program lines.
+A long line wraps onto the next screen rows, at a space where it can. The line the cursor is on is always shown whole, so when it would run into the status line, the lines above it move up. When its last row is full -- 32 characters -- the line gets one more, empty, row while you edit it: the cursor after its last character is shown there.
+
+The commands `RUN`, `LIST`, `NEW`, `SAVE`, `LOAD`, `VERIFY`, and the immediate statements (`: statement`) are usually typed on that empty last line, but ENTER carries out a command on any line: typed over a program line, the command runs and the line keeps its text. Here the text of line 1 is deleted and `RUN` typed in its place; after the run (a key returns to the editor) line 1 still reads `x = 5`:
+
+```keys ex=con.edit.5
+x = 5
+PRINT x * 2
+{UP}{UP}{RIGHT}{RIGHT}{RIGHT}{RIGHT}{RIGHT}{DEL}{DEL}{DEL}{DEL}{DEL}RUN
+{ANY}\
+```
+```screen ex=con.edit.5
+x = 5
+PRINT x * 2
+...
+LINE 1/2
+```
 
 Here three lines are typed. Pressing up moves to the previous line, and a letter is inserted there; the status line shows where the cursor is:
 
@@ -1023,7 +1038,7 @@ PRINT 2 +
 PRINT 3
 RUN
 ...
-SYNTAX ERROR
+SYNTAX ERROR 3
 ```
 
 Any change to the program -- storing a line, deleting a line, `LOAD`, `NEW` -- **ends the variable session** (see [Sessions](#sessions)).

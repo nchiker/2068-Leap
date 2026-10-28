@@ -39,7 +39,7 @@ The rules:
 * **One package at a time.** A package occupies a 1 KB window of memory. Loading another package **replaces** the first: its statements stop working.
 * **`NEW` unloads the package** (and so does switching the machine off).
 * Loading a package ends the current variable session (see [Sessions](04_concepts.md#sessions)).
-* A statement of a package that is **not loaded** is a compile error: `RUN` shows `SYNTAX ERROR`, the cursor goes to the line when you press a key, and nothing runs. (`LPRINT` without its package is the same.)
+* A statement of a package that is **not loaded** is a compile error: `RUN` shows `SYNTAX ERROR 2`, the cursor goes to the line when you press a key, and nothing runs. (`LPRINT` without its package is the same.)
 * `SAVE "name" EXT` writes the package currently loaded back to tape; with none loaded it shows `NO PACKAGE`.
 * A `SAVE ... ALL` tape remembers which package was loaded when it was written. Load the same package, **before** loading the ALL tape, or the variables will not come back (`NO VARIABLES`). See [Tapes](04_concepts.md#tapes).
 
@@ -59,10 +59,10 @@ RUN
 block
 ...
 store: CIRCLE 128, 96, 40
-RUN                                    [SYNTAX ERROR]
+RUN                                    [SYNTAX ERROR 2]
 ```
 
-(The last `RUN` fails to compile: `CIRCLE` belongs to the shapes package, which the graphics package replaced. The status line then shows `SYNTAX ERROR`.)
+(The last `RUN` fails to compile: `CIRCLE` belongs to the shapes package, which the graphics package replaced. The status line then shows `SYNTAX ERROR 2`.)
 
 ```basic ex=pkg.new.1
 x = 1
@@ -82,7 +82,7 @@ All package statements take **numbers**; `LPRINT` also takes a string. The argum
 
 ## Errors
 
-A package statement that is given a bad argument stops the program with `RUNTIME ERROR`. The internal code differs by package:
+A package statement that is given a bad argument stops the program with `RUNTIME ERROR n`, where `n` is the error code, which differs by package:
 
 | Package | Code | Cause |
 |---|---|---|
