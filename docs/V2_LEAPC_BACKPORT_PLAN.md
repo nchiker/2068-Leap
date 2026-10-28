@@ -66,6 +66,7 @@ Further rules:
 | 6.3 package errors           | **377** | **111** | [M], integrated (F35): HOME 0 (service 18 is a `jp VM_ERR_COMMON` in the reserved slot area, 3 B, not counted); EXROM −2 (`RUNTIME ERROR n`: `V2_RUNTIME_MSG` jumps into `V2_COMPILE_MSG`'s code tail, now `V2_MSG_CODE`, 1; the message's trailing space 1); RAM 0 |
 | 6.4 the reserved slots trap  | **377** | **111** | [M], prototype (`proto/6.4-slot-trap`): HOME 0 (11 `jp VM_ERR_EXTENSION_NOT_FOUND` in the reserved slot area, not counted); EXROM 0; RAM 0 |
 | 6.5 package stack budget     | **377** | **111** | [M], prototype (`proto/6.5-stack-budget`): no ROM; measured 32 B a call, 50 B with an interrupt; allowance 512 → 128 B |
+| 6.6 package names            | **377** | **111** | [M], prototype (`proto/6.6-keyword-names`): no ROM; documented, `make_extension_tzx.py` warns |
 | phase 5 (speed)              | ≥ 64    | ≥ 32    | Class B: each item sized and weighed before it is started; 5.0 first if the room is not there                 |
 
 Every [E] is replaced by `make budget`'s figure as each item lands.
@@ -1238,6 +1239,40 @@ Then phase 6's rest (6.2-6.6) and the manual's speed figures (`tools/qual/manual
   the `$F800-$FEFF` stack area. That decision stays with phase 7.
 - **Bytes:** HOME 377 (0); EXROM 111 (0); RAM 0.
 - **Checks.** `make check` OK; `tools/qual/qpkgstack.py` as above (two canaries, 14 programs).
+
+### Item 6.6 outcome (prototype, 2026-10-27; `proto/6.6-keyword-names` off `proto/6.5-stack-budget` `7d2f410`; all [M])
+
+- **What:** no ROM change. Documents what happens when a package name equals a keyword
+  (`docs/PACKAGE_ABI.md` §2 "Names", §8, §9); the host tool warns (Leap-C's `lib2tape.py` does the same
+  kind of check for its libraries).
+- **Found** (a no-op statement registered with `EXT2_REGISTER` under each name, then a program run):
+  - `EXT2_REGISTER` accepts any name; it never refuses one for clashing with the language. Names are
+    matched without regard to case (a statement `ZZ` is called by `zz 1` too).
+  - A keyword always wins: the lexer classifies a whole identifier against `KEYWORD_TABLE` first
+    (`LEX_CLASSIFY_KEYWORD`, whole word, case folded); only identifiers reach the registry. A statement
+    `PRINT` is never reached (`PRINT 5` prints 5); `AND` or `TO` makes the line a compile error (64,
+    UNEXPECTED TOKEN).
+  - A built-in function wins over a package function of the same name (a package `LEN` is never
+    called: `LEN("abc")` is 3; `tools/qual/qpkgfn.py` has the same for a package `ABS`).
+  - A name that only contains a keyword is fine: a statement `STEPS` works.
+  - The shell's whole-line commands (`RUN LIST NEW SAVE LOAD VERIFY EXT ARRAY ALL`) are not compiler
+    keywords: in a program a package `RUN` or `LIST` is called normally, but a line that is just `RUN`,
+    `LIST` or `NEW`, typed in the editor, is the shell's command (`V2_DISPATCH` matches the whole line first; ED3:
+    a command runs on any line), so the statement can be entered only with arguments or beside other text.
+  - `LPRINT`, `LPRINT$` and `LLIST` look the registry up by name in `COMPILE_LPRINT`: a package that
+    registers them takes those keywords over from PRINTER (a statement `LPRINT` registered by another
+    package ran instead of PRINTER's).
+- **The tool:** `tools/make_extension_tzx.py` (`3c5fd8d`), with `--v2`, warns on stderr for each name a
+  package registers that the language already uses (`warn_names`); it never fails the build. The names
+  are the export table's for a package that starts `ld hl,table / jp EXT2_EXPORTS` (ABI 2.1), otherwise
+  every NUL-terminated name-like string in the image (a warning may then be a string that is not a
+  name). The reserved words are read from `KEYWORD_TABLE`, `BUILTIN_FN_TABLE` and the shell's `V2_KW_*`,
+  so the list follows the ROM. The warning points to `docs/PACKAGE_ABI.md` §2 "Names".
+- **Result on the packages:** none on the six shipped packages (PRINTER's own `LPRINT`/`LPRINT$`/`LLIST`
+  are expected and not reported); one on the test package `fntest`: its deliberate `ABS` ("a built-in
+  function: the built-in wins").
+- **Bytes:** HOME 377 (0); EXROM 111 (0); RAM 0.
+- **Checks.** `make check` OK; the tool on the eight package images as above.
 
 ## Phase 7: decision gate for a V3 (major: ABI 3.0, new RAM map)
 

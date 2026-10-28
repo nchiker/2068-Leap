@@ -127,6 +127,28 @@ a statement are as without the form. The float form's arguments are all numbers 
 0-4, the package's for the whole call: copies (writing one changes no variable), kept by `FP_OP`,
 undefined after the call.
 
+**Names** (item 6.6). `EXT2_REGISTER` accepts any name; it never refuses one for clashing with the
+language, and names are matched without regard to case (a statement `ZZ` is called by `zz 1` too) [M]. A
+name the language already uses is registered but not always reached [M]:
+
+* *A keyword wins.* The lexer classifies a whole identifier against the compiler's `KEYWORD_TABLE`
+  first (`LEX_CLASSIFY_KEYWORD`: whole-word match, case folded); only identifiers are looked up in the
+  registry. A statement `PRINT` is never reached (`PRINT 5` prints 5); one named `AND` or `TO` makes the
+  line a compile error (64, UNEXPECTED TOKEN).
+* *A built-in function wins* over a package function of the same name: a package `LEN` is never called
+  (`LEN("abc")` is 3), likewise a package `ABS` (the "built-in wins" case of `tools/qual/qpkgfn.py`).
+* *A name that only contains a keyword is fine:* a statement `STEPS` works.
+* *Shell commands* (`RUN LIST NEW SAVE LOAD VERIFY EXT ARRAY ALL`) are not compiler keywords: inside a
+  program a package statement `RUN` or `LIST` is called normally, but a line that is just `RUN`, `LIST`
+  or `NEW`, typed in the editor, is taken by the shell as its command (`V2_DISPATCH` matches the whole line first;
+  a command runs on any line). Such a statement can be entered only with arguments or beside other text.
+* *`LPRINT`, `LPRINT$` and `LLIST`* are keywords whose compiler code (`COMPILE_LPRINT`) looks the registry
+  up by name (`LPRINT$` for a string argument): a package that registers those names takes the keywords
+  over from PRINTER (a statement `LPRINT` registered by another package ran instead of PRINTER's).
+
+`tools/make_extension_tzx.py --v2` warns on stderr for each such name (§8), and never fails the build.
+Choose a name that is not a keyword, a built-in function or a shell command.
+
 **Execute** — `OP_CALL_EXT` pops the arguments into `EXT_CALL_ARG0…4`, **pages EXROM out**
 (`BANK_PAGE_EXROM_OUT`), then `call`s the registered entry; on return it pages EXROM back in.
 Contract for an execute routine:
@@ -416,6 +438,7 @@ treating `$E000-$E7FF` as off limits, as in §5.5. `NEW` clears it; `RUN`, `CLEA
 | `tools/check_package_abi.py` (in `make check`) | table bytes ≠ ABI file; a reserved slot that is not exactly `jp VM_ERR_EXTENSION_NOT_FOUND` (6.4); pin overlaps; HOME/EXROM touching the package scratch block; EXROM edges from any service; the wrapper's exact bytes; a package that does not assemble against the ABI file alone; any package call/jump into HOME that is not a slot; any package memory reference outside pinned cells and hardware ranges; literal addresses in package sources; an error code a shipped package raises that §2 does not allow, or one not given as `ld a,n` right before the raise (6.3) |
 | `tools/v2_prod_regress.py` `abi-*` | the shipped ROM's table; slot 14 with EXROM out; end-to-end package tape load + run; rejection of 6 package and 6 program header words with no side effects; SAVE stamps; SAVE→LOAD round trips |
 | `tools/qual/qpkgstack.py` (a probe; **not** in `make check`) | the machine stack each package's execute routine and install use, canary-measured, and the interrupt's own depth: backs the §2 stack allowance |
+| `tools/make_extension_tzx.py --v2` (in `make v2-packages`; a **warning** on stderr, not a failure) | a registered name the language already uses: a keyword, a built-in function, a shell command, or `LPRINT`/`LPRINT$`/`LLIST` (§2 "Names", 6.6). The names are the export table's (a package that starts `ld hl,table / jp EXT2_EXPORTS`), otherwise every NUL-terminated name-like string in the image (a warning may then be a string that is not a name); the reserved words are read from `KEYWORD_TABLE`, `BUILTIN_FN_TABLE` and the shell's `V2_KW_*`, so the list follows the ROM. None on the six shipped packages (PRINTER's own `LPRINT`/`LPRINT$`/`LLIST` are expected, not reported); one on the test package `fntest`, its deliberate `ABS` |
 
 Negative controls were run when the checker was written (an unpinned `ld a,($8200)` and a raw
 `call $0FBA` in a package are both reported; moving a pinned cell fails the HOME build).
@@ -430,7 +453,9 @@ Negative controls were run when the checker was written (an unpinned `ld a,($820
 5. Never call EXROM code. Never assume chunk 6 contents between statements.
 6. Add the package to `PACKAGES` in `tools/check_package_abi.py`, to `make v2-packages`, and add a
    production test next to `pkg-*` in `tools/v2_prod_regress.py`.
-7. Build with `make v2-packages` (stamps the ABI word) and run `make check test`.
+7. Choose names that are not a keyword, a built-in function or a shell command (§2 "Names"); a clash
+   is a warning from `make v2-packages`, not a failure.
+8. Build with `make v2-packages` (stamps the ABI word) and run `make check test`.
 
 ## 10. Inventory (what each shipped package uses)
 
