@@ -48,7 +48,7 @@ V2 is not a compatibility clone of Sinclair BASIC: the differences are listed in
 
 ## Try it
 
-**In your browser, no install: [nchiker.github.io/TSRun/?rom=leap](https://nchiker.github.io/TSRun/?rom=leap)** runs the older `v2.0.1-emu.1` ROMs, **not v2.1** (it lacks the speed-ups, package functions and other changes of v2.1.0-emu.1, and the M-4 fix and larger memory pool of v2.0.2-emu.1) in the [TSRun](https://github.com/josef-jelinek/TSRun) browser emulator (our fork: [nchiker/TSRun](https://github.com/nchiker/TSRun)). Startup, typing, running programs and AY sound were checked there on 2026-10-12; click the page once so the browser allows sound. *Known limitation:* the package tapes do not load in TSRun yet (`LOAD FAILED`, a TSRun tape-detection issue; reported with a tested fix as [TSRun issue #3](https://github.com/josef-jelinek/TSRun/issues/3)), so the package examples need a desktop emulator for now.
+**In your browser, no install: [nchiker.github.io/TSRun/?rom=leap](https://nchiker.github.io/TSRun/?rom=leap)** runs the **v2.1.0-emu.1** ROMs (since 2026-10-28) in the [TSRun](https://github.com/josef-jelinek/TSRun) browser emulator (our fork: [nchiker/TSRun](https://github.com/nchiker/TSRun)). Eight test programs (every character, floats and `SIN`/`COS`/`TAN`, loops, strings, arrays and `PROC`, scrolling, an error) give screens byte-identical to ZEsarUX's, and a package tape (`SHAPES`) loads with `LOAD "SHAPES" EXT` once the tape is played; click the page once so the browser allows sound.
 
 The machine starts in the editor. Type each line and press ENTER after it, then type `RUN` on the empty line that follows:
 
@@ -101,7 +101,7 @@ The **2068-Leap V2 User Manual and Language Reference** has seven parts — intr
 
 The Word files open in Word or LibreOffice; to fill in the Contents page, update the table of contents (in LibreOffice: Tools → Update → Update All). The compact [**language reference**](docs/V2_LANGUAGE_REFERENCE.md) is the same language without the teaching.
 
-**Which edition?** The manual in this branch describes release v2.1.0-emu.1 (pool 9211 bytes, `FREE()` = 8967 on an empty machine, as in v2.0.2-emu.1; the v2.0.1-emu.1 ROM — also the one in the browser demo — has 8397 and 8153, and none of v2.1's changes). It is maintained with the development branch; the manual exactly as released is inside the release archive (`docs/manual/`, the `.docx` and the `.doc`). The Word editions are generated from the Markdown with `make manual-v2` (the `.doc` by LibreOffice, checked against the `.docx`).
+**Which edition?** The manual in this branch describes release v2.1.0-emu.1 (pool 9211 bytes, `FREE()` = 8967 on an empty machine, as in v2.0.2-emu.1; the v2.0.1-emu.1 ROM has 8397 and 8153, and none of v2.1's changes; the browser demo runs v2.1.0-emu.1). It is maintained with the development branch; the manual exactly as released is inside the release archive (`docs/manual/`, the `.docx` and the `.doc`). The Word editions are generated from the Markdown with `make manual-v2` (the `.doc` by LibreOffice, checked against the `.docx`).
 
 ## Running it in an emulator
 
