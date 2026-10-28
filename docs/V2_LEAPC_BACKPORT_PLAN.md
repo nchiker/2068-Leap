@@ -64,10 +64,10 @@ Further rules:
 | 5.14 the glyph lookup        | **500** | **113** | [M], integrated (F32; owner request, 2026-10-27): HOME +38 free (`LOW_CHAR_TABLE` 33 B replaces the 46-byte pair table; the lookup's code 25 B shorter); EXROM 0; RAM 0 |
 | 6.2 floats for packages      | **377** | **113** | [M], integrated (F33, fast-forward to `aa0fcb7`): HOME −123 free (`FP_OP` 83, service 17; `OP_CALL_EXT`'s float form 34: the arguments into calculator slots 0-4, a float value stored as a FLOAT temp; `EXT2_REGISTER` refusing the float form with a string argument 6); EXROM 0; slot 17 takes 3 B of the reserved slot area (not counted); RAM 0 |
 | 6.3 package errors           | **377** | **111** | [M], integrated (F35): HOME 0 (service 18 is a `jp VM_ERR_COMMON` in the reserved slot area, 3 B, not counted); EXROM −2 (`RUNTIME ERROR n`: `V2_RUNTIME_MSG` jumps into `V2_COMPILE_MSG`'s code tail, now `V2_MSG_CODE`, 1; the message's trailing space 1); RAM 0 |
-| 6.4 the reserved slots trap  | **377** | **111** | [M], prototype (`proto/6.4-slot-trap`): HOME 0 (11 `jp VM_ERR_EXTENSION_NOT_FOUND` in the reserved slot area, not counted); EXROM 0; RAM 0 |
-| 6.5 package stack budget     | **377** | **111** | [M], prototype (`proto/6.5-stack-budget`): no ROM; measured 32 B a call, 50 B with an interrupt; allowance 512 → 128 B |
-| 6.6 package names            | **377** | **111** | [M], prototype (`proto/6.6-keyword-names`): no ROM; documented, `make_extension_tzx.py` warns |
-| tape stamp (6.1's open item) | **377** | **111** | [M], prototype (`proto/tape-abi-minor`): no ROM; the shipped package tapes $8201 → $8200, they load on v2.0.2 again |
+| 6.4 the reserved slots trap  | **377** | **111** | [M], integrated (F36): HOME 0 (11 `jp VM_ERR_EXTENSION_NOT_FOUND` in the reserved slot area, not counted); EXROM 0; RAM 0 |
+| 6.5 package stack budget     | **377** | **111** | [M], integrated (F36): no ROM; measured 32 B a call, 50 B with an interrupt; allowance 512 → 128 B |
+| 6.6 package names            | **377** | **111** | [M], integrated (F36): no ROM; documented, `make_extension_tzx.py` warns |
+| tape stamp (6.1's open item) | **377** | **111** | [M], integrated (F36): no ROM; the shipped package tapes $8201 → $8200, they load on v2.0.2 again |
 | phase 5 (speed)              | ≥ 64    | ≥ 32    | Class B: each item sized and weighed before it is started; 5.0 first if the room is not there                 |
 
 Every [E] is replaced by `make budget`'s figure as each item lands.
@@ -1547,6 +1547,7 @@ All decided by the owner on 2026-10-25.
 | F33 | 6.2 floats for packages                 | Integrated on a passing `make test` (fast-forward to `aa0fcb7`, 2026-10-27): HOME 123, EXROM 0; next: 6.3 |
 | F34 | 6.3/6.4 the error design                 | Package codes 12-31 (no renumbering); a package may also raise 5, 15, 67; error service slot 18; the code shown for runtime errors without a message (≤ ~15 B EXROM); reserved slots trap to error 9 |
 | F35 | 6.3 package errors                      | Integrated on a passing `make test` (fast-forward, 2026-10-27): HOME 0, EXROM 2; next: 6.4, 6.5, 6.6 and the tape stamp, each prototyped and tested in turn |
+| F36 | 6.4, 6.5, 6.6, the tape stamp          | Integrated together on passing tests (fast-forward to `cd12c9a`, 2026-10-27): HOME 0, EXROM 0; phase 6 finished; next: the manual's speed figures and the v2.1 release decisions (`docs/V2_LEAPC_HANDOFF.md`) |
 
 ## Also worth doing
 
