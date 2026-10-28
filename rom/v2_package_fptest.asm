@@ -1,5 +1,5 @@
 ; ============================================================================
-; rom/v2_package_fptest.asm -- 6.2/6.3: a test package for the float form, FP_OP and VM_RAISE_ERROR.
+; rom/v2_package_fptest.asm -- 6.2-6.4: a test package for the float form, FP_OP, VM_RAISE_ERROR and the slot traps.
 ;
 ; The float form (EXT_SIG_FLOAT, signature bit 5): the numeric arguments arrive as the addresses
 ; of 5-byte floats (an INT converted), and a numeric function's value is a float (EXT_CALL_RESULT
@@ -19,6 +19,8 @@
 ;                        float form alone (n = 1, as ZZ): 1 if refused, 0 if registered
 ;   RAISE(n)             runtime error n through VM_RAISE_ERROR (service 18, 6.3), which does not
 ;                        return (error 99 if it did)
+;   TRAP(n)              calls the first reserved slot (n = 0) or the last (n = 1): runtime error 9
+;                        (6.4; 99 if the slot returned)
 ; ============================================================================
     INCLUDE "include/hardware.inc"
     INCLUDE "include/v2_package_abi.inc"
@@ -60,6 +62,9 @@ FQ_EXPORTS:
     DB 1, EXT_KIND_FN
     DB "RAISE",0
     DW FQ_RAISE
+    DB 1, EXT_KIND_FN
+    DB "TRAP",0
+    DW FQ_TRAP
     DB 1, EXT_KIND_FN
     DB 0
 
@@ -180,9 +185,20 @@ FQ_TRYREG:
 FQ_INT:
     jp FQ_RESULT
 
+FQ_TRAP:
+    ld a,(EXT_CALL_ARG0)
+    or a
+    jr nz,.last
+    call PKG_SVC_ENTRIES + 3*PKG_SVC_COUNT
+    jr FQ_RETURNED
+.last:
+    call PKG_SVC_CODE - 3
+    jr FQ_RETURNED
+
 FQ_RAISE:
     ld a,(EXT_CALL_ARG0)
     call VM_RAISE_ERROR
+FQ_RETURNED:
     ld a,99
     ld (VM_ERROR_CODE),a
     ld a,1

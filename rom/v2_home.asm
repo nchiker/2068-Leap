@@ -27,8 +27,8 @@ V2_RST_38:
     DS V2_KTAB_MAGIC_ADDR - $, $FF
     DB V2_KTAB_MAGIC
 ; R10.9 Phase 1: versioned package service table (docs/PACKAGE_ABI.md), in what used
-; to be unused $FF padding -- zero HOME-budget cost.  Header, 16 `jp` slots, room for 14
-; more slots (append-only), then the one slot that needs a few bytes of code of its own.
+; to be unused $FF padding -- zero HOME-budget cost.  Header, the `jp` slots, the reserved slots
+; (append-only; each a trap, 6.4), then the one slot that needs a few bytes of code of its own.
     ASSERT $ == PKG_SVC_HEADER
     DB PKG_SVC_MAGIC, PKG_ABI_MAJOR, PKG_ABI_MINOR, PKG_SVC_COUNT
     ASSERT $ == PKG_SVC_ENTRIES
@@ -36,7 +36,12 @@ V2_RST_38:
     ASSERT PKG_SVC_INDEX == PKG_SVC_COUNT
     ASSERT $ == PKG_SVC_ENTRIES + 3*PKG_SVC_COUNT
     ASSERT $ <= PKG_SVC_MAX_END
-    DS PKG_SVC_CODE - $, $FF
+; 6.4: each reserved slot traps: a package calling a service this ROM does not have stops with
+; runtime error 9 (as a package name that is gone does), instead of running the $FF padding.
+    ASSERT (PKG_SVC_CODE - $) % 3 == 0
+    DUP (PKG_SVC_CODE - $) / 3
+    jp VM_ERR_EXTENSION_NOT_FOUND
+    EDUP
     ASSERT $ == PKG_SVC_CODE
 ; VM_NUM_TO_TEXT ends in a jump to EXROM code (BASIC_NUM_TO_STRING_EXROM, $C09C), but a
 ; package runs with chunk 6 paged to RAM (OP_CALL_EXT), so calling it directly executes

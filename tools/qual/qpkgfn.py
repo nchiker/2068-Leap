@@ -13,7 +13,8 @@ conversion, error 67 from an operation, a float statement and string function, a
 refusing the float form with a string argument. 6.3: VM_RAISE_ERROR (service 18) through fptest's
 RAISE (RAISES below): it stops the program at once with the code (from a function, nested in
 another's arguments, in a statement's, in a loop), the message shows the code ("RUNTIME ERROR n";
-the VM's own messages unchanged), and the EXROM is paged in at depth 1 afterwards. Then the shipped
+the VM's own messages unchanged), and the EXROM is paged in at depth 1 afterwards. 6.4: a call to
+the first or the last reserved service slot (fptest's TRAP) stops with error 9. Then the shipped
 ABI 2.0 packages (statements only) are installed and one statement of each is run.
 
 Usage: python3 tools/qual/qpkgfn.py [--tree DIR] [--port N]
@@ -106,6 +107,9 @@ RAISES = [
      ["1", "2", "3"], 23, "RUNTIME ERROR 23"),
     ("raise: FP_OP's 67 shows its code", ["PRINT FDIV(1, 0)"], [], 67, "RUNTIME ERROR 67"),
     ("message: a VM error shows its code", ["PRINT 1 / 0"], [], 5, "RUNTIME ERROR 5"),
+    # 6.4: a reserved slot traps (fptest's TRAP)
+    ("trap: the first reserved slot", ["PRINT 1", "PRINT TRAP(0)", "PRINT 2"], ["1"], 9, "RUNTIME ERROR 9"),
+    ("trap: the last reserved slot", ["PRINT TRAP(1)"], [], 9, "RUNTIME ERROR 9"),
     ("message: the VM's own messages stay", ["CALL r(1)", "END", "PROC r(n):", "CALL r(n + 1)", "ENDP"], [], 6,
      "STACK"),
 ]

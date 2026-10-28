@@ -5,7 +5,8 @@ Fails when the HOME image, the five package images and include/v2_package_abi.in
 stop agreeing.  It is the automated half of docs/PACKAGE_ABI.md:
 
  1. the service table in the built HOME image matches the ABI file (header bytes, slot
-    count, every slot is `jp <the named HOME routine>`), and fits the KTAB padding;
+    count, every slot is `jp <the named HOME routine>`), and fits the KTAB padding; every
+    reserved slot is `jp VM_ERR_EXTENSION_NOT_FOUND` (6.4);
  2. every pinned RAM cell / constant is where the ABI file says (the HOME build ASSERTs
     this too; this re-checks the shipped symbols);
  3. no pinned ranges overlap each other or the package scratch block, and nothing in
@@ -52,6 +53,8 @@ FP_TRAMPOLINE = "VM_CALL_USR_TRAMPOLINE"
 FP_STUBS = ("VM_CALC_ADD_STUB", "VM_CALC_SUB_STUB", "VM_CALC_MUL_STUB", "VM_CALC_DIV_STUB")
 FP_EXROM_CALL = "CALC_FP_TO_INT"
 RAISE_SERVICE = "VM_RAISE_ERROR"
+# 6.4: where each reserved slot jumps.
+TRAP = "VM_ERR_EXTENSION_NOT_FOUND"
 # Hardware / always-visible ranges a package may touch without a pin.
 HW_RANGES = [(0x4000, 0x5B00, "screen + attributes"), (0x6000, 0x7B00, "second display file")]
 
@@ -273,9 +276,12 @@ def main():
             fail("slot %d: HOME routine %s not in build/test_basic.sym" % (i, homename))
         elif got != bytes([0xC3, want & 0xFF, want >> 8]):
             fail("slot %d (%s): bytes %s != jp %s ($%04X)" % (i, pkg, got.hex(), homename, want))
-    pad = home[end:abi.code]
-    if any(x != 0xFF for x in pad):
-        fail("reserved slot area $%04X-$%04X is not blank ($FF)" % (end, abi.code))
+    # 6.4: every reserved slot traps (jp VM_ERR_EXTENSION_NOT_FOUND, runtime error 9)
+    trap = hsym.get(TRAP)
+    if trap is None:
+        fail("%s not in build/test_basic.sym" % TRAP)
+    elif (abi.code - end) % 3 or home[end:abi.code] != bytes([0xC3, trap & 0xFF, trap >> 8]) * ((abi.code - end) // 3):
+        fail("reserved slot area $%04X-$%04X is not one `jp %s` per slot" % (end, abi.code, TRAP))
     if any(x != 0xFF for x in home[abi.code + 14:0x100]):
         fail("bytes after the slot code up to $0100 are not blank ($FF)")
     w = hsym.get(WRAPPER)
