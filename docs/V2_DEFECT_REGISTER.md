@@ -12,7 +12,6 @@ case ids (`tools/qual/corpus.py`) or suite case names. Source of the Q-/D-/L-/N-
 | Id | Sev | Defect | Why open | Evidence |
 |---|---|---|---|---|
 | Q-24 | LOW | `CALL` of a plain label (not a `PROC`) is accepted: it jumps there, and the code runs on without returning | deferred: needs a label-kind check in the compiler; no ROM reserve; **accepted LOW limitation** (owner, 2026-10-11) | `proc.goto_label` (XFAIL) |
-| Q-26 | LOW | the nine characters `[` `\` `]` `^` `` ` `` `{` `\|` `}` `~` print as blanks (no glyphs in the ROM font) | deferred: 9 glyphs cost ~72-90 bytes of HOME; **accepted LOW limitation** (owner, 2026-10-11) | `print.font_brackets` (XFAIL) |
 | RC-O1 | LOW | A literal beyond the float range (~1.7E38) is compile error 64, whose message reads "UNEXPECTED TOKEN" | cosmetic; a "NUMBER TOO BIG" message costs ~20 bytes | `lit.float.too_big` (passes on the code) |
 | RC-O2 | LIMIT | `SAVE ... ALL` refuses (`OUT OF MEMORY`) when bytecode + segment 2 + 53 bytes exceed the bytecode area plus free memory | the in-place layout must end at `V2_CODE_LIMIT` | `sa-no-room` |
 | RC-O3 | LIMIT | A `SAVE ... ALL` tape restores its variables only on the exact ROM build, with the same package registration, that wrote it (otherwise: program only, `NO VARIABLES`) | by design: the image includes bytecode, layout and package references | `sa-other-rom`, `sa-package-mismatch` |
@@ -47,6 +46,7 @@ case ids (`tools/qual/corpus.py`) or suite case names. Source of the Q-/D-/L-/N-
 | Q-22 | LOW | SQR of a negative returned 0 | Fixed (error 15) | `fn.sqr.neg` |
 | Q-23 | LOW | STICK(n) out of range returned a value | Fixed (error 15) | `hw.stick_bad` |
 | Q-25 | LOW | string comparison not usable in AND/OR | Fixed | `str.cmp_and` |
+| Q-26 | LOW | the nine characters `[` `\` `]` `^` `` ` `` `{` `\|` `}` `~` printed as blanks (no glyphs in the ROM font) | Fixed (owner decision 2026-10-27, `8a52ab9`, v2.1): nine new 8x8 glyphs; the font is reordered so the letters' arithmetic reaches them; all of printable ASCII (codes 32-126) has a glyph; HOME -64. Deferred on 2026-10-11 as an accepted limitation | `print.font_brackets` |
 | Q-27 | HIGH | PRINT of a string-function result showed a stale tail | Fixed | `strrec.stale_tail*` |
 | Q-28 | CRITICAL | 31-character strings corrupted array 0 | Fixed | `strrec.31_*` |
 | Q-29 | HIGH | SPRITE MOVE garbage (package) | Fixed | sprite package checks |

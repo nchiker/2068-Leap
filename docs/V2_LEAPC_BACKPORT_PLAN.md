@@ -68,6 +68,7 @@ Further rules:
 | 6.5 package stack budget     | **377** | **111** | [M], integrated (F36): no ROM; measured 32 B a call, 50 B with an interrupt; allowance 512 → 128 B |
 | 6.6 package names            | **377** | **111** | [M], integrated (F36): no ROM; documented, `make_extension_tzx.py` warns |
 | tape stamp (6.1's open item) | **377** | **111** | [M], integrated (F36): no ROM; the shipped package tapes $8201 → $8200, they load on v2.0.2 again |
+| Q-26 the nine glyphs         | **313** | **111** | [M], integrated (F38): HOME −64 free (the glyphs 72, the lookup −8); EXROM 0; RAM 0 |
 | phase 5 (speed)              | ≥ 64    | ≥ 32    | Class B: each item sized and weighed before it is started; 5.0 first if the room is not there                 |
 
 Every [E] is replaced by `make budget`'s figure as each item lands.
@@ -1327,6 +1328,51 @@ Then phase 6's rest (6.2-6.6) and the manual's speed figures (`tools/qual/manual
   qual 666 PASS + 2 XFAIL + 2 N/A of 670, lifecycle 23, `qvmedge` 221, maint-qual all (ay_beep 59, cbeep
   27, di_wait 14, cbeep_tape 3); `make doc-examples` 327/327 (its package tapes now `$8200`).
 
+### Item Q-26 outcome (2026-10-27; prototyped on `proto/q26-glyphs` off `backport/leapc` `5566dd6`; all [M]; integrated, F38)
+
+- **What:** the defect register's Q-26 (LOW): the nine characters `[` `\` `]` `^` `` ` `` `{` `|` `}` `~`
+  (codes 91, 92, 93, 94, 96, 123, 124, 125, 126) printed as blanks, the ROM font having no glyph for
+  them. It was deferred on 2026-10-11 ("9 glyphs cost ~72-90 bytes of HOME; accepted LOW limitation");
+  the owner decided on 2026-10-27 to fix it for v2.1, the room being there after phase 6. Commit `8a52ab9`.
+- **Design** (`kernel/graphics/graphics.asm`):
+  - Nine new 8x8 glyphs, original designs in the font's 5-pixel style: `[` and `]` like `(` and `)` with
+    square corners, `\` the mirror of `/`, `^` a caret, `` ` `` a grave mark, `{` and `}` braces, `|` a
+    full-height bar, `~` a wave.
+  - The font is reordered so the letters' arithmetic reaches them: after 'Z' come `[ \ ] ^ _` and the grave mark
+    (the existing `_` moved there), after 'z' come `{ | } ~`, then the other punctuation.
+    `GFX_CHAR_TO_FONT_OFFSET`'s two range tests are widened (to 'a'..'~' and 'A'..'`') and its separate
+    `_` path is removed; `LOW_CHAR_TABLE`'s punctuation indices are renumbered (73-94).
+  - `FONT_TABLE` has 95 glyphs, all of printable ASCII (codes 32-126; was 86); punctuation 32 (was 23).
+  - Lookup speed: unchanged in kind (the same tests; one fewer for codes 128 and up).
+- **Bytes** (`make budget`, `5566dd6` → `8a52ab9`): HOME 377 → 313 free (−64: the glyphs 72, the lookup
+  −8); EXROM 111 (0); RAM 0. Within the estimate (~72-90). Above the 64 B reserve: HOME 249.
+- **Keyboard (not changed):** the V2 keyboard map (`kernel/io/io.asm`, `KEY_ASCII_TABLE_SYMBOL`) still has
+  no keys for these nine characters. They are reached through `CHR$`, and in strings that contain them
+  (for instance from tape).
+- **Checks.**
+  - New probe `tools/qual/qglyphs.py`: `GFX_CHAR_TO_FONT_OFFSET` (service slot 2) for each code 0-255.
+    All 95 printable codes give their glyph as written in the font source; 0-31 and 127 give none; 128-255
+    (block graphics, UDGs) give the same as on a reference build of `bc81c01`. 0 problems.
+  - `tools/qual/qscrdiff.py` against the `bc81c01` build: 22 programs, 21 identical; the one that
+    differs is `chars-all` (every character code printed), by 96 bytes, exactly the new glyphs' set
+    pixels (48 bytes for the eight new non-blank glyphs, printed twice).
+  - The corpus case `print.font_brackets` passes now; Q-26 is added to `tools/qual/defects.py`
+    `RC_FIXED`, so the qual totals become 667 PASS + 1 XFAIL (Q-24) + 2 N/A. `docs/v1/programmers_reference.md`'s glyph counts are updated (`tools/check_docs.py` checks
+    them); `make check` OK.
+- **Documentation:** `docs/V2_DEFECT_REGISTER.md` (Q-26 moved to Fixed); the manual's Appendix C (all of
+  codes 32 to 126 have a glyph; the nine are reached with `CHR$`; the example `app.chars.2` now expects
+  the glyphs on the screen) and the capability table in `04_concepts.md`. The Appendix C screenshot
+  (`docs/manual/images/charset.png`) rewritten (`manual_run.py --write-shots`): it shows the nine now.
+  Still to follow with the release documents: the audit, coverage CSVs and regression report that list
+  Q-26 as open.
+- **Tests** (on `8a52ab9`, fast emulation, 1,893 s): `make test` all PASS: smoke 9/9, standalone 40/40,
+  production checks, fill, prod-regress 127, prod-arrays 101, known-defects 15, saveall 13, micsave 3,
+  qual **667 PASS + 1 XFAIL (Q-24) + 2 N/A** of 670, lifecycle 23, `qvmedge` 221, maint-qual all (ay_beep
+  59, cbeep 27, di_wait 14, cbeep_tape 3). `make doc-examples` there: 325 + the 2 Appendix C examples the
+  docs had not caught up with; with the docs and the new screenshot, 327/327.
+- **Owner decision F38 (2026-10-27):** integrate when the tests pass; then push and start the release
+  documents.
+
 ## Phase 7: decision gate for a V3 (major: ABI 3.0, new RAM map)
 
 Only after phases 1-6, and only with the owner's go-ahead. Everything here breaks the package ABI.
@@ -1553,6 +1599,7 @@ All decided by the owner on 2026-10-25.
 | F35 | 6.3 package errors                      | Integrated on a passing `make test` (fast-forward, 2026-10-27): HOME 0, EXROM 2; next: 6.4, 6.5, 6.6 and the tape stamp, each prototyped and tested in turn |
 | F36 | 6.4, 6.5, 6.6, the tape stamp          | Integrated together on passing tests (fast-forward to `cd12c9a`, 2026-10-27): HOME 0, EXROM 0; phase 6 finished; next: the manual's speed figures and the v2.1 release decisions (`docs/V2_LEAPC_HANDOFF.md`) |
 | F37 | Release waivers                          | `make test-legacy` (V1, Fuse) and the hardware checklist are waived for v2.1, as for the earlier releases (F12; owner, 2026-10-27) |
+| F38 | Q-26 the nine glyphs                    | Fixed for v2.1 and integrated on passing tests (fast-forward, 2026-10-27): HOME 64, EXROM 0; then push and the release documents (`v2.1.0-emu.1`) |
 
 ## Also worth doing
 

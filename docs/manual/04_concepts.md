@@ -174,7 +174,7 @@ BREAK works in tight loops, in `PAUSE` and during a `BEEP`. It does **not** work
 | `CONTINUE` | yes | none: `: GOTO label` restarts at a label |
 | `RUN` | line-by-line | whole program compiled first; mistakes reported before anything happens |
 | tapes | Sinclair tapes | V2 tapes; Sinclair and V1 tapes are refused |
-| characters | full set | nine characters have no glyph (see [Appendix C](07_appendices.md#appendix-c-the-character-set)); 21 [user-defined characters](#user-defined-characters), defined by `POKE` at 61824, printed with `CHR$(144)` to `CHR$(164)`; no `USR "a"` |
+| characters | full set | every printable character, codes 32 to 126, has a glyph (see [Appendix C](07_appendices.md#appendix-c-the-character-set)); 21 [user-defined characters](#user-defined-characters), defined by `POKE` at 61824, printed with `CHR$(144)` to `CHR$(164)`; no `USR "a"` |
 
 ---
 

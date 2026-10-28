@@ -221,7 +221,7 @@ ve 15 pkg=cbeep | CBEEP 32767, 69, 7
 
 ## Appendix C: The character set
 
-Characters are the standard Spectrum-family set for codes **32 to 127**, plus 16 **block graphics** for codes **128 to 143**, and 21 **user-defined characters** for codes **144 to 164** that you design yourself (see [User-defined characters](04_concepts.md#user-defined-characters)): they are blank until you `POKE` a picture into them. Nothing is drawn for codes 0 to 31 or 165 to 255. `PRINT CHR$(n)` prints character *n*; `CODE` gives the code of a character.
+Characters are the standard Spectrum-family set for codes **32 to 126** (all of printable ASCII, each with a picture), plus 16 **block graphics** for codes **128 to 143**, and 21 **user-defined characters** for codes **144 to 164** that you design yourself (see [User-defined characters](04_concepts.md#user-defined-characters)): they are blank until you `POKE` a picture into them. Nothing is drawn for codes 0 to 31, 127 or 165 to 255. `PRINT CHR$(n)` prints character *n*; `CODE` gives the code of a character.
 
 ```basic ex=app.chars.1 shot=charset
 CLS
@@ -238,7 +238,7 @@ NEXT r
 
 ![Characters 32 to 143: the first code of each row is at the left](images/charset.png)
 
-**Nine characters have no picture.** The font of the release has no glyph for `[` `\` `]` `^` `` ` `` `{` `|` `}` `~` (codes 91, 92, 93, 94, 96, 123, 124, 125 and 126): they print as a blank. They can be typed, kept in strings, compared and passed to `CODE`; they just cannot be seen. (An accepted limitation of the release, Q-26.)
+**Every printable character has a picture.** Codes 32 to 126 all print, including the nine that the first release printed as blanks: `[` `\` `]` `^` `` ` `` `{` `|` `}` `~` (codes 91, 92, 93, 94, 96, 123, 124, 125 and 126). The keyboard has no keys for these nine, so a program gets them with `CHR$` (`CHR$(91)` is `[`), or in a string that holds them, for instance one read from tape. They are kept in strings, compared and passed to `CODE` like any other character.
 
 ```basic ex=app.chars.2
 PRINT "a[\]^`{|}~b"
@@ -246,7 +246,7 @@ PRINT LEN("a[\]^`{|}~b")
 PRINT CODE("[")
 ```
 ```output ex=app.chars.2
-a         b
+a[\]^`{|}~b
 11
 91
 ```
