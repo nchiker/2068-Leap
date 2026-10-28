@@ -62,6 +62,12 @@ jobs:
         with:
           fetch-depth: 0   # full history so tag lookups work
 
+      # On a tag push, actions/checkout re-creates the pushed tag as a lightweight tag, so plain
+      # `git describe` (BUILD_INFO.txt's "describe:" line) skipped it and named the release before;
+      # fetch the tags again as they are (annotated).
+      - name: Fetch the tags as they are
+        run: git fetch --force --tags origin
+
       - name: Build pinned SjASMPlus
         run: |
           git clone --branch v1.23.1 --depth 1 --recurse-submodules --shallow-submodules https://github.com/z00m128/sjasmplus.git /tmp/sjasmplus
