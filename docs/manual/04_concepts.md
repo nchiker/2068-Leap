@@ -210,7 +210,7 @@ PRINT "after"
 before
 ```
 
-The screen shows only the **message** (`RUNTIME ERROR`), not a number; of the compile errors, only `SYNTAX ERROR` adds its number, because many different mistakes share that message. The numbers are listed in [Appendix B](07_appendices.md#appendix-b-error-codes) for the curious.
+The screen shows the **message**; `SYNTAX ERROR` and `RUNTIME ERROR` add their number (`RUNTIME ERROR 5` for a division by zero), because many different mistakes share each of those messages. (Before v2.1 `RUNTIME ERROR` showed no number.) The numbers are listed in [Appendix B](07_appendices.md#appendix-b-error-codes) for the curious.
 
 The messages you can meet are in [Appendix A](07_appendices.md#appendix-a-messages). The commonest:
 
@@ -222,7 +222,7 @@ The messages you can meet are in [Appendix A](07_appendices.md#appendix-a-messag
 | `NESTING TOO DEEP` | too many brackets, `IF`s or loops inside each other |
 | `TOO MANY VARIABLES` | more than 251 numeric, 251 string or 255 array names |
 | `OUT OF MEMORY` | the program, its variables and arrays do not fit |
-| `RUNTIME ERROR` | division by zero, index out of range, bad argument, number too big ... |
+| `RUNTIME ERROR n` | division by zero, index out of range, bad argument, number too big ...; `n` is the error code |
 | `STACK OVERFLOW` | expressions or procedure calls nested too deeply |
 | `BREAK` | you pressed CAPS SHIFT + SPACE |
 

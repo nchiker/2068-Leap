@@ -82,7 +82,7 @@ All package statements take **numbers**; `LPRINT` also takes a string. The argum
 
 ## Errors
 
-A package statement that is given a bad argument stops the program with `RUNTIME ERROR`. The internal code differs by package:
+A package statement that is given a bad argument stops the program with `RUNTIME ERROR n`, where `n` is the error code, which differs by package:
 
 | Package | Code | Cause |
 |---|---|---|

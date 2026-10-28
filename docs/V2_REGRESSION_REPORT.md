@@ -1,5 +1,7 @@
 # 2068-Leap V2 Enhanced — Emulator-Qualified Release: regression report
 
+> **Later note (2026-10-27):** defect **Q-26** (the nine characters: brackets, braces, backslash, caret, backquote, bar and tilde print blank), listed below as open (one of the corpus's two XFAILs), is **fixed in `v2.1.0-emu.1`** (`print.font_brackets` passes there; `V2_DEFECT_REGISTER.md`, `V2_1_RELEASE_STATUS.md`). This report is the record of `v2.0.0-emu.1` and is otherwise unchanged.
+
 This is the qualification evidence for the accepted release (owner acceptance 2026-10-11). Earlier
 parts of this report call it the release candidate (RC), the name it had while it was qualified.
 

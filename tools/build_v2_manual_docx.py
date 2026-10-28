@@ -189,7 +189,7 @@ def main():
     document.add_paragraph("\n")
     ed = document.add_paragraph()
     ed.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    ed.add_run("V2 Enhanced -- edition for release v2.0.2-emu.1 (maintained on v2-development) • %s"
+    ed.add_run("V2 Enhanced -- edition for release v2.1.0-emu.1 (maintained on v2-development) • %s"
                % date.today().isoformat()).italic = True
     document.add_page_break()
     document.add_heading("Contents", level=1)
@@ -204,7 +204,7 @@ def main():
         text = (MANUAL / name).read_text(encoding="utf-8").splitlines()
         parse(document, text, flow=name in FLOW_PARTS)
     document.core_properties.title = "2068-Leap V2 User Manual and Language Reference"
-    document.core_properties.subject = "2068-Leap V2 Enhanced, development edition (v2-development)"
+    document.core_properties.subject = "2068-Leap V2 Enhanced, edition for release v2.1.0-emu.1 (v2-development)"
     document.core_properties.author = "2068-Leap Project"
     document.core_properties.keywords = "TS2068, Timex Sinclair, BASIC, ROM, V2"
     output.parent.mkdir(parents=True, exist_ok=True)

@@ -19,7 +19,7 @@ What the status line (the bottom row of the screen) can say. The program or comm
 
 | Message | Meaning |
 |---|---|
-| `RUNTIME ERROR` | a statement failed while the program ran: division by zero, an array index outside the array, a number stored in a numeric array that is not a whole number or is out of range, `NEXT` without its loop, a bad argument (`CHR$(256)`, `SQR(-1)`, `STICK(3)`, `PEEK(65536)`), a result too big (beyond about 1.7 x 10^38), a package argument out of range |
+| `RUNTIME ERROR n` | a statement failed while the program ran (the number `n` is the error code, listed in [Appendix B](#run-time-errors); in versions before v2.1 the message had no number): division by zero, an array index outside the array, a number stored in a numeric array that is not a whole number or is out of range, `NEXT` without its loop, a bad argument (`CHR$(256)`, `SQR(-1)`, `STICK(3)`, `PEEK(65536)`), a result too big (beyond about 1.7 x 10^38), a package argument out of range |
 | `STACK OVERFLOW` | procedures called themselves too deeply, or an expression nested too deeply |
 | `OUT OF MEMORY` | an array is too big for the memory left |
 | `ARRAY SIZE MISMATCH` | a `DIM` differs from the stored array of the same name |
@@ -170,22 +170,24 @@ RUN
 
 ### Run-time errors
 
+The screen shows the message with the code from the first column in place of `n` (`RUNTIME ERROR 5`) for every run-time error that has no message of its own; `STACK OVERFLOW`, `OUT OF MEMORY`, `ARRAY SIZE MISMATCH` and `BREAK` keep theirs.
+
 | Code | Message | Cause |
 |---|---|---|
 | 2, 6 | `STACK OVERFLOW` | recursion (6) or expression nesting (2) too deep |
-| 5 | `RUNTIME ERROR` | division by zero (`/`, `DIV`, `MOD`), `TAN(90)` |
-| 7 | `RUNTIME ERROR` | `NEXT` or return with no frame: jumping into a loop; a loop ended by `CLEAR` |
-| 8 | `RUNTIME ERROR` | `SOUND` register 17 or more |
-| 10 | `RUNTIME ERROR` | array index outside the array |
-| 11 | `RUNTIME ERROR` | a fraction or out-of-range number stored in a numeric array, or used as an index |
-| 15 | `RUNTIME ERROR` | argument out of range: `CHR$`, `STICK`, `SQR` of a negative number, an address of 65536 or more, `BEEP` seconds negative or over 273 or semitones outside -60 to 69 |
+| 5 | `RUNTIME ERROR n` | division by zero (`/`, `DIV`, `MOD`), `TAN(90)` |
+| 7 | `RUNTIME ERROR n` | `NEXT` or return with no frame: jumping into a loop; a loop ended by `CLEAR` |
+| 8 | `RUNTIME ERROR n` | `SOUND` register 17 or more |
+| 10 | `RUNTIME ERROR n` | array index outside the array |
+| 11 | `RUNTIME ERROR n` | a fraction or out-of-range number stored in a numeric array, or used as an index |
+| 15 | `RUNTIME ERROR n` | argument out of range: `CHR$`, `STICK`, `SQR` of a negative number, an address of 65536 or more, `BEEP` seconds negative or over 273 or semitones outside -60 to 69 |
 | 64 | `OUT OF MEMORY` | an array does not fit |
 | 65 | `ARRAY SIZE MISMATCH` | `DIM` differs from a stored array |
 | 66 | `BREAK` | CAPS SHIFT + SPACE |
-| 67 | `RUNTIME ERROR` | a result beyond about 1.7 x 10^38 |
-| 12 to 14 | `RUNTIME ERROR` | mode package: bad `MODE`, `ULAPLUS`, `PALETTE` |
-| 15 to 20 | `RUNTIME ERROR` | sprite package (see [Part 5](05_packages.md#errors)) |
-| 15 | `RUNTIME ERROR` | cbeep package: `CBEEP` out of range |
+| 67 | `RUNTIME ERROR n` | a result beyond about 1.7 x 10^38 |
+| 12 to 14 | `RUNTIME ERROR n` | mode package: bad `MODE`, `ULAPLUS`, `PALETTE` |
+| 15 to 20 | `RUNTIME ERROR n` | sprite package (see [Part 5](05_packages.md#errors)) |
+| 15 | `RUNTIME ERROR n` | cbeep package: `CBEEP` out of range |
 
 ```errors ex=app.verr
 ve 5 | PRINT 1 / 0
@@ -401,11 +403,12 @@ One package at a time; `NEW` unloads it; a statement of a package that is not lo
 
 ## Appendix G: Hardware notes
 
-Everything in this manual was verified in the **ZEsarUX emulator**: on the accepted release ROMs (tag `v2.0.0-emu.1`), and, for the maintenance release's sound changes (`BEEP`, `SOUND`, `PAUSE`, the cbeep package), on its candidate ROMs; the memory figures on the `v2-development` ROM of the RAM-efficiency change, whose memory layout `v2.0.2-emu.1` has unchanged. **Nothing was tried on a physical TS2068**, a real cassette recorder, a ZX Printer, a joystick, ULAplus hardware or a Dock/EXROM cartridge. In particular:
+Everything in this manual was verified in the **ZEsarUX emulator**, on the ROMs of the release it describes (`v2.1.0-emu.1`; the examples and figures of the earlier releases were checked on theirs, and the memory layout is that of `v2.0.2-emu.1`). **Nothing was tried on a physical TS2068**, a real cassette recorder, a ZX Printer, a joystick, ULAplus hardware or a Dock/EXROM cartridge. In particular:
 
 * the sound (`BEEP`, `SOUND`, `CBEEP`) was measured by reading the sound chip's registers back, counting instructions and port writes, and from the emulator's recorded audio; it was never listened to on a TS2068 (the startup chime included);
 * `BEEP` and `PAUSE` count display frames: 1/60 second on a TS2068 is the design figure, the emulator interrupts 50 times a second (not measured on hardware);
-* tape timing was exercised only through the emulator's tape input; the identity-check pause of about 2.4 seconds on `SAVE ... ALL`, `LOAD` and `VERIFY` of an ALL tape has not been timed on real hardware;
+* the tape block routines (receiver and sender) are new in v2.1, written from scratch: tape timing was exercised only through the emulator's tape input; the identity-check pause of about 2.4 seconds on `SAVE ... ALL`, `LOAD` and `VERIFY` of an ALL tape has not been timed on real hardware;
+* the speed figures (T-states, lines a second) are emulator counts of uncontended T-states at 3.5 MHz, not timed on a TS2068;
 * the printer package, the joysticks, `MODE 1`, ULAplus and the keyboard-matrix details are as the source states, not as seen on a machine;
 * the hardware checklist for the release is `docs/V2_HARDWARE_CHECKLIST.md`.
 
@@ -437,6 +440,6 @@ Everything in this manual was verified in the **ZEsarUX emulator**: on the accep
 
 ## Appendix I: How this manual was checked
 
-* Every example marked with an output block, a picture, a transcript or an error code in this manual is a test. `make doc-examples` runs them all on the ROM image built from the same tree (the release, `v2.0.0-emu.1`; the `BEEP`, `SOUND`, `PAUSE` and `CBEEP` examples on the maintenance candidate; this development edition on the `v2-development` ROM) (`tools/qual/manual_run.py`; the parser is `tools/qual/manual_examples.py`): programs are stored and run; `LIST`, `RUN`, `NEW` and the editor keys are typed through the real keyboard path; `SAVE` is captured at the tape transport and `LOAD` / `VERIFY` run the real tape receiver on a synthesised signal; packages are loaded with `LOAD "NAME" EXT` through that same receiver; BREAK is pressed in the emulated keyboard matrix; pictures are rendered from screen memory and compared with the committed images.
+* Every example marked with an output block, a picture, a transcript or an error code in this manual is a test. `make doc-examples` runs them all on the ROM image built from the same tree (the release this edition describes, `v2.1.0-emu.1`) (`tools/qual/manual_run.py`; the parser is `tools/qual/manual_examples.py`): programs are stored and run; `LIST`, `RUN`, `NEW` and the editor keys are typed through the real keyboard path; `SAVE` is captured at the tape transport and `LOAD` / `VERIFY` run the real tape receiver on a synthesised signal; packages are loaded with `LOAD "NAME" EXT` through that same receiver; BREAK is pressed in the emulated keyboard matrix; pictures are rendered from screen memory and compared with the committed images.
 * This suite is **separate** from the 1010-case release baseline (`make test`, `make qual`, `tools/qual/corpus.py`), which it does not touch and whose totals it does not change.
 * Facts that are not examples (limits, timings) were measured with `tools/qual/manual_measure.py` and the commands recorded in `docs/V2_DOCUMENTATION_FINDINGS.md`, which also lists what in the earlier documents turned out to be wrong.

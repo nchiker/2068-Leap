@@ -15,9 +15,8 @@ and is not affiliated with or endorsed by them.
 
 The TS2068's ROM is Timex's adaptation of the ZX Spectrum ROM, whose code is
 copyright Amstrad plc (formerly Sinclair Research Ltd). No part of the current
-2068-Leap ROM images is derived from it. Three parts were, until the
-`backport/leapc` branch replaced them (`docs/V2_LEAPC_BACKPORT_PLAN.md`,
-phase 3):
+2068-Leap ROM images is derived from it. Three parts were, until release
+`v2.1.0-emu.1` replaced them (`docs/V2_LEAPC_BACKPORT_PLAN.md`, phase 3):
 
 - The tape block I/O (`STORAGE_SEND_BLOCK` / `STORAGE_RECEIVE_BLOCK`, a port
   of SA-BYTES and LD-BYTES): replaced by clean-room code from 2068-Leap-C,
@@ -36,7 +35,9 @@ phase 3):
 `tools/check_provenance.py` (part of `make check` when the stock ROMs are
 present) compares the production images with the stock 48K and TS2068 ROMs
 and fails on any common run of 12 bytes or more; its allow-list is empty.
-Earlier releases and the git history still contain the derived versions.
+The releases `v2.0.0-emu.1` to `v2.0.2-emu.1` and the git history still
+contain the derived versions; `v2.1.0-emu.1` is the first release without
+them.
 
 ## Code from 2068-Leap-C (MIT)
 
@@ -53,3 +54,19 @@ subtract, multiply and divide in `rom/exrom_calc.asm`: Leap-C's float core,
 from Leap-C's (`tools/check_provenance.py`, `tools/check_repro.sh`,
 `tools/qual/qpoweron.py`, the banking checks of `tools/qual/qcanary.py`, the tape
 tolerance test `tools/qtapetol.py` and the MIC capture of `tools/qual/qmicsave.py`).
+All of this is in release `v2.1.0-emu.1`.
+
+Designs and findings taken from Leap-C without its code (written for V2's own
+structures): the package export table and signature byte of ABI 2.1
+(`EXT2_EXPORTS`, from Leap-C's `spec.md` section 7.2), the paging-depth reset
+on the error unwind (item 2.3), the removal of `di` from the EXROM paging
+routines (D14), the production-only removal of the editor's unused fallbacks
+(D15-D17), the power-on RAM and Fuse frame-count probes (`tools/qual/qpoweron.py`
+is adapted from Leap-C's; `tools/qual/fuse_frames_probe.py` uses
+`tools/fuse/fuseshim.c`), and the tape signal limits checked by
+`tools/check_storage_contract.py` (Leap-C's `docs/TAPE_SIGNAL_SPEC.md`).
+`tools/qual/qcalcround.py`, `qnumcheck.py` and `qsinfit.py` read Leap-C's
+float model (`tools/fpmodel.py`) from a checkout given on the command line;
+it is not copied here. The `SIN`/`COS`/`TAN` series, the `PRINT` and scroll
+routines, the package float service and the nine glyphs for `` [ \ ] ^ ` { | } ~ ``
+(Q-26) were written for this project.

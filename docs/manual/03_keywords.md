@@ -634,7 +634,7 @@ PRINT LEN(w$(0))
 
 | Mistake | What happens |
 |---|---|
-| index below 0 or at/above *size* | run-time error (RUNTIME ERROR) |
+| index below 0 or at/above *size* | run-time error (RUNTIME ERROR 10) |
 | `a(2) = 40000` or `a(2) = 1.5` | run-time error |
 | a variable as the size (`DIM a(n)`) | compile error (SYNTAX ERROR) |
 | a size of 0 | compile error |

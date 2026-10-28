@@ -71,7 +71,7 @@ left before v2.1 and how to pick it up.
      2026-10-11) is now affordable (313 B above the reserve); the two optional phase 5 follow-ups (the
      two-variable `IF k <= s`, ~20 B HOME / ~15 EXROM, the sieve's inner loop). *Decided:* `make
      test-legacy` (V1, Fuse) and the hardware checklist are waived (F37).
-5. **The release record and documents**, following `v2.0.2-emu.1` (`77f1baa`; its record is
+5. *Drafted (2026-10-27): `docs/V2_1_RELEASE_STATUS.md` and the documents below, the Word manual rebuilt.* **The release record and documents**, following `v2.0.2-emu.1` (`77f1baa`; its record is
    `docs/V2_COMPILER_MAINT_RELEASE_STATUS.md`): a new `docs/V2_..._RELEASE_STATUS.md` (what changed since
    `v2.0.2-emu.1`: phases 1-6 of the plan in user terms; the image hashes from `make rc-assets`
    → `build/release-v2-rc/`; the identity CRC that `SAVE ... ALL` stamps, which changes with every ROM
@@ -83,7 +83,7 @@ left before v2.1 and how to pick it up.
    (Q-35 and the phase 2 fixes as released); `NOTICE.md` (Leap-C's MIT parts); the manual's edition text
    (and `02_beginners_guide.md` Chapter 1 / `07_appendices.md` Appendix A with `boot_screen.png` if the
    version text changes: `doc-examples`' `guide.boot`), then the Word editions (`make manual-v2`).
-6. **Qualification for the record:** `make test`, `make doc-examples`, `make repro` (two fresh trees,
+6. *Done (2026-10-27, in the record's section 3).* **Qualification for the record:** `make test`, `make doc-examples`, `make repro` (two fresh trees,
    identical images), `make build EXTRA_DEFS=` (the release definitions), `qcanary --banking`,
    `qtapetol`, `qpoweron`; `make test-legacy` and hardware are waived (F37).
 
