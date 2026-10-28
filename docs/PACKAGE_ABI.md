@@ -158,9 +158,17 @@ Contract for an execute routine:
 * Interrupts are **enabled** (IM 1, `RST $38` → `KBD_ISR_TICK`). The ISR touches only chunk-4/7
   state and the machine stack.
 * Stack: the machine stack grows down from `$FF00`; `$F800–$FEFF` (1,792 bytes) is stack only. SP
-  at package entry measured **`$FEFC`** under the test harness [M]; the production command-loop path
-  adds a few frames. **Design allowance for a package: 512 bytes** (conservative; not a measured
-  worst case).
+  at a package's entry is **`$FEFC`** under the test harness (`V2_RUN_STORED` called with SP = `$FF00`)
+  and **`$FEF8`** in the command loop, for `RUN` and an immediate statement alike, also inside a
+  `DEF FN`, a recursive `PROC` and a deep expression (the VM keeps its own stacks in memory) [M:
+  `tools/qual/qpkgstack.py`]. Measured depth of an execute call below its entry SP, its return
+  address, the services it calls and an interrupt taken meanwhile included [M]: SHAPES 32, SPRITE 26,
+  MODE 22, GRAPHICS 26, PRINTER 32, CBEEP 10; test packages 4–22; installs 2–6. The interrupt routine
+  alone takes 18 (the pushed PC included). So the deepest call is **32 bytes, 50 with an interrupt**,
+  and the lowest a shipped package reaches is about `$FEF8 − 50 = $FEC6`. **Design allowance for a
+  package: 128 bytes** below its entry SP, the services it calls and an interrupt included (2.5× the
+  measured worst; replaces the earlier unmeasured 512). The probe is not part of `make check`; run
+  it after changing a package.
 
 | Event | Registry (12 slots) | Window / `V2_PACKAGE_LEN` |
 |---|---|---|
@@ -407,6 +415,7 @@ treating `$E000-$E7FF` as off limits, as in §5.5. `NEW` clears it; `RUN`, `CLEA
 | HOME build `ASSERT`s (`PKG_PIN_LIST`, `PKG_CONST_LIST`, table layout) | any sysvar/constant moving; table overlapping the KTAB or the slot code |
 | `tools/check_package_abi.py` (in `make check`) | table bytes ≠ ABI file; a reserved slot that is not exactly `jp VM_ERR_EXTENSION_NOT_FOUND` (6.4); pin overlaps; HOME/EXROM touching the package scratch block; EXROM edges from any service; the wrapper's exact bytes; a package that does not assemble against the ABI file alone; any package call/jump into HOME that is not a slot; any package memory reference outside pinned cells and hardware ranges; literal addresses in package sources; an error code a shipped package raises that §2 does not allow, or one not given as `ld a,n` right before the raise (6.3) |
 | `tools/v2_prod_regress.py` `abi-*` | the shipped ROM's table; slot 14 with EXROM out; end-to-end package tape load + run; rejection of 6 package and 6 program header words with no side effects; SAVE stamps; SAVE→LOAD round trips |
+| `tools/qual/qpkgstack.py` (a probe; **not** in `make check`) | the machine stack each package's execute routine and install use, canary-measured, and the interrupt's own depth: backs the §2 stack allowance |
 
 Negative controls were run when the checker was written (an unpinned `ld a,($8200)` and a raw
 `call $0FBA` in a package are both reported; moving a pinned cell fails the HOME build).

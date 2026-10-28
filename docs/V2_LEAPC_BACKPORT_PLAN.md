@@ -65,6 +65,7 @@ Further rules:
 | 6.2 floats for packages      | **377** | **113** | [M], integrated (F33, fast-forward to `aa0fcb7`): HOME −123 free (`FP_OP` 83, service 17; `OP_CALL_EXT`'s float form 34: the arguments into calculator slots 0-4, a float value stored as a FLOAT temp; `EXT2_REGISTER` refusing the float form with a string argument 6); EXROM 0; slot 17 takes 3 B of the reserved slot area (not counted); RAM 0 |
 | 6.3 package errors           | **377** | **111** | [M], integrated (F35): HOME 0 (service 18 is a `jp VM_ERR_COMMON` in the reserved slot area, 3 B, not counted); EXROM −2 (`RUNTIME ERROR n`: `V2_RUNTIME_MSG` jumps into `V2_COMPILE_MSG`'s code tail, now `V2_MSG_CODE`, 1; the message's trailing space 1); RAM 0 |
 | 6.4 the reserved slots trap  | **377** | **111** | [M], prototype (`proto/6.4-slot-trap`): HOME 0 (11 `jp VM_ERR_EXTENSION_NOT_FOUND` in the reserved slot area, not counted); EXROM 0; RAM 0 |
+| 6.5 package stack budget     | **377** | **111** | [M], prototype (`proto/6.5-stack-budget`): no ROM; measured 32 B a call, 50 B with an interrupt; allowance 512 → 128 B |
 | phase 5 (speed)              | ≥ 64    | ≥ 32    | Class B: each item sized and weighed before it is started; 5.0 first if the room is not there                 |
 
 Every [E] is replaced by `make budget`'s figure as each item lands.
@@ -1194,6 +1195,49 @@ Then phase 6's rest (6.2-6.6) and the manual's speed figures (`tools/qual/manual
   first reserved slot, n = 1 the last; it would raise 99 if the slot returned); `tools/qual/qpkgfn.py`
   67/67 PASS (65 before; 2 new cases in `RAISES`): both give error 9, `RUNTIME ERROR 9`, paging depth 1
   afterwards. `make check` OK. `make test`: [make test: pending]
+
+### Item 6.5 outcome (prototype, 2026-10-27; `proto/6.5-stack-budget` off `proto/6.4-slot-trap` `d5bb6bb`; all [M])
+
+- **What:** no ROM change. The package stack allowance was 512 B, "conservative; not a measured worst case"
+  (`docs/PACKAGE_ABI.md` §2). New probe `tools/qual/qpkgstack.py` (`b9fce46`) measures it; Leap-C's
+  comparable figure is 30-42 B per service including an interrupt.
+- **Method:** the package's execute routine is caught where `OP_CALL_EXT` calls it (`call
+  VM_CALL_INDIRECT`); the stack below SP there is filled with a canary byte; on return (or, for an error
+  raised in the package, at `VM_ERR_COMMON`) the lowest changed byte gives the depth: the call's return
+  address, the services the routine called and any interrupt taken meanwhile. Each program runs twice,
+  canaries `$A5` and `$5A`. An install is measured the same way below `$FF00`. The interrupt routine (IM
+  1, `$0038`) is measured on its own: the deepest of 200 interrupts, the pushed PC included.
+- **Results** (bytes, each package's deepest execute call):
+
+  | Package | Depth | Deepest case |
+  |---|---|---|
+  | SHAPES | 32 | — |
+  | SPRITE | 26 | — |
+  | MODE | 22 | — |
+  | GRAPHICS | 26 | — |
+  | PRINTER | 32 | `LPRINT` of a number 28, of a string 24, `LLIST` 32 |
+  | CBEEP | 10 | — |
+  | ABI 2.1 test packages | 4-22 | fntest 8, fptest 22 (`FP_OP` float arithmetic through the calculator), `VM_RAISE_ERROR` 4, a reserved-slot trap 4 |
+
+  Installs: 2-6 B. The interrupt: **18 B** (pushed PC included). Deepest execute call **32 B; with an
+  interrupt 50 B**.
+- **SP at a package's entry:** `$FEFC` when `V2_RUN_STORED` is called with SP = `$FF00` (the harness);
+  `$FEF8` in the command loop (`V2_MACHINE_STACK_TOP` = `$FF00`, `V2_DISPATCH` then `V2_RUN_STORED`), for
+  `RUN` and for an immediate statement. The same inside a `DEF FN`, a recursive `PROC` (20 deep) and a
+  deep parenthesised expression: the VM keeps its own stacks in memory, not on the machine stack, at a
+  package call. So the lowest a package reaches in the shipped set is about `$FEF8 - 50 = $FEC6`, 58 B
+  below `$FF00` of the 1,792-byte `$F800-$FEFF` stack area.
+- **The allowance:** **128 B** below a package's entry SP, the services it calls and an interrupt
+  included (2.5x the measured worst of 50 B; Leap-C's comparable margin is 40 B). It replaces 512 B in
+  `docs/PACKAGE_ABI.md` §2, which also lists the measured figures. The probe is not part of `make check`;
+  re-run it when a package changes.
+- **For phase 7:** the VM itself reaches lower than any package: `tools/qual/qcanary.py` over the 670-case
+  corpus records its lowest stack byte at `$FDE8`, 280 B below `$FF00`. A package always starts at the
+  same SP (`$FEF8`), not on top of the VM's deepest point, so the machine stack needs the larger of the
+  two, about 280 B below `$FF00` (a package's 8 + 128 B is less), and phase 7 may reclaim the bottom of
+  the `$F800-$FEFF` stack area. That decision stays with phase 7.
+- **Bytes:** HOME 377 (0); EXROM 111 (0); RAM 0.
+- **Checks.** `make check` OK; `tools/qual/qpkgstack.py` as above (two canaries, 14 programs).
 
 ## Phase 7: decision gate for a V3 (major: ABI 3.0, new RAM map)
 
