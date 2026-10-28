@@ -1318,7 +1318,10 @@ Then phase 6's rest (6.2-6.6) and the manual's speed figures (`tools/qual/manual
   statement-only package saved from a 2.1 ROM says `$8201` and a 2.0 ROM refuses it. The shipped
   tapes come from `make v2-packages`, not from `SAVE`.
 - **Bytes:** HOME 377 (0); EXROM 111 (0); RAM 0. No ROM change.
-- **Tests:** `[make test: pending]`.
+- **Tests** (on `2fc82ac`, fast emulation, 1,789 s): `make test` all PASS: smoke 9/9, standalone 40/40,
+  production checks, fill, prod-regress 127, prod-arrays 101, known-defects 15, saveall 13, micsave 3,
+  qual 666 PASS + 2 XFAIL + 2 N/A of 670, lifecycle 23, `qvmedge` 221, maint-qual all (ay_beep 59, cbeep
+  27, di_wait 14, cbeep_tape 3); `make doc-examples` 327/327 (its package tapes now `$8200`).
 
 ## Phase 7: decision gate for a V3 (major: ABI 3.0, new RAM map)
 
