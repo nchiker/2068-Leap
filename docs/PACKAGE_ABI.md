@@ -53,7 +53,7 @@ tell *unversioned* (bit 15 clear, or major 0) from *versioned*.
 | Tape | Header type | Current word | Meaning |
 |---|---|---|---|
 | Program | 0 | **`$8100`** | program format 1.0: the line store verbatim, `[len:2][text][CR]` records (§7.1) |
-| Package (`SAVE/LOAD … EXT`) | 4 | **`$8201`** | package ABI 2.1 (this document; 2.0 tapes, `$8200`, still load). Major 1 was the unversioned raw-address ABI. 2.1 is not yet released, so its later additions (6.2's float form and service 17, 6.3's error range and service 18) are still 2.1 |
+| Package (`SAVE/LOAD … EXT`) | 4 | **`$8201`** (the ROM's own); a package tape carries the minor its package needs, **`$8200`** for the six shipped ones | package ABI 2.1 (this document; 2.0 tapes, `$8200`, still load). A package tape is stamped with the minor its package needs (2.0 unless it uses a 2.1 service, pin or constant, §7.2), so a 2.0 ROM loads the statement-only packages; `SAVE … EXT` stamps the running ROM's word. Major 1 was the unversioned raw-address ABI. 2.1 is not yet released, so its later additions (6.2's float form and service 17, 6.3's error range and service 18) are still 2.1 |
 | Array (`… ARRAY`) | 8 | **`$8100`** | array format 1.0. Array persistence is an intentional V2 feature (the replacement for `DATA/READ/RESTORE`). R10.9 Phase 2C implements the persistent Array Store (§7.3): the header type, version word and check are unchanged, `SAVE ... ARRAY` now actually writes type 8 (D13) |
 
 **Acceptance rule** (`STORAGE_LOAD`, `.name_ok`): *tag bit and major must equal the ROM's; the tape's
@@ -366,11 +366,11 @@ defined (the production EXROM, `rom/v2_exrom.asm`); the legacy V1 chain and the 
 component tests assemble byte-identically to before.
 
 It does **not** (and cannot) check that a package binary was built against the ABI it claims: the
-header word is the builder's claim. `make v2-packages` stamps it from the ABI file
-(`tools/make_extension_tzx.py --v2`), and `check_package_abi.py` proves the shipped sources
-reference nothing outside the ABI. `SAVE … EXT` stamps the *ROM's* current ABI word on whatever is
-in the window; the window can only contain a package that passed the check, so this is at worst
-over-conservative on a later, lower-minor ROM.
+header word is the builder's claim. `make v2-packages` stamps it from the ABI file and the package's
+source (`tools/make_extension_tzx.py --v2 --source`, the minor the package needs, §7.2), and
+`check_package_abi.py` proves the shipped sources reference nothing outside the ABI. `SAVE … EXT`
+stamps the *ROM's* current ABI word on whatever is in the window; the window can only contain a
+package that passed the check, so this is at worst over-conservative on a later, lower-minor ROM.
 
 ## 7. Compatibility consequences
 
@@ -410,10 +410,24 @@ are rebuilt by that target and their `.tzx` stamped `$8200`. This is a one-time,
 (R10.8 plan M-6). Package *sizes* are unchanged (mode 165, sprite 832, printer 345, shapes 795,
 graphics 467 bytes) [M].
 
-ABI 2.1 (6.1): `make v2-packages` stamps every package tape with the ROM's word, now `$8201`, and
-`SAVE … EXT` stamps the running ROM's word too; a 2.0 ROM refuses `$8201`, so packages built here no
-longer load on v2.0.x ROMs although the shipped ones use nothing of 2.1. Open: stamp each package
-with the minor it needs.
+ABI 2.1 (6.1): `make v2-packages` first stamped every package tape with the ROM's word, now `$8201`,
+so packages built here no longer loaded on v2.0.x ROMs although the shipped ones use nothing of 2.1.
+Now (tape stamp): each package tape carries the minor its package needs, `$8200` (2.0) unless it uses
+2.1. `make v2-packages` passes `--source rom/v2_package_<name>.asm` to `tools/make_extension_tzx.py
+--v2`; `tools/v2_abi.py` `needed_minor(source)` scans that source and the `rom/` files it `INCLUDE`s
+(comments and strings ignored) for the names that came in with 2.1 and `package_word(source)` is
+`$8200` plus the highest minor found. The names are the service slots 16-18 and the `EXT_CALL_RESULT`
+pin (each carries an "ABI 2.N" note in its comment in `include/v2_package_abi.inc`, which the reader
+records) and the constants `EXT_KIND_FN`, `EXT_KIND_STR`, `EXT_SIG_FLOAT`. The minor comes from the
+source, not the image's bytes: a byte scan read GRAPHICS as needing 2.1 (`jr c,.row` is `38 CA`,
+`ret` is `C9`, and with the data byte `00` after them, `CA C9 00` reads as `jp z,$00C9`, `FP_OP`'s slot). Without
+`--source` the tool stamps this ROM's word as before and prints the word it wrote. All six shipped
+packages are now `$8200`; the test packages `fntest` and `fptest` use 2.1 and are `$8201`.
+`tools/qual/manual_tapes.py` (`make doc-examples`) stamps the same way.
+
+Limit (needs ROM): `SAVE … EXT` stamps the running ROM's own word, so a statement-only package saved
+from a 2.1 ROM says `$8201` and a 2.0 ROM refuses it. The shipped tapes come from `make v2-packages`,
+not from `SAVE`.
 
 ### 7.3 Array tapes and the Array Store (R10.9 Phase 2C)
 
@@ -436,6 +450,8 @@ treating `$E000-$E7FF` as off limits, as in §5.5. `NEW` clears it; `RUN`, `CLEA
 |---|---|
 | HOME build `ASSERT`s (`PKG_PIN_LIST`, `PKG_CONST_LIST`, table layout) | any sysvar/constant moving; table overlapping the KTAB or the slot code |
 | `tools/check_package_abi.py` (in `make check`) | table bytes ≠ ABI file; a reserved slot that is not exactly `jp VM_ERR_EXTENSION_NOT_FOUND` (6.4); pin overlaps; HOME/EXROM touching the package scratch block; EXROM edges from any service; the wrapper's exact bytes; a package that does not assemble against the ABI file alone; any package call/jump into HOME that is not a slot; any package memory reference outside pinned cells and hardware ranges; literal addresses in package sources; an error code a shipped package raises that §2 does not allow, or one not given as `ld a,n` right before the raise (6.3) |
+| `tools/check_package_abi.py` rule 8 (in `make check`) | a shipped package's tape line in the Makefile that does not pass `--source` with its own source ("the cbeep tape is not stamped from its source"); `needed_minor` itself: the test packages `fntest` and `fptest` must be found to need 2.1. It prints each tape's minor (`$8200` for the six shipped) |
+| `tools/qual/qpkgtape.py` (a probe; **not** in `make check`) | the stamp end to end: makes each package's tape blocks as `make v2-packages` does and `LOAD … EXT`s them through each given ROM's real tape receiver (`--rom TREE`); a package the ROM's minor covers must load, install and run one statement with no error, one it does not must say BAD TAPE VERSION. 16/16 on this ROM (2.1: all eight load) and on a v2.0.2-emu.1 tree (the six shipped load and run; `fntest` and `fptest` are refused) |
 | `tools/v2_prod_regress.py` `abi-*` | the shipped ROM's table; slot 14 with EXROM out; end-to-end package tape load + run; rejection of 6 package and 6 program header words with no side effects; SAVE stamps; SAVE→LOAD round trips |
 | `tools/qual/qpkgstack.py` (a probe; **not** in `make check`) | the machine stack each package's execute routine and install use, canary-measured, and the interrupt's own depth: backs the §2 stack allowance |
 | `tools/make_extension_tzx.py --v2` (in `make v2-packages`; a **warning** on stderr, not a failure) | a registered name the language already uses: a keyword, a built-in function, a shell command, or `LPRINT`/`LPRINT$`/`LLIST` (§2 "Names", 6.6). The names are the export table's (a package that starts `ld hl,table / jp EXT2_EXPORTS`), otherwise every NUL-terminated name-like string in the image (a warning may then be a string that is not a name); the reserved words are read from `KEYWORD_TABLE`, `BUILTIN_FN_TABLE` and the shell's `V2_KW_*`, so the list follows the ROM. None on the six shipped packages (PRINTER's own `LPRINT`/`LPRINT$`/`LLIST` are expected, not reported); one on the test package `fntest`, its deliberate `ABS` |
@@ -455,7 +471,8 @@ Negative controls were run when the checker was written (an unpinned `ld a,($820
    production test next to `pkg-*` in `tools/v2_prod_regress.py`.
 7. Choose names that are not a keyword, a built-in function or a shell command (§2 "Names"); a clash
    is a warning from `make v2-packages`, not a failure.
-8. Build with `make v2-packages` (stamps the ABI word) and run `make check test`.
+8. Build with `make v2-packages` (stamps the minor the package needs, from its source; add the
+   `--source` to the target's line, `make check` fails without it) and run `make check test`.
 
 ## 10. Inventory (what each shipped package uses)
 

@@ -67,6 +67,7 @@ Further rules:
 | 6.4 the reserved slots trap  | **377** | **111** | [M], prototype (`proto/6.4-slot-trap`): HOME 0 (11 `jp VM_ERR_EXTENSION_NOT_FOUND` in the reserved slot area, not counted); EXROM 0; RAM 0 |
 | 6.5 package stack budget     | **377** | **111** | [M], prototype (`proto/6.5-stack-budget`): no ROM; measured 32 B a call, 50 B with an interrupt; allowance 512 → 128 B |
 | 6.6 package names            | **377** | **111** | [M], prototype (`proto/6.6-keyword-names`): no ROM; documented, `make_extension_tzx.py` warns |
+| tape stamp (6.1's open item) | **377** | **111** | [M], prototype (`proto/tape-abi-minor`): no ROM; the shipped package tapes $8201 → $8200, they load on v2.0.2 again |
 | phase 5 (speed)              | ≥ 64    | ≥ 32    | Class B: each item sized and weighed before it is started; 5.0 first if the room is not there                 |
 
 Every [E] is replaced by `make budget`'s figure as each item lands.
@@ -1084,6 +1085,7 @@ Then phase 6's rest (6.2-6.6) and the manual's speed figures (`tools/qual/manual
   `cbeep_tape` 3).
 - **Owner (2026-10-27):** integrate 6.1 (F28): `backport/leapc` fast-forwarded to `e9423ab` (with
   `docs/PACKAGE_ABI.md` for 2.1). Open from it: stamp each package tape with the ABI minor it needs.
+  (done: the tape stamp, below)
 
 ### Item 6.2 outcome (2026-10-27; prototyped on `proto/6.2-float-service` off `backport/leapc` `bc81c01`; all [M]; integrated, F33)
 
@@ -1273,6 +1275,46 @@ Then phase 6's rest (6.2-6.6) and the manual's speed figures (`tools/qual/manual
   function: the built-in wins").
 - **Bytes:** HOME 377 (0); EXROM 111 (0); RAM 0.
 - **Checks.** `make check` OK; the tool on the eight package images as above.
+
+### The tape stamp outcome (prototype, 2026-10-27; `proto/tape-abi-minor` off `proto/6.6-keyword-names` `a9527fb`; all [M])
+
+- **What:** 6.1's open item. Every package tape was stamped with the ROM's ABI word
+  (`tools/make_extension_tzx.py`), so the shipped packages said `$8201` and a v2.0.x ROM refused them
+  although only the function packages need 2.1. A package tape now carries the minor its package needs
+  (2.0 unless it uses 2.1); the six shipped packages are `$8200` again (`ee9f2bb`).
+- **How the minor is found:** `tools/v2_abi.py`: the `Abi` reader records the minor each service slot
+  and pinned cell came in, from the "ABI 2.N" note in its comment in `include/v2_package_abi.inc`
+  (slots 16-18 and the `EXT_CALL_RESULT` pin: 2.1), plus `MINOR_CONSTS` (`EXT_KIND_FN`,
+  `EXT_KIND_STR`, `EXT_SIG_FLOAT`: 2.1). `needed_minor(source)` scans the package's `.asm` and the
+  `rom/` files it `INCLUDE`s (comments and strings ignored) for those names and returns the highest
+  minor; `package_word(source)` is `$8200 | minor`.
+- **Why not from the bytes** (the first attempt: a `call`/`jp` to a 2.1 slot, a pin's address in the
+  image): it found GRAPHICS to need 2.1 from overlapping bytes (`jr c,.row` is `38 CA`, `ret` is `C9`,
+  then a data byte `00`: `CA C9 00` reads as `jp z,$00C9`, `FP_OP`'s slot). The source has no such ambiguity.
+- **The tools:** `tools/make_extension_tzx.py` has `--source PACKAGE.asm` (with `--v2`): the word
+  carries the minor the package needs; without it, this ROM's word as before. It prints the word it
+  wrote. The Makefile's `v2-packages` passes `--source rom/v2_package_<name>.asm` for all six shipped
+  packages. `tools/qual/manual_tapes.py` `package_blocks` (used by `make doc-examples`) stamps the
+  same way. New probe `tools/qual/qpkgtape.py` (not in `make check`): makes each package's tape
+  blocks as `make v2-packages` does and `LOAD`s them `EXT` through each given ROM's real tape receiver
+  (`--rom TREE`); a package the ROM's minor covers must say LOADED, install and run one statement
+  with no error, one it does not must say BAD TAPE VERSION.
+- **Checks.**
+  - `tools/check_package_abi.py` rule 8 (in `make check`): every shipped package's tape line in the
+    Makefile must use `--source` with its own source; the test packages `fntest` and `fptest` (which
+    use 2.1) must be found to need 2.1 (a check of `needed_minor` itself); it prints each tape's
+    minor. Negative control: the `--source` removed from the `cbeep` line is reported ("the cbeep tape
+    is not stamped from its source").
+  - `qpkgtape.py` on this ROM (2.1) and on a v2.0.2-emu.1 tree built from its tag
+    (`git archive v2.0.2-emu.1`, `make build v2-packages`, in a scratch directory): 16/16 PASS. On
+    2.1 all eight load and run (the six shipped at `$8200`, `fntest` and `fptest` at `$8201`); on
+    2.0.2 the six shipped packages LOAD and run (`MODE 0`, `GRAB`, `LPRINT 1`, `CIRCLE`, `CPLOT`,
+    `CBEEP`), `fntest` and `fptest` are refused with BAD TAPE VERSION.
+- **Not changed (a limit, needs ROM):** `SAVE … EXT` stamps the running ROM's own word, so a
+  statement-only package saved from a 2.1 ROM says `$8201` and a 2.0 ROM refuses it. The shipped
+  tapes come from `make v2-packages`, not from `SAVE`.
+- **Bytes:** HOME 377 (0); EXROM 111 (0); RAM 0. No ROM change.
+- **Tests:** `[make test: pending]`.
 
 ## Phase 7: decision gate for a V3 (major: ABI 3.0, new RAM map)
 
