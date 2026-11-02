@@ -80,7 +80,7 @@ For the `v2.0.1-emu.1` images (HOME `3f13ec2c...`, EXROM `24b1ebb0...`, identity
 | 5.8 | `LOAD "CBEEP" EXT` from the package tape; `BORDER 2 : CBEEP 1000,0,2 : CBEEP 1000,12,2` | loudspeaker middle C then C an octave up, 1 s each; border stays red | NOT TESTED — PHYSICAL HARDWARE UNAVAILABLE |
 | 5.9 | `CBEEP 5000,0,7`, BREAK during it | the note plays to the end, then `BREAK` (interrupts are off while it sounds) | NOT TESTED — PHYSICAL HARDWARE UNAVAILABLE |
 | 5.10 | relative loudness of `BEEP` (AY, level 15) and `CBEEP` (loudspeaker) through the TV / monitor audio | both audible and comfortable; note the levels | NOT TESTED — PHYSICAL HARDWARE UNAVAILABLE |
-| 5.11 | `PRINT STICK(1)` after the chime and after a `BEEP` | joystick still read (the mixer's I/O-port bits are kept) | NOT TESTED — PHYSICAL HARDWARE UNAVAILABLE |
+| 5.11 | `PRINT STICK(1)` after the chime and after a `BEEP` | joystick still read after the chime and after a `BEEP` (`STICK` makes the sound chip's I/O port an input before each read) | NOT TESTED — PHYSICAL HARDWARE UNAVAILABLE |
 
 ## 6. Compiler maintenance release v2.0.2-emu.1
 
@@ -105,6 +105,18 @@ For the `v2.1.0-emu.1` images (HOME `8c3d6c81...`, EXROM `e46e2065...`, identity
 | 7.6 | **The new glyphs (Q-26).** The program `FOR i = 91 TO 94`, `PRINT CHR$(i);`, `NEXT i`, `PRINT CHR$(96);`, `FOR i = 123 TO 126`, `PRINT CHR$(i);`, `NEXT i`, `RUN` (one statement per line) | `[\]^` then the grave mark, then `{\|}~`, each legible on the TV or monitor (they have no keyboard keys; manual Appendix C) | NOT TESTED — PHYSICAL HARDWARE UNAVAILABLE |
 | 7.7 | **Faster loops and BREAK (items 5.2-5.4, 5.12).** `top:` / `GOTO top`, `RUN`, then CAPS SHIFT + SPACE; also `FOR i = 1 TO 30000`, `NEXT i` with a BREAK; `PAUSE 600` timed | `BREAK` within a second in each case (the BREAK poll was reworked in 5.2); `PAUSE 600` still 10 s | NOT TESTED — PHYSICAL HARDWARE UNAVAILABLE |
 | 7.8 | **Package functions and the error message (items 6.1-6.3; nothing hardware-specific, a quick check).** `x = 0`, `PRINT 1 / x`, `RUN` | the status bar shows `RUNTIME ERROR 5` (the code is shown); the six shipped packages load and run as in 3.10 | NOT TESTED — PHYSICAL HARDWARE UNAVAILABLE |
+
+## 8. Maintenance release v2.1.1-emu.1
+
+For the `v2.1.1-emu.1` images (HOME `c79ce1cf...`, EXROM `ba7f0869...`, identity CRC `$2A70`; `V2_1_1_RELEASE_STATUS.md`). **Hardware testing was waived by the owner for this release as for v2.1.0**: nothing below has been run; every row stays "not tested" until a machine is available. The release changes `STICK`, the graphics statements (`LINE` and the mode 1 colour byte) and three glyphs; sections 1-7 apply as they stand. The rows below are the behaviour a hardware test should look at in particular (`V2_DEFECT_REGISTER.md`, M-5 to M-9):
+
+| # | Step | Expected | Result |
+|---|---|---|---|
+| 8.1 | `PRINT STICK(1)` and `PRINT STICK(2)` with a joystick in each connector, each moved in every direction and with fire pressed | each reads only its own joystick: the directions give 1 to 15, and fire adds 16; nothing pressed gives 0 | NOT TESTED — PHYSICAL HARDWARE UNAVAILABLE |
+| 8.2 | `SOUND 7, 255`, then `PRINT STICK(1)` with the joystick held | the joystick is still read (`STICK` makes the I/O port an input first) | NOT TESTED — PHYSICAL HARDWARE UNAVAILABLE |
+| 8.3 | `LOAD "MODE" EXT`, `MODE 1`, `INK 2 : PLOT 24, 1 : INK 4 : PLOT 24, 8` | each pixel in its own colour (red, then green), and no colour on any other row | NOT TESTED — PHYSICAL HARDWARE UNAVAILABLE |
+| 8.4 | `LINE 0, 0 TO 255, 191` in `MODE 0` and in `MODE 1` | the same line as in v2.1.0, visibly faster | NOT TESTED — PHYSICAL HARDWARE UNAVAILABLE |
+| 8.5 | `PRINT "pq gap"` | the descenders of `p`, `q` and `g` go below the line; `p` does not look like `P` | NOT TESTED — PHYSICAL HARDWARE UNAVAILABLE |
 
 ## 4. Machine-specific risks to look for
 

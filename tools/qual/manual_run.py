@@ -44,7 +44,10 @@ def png_bytes(w, h, rgb_rows):
 def render_screen(scr, scale=2, attr8x1=None):
     """256x192 bitmap + attributes (6912 bytes read from $4000) -> PNG bytes (flash shown steady).
     attr8x1 = the 6144 bytes at $6000 when the machine is in the extended-colour mode (MODE 1): one
-    attribute byte per scan line and character column, instead of one per 8 x 8 cell."""
+    attribute byte per scan line and character column, instead of one per 8 x 8 cell, laid out like the
+    bitmap: the colour of the bitmap byte at offset o is at $6000 + o (Fuse's display.c reads it at
+    display_line_start[y] + x + ALTDFILE_OFFSET). v2.1.1: this read $6000 + y*32 + x, the same wrong
+    layout the ROM wrote (issue #5), so the two errors hid each other in mode1_strips."""
     rows = []
     for y in range(192):
         base = ((y & 0xC0) << 5) | ((y & 0x07) << 8) | ((y & 0x38) << 2)
@@ -52,7 +55,7 @@ def render_screen(scr, scale=2, attr8x1=None):
         px = bytearray()
         for cx in range(32):
             b = scr[base + cx]
-            at = attr8x1[y * 32 + cx] if attr8x1 is not None else scr[arow + cx]
+            at = attr8x1[base + cx] if attr8x1 is not None else scr[arow + cx]
             pal = BRIGHT if at & 0x40 else PALETTE
             ink, paper = pal[at & 7], pal[(at >> 3) & 7]
             for bit in range(7, -1, -1):

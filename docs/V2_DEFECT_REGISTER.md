@@ -127,6 +127,18 @@ Found in the back-port of 2068-Leap-C's improvements (`V2_LEAPC_BACKPORT_PLAN.md
 | BP-1.2 | LOW | **`RND` was correlated.** The one-bit LFSR step made each state the previous one shifted right (`RANDOMISE 7`: `RND(6)` gave 3, 1, 0) | Fixed in `v2.1.0-emu.1` (plan 1.2): 16-bit xorshift (Leap-C's), period 65,535, the R seeding and MOD scaling kept; seeded sequences change | `tools/qual/qrnd.py` |
 | BP-6.3 | MEDIUM | **Package error codes 12-21 overlapped the VM's** (R10.8 A3) | Fixed in `v2.1.0-emu.1` (plan 6.3, ABI 2.1): runtime codes 12-31 are the packages' (the shipped packages keep theirs), a package may also raise 5, 15 and 67, the VM's new codes go above 67; error service 18; runtime errors without a message show their number | `tools/check_package_abi.py` rule 7; `qpkgfn` |
 
+## Maintenance release `v2.1.1-emu.1`
+
+Found after `v2.1.0-emu.1` and fixed in `v2.1.1-emu.1`. Ids continue the `M-` series of the maintenance releases above.
+
+| Id | Sev | Defect | Status | Evidence |
+|---|---|---|---|---|
+| M-5 | MEDIUM | **`STICK` read the sound chip's port A while it was an output.** The boot mixer value is `$F8` (register 7 bit 6 = 1), and `SOUND`, `BEEP` or `OUT` writes to register 7 could leave it so; a real joystick might not be seen. Present in `v2.1.0-emu.1` | Fixed in `v2.1.1-emu.1`: `STICK` clears register 7 bit 6 before each read. Not tried on a real joystick | `hw.stick_input` |
+| M-6 | MEDIUM | **`STICK` did not select a joystick, and `STICK(2)` was the fire bit.** The port address high byte was not set (the stock ROM puts the stick number there), so neither connector was selected, and `STICK(2)` gave only 0 or 1. The manual called that a hardware limitation of the second connector, which was wrong. Present in `v2.1.0-emu.1` and earlier V2 releases | Fixed in `v2.1.1-emu.1`: `STICK(n)` selects joystick n and gives 0 to 31. Hardware check needed (`V2_HARDWARE_CHECKLIST.md` section 8) | `hw.stick_input` (the emulator has no joystick; a real joystick was not tried) |
+| M-7 | MEDIUM | **In `MODE 1` the colour byte of a pixel was written to the wrong pixel row for most rows** (only 24 of the 192 rows were right): `PLOT`, `LINE`, `CIRCLE`, `FILL`, `CPLOT`, `BLOCK`, `FRAME` and `INVERT`. Issue nchiker/2068-Leap#5 | Fixed in `v2.1.1-emu.1` (no package change) | `pkg.mode.colour_rows` |
+| M-8 | LOW | **The lowercase `g`, `p` and `q` had their bowl one row high**, so `p` looked like a capital `P`. Issue nchiker/2068-Leap#6 | Fixed in `v2.1.1-emu.1` | `tools/qual/qglyphs.py` |
+| M-9 | LOW | **`LINE` did not move off-screen ends to the nearest edge, as the manual says.** An *x* off the screen was taken modulo 256 and a *y* outside 0-255 from its low byte (`LINE -10, 50 TO 100, 50` started at *x* 246) | Fixed in `v2.1.1-emu.1`: each end is moved to the nearest edge, as `PLOT` does (`LINE` is also about 4-5 times faster) | `gfx.line_offscreen` |
+
 ## Hardware
 
 Nothing in this register has been checked on a physical TS2068 (all evidence is ZEsarUX): **NOT

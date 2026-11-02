@@ -2163,7 +2163,7 @@ BUILTIN_FN_TABLE:
     db 3, "COS", 1, 26, 0
     db 3, "TAN", 1, 27, 0
     db 2, "IN", 1, 30, 0          ; STUDY: IN(port), full 16-bit port address
-    db 5, "STICK", 1, 31, 0       ; STUDY: STICK(1|2), Timex joystick via AY port A
+    db 5, "STICK", 1, 31, 0       ; STICK(1|2): Timex joystick n via AY port A, 0-31
 
 ; BUG FOUND (real hardware, R8.5 Group 5): a literal 128-255 has TOK_VAL
 ; high byte 0, so this used to take the PUSH_I8 path below -- but

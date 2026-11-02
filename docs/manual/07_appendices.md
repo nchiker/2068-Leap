@@ -41,7 +41,7 @@ What the status line (the bottom row of the screen) can say. The program or comm
 | `BAD ARRAY TAPE` | the tape block is not a valid array |
 | `ARRAY STORE FULL` | no room is left in the Array Store |
 | `LINE n/m` | not an error: the editor's status line (cursor line *n* of *m*) |
-| `2068 LEAP V2.1` | not an error: the ROM's version, shown after switching on until the first key |
+| `2068 LEAP V2.1.1` | not an error: the ROM's version, shown after switching on until the first key |
 
 The `PROGRAM FULL` message is covered by the release qualification (defect RC-2), not by an example of this manual: it needs a nearly full program memory.
 
@@ -240,6 +240,8 @@ NEXT r
 
 ![Characters 32 to 143: the first code of each row is at the left](images/charset.png)
 
+**Changed in the maintenance release (v2.1.1):** in v2.1.0 the bowl of the lowercase `g`, `p` and `q` was one pixel row too high, so `p` looked like a capital `P` (issue nchiker/2068-Leap#6). The glyphs are corrected.
+
 **Every printable character has a picture.** Codes 32 to 126 all print, including the nine that the first release printed as blanks: `[` `\` `]` `^` `` ` `` `{` `|` `}` `~` (codes 91, 92, 93, 94, 96, 123, 124, 125 and 126). The keyboard has no keys for these nine, so a program gets them with `CHR$` (`CHR$(91)` is `[`), or in a string that holds them, for instance one read from tape. They are kept in strings, compared and passed to `CODE` like any other character.
 
 ```basic ex=app.chars.2
@@ -403,13 +405,13 @@ One package at a time; `NEW` unloads it; a statement of a package that is not lo
 
 ## Appendix G: Hardware notes
 
-Everything in this manual was verified in the **ZEsarUX emulator**, on the ROMs of the release it describes (`v2.1.0-emu.1`; the examples and figures of the earlier releases were checked on theirs, and the memory layout is that of `v2.0.2-emu.1`). **Nothing was tried on a physical TS2068**, a real cassette recorder, a ZX Printer, a joystick, ULAplus hardware or a Dock/EXROM cartridge. In particular:
+Everything in this manual was verified in the **ZEsarUX emulator**, on the ROMs of the release it describes (`v2.1.1-emu.1`; the examples and figures of the earlier releases were checked on theirs, and the memory layout is that of `v2.0.2-emu.1`). **Nothing was tried on a physical TS2068**, a real cassette recorder, a ZX Printer, a joystick, ULAplus hardware or a Dock/EXROM cartridge. In particular:
 
 * the sound (`BEEP`, `SOUND`, `CBEEP`) was measured by reading the sound chip's registers back, counting instructions and port writes, and from the emulator's recorded audio; it was never listened to on a TS2068 (the startup chime included);
 * `BEEP` and `PAUSE` count display frames: 1/60 second on a TS2068 is the design figure, the emulator interrupts 50 times a second (not measured on hardware);
 * the tape block routines (receiver and sender) are new in v2.1, written from scratch: tape timing was exercised only through the emulator's tape input; the identity-check pause of about 2.4 seconds on `SAVE ... ALL`, `LOAD` and `VERIFY` of an ALL tape has not been timed on real hardware;
 * the speed figures (T-states, lines a second) are emulator counts of uncontended T-states at 3.5 MHz, not timed on a TS2068;
-* the printer package, the joysticks, `MODE 1`, ULAplus and the keyboard-matrix details are as the source states, not as seen on a machine;
+* the printer package, the joysticks (`STICK`'s choice of joystick 1 or 2 and its fire bit were checked only on the model of the two connectors in the TSRun emulator, not with a real joystick), `MODE 1`, ULAplus and the keyboard-matrix details are as the source states, not as seen on a machine;
 * the hardware checklist for the release is `docs/V2_HARDWARE_CHECKLIST.md`.
 
 ---
@@ -440,6 +442,6 @@ Everything in this manual was verified in the **ZEsarUX emulator**, on the ROMs 
 
 ## Appendix I: How this manual was checked
 
-* Every example marked with an output block, a picture, a transcript or an error code in this manual is a test. `make doc-examples` runs them all on the ROM image built from the same tree (the release this edition describes, `v2.1.0-emu.1`) (`tools/qual/manual_run.py`; the parser is `tools/qual/manual_examples.py`): programs are stored and run; `LIST`, `RUN`, `NEW` and the editor keys are typed through the real keyboard path; `SAVE` is captured at the tape transport and `LOAD` / `VERIFY` run the real tape receiver on a synthesised signal; packages are loaded with `LOAD "NAME" EXT` through that same receiver; BREAK is pressed in the emulated keyboard matrix; pictures are rendered from screen memory and compared with the committed images.
+* Every example marked with an output block, a picture, a transcript or an error code in this manual is a test. `make doc-examples` runs them all on the ROM image built from the same tree (the release this edition describes, `v2.1.1-emu.1`) (`tools/qual/manual_run.py`; the parser is `tools/qual/manual_examples.py`): programs are stored and run; `LIST`, `RUN`, `NEW` and the editor keys are typed through the real keyboard path; `SAVE` is captured at the tape transport and `LOAD` / `VERIFY` run the real tape receiver on a synthesised signal; packages are loaded with `LOAD "NAME" EXT` through that same receiver; BREAK is pressed in the emulated keyboard matrix; pictures are rendered from screen memory and compared with the committed images.
 * This suite is **separate** from the 1010-case release baseline (`make test`, `make qual`, `tools/qual/corpus.py`), which it does not touch and whose totals it does not change.
 * Facts that are not examples (limits, timings) were measured with `tools/qual/manual_measure.py` and the commands recorded in `docs/V2_DOCUMENTATION_FINDINGS.md`, which also lists what in the earlier documents turned out to be wrong.

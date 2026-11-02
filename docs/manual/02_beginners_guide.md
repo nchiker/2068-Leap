@@ -12,7 +12,7 @@ Switch on the machine. A short chime plays, and the screen is empty except for o
 ```
 ```screen ex=guide.boot
 ...
-2068 LEAP V2.1
+2068 LEAP V2.1.1
 ```
 
 ![The screen after switching on](images/boot_screen.png)

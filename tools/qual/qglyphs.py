@@ -4,7 +4,7 @@
 Calls GFX_CHAR_TO_FONT_OFFSET (package service slot 2) for each code 0-255 on the built ROM and
 reads the 8 bytes it points to. Each code from ' ' to '~' must give carry clear and the bytes the
 font source (kernel/graphics/graphics.asm FONT_TABLE, a `; 'c'` comment before each glyph) gives for
-it; 0-31 and 127 carry set. With --ref TREE (a built tree from before the change), every other code
+it; 0-31 and 127 carry set; g, p and q have their bowl on rows 2-5 (issue #6). With --ref TREE (a built tree from before the change), every other code
 (128-255: block graphics, UDGs, none) must give the same carry and bytes there as here.
 
 Usage: python3 tools/qual/qglyphs.py [--tree DIR] [--ref TREE] [--port N]
@@ -78,6 +78,12 @@ def main():
                     code, chr(code), cf, data.hex() if data else "-", want.hex() if want else "none"))
         elif code < 128 and not cf:
             fails.append("%3d: a glyph where there should be none" % code)
+    # Issue #6 (v2.1.1): g, p and q have their bowl on the x-height (rows 2-5, as a, o, n) and their
+    # descender in rows 6-7 (as y); before, the bowl started on row 1 and p read as a capital P.
+    for ch in "gpq":
+        cf, data = got[ord(ch)]
+        if cf or data[0] or data[1] or not data[2] or not data[7]:
+            fails.append("%r: bowl not on the x-height or no descender to row 7 (%s)" % (ch, data.hex() if data else "-"))
     n = 256
     if a.ref:
         ref = lookups(a.ref, a.port + 1)

@@ -1,10 +1,10 @@
 # 2068-Leap V2 -- emulator setup
 
-How to run the 2068-Leap V2 ROMs in an emulator. **ZEsarUX is the only qualification emulator**: the release `v2.1.0-emu.1` is accepted on ZEsarUX results (more than a thousand automated cases; see [V2_1_RELEASE_STATUS.md](V2_1_RELEASE_STATUS.md)). EightyOne and Fuse are **courtesy** alternatives for people who prefer them: the configurations below are known to start the ROM, but nothing is qualified on them. The browser emulator TSRun is a quick way to try V2 without installing anything. Nothing has been tried on a physical TS2068 ([V2_HARDWARE_CHECKLIST.md](V2_HARDWARE_CHECKLIST.md)).
+How to run the 2068-Leap V2 ROMs in an emulator. **ZEsarUX is the only qualification emulator**: the release `v2.1.1-emu.1` is accepted on ZEsarUX results (more than a thousand automated cases; see [V2_1_1_RELEASE_STATUS.md](V2_1_1_RELEASE_STATUS.md)). EightyOne and Fuse are **courtesy** alternatives for people who prefer them: the configurations below are known to start the ROM, but nothing is qualified on them. The browser emulator TSRun is a quick way to try V2 without installing anything. Nothing has been tried on a physical TS2068 ([V2_HARDWARE_CHECKLIST.md](V2_HARDWARE_CHECKLIST.md)).
 
 ## The files
 
-From the release archive [`2068-Leap-V2-v2.1.0-emu.1.zip`](https://github.com/nchiker/2068-Leap/releases/tag/v2.1.0-emu.1) (check it first: `sha256sum -c 2068-Leap-V2-v2.1.0-emu.1.zip.sha256`, then `sha256sum -c SHA256SUMS` inside it):
+From the release archive [`2068-Leap-V2-v2.1.1-emu.1.zip`](https://github.com/nchiker/2068-Leap/releases/tag/v2.1.1-emu.1) (check it first: `sha256sum -c 2068-Leap-V2-v2.1.1-emu.1.zip.sha256`, then `sha256sum -c SHA256SUMS` inside it):
 
 | File in the release | Size | What it is | Used by |
 |---|---:|---|---|
@@ -14,14 +14,14 @@ From the release archive [`2068-Leap-V2-v2.1.0-emu.1.zip`](https://github.com/nc
 | `roms/leap_v2_exrom.dck` | 8,201 | the EXROM wrapped as a Timex ROM cartridge (9-byte header + EXROM) | EightyOne 1.41; also accepted by TSRun's **Load Cart** |
 | `packages/v2_*.tzx` | varies | the six packages as tapes: `mode`, `sprite`, `printer`, `shapes`, `graphics`, `cbeep` | every emulator's tape input |
 
-The qualified ROM hashes (SHA-256) of `v2.1.0-emu.1` are:
+The qualified ROM hashes (SHA-256) of `v2.1.1-emu.1` are:
 
 | ROM | SHA-256 |
 |---|---|
-| `leap_v2_home.bin` | `8c3d6c8108b653114ce4fffcd9695ac9883a8068664bffd21524b7ac1d167df0` |
-| `leap_v2_exrom.bin` | `e46e2065ee863f0569c3e47cdc975af0081b4e7227b690977eed4fb7d7020f9d` |
+| `leap_v2_home.bin` | `c79ce1cfe1d757036fb7c53974d53dd56117ec2d231c7b4c5f2e65c510dc295a` |
+| `leap_v2_exrom.bin` | `ba7f0869d3ea8641cbcdc25f62b131a1cc1e8614fd083a873d77313a00d5a1b5` |
 
-(`v2.0.2-emu.1`: HOME `1fe5798f79f31e760780a7c3d1d24657a9aadf12edfa5aef5f82c94040a4f5cc`, EXROM `e6b507a49cef4d6cdd62ae09f8664f20ee84c7931a42bf67e1cf0862322641a0`; `v2.0.1-emu.1`: HOME `3f13ec2cc4ef02c1b9694ccd3d40c02658ff4ddef100e16f50230d3002306f1c`, EXROM `24b1ebb0b1377aad8e2e6caee443a9c5611cfad2f0eab495311e07df43b22b7e`.) The `v2.0.1-emu.1` archive predates the cartridge file: build it from the EXROM with `tools/make_eightyone_dck.sh roms/leap_v2_exrom.bin roms/leap_v2_exrom.dck` (or by hand: `printf '\376\000\000\000\000\000\000\002\000' > leap_v2_exrom.dck && cat leap_v2_exrom.bin >> leap_v2_exrom.dck`); `v2.0.2-emu.1` and later archives include it. The six package tapes of `v2.1.0-emu.1` are byte-identical to those of `v2.0.2-emu.1`.
+(`v2.1.0-emu.1`: HOME `8c3d6c8108b653114ce4fffcd9695ac9883a8068664bffd21524b7ac1d167df0`, EXROM `e46e2065ee863f0569c3e47cdc975af0081b4e7227b690977eed4fb7d7020f9d`; `v2.0.2-emu.1`: HOME `1fe5798f79f31e760780a7c3d1d24657a9aadf12edfa5aef5f82c94040a4f5cc`, EXROM `e6b507a49cef4d6cdd62ae09f8664f20ee84c7931a42bf67e1cf0862322641a0`; `v2.0.1-emu.1`: HOME `3f13ec2cc4ef02c1b9694ccd3d40c02658ff4ddef100e16f50230d3002306f1c`, EXROM `24b1ebb0b1377aad8e2e6caee443a9c5611cfad2f0eab495311e07df43b22b7e`.) The `v2.0.1-emu.1` archive predates the cartridge file: build it from the EXROM with `tools/make_eightyone_dck.sh roms/leap_v2_exrom.bin roms/leap_v2_exrom.dck` (or by hand: `printf '\376\000\000\000\000\000\000\002\000' > leap_v2_exrom.dck && cat leap_v2_exrom.bin >> leap_v2_exrom.dck`); `v2.0.2-emu.1` and later archives include it. The six package tapes of `v2.1.1-emu.1` are byte-identical to those of `v2.1.0-emu.1` and `v2.0.2-emu.1`.
 
 **Built from source** (`make build`, see the [README](../README.md#building-from-source)) the same images are `build/test_basic.bin` (HOME), `build/exrom.bin` (EXROM), `build/ts2068rom_zesarux.bin` (combined) and `build/exrom.dck` (cartridge); `make v2-packages` writes the tapes to `build/extensions/v2_*.tzx`. A build of the `v2-development` branch is a development build, not the qualified release (its ROMs can differ from the qualified images).
 
@@ -44,7 +44,7 @@ cd src && ./configure && make -j"$(nproc)"
 ./zesarux --noconfigfile --machine TS2068 --romfile /absolute/path/roms/leap_v2_zesarux.bin
 ```
 
-Add `--enableulaplus` for the ULAplus examples of the MODE package (`ULAPLUS`, `PALETTE`). The machine starts in the V2 editor after the startup chime; during the chime the status row shows the ROM's version, `2068 LEAP V2.1`, until the first key, which brings the status line `LINE 1/0` back.
+Add `--enableulaplus` for the ULAplus examples of the MODE package (`ULAPLUS`, `PALETTE`). The machine starts in the V2 editor after the startup chime; during the chime the status row shows the ROM's version, `2068 LEAP V2.1.1`, until the first key, which brings the status line `LINE 1/0` back.
 
 **Packages:** insert the package's `.tzx` with ZEsarUX's tape controls, type `LOAD "SHAPES" EXT` (or `MODE`, `SPRITE`, `PRINTER`, `GRAPHICS`, `CBEEP`) on the editor's empty last line, and play the tape; the status line shows `LOADED`. The tapes are Direct Recording images of V2's own tape format, so the emulator must play them as a signal into the EAR input (a stock-ROM loading trap does not apply). One package is resident at a time; loading another replaces it.
 
@@ -73,7 +73,7 @@ fuse --machine ts2068 --rom-ts2068-0 /absolute/path/roms/leap_v2_home.bin --rom-
 
 ## In the browser: TSRun
 
-[**nchiker.github.io/TSRun/?rom=leap**](https://nchiker.github.io/TSRun/?rom=leap) runs the `v2.1.0-emu.1` HOME and EXROM (byte-identical to the release's hashes, given above; since 2026-10-28, TSRun `016787f`) in [TSRun](https://github.com/josef-jelinek/TSRun), a browser TS2068 emulator, from our fork [nchiker/TSRun](https://github.com/nchiker/TSRun). Checked on 2026-10-28, headless on TSRun's own machine: eight programs (every character, floats and `SIN`/`COS`/`TAN`, loops, strings, arrays and `PROC`, scrolling, an error) give screens byte-identical to ZEsarUX's, and the `SHAPES` package tape loads with `LOAD "SHAPES" EXT` once the tape is played. Checked earlier with `v2.0.1-emu.1` (2026-10-12): power-on to the editor, typing and running a program, the AY sound (the startup chime and `BEEP`), and the cartridge path (`leap_v2_home.bin` as ROM0 plus `leap_v2_exrom.dck` through **Load Cart**). Click the page or press a key once to let the browser play sound.
+[**nchiker.github.io/TSRun/?rom=leap**](https://nchiker.github.io/TSRun/?rom=leap) runs the `v2.1.0-emu.1` HOME and EXROM (byte-identical to that release's hashes, given above; since 2026-10-28, TSRun `016787f`; **not `v2.1.1-emu.1`**, which has the `STICK`, `MODE 1` colour, `LINE` and glyph fixes of the maintenance release) in [TSRun](https://github.com/josef-jelinek/TSRun), a browser TS2068 emulator, from our fork [nchiker/TSRun](https://github.com/nchiker/TSRun). Checked on 2026-10-28, headless on TSRun's own machine: eight programs (every character, floats and `SIN`/`COS`/`TAN`, loops, strings, arrays and `PROC`, scrolling, an error) give screens byte-identical to ZEsarUX's, and the `SHAPES` package tape loads with `LOAD "SHAPES" EXT` once the tape is played. Checked earlier with `v2.0.1-emu.1` (2026-10-12): power-on to the editor, typing and running a program, the AY sound (the startup chime and `BEEP`), and the cartridge path (`leap_v2_home.bin` as ROM0 plus `leap_v2_exrom.dck` through **Load Cart**). Click the page or press a key once to let the browser play sound.
 
 **Package tapes** load in TSRun since its commit `4db1f1e` (2026-10-27): TSRun used to stop the tape about 0.1 s after starting it because its loader detection did not recognise V2's loader running from an EXROM chunk other than 0 ([TSRun issue #3](https://github.com/josef-jelinek/TSRun/issues/3)); it now keeps such a tape playing. Checked headless with `v2.1.0-emu.1` and `SHAPES` (above).
 
