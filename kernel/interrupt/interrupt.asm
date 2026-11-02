@@ -200,14 +200,18 @@ KBD_ISR_TICK:
     ld   (FRAMES), hl                  ; once, before any of this
                                       ; routine's own early-exit paths
 
+    ld   a, (KBD_CUR_ROW)              ; v2.1.1: Leap-C delta D27 (2068-Forth v2.0's interrupt). With no
+    inc  a                             ; key tracked ($FF + 1 = 0 selects every row at once), one read
+    jr   nz, .tracked                  ; of the keyboard ends an idle frame: bits 0-4 all set = no key
+    in   a, (PORT_ULA)                 ; down (it scanned all 8 rows every frame: about 2,000 T).
+    or   $E0                           ; IO_SCAN_TABLE is then not refreshed: only this routine's
+    inc  a                             ; IO_FIND_KEY, IO_KEY_STILL_DOWN and IO_DECODE_KEY read it,
+    jr   z, .done                      ; each after a scan.
     call IO_KEY_SCAN_ALL
-
+    jr   .look_for_new
+.tracked:                              ; something is tracked: the rows, then ONLY that key
+    call IO_KEY_SCAN_ALL
     ld   a, (KBD_CUR_ROW)
-    cp   $FF
-    jr   z, .look_for_new           ; nothing currently tracked
-
-    ; something is tracked -- check ONLY that key, regardless of
-    ; anything else currently down on the matrix
     ld   b, a
     ld   a, (KBD_CUR_BIT)
     ld   c, a

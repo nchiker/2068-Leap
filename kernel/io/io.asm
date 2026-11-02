@@ -122,7 +122,7 @@ KEY_ROW_COUNT   EQU 8
 ;      undefined
 ; Destroys: AF
 ; ============================================================================
-    IFNDEF V2_PRODUCTION          ; RC: production places it in the low-ROM padding (rom/v2_lowrom_fill.asm)
+    IFNDEF V2_PRODUCTION          ; not in production: no caller since v2.1.1 (IO_KEY_SCAN_ALL reads the rows itself)
 IO_KEY_SCAN_ROW:
     in   a, (PORT_ULA)
     ret
@@ -130,30 +130,21 @@ IO_KEY_SCAN_ROW:
 
 ; ============================================================================
 ; IO_KEY_SCAN_ALL
-; Scans all 8 rows into IO_SCAN_TABLE (one byte per row, same row order as
-; ROW_TABLE below — index 0 = $FE, index 7 = $7F).
+; Scans all 8 rows into IO_SCAN_TABLE (one byte per row: index 0 = row
+; select $FE, index 7 = $7F).
 ; In:  none
 ; Out: IO_SCAN_TABLE filled; HL = IO_SCAN_TABLE (start of the table)
 ; Destroys: AF, BC, HL
 ; ============================================================================
-IO_KEY_SCAN_ALL:
-    ld   hl, IO_SCAN_TABLE
-    ld   b, KEY_ROW_COUNT
-    ld   c, 0                    ; C = index into ROW_TABLE
-.scan_loop:
-    push bc
-    push hl
-    ld   hl, ROW_TABLE
-    ld   b, 0
-    add  hl, bc                   ; HL -> ROW_TABLE[C]
-    ld   a, (hl)                  ; A = this row's select byte
-    pop  hl
-    call IO_KEY_SCAN_ROW
+IO_KEY_SCAN_ALL:                      ; v2.1.1: Leap-C delta D27 (2068-Forth v2.0's): IN A,(C) with B the
+    ld   hl, IO_SCAN_TABLE             ; row select rotated left ($FE, $FD ... $7F), no ROW_TABLE and no
+    ld   bc, $FE << 8 | PORT_ULA       ; IO_KEY_SCAN_ROW call per row
+.row:
+    in   a, (c)
     ld   (hl), a
     inc  hl
-    pop  bc
-    inc  c
-    djnz .scan_loop
+    rlc  b
+    jr   c, .row                       ; $7F rotates to $FE with no carry: the 8th row was the last
     ld   hl, IO_SCAN_TABLE
     ret
 
@@ -535,8 +526,7 @@ IO_READ_KEY_NONBLOCK:
 ; recovered.
 
 ; ---- row select bytes, in the order IO_SCAN_TABLE stores them ----
-ROW_TABLE:
-    DB   $FE, $FD, $FB, $F7, $EF, $DF, $BF, $7F
+; ROW_TABLE removed in v2.1.1 (Leap-C D27): IO_KEY_SCAN_ALL rotates the row select itself.
 
 ; ---- key -> ASCII translation table, 40 entries (8 rows x 5 bits) ----
 ; Index = row*5 + bit, using ROW_TABLE's row order above. 0 = unmapped

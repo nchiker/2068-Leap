@@ -41,9 +41,6 @@ COMPILE_CLEAR:
     rst $20
     ret
     ASSERT $ <= $0030
-    ORG $0035                     ; after RST $30's code
-IO_KEY_SCAN_ROW:
-    in   a, (PORT_ULA)
-    ret
-    ASSERT $ <= $0038
+    ; $0035-$0037 (after RST $30's code): free since v2.1.1, when IO_KEY_SCAN_ROW lost its only caller
+    ; (IO_KEY_SCAN_ALL reads the rows itself, Leap-C delta D27).
     ORG V2_LOWROM_RESUME
