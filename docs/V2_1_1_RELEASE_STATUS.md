@@ -81,30 +81,30 @@ ROM free space: **HOME 403 bytes, EXROM 111 bytes** (`v2.1.0-emu.1`: 313 / 111).
 
 ## 3. Qualification (2026-11-01, all on the emulator)
 
-The runs below are on the commit that builds this release's ROM images (TBD: commit):
+The runs below are on the commit that builds this release's ROM images `efe734c` (this table was filled in the next commit, which changes only this record):
 
 | Suite | Result |
 |---|---|
-| `make check` | TBD |
-| `make test`: smoke ROMs / V2 standalone | TBD |
-| production checks, FILL check | TBD |
-| production regression gate / Array Store gate / known-defect suite / SAVE ALL | TBD |
-| micsave (`qmicsave`) | TBD |
-| `make qual` corpus | TBD |
-| session lifecycle | TBD |
-| `qvmedge` | TBD |
-| `make qual-maint`: AY BEEP / cbeep / frame interrupt unavailable / cbeep tape LOAD | TBD |
-| `make doc-examples` (the manual) | TBD |
-| `make repro` (two fresh trees, identical images) | TBD |
-| release definitions (`make build EXTRA_DEFS=`) | TBD |
-| `qcanary --banking` | TBD |
-| `qtapetol` (23 tape distortions) | TBD |
-| `qpoweron` (zero, ones, alternate, address and three random RAM patterns) | TBD |
-| `qpkgfn` (package functions, floats, errors, slot traps, ABI 2.0 packages) | TBD |
-| `qpkgtape` (package tapes through the real receiver) | TBD |
-| `qglyphs` (every character code; `g`, `p`, `q` pinned) | TBD |
-| `qlines` (`LINE` against the `v2.1.0-emu.1` ROM and a model; new) | TBD |
-| `tsrun_stick` (`STICK` on TSRun's core; new) | TBD |
+| `make check` | pass |
+| `make test`: smoke ROMs / V2 standalone | 9/9, 40/40 |
+| production checks, FILL check | 0 failures |
+| production regression gate / Array Store gate / known-defect suite / SAVE ALL | 127/127, 101/101, 15/15, 13/13 |
+| micsave (`qmicsave`) | 0 failures |
+| `make qual` corpus | 670 PASS, 1 XFAIL, 2 N/A |
+| session lifecycle | 23/23 |
+| `qvmedge` | 221/221 |
+| `make qual-maint`: AY BEEP / cbeep / frame interrupt unavailable / cbeep tape LOAD | 59/59, 27/27, 14/14, 3/3 |
+| `make doc-examples` (the manual) | 327/327 |
+| `make repro` (two fresh trees, identical images) | identical: 18 files |
+| release definitions (`make build EXTRA_DEFS=`) | assemble; HOME 441 / EXROM 110 free |
+| `qcanary --banking` | 673 cases: 0 canary hits, 0 errors, 0 banking violations; lowest stack byte `$FDE8` |
+| `qtapetol` (23 tape distortions) | 22 of 23 loaded: `speed 1.25` refused. Not a regression: a sweep of the tape's start against the frame (leads -600k to +1.2M T) and of speeds 1.20-1.30 shows both this ROM and `v2.1.0-emu.1` loading or refusing 1.22-1.30 by phase alone (each refuses at some leads and loads at others; both refuse 1.22, 1.26, 1.30); the receiver runs with interrupts off. Item 3.1 of v2.1.0 also recorded 22 of 23 |
+| `qpoweron` (zero, ones, alternate, address and three random RAM patterns) | 0 failures |
+| `qpkgfn` (package functions, floats, errors, slot traps, ABI 2.0 packages) | 67/67 |
+| `qpkgtape` (package tapes through the real receiver) | 8/8 on this ROM and on `v2.1.0-emu.1` |
+| `qglyphs` (every character code; `g`, `p`, `q` pinned) | 0 problems |
+| `qlines` (`LINE` against the `v2.1.0-emu.1` ROM and a model; new) | PASS: new ROM = model in every program; old ROM = old model; new = old wherever no end is off the screen |
+| `tsrun_stick` (`STICK` on TSRun's core; new) | 9/9 (`v2.1.0-emu.1`: 3/9) |
 | `make test-legacy` (V1, Fuse) | not run (owner waiver) |
 | hardware | not tested (above) |
 
