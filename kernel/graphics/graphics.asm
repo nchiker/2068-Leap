@@ -1561,6 +1561,12 @@ LINE_DELTA:
 ; ---- screen-row base addresses, computed and verified numerically
 ; (see file header) rather than derived by hand from the bit-shuffle
 ; formula ----
+    ; The table must not cross a 256-byte page (GFX_CHAR_TO_FONT_OFFSET adds to L only). Every image
+    ; that includes this file pads to the next page if it would: 0 bytes in the production HOME
+    ; (v2.1.1), where it does not cross; the smoke ROMs (rom/test_editor.asm) may pad.
+    IF HIGH $ != HIGH ($ + "@" - " ")
+    DS   256 - LOW $, 0
+    ENDIF
 LOW_CHAR_TABLE:
     ; 5.14: the font index of each code from ' ' to '@' (GFX_CHAR_TO_FONT_OFFSET):
     ; 0 space, 1-10 the digits, 73-94 the punctuation (Q-26: after the letters'
