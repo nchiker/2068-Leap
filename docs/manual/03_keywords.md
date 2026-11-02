@@ -1434,6 +1434,11 @@ PRINT POINT(120, 100)
 
 ![A box with a diagonal](images/line_box.png)
 
+**Notes.**
+
+* **Changed in the maintenance release (v2.1.1):** in v2.1.0 an *x* off the screen was taken modulo 256 and a *y* outside 0 to 255 from its low byte, so `LINE -10, 50 TO 100, 50` started at *x* 246. Each end is now moved to the nearest edge, as `PLOT` does.
+* **Changed in the maintenance release (v2.1.1):** `LINE` is about 4 to 5 times faster than in v2.1.0 (a row of 256 pixels about 5.7 times, measured in an emulator). The pixels of every line with both ends on the screen are the same as before, and so are its colours in mode 0 (mode 1's colours are corrected: see MODE).
+
 **See also** PLOT, POINT, CIRCLE, CLS.
 
 ---
@@ -1615,6 +1620,10 @@ PRINT "back to normal"
 ```output ex=kw.mode.1
 back to normal
 ```
+
+**Notes.**
+
+* **Changed in the maintenance release (v2.1.1):** in v2.1.0, in mode 1, `PLOT`, `LINE`, `CIRCLE`, `FILL`, `CPLOT`, `BLOCK`, `FRAME` and `INVERT` wrote a pixel's colour byte (it covers 8 x 1 pixels) to the wrong pixel row for most rows; only 24 of the 192 rows were right (issue nchiker/2068-Leap#5). Fixed in v2.1.1; the package is unchanged.
 
 **See also** ULAPLUS, PALETTE.
 
@@ -2477,6 +2486,7 @@ SOUND 17, 1
 * `BEEP` plays on channel A: after a `BEEP`, channel A is silent and its pitch registers hold the `BEEP`'s note, so set channel A again if your `SOUND` music uses it. Channels B and C are not touched by `BEEP`.
 * Only the low eight bits of *register* are used, so `SOUND 256, x` writes register 0 (the stock TS2068 BASIC refuses 256 and above).
 * **Changed in the maintenance release:** the first V2 release accepted only registers 1 to 16, so channel A's fine pitch could be written only with `OUT 245, 0 : OUT 246, value`.
+* Register 7's bits 6 and 7 set the direction of the chip's two I/O ports (1 = output). The joysticks are read through port A, and `STICK` sets bit 6 to 0 itself before each read, so any value can be written to register 7.
 * The register number is sent to the chip unchanged (checked in the emulator by reading the chip's registers back). The sound itself was not heard on a real machine.
 
 **See also** BEEP, OUT.
@@ -2516,20 +2526,24 @@ Gives the amount a `FOR` loop adds each time round. See FOR.
 
 `STICK(n)` -- **function**
 
-Reads joystick *n* (1 or 2) through the sound chip's input port. Any other *n* is a run-time error. `STICK(1)` gives a number from 0 to 15, one bit per direction switch (a bit is 1 while its switch is closed; 0 means nothing is pressed). `STICK(2)` gives 0 or 1 -- a hardware limitation of the machine's second joystick connection, not of BASIC.
+Reads joystick *n* (1 or 2) through the sound chip's input port. Any other *n* is a run-time error 15. The result is a number from 0 to 31. Bits 0 to 3 are the four direction switches (a bit is 1 while its switch is closed), and 16 is added while the fire button is pressed; 0 means nothing is pressed. If all four direction bits read as closed at once, the directions read 0 (no real joystick can do that).
 
 ```basic ex=kw.stick.1
 j = STICK(1)
-PRINT j >= 0 AND j <= 15
+PRINT j >= 0 AND j <= 31
 k = STICK(2)
-PRINT k >= 0 AND k <= 1
+PRINT k >= 0 AND k <= 31
 ```
 ```output ex=kw.stick.1
 1
 1
 ```
 
-**Notes.** The joystick reading was not tried with a real joystick (hardware not tested).
+**Notes.**
+
+* Before reading, `STICK` makes the sound chip's I/O port an input (register 7 bit 6 = 0), so `SOUND`, `BEEP` or `OUT` writes to register 7 cannot stop `STICK` working. `STICK` leaves bit 6 of register 7 clear.
+* **Changed in the maintenance release (v2.1.1):** in v2.1.0 `STICK(1)` gave the directions and `STICK(2)` gave the fire button (0 or 1) of a joystick that was not selected, because the read did not select either connector, and the port could be left as an output, so a real joystick might not be seen. The earlier text that called `STICK(2)` giving 0 or 1 a hardware limitation of the machine's second joystick connection was wrong.
+* The joystick reading was not tried with a real joystick (hardware not tested).
 
 **See also** INKEY$, IN.
 

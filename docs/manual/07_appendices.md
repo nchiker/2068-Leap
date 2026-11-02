@@ -240,6 +240,8 @@ NEXT r
 
 ![Characters 32 to 143: the first code of each row is at the left](images/charset.png)
 
+**Changed in the maintenance release (v2.1.1):** in v2.1.0 the bowl of the lowercase `g`, `p` and `q` was one pixel row too high, so `p` looked like a capital `P` (issue nchiker/2068-Leap#6). The glyphs are corrected.
+
 **Every printable character has a picture.** Codes 32 to 126 all print, including the nine that the first release printed as blanks: `[` `\` `]` `^` `` ` `` `{` `|` `}` `~` (codes 91, 92, 93, 94, 96, 123, 124, 125 and 126). The keyboard has no keys for these nine, so a program gets them with `CHR$` (`CHR$(91)` is `[`), or in a string that holds them, for instance one read from tape. They are kept in strings, compared and passed to `CODE` like any other character.
 
 ```basic ex=app.chars.2

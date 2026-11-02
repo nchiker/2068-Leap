@@ -423,6 +423,10 @@ T("print.ink_range", "stmt.INK", ["INK 9", 'PRINT "i"'], OkOrErr("i"), decision=
 # =====================================================================================
 T("gfx.plot_point", "stmt.PLOT", ["PLOT 10,20", "p = POINT(10,20) + POINT(11,20)", "CLS", "PRINT p"], Num(1, "int"))
 T("gfx.line", "stmt.LINE", ["LINE 0,0 TO 100,50", "p = POINT(0,0) + POINT(100,50) + POINT(50,25)", "CLS", "PRINT p"], Num(3, "int"))
+T("gfx.line_offscreen", "stmt.LINE", ["CLS", "LINE -10, 50 TO 100, 50", "LINE 120, -10 TO 120, 300", "LINE 300, 20 TO 200, 20",
+  "p$ = STR$(POINT(0, 50)) + STR$(POINT(246, 50)) + STR$(POINT(120, 0)) + STR$(POINT(120, 191)) + STR$(POINT(255, 20)) + STR$(POINT(44, 20)) + STR$(POINT(150, 20))",
+  "CLS", "PRINT p$"], Out("1011100"), only=NEW,
+  note="v2.1.1: LINE moves an end off the screen to the nearest edge, as the manual says and PLOT does (v2.1.0: x by its low byte: 0101011)")
 T("gfx.plot_clamp", "stmt.PLOT", ["PLOT 255,300", "p = POINT(255,191)", "CLS", "PRINT p"], OkOrErr("1"),
   decision="out-of-range PLOT coordinates: clamp (y>191) / wrap mod 256 / error")
 T("gfx.point_range", "fn.POINT", ["PRINT POINT(0,500)"], Num(0, "int"))
@@ -646,6 +650,9 @@ T("hw.in_noarg", "fn.IN", ["PRINT IN()"], CErr(), only=NEW)
 T("hw.in_kbd", "fn.IN", ["PRINT IN(65278) > 0"], Num(1, "int"), only=NEW)
 T("hw.stick_idle", "fn.STICK", ["PRINT STICK(1) + STICK(2)"], Num(0, "int"), only=NEW)
 T("hw.stick_bad", "fn.STICK", ["PRINT STICK(5)"], AnyErr(), only=NEW, note="manual: INVALID ARGUMENT for STICK")
+T("hw.stick_input", "fn.STICK", ["OUT 245, 7", "OUT 246, 248", 'PRINT STICK(1); " "; STICK(2)', "OUT 245, 7", "PRINT IN(246)"],
+  Lines("0 0", "184"), only=NEW,
+  note="v2.1.1: STICK makes AY port A an input (register 7 bit 6 = 0) before reading it; 248 leaves it an output")
 T("hw.out_baseline", "stmt.OUT", ["OUT 245,7"], CErr(), only=OLD, note="baseline has no OUT (package V1 only)")
 T("hw.in_baseline", "fn.IN", ["PRINT IN(254)"], CErr(), only=OLD)
 T("hw.out_reserved", "identifier.reserved", ["out = 1"], CErr(), only=NEW, note="core OUT reserves the word")
@@ -798,6 +805,9 @@ T("pkg.shapes.fill", "pkg.SHAPES", ["CIRCLE 128,96,20", "FILL 128,96", "p = POIN
   packages=("shapes",), maxi=60_000_000)
 T("pkg.shapes.argc", "pkg.SHAPES", ["CIRCLE 1,2"], CErr(28), packages=("shapes",))
 T("pkg.mode.toggle", "pkg.MODE", ["MODE 1", "MODE 0", 'PRINT "m"'], Out("m"), packages=("mode",))
+T("pkg.mode.colour_rows", "pkg.MODE", ['MODE 1', 'INK 1', 'PLOT 24, 80', 'INK 2', 'PLOT 24, 81', 'INK 3', 'PLOT 24, 82', 'INK 4', 'PLOT 24, 83', 'INK 5', 'PLOT 24, 84', 'INK 6', 'PLOT 24, 85', 'INK 7', 'PLOT 24, 86', 'INK 1', 'PLOT 24, 87', 'INK 5', 'LINE 40, 82 TO 47, 82', 'INK 3', 'LINE 64, 80 TO 64, 87', 's$ = ""', 'FOR y = 0 TO 6', 's$ = s$ + STR$(PEEK(26691 + 256 * y)) + " "', 'NEXT y', 's$ = s$ + STR$(PEEK(28483))', 'v = PEEK(27205)', 'w = PEEK(26696) + PEEK(28488)', 'MODE 0', 'INK 0', 'CLS', 'PRINT s$', 'PRINT v; " "; w'],
+  Lines("57 58 59 60 61 62 63 57", "61 118"), packages=("mode",),
+  note="v2.1.1 (issue #5): in mode 1 a pixel's 8x1 colour byte is its bitmap byte + $2000, for PLOT and LINE, at every y of a character row (v2.1.0: 56 56 59 56 56 56 56 56 / 61 112)")
 T("pkg.mode.bad", "pkg.MODE", ["MODE 5"], RErr(), packages=("mode",), note="INVALID MODE")
 T("pkg.mode.palette", "pkg.MODE", ["ULAPLUS 1", "PALETTE 0,255", "ULAPLUS 0", 'PRINT "u"'], Out("u"), packages=("mode",))
 T("pkg.sprite.cycle", "pkg.SPRITE", ["PLOT 4,4", "GRAB 0,0,0,1,1", "SHOW 0,5,5", "MOVE 0,6,6", "HIDE 0", 'PRINT "s"'], Out("s"), packages=("sprite",))

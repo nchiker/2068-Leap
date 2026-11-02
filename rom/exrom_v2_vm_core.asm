@@ -3892,20 +3892,21 @@ OP_PLOT:
 ; then calls the real, unmodified GFX_LINE. Each popped value is stored
 ; immediately, before the NEXT VM_POP/call, so nothing is ever held in a
 ; register across a call here.
+; v2.1.1: each end is moved to the nearest edge, as PLOT's are (the manual's rule); x was taken by
+; its low byte and y clamped from its low byte, so LINE -10,50 TO 100,50 started at x 246. GFX_LINE
+; (Leap-C delta D25) needs its ends on the screen.
 OP_LINE:
         rst $18                 ; HL = y1 (FLOAT truncated)
-        ld a,l
-        call VM_CLAMP_Y191
+        call VM_CLAMP_YCOORD    ; A = 0..191
         ld (GFX_LINE_Y1),a
         rst $18                 ; HL = x1
-        ld a,l
+        call VM_CLAMP_COORD     ; A = 0..255
         ld (GFX_LINE_X1),a
         rst $18                 ; HL = y0
-        ld a,l
-        call VM_CLAMP_Y191
+        call VM_CLAMP_YCOORD
         ld (GFX_LINE_Y0),a
         rst $18                 ; HL = x0
-        ld a,l
+        call VM_CLAMP_COORD
         ld (GFX_LINE_X0),a
         ld a,(CURRENT_OVER)
         ld (GFX_LINE_OVER),a
@@ -4793,8 +4794,11 @@ BUILTIN_FN_IN:
         ld h,0
         jp VM_PUSH_INT          ; RC shrink: TAG_INT + VM_PUSH
 
-; STUDY: STICK(n) -- Timex joystick through AY register 14 (I/O port A), the removed V1 STICK_READ
-; algorithm: stick 1 = low nibble (direction bits, active high), stick 2 = one bit (hardware asymmetry).
+; STICK(n) -- Timex joystick n (1 or 2) through AY register 14 (I/O port A): the four direction bits
+; (bits 0-3, active high) plus the fire button as 16 (bit 4), 0-31. The TS2068 enables joystick n
+; while A8 (n = 1) or A9 (n = 2) is high during the read, as the stock ROM does with B = n. Port A
+; is made an input first (register 7 bit 6 = 0): the chime, BEEP and SOUND can leave it an output,
+; and an output port drives its pins (v2.1.1: the IDE's report, LEAP_V2_ANSWERS.md section 1).
 BUILTIN_FN_STICK:
         rst $18                 ; HL = 1 or 2
         ld a,h
@@ -4805,21 +4809,26 @@ BUILTIN_FN_STICK:
         cp 2
 .bad:
         jp nc,BUILTIN_FN_CHR.chr_range_err   ; RC (Q-23): STICK(n), n other than 1/2: error 15
+        ld a,7
+        out (PORT_AY_REG),a      ; the mixer
+        ld bc,PORT_AY_DATA       ; B = 0: no joystick enabled while writing
+        in a,(c)
+        and $BF                  ; bit 6 = 0: port A an input
+        out (c),a
         ld a,$0E
         out (PORT_AY_REG),a      ; select AY register 14
-        ld c,PORT_AY_DATA
+        ld b,l                   ; A8 or A9: joystick n
         in a,(c)
         cpl                      ; active low -> active high
-        dec l
-        jr nz,.stick2
+        ld l,a
         and $0F
         cp $0F
-        jr c,.done
+        jr c,.dirs
         xor a                    ; all four set: no real input
-        jr .done
-.stick2:
-        rlca
-        and $01
+.dirs:
+        bit 7,l
+        jr z,.done
+        or $10                   ; fire
 .done:
         ld l,a
         ld h,0

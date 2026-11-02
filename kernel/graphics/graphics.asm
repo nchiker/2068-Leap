@@ -1067,41 +1067,6 @@ GFX_SET_ATTR:
 ; Out: none
 ; Destroys: AF, DE, HL
 ; ============================================================================
-GFX_SET_ATTR_EXT:
-    ld   d, a                    ; stash the attribute byte before
-                                 ; using A as bounds-check scratch —
-                                 ; same fix, same reasoning, as GFX_
-                                 ; SET_ATTR just above (that routine's
-                                 ; own header has the full story: this
-                                 ; project's real, reproducible bug,
-                                 ; not a hypothetical one)
-    ld   a, b
-    cp   192                     ; B here is a real scanline row
-                                 ; (0-191), not a character row —
-                                 ; different bound than GFX_SET_ATTR's
-                                 ; own row check
-    ret  nc
-    ld   a, c
-    cp   32
-    ret  nc
-    ld   a, d                    ; restore the attribute byte
-
-    push af
-    ld   h, 0
-    ld   l, b
-    add  hl, hl
-    add  hl, hl
-    add  hl, hl
-    add  hl, hl
-    add  hl, hl                  ; y*32
-    ld   de, SECOND_DISPLAY_ADDR
-    add  hl, de
-    ld   d, 0
-    ld   e, c
-    add  hl, de                   ; HL = SECOND_DISPLAY_ADDR + y*32 + col
-    pop  af
-    ld   (hl), a
-    ret
 
 ; ============================================================================
 ; GFX_SET_MODE
@@ -1263,10 +1228,10 @@ GFX_CLEAR_ROW_TEXT:
     ret
 
 ; ============================================================================
-; Pixel graphics: GFX_PIXEL_ADDR_SETUP / GFX_WRITE_PIXEL / GFX_READ_PIXEL /
-; GFX_LINE
+; Pixel graphics: GFX_PIXEL_AT / GFX_WRITE_PIXEL / GFX_READ_PIXEL /
+; GFX_PLOT_CLIPPED / GFX_LINE
 ;
-; Screen addressing verified two independent ways before any Z80 was
+; Screen addressing (the original GFX_PIXEL_ADDR_SETUP) verified two independent ways before any Z80 was
 ; written: (1) this file's own already-tested ROW_BASE_TABLE plus a
 ; row/col/scanline decomposition, and (2) the canonical, independently-
 ; known ZX Spectrum-family screen address formula
@@ -1275,382 +1240,323 @@ GFX_CLEAR_ROW_TEXT:
 ; between the two methods, and confirmed every resulting address stays
 ; within the real 6144-byte bitmap and 768-byte attribute ranges.
 ;
-; PLOT also sets the covering 8x8 attribute cell to the current INK/
-; PAPER/FLASH/INVERSE (via GFX_SET_ATTR, called from GFX_WRITE_PIXEL) —
+; PLOT also sets the covering 8x8 attribute cell (mode 1: the 8x1 byte) to the current INK/
+; PAPER/FLASH/INVERSE (LINE_ATTR) —
 ; this is real Sinclair-family hardware behavior (attribute clash is the
 ; hardware, not a choice this ROM makes), not something invented here.
 ; ============================================================================
 
 ; ============================================================================
-; GFX_PIXEL_ADDR_SETUP (internal — not in kernel_api.inc)
-; Shared address computation for GFX_WRITE_PIXEL and GFX_READ_PIXEL —
-; written once here rather than duplicated in both, same reasoning as
-; GFX_CHAR_SETUP/GFX_ATTR_SWAP above: duplicated addressing logic is this
-; project's single most common source of real bugs.
-; In:  B = x (0-255), C = y (0-191, caller's responsibility to clamp —
-;      an out-of-range y indexes past ROW_BASE_TABLE)
-; Out: HL = bitmap byte address, A = bit mask (bit7 = leftmost pixel in
-;      the byte, matching this file's font glyph convention); also
-;      leaves GFX_PIXEL_ROW/GFX_PIXEL_COL set, for a caller that also
-;      needs the attribute-cell address
-; Destroys: AF, BC, DE, HL
+; Pixels and lines (v2.1.1): Leap-C delta D25 (2068-Leap-C 1.2.0, b024dbc), itself a port of
+; 2068-Forth v2.0's line (its Display speed milestone). V2's GFX_PIXEL_ADDR_SETUP, GFX_WRITE_PIXEL's
+; body, GFX_LINE (memory cells, two MATH_COMPARE16 calls and a full address per pixel: about
+; 1,400 T a pixel), GFX_SET_ATTR_EXT and BIT_MASK_TABLE are replaced: the major-axis Bresenham loop
+; with r, dmin and dmaj in the alternate registers, the address and mask stepped from pixel to
+; pixel, the attribute written only where the cell (mode 1: the 8x1 byte, at the bitmap address +
+; $2000 -- issue #5) changes. LINE's ends are bytes on the screen (OP_LINE takes x mod 256 and
+; clamps y to 191), so the line never leaves the screen. The pixels and attributes are those of the
+; old e2 loop for every line (tools/qual/qlines.py). GFX_WRITE_PIXEL and GFX_READ_PIXEL keep V2's
+; B = x, C = y contracts (package services 6 and 7) as short adapters; GFX_PLOT_CLIPPED (service 5)
+; keeps its own.
+;
+; LINE's flags, in E while drawing: bit 0 y is the major axis, bit 1 x goes left, bit 2 y goes up,
+; bit 3 mode 1 (8x1 colour), bit 4 the attribute is pending, bit 5 over (XOR). The alternate
+; registers hold r (HL'), dmin (DE') and dmaj (BC') during GFX_LINE: the interrupt routine does not
+; use them, and the float core (the only other user besides GFX_PRINT_STRING_ATTR and the tape
+; code) never runs inside LINE.
 ; ============================================================================
-GFX_PIXEL_ADDR_SETUP:
-    ld   a, c
-    and  %00000111                 ; scanline = y & 7
-    ld   (GFX_PIXEL_SCANLINE), a
-
-    ld   a, c
-    rrca
-    rrca
-    rrca
-    and  %00011111                 ; char_row = y >> 3 (three RRCAs
-                                   ; rotate the low 3 bits into the top
-                                   ; of the byte; the mask discards
-                                   ; them, leaving a clean 0-23)
-    ld   (GFX_PIXEL_ROW), a
-
+; GFX_PIXEL_AT -- a pixel's bitmap address and bit mask
+; In:  C = x (0-255), B = y (0-191; not checked)
+; Out: HL = the bitmap byte's address, A = the bit mask (bit 7 = leftmost pixel)
+; Destroys: F (BC and DE are kept)
+; ============================================================================
+GFX_PIXEL_AT:
     ld   a, b
-    and  %00000111                 ; bit_in_byte = x & 7
-    ld   e, a
-    ld   d, 0
-    ld   hl, BIT_MASK_TABLE
-    add  hl, de
-    ld   a, (hl)
-    ld   (GFX_PIXEL_MASK), a
-
+    and  7
+    ld   h, a
     ld   a, b
+    rra
+    rra
+    rra
+    and  $18
+    or   h
+    or   HIGH SCREEN_ADDR
+    ld   h, a                       ; 010tt sss: the third, the scanline
+    ld   a, b
+    rla
+    rla
+    and  $E0
+    ld   l, a
+    ld   a, c
     rrca
     rrca
     rrca
-    and  %00011111                 ; col = x >> 3, same trick as row
-    ld   (GFX_PIXEL_COL), a
-
-    ; bitmap address = ROW_BASE_TABLE[char_row] + col; scanline adds
-    ; directly to the high byte (each scanline down = +256, verified —
-    ; see this file's header and GFX_CHAR_SETUP's own comment)
-    ld   a, (GFX_PIXEL_ROW)
-    call GFX_ROW_BASE_ADDR
-    ex   de, hl                   ; DE = ROW_BASE_TABLE[char_row]
-    ld   a, (GFX_PIXEL_COL)
-    add  a, e
-    ld   e, a
-    jr   nc, .no_col_carry
-    inc  d
-.no_col_carry:
-    ld   a, (GFX_PIXEL_SCANLINE)
-    add  a, d
-    ld   d, a                      ; DE = final bitmap byte address
-    ld   h, d
-    ld   l, e
-    ld   a, (GFX_PIXEL_MASK)
+    and  $1F
+    or   l
+    ld   l, a                       ; rrr ccccc: the row in the third, the column
+    ld   a, c
+    and  7
+    push bc
+    ld   b, a
+    inc  b
+    ld   a, 1
+.mask:
+    rrca
+    djnz .mask
+    pop  bc
     ret
+    ASSERT LOW SCREEN_ADDR == 0
 
 ; ============================================================================
-; GFX_WRITE_PIXEL
-; Sets or XOR-toggles one pixel, then colors its covering 8x8 attribute
-; cell to match — PLOT's actual mechanism.
-; In:  B = x (0-255), C = y (0-191, caller clamps), A = attribute byte
-;      (same bit layout GFX_SET_ATTR/ATTR_DEFAULT already use), D = OVER
-;      flag (0 = set the pixel outright (OR), nonzero = XOR-toggle it —
-;      real Sinclair BASIC's own OVER semantics, applied to graphics the
-;      same way this project's OVER already applies to text)
-; Out: none
-; Destroys: AF, BC, DE, HL
-; ============================================================================
-GFX_WRITE_PIXEL:
-    ld   (GFX_PIXEL_ATTR), a       ; stash attribute + OVER flag before
-    ld   a, d                     ; GFX_PIXEL_ADDR_SETUP destroys AF —
-    ld   (GFX_PIXEL_OVER), a       ; same PRINT_ATTR_SCRATCH reasoning
-
-    call GFX_PIXEL_ADDR_SETUP      ; HL = bitmap byte address, A = mask;
-                                   ; GFX_PIXEL_ROW/COL also now set
-    ld   b, a                      ; B = mask — x/y (the original B/C)
-                                   ; are no longer needed past this point
-    ld   a, (GFX_PIXEL_OVER)
-    or   a
-    jr   z, .plot_set
-    ld   a, (hl)
-    xor  b
-    jr   .plot_write
-.plot_set:
-    ld   a, (hl)
-    or   b
-.plot_write:
-    ld   (hl), a
-
-    ; Color the covering attribute — which formula depends on the
-    ; active video mode. Normal mode reuses the already-tested GFX_
-    ; SET_ATTR rather than re-deriving its addressing formula here;
-    ; High Resolution Graphics mode needs a real scanline row (0-191),
-    ; not a character row, reconstructed from GFX_PIXEL_ROW/SCANLINE
-    ; (both already set by GFX_PIXEL_ADDR_SETUP above) rather than
-    ; re-deriving it from the original x/y, which are no longer live
-    ; in any register by this point.
-    ld   a, (GFX_MODE)
-    or   a
-    jr   nz, .ext_attr
-
-    ld   a, (GFX_PIXEL_ROW)
-    ld   b, a
-    ld   a, (GFX_PIXEL_COL)
-    ld   c, a
-    ld   a, (GFX_PIXEL_ATTR)
-    jp GFX_SET_ATTR
-
-.ext_attr:
-    ld   a, (GFX_PIXEL_ROW)
-    add  a, a
-    add  a, a
-    add  a, a                      ; row*8 (fits easily — row maxes at
-                                   ; 23, so row*8 maxes at 184)
-    ld   b, a
-    ld   a, (GFX_PIXEL_SCANLINE)
-    add  a, b
-    ld   b, a                      ; B = real y (row*8 + scanline —
-                                   ; exactly reconstructs the original
-                                   ; y by construction, verified in
-                                   ; Python for all 192 values before
-                                   ; this was written)
-    ld   a, (GFX_PIXEL_COL)
-    ld   c, a
-    ld   a, (GFX_PIXEL_ATTR)
-    jp GFX_SET_ATTR_EXT
-
-; ============================================================================
-; GFX_READ_PIXEL
-; Tests whether a pixel is currently set — the mechanism behind POINT(x,y).
-; In:  B = x (0-255), C = y (0-191, caller clamps)
+; GFX_READ_PIXEL -- whether a pixel is set (POINT; package service 6)
+; In:  B = x (0-255), C = y (0-191, the caller checks): V2's contract, kept for the packages
 ; Out: A = 1 if the pixel is set, 0 if not
-; Destroys: AF, BC, DE, HL
+; Destroys: AF, BC, HL
 ; ============================================================================
 GFX_READ_PIXEL:
-    call GFX_PIXEL_ADDR_SETUP      ; HL = bitmap byte address, A = mask
-    ld   b, a
-    ld   a, (hl)
-    and  b
+    ld   a, b
+    ld   b, c
+    ld   c, a                       ; C = x, B = y: GFX_PIXEL_AT's order
+    call GFX_PIXEL_AT
+    and  (hl)
     ret  z
     ld   a, 1
     ret
 
 ; ============================================================================
-; GFX_LINE
-; Draws a line between two points via Bresenham's algorithm — integer
-; only, matching this project's pure-integer BASIC. Absolute coordinates
-; for BOTH endpoints (QL SuperBASIC style), deliberately not classic
-; Sinclair BASIC's relative-only DRAW — no "current position" to track
-; before drawing the next segment.
-;
-; The exact planned register-level arithmetic (byte-sized dx/dy
-; magnitudes, a signed 16-bit error term with truncating add, MATH_
-; COMPARE16-style three-way branch tests) was verified via Python
-; simulation against a textbook reference Bresenham implementation
-; before any Z80 was written: 512 lines (every degenerate/edge case —
-; a single point, pure horizontal, pure vertical, both screen corners —
-; plus 500 random endpoint pairs across the full 256x192 space), zero
-; mismatches.
-;
-; Takes all six of its inputs from memory, not registers — GFX_LINE_X0/
-; Y0/X1/Y1/ATTR/OVER — there are more live values here than survive a
-; loop that itself calls GFX_WRITE_PIXEL and MATH_COMPARE16 (both
-; destroy registers freely per their own contracts) every iteration.
-; Same "value that must survive a destructive call lives in memory"
-; reasoning as DELETE_START/DELETE_END and IF_SCAN_POS elsewhere in this
-; project, just with more values in play. BASIC_STMT_LINE fills these in
-; directly before calling — see sysvars.inc's own comment on this block.
-; In:  GFX_LINE_X0/Y0/X1/Y1/ATTR/OVER, all pre-set by the caller
+; GFX_WRITE_PIXEL -- one pixel, set (or XORed) and coloured (PLOT; package service 7)
+; In:  B = x (0-255), C = y (0-191; a larger y draws nothing), A = the attribute byte,
+;      D = over (0: set, else XOR): V2's contract, kept for OP_PLOT and the packages
 ; Out: none
-; Destroys: AF, BC, DE, HL
+; Destroys: AF, BC, DE, HL (not the alternate registers: a one-point line never steps)
 ; ============================================================================
-GFX_LINE:
-    ; ---- dx = abs(x1-x0), sx = sign ----
-    ld   a, (GFX_LINE_X1)
-    ld   b, a
-    ld   a, (GFX_LINE_X0)
-    ld   c, a
-    sub  b                        ; A = x0 - x1; carry set means x0 < x1
-    jr   nc, .x0_ge_x1
-    ld   a, b
-    sub  c                        ; A = x1 - x0
-    ld   (GFX_LINE_DX), a
-    ld   a, 1
-    ld   (GFX_LINE_SX), a
-    jr   .dx_done
-.x0_ge_x1:
-    ld   (GFX_LINE_DX), a         ; A already = x0 - x1, from the SUB
-                                  ; above
-    ld   a, $FF                   ; -1 (two's complement)
-    ld   (GFX_LINE_SX), a
-.dx_done:
-
-    ; ---- dy_abs = abs(y1-y0), sy = sign — same shape as dx/sx above ----
-    ld   a, (GFX_LINE_Y1)
-    ld   b, a
-    ld   a, (GFX_LINE_Y0)
-    ld   c, a
-    sub  b
-    jr   nc, .y0_ge_y1
-    ld   a, b
-    sub  c
-    ld   (GFX_LINE_DY_ABS), a
-    ld   a, 1
-    ld   (GFX_LINE_SY), a
-    jr   .dy_done
-.y0_ge_y1:
-    ld   (GFX_LINE_DY_ABS), a
-    ld   a, $FF
-    ld   (GFX_LINE_SY), a
-.dy_done:
-
-    ; ---- err = dx - dy_abs (signed 16-bit; dx and dy_abs are always
-    ; non-negative bytes, zero-extended here, so a plain 16-bit
-    ; subtract is exact — no separate negation needed for this one) ----
-    ld   a, (GFX_LINE_DX)
-    ld   l, a
-    ld   h, 0
-    ld   a, (GFX_LINE_DY_ABS)
-    ld   e, a
-    ld   d, 0
-    or   a
-    sbc  hl, de
-    ld   (GFX_LINE_ERR), hl
-
-.loop:
-    ld   a, (GFX_LINE_X0)
-    ld   b, a
-    ld   a, (GFX_LINE_Y0)
-    ld   c, a
-    ld   a, (GFX_LINE_OVER)
-    ld   d, a
-    ld   a, (GFX_LINE_ATTR)
-    call GFX_WRITE_PIXEL
-
-    ; ---- termination: current point == end point ----
-    ld   a, (GFX_LINE_X0)
-    ld   b, a
-    ld   a, (GFX_LINE_X1)
-    cp   b
-    jr   nz, .not_done
-    ld   a, (GFX_LINE_Y0)
-    ld   b, a
-    ld   a, (GFX_LINE_Y1)
-    cp   b
-    jr   nz, .not_done
-    ret
-.not_done:
-
-    ; ---- e2 = err + err (16-bit, truncating add — same operation as
-    ; MATH_ADD16's own body, done inline here to avoid a CALL inside
-    ; this already CALL-heavy per-pixel loop) — saved to memory since
-    ; BOTH branch decisions below need it, and it must survive the
-    ; first MATH_COMPARE16 call (which destroys HL) to reach the second
-    ld   hl, (GFX_LINE_ERR)
-    add  hl, hl
-    ld   (GFX_LINE_E2), hl
-
-    ; ---- if e2 >= -dy_abs: err += -dy_abs; x0 += sx ----
-    ld   a, (GFX_LINE_DY_ABS)
-    ld   l, a
-    ld   h, 0
-    call MATH_NEGATE16             ; HL = -dy_abs
-    ex   de, hl                    ; DE = -dy_abs, preserved across the
-                                   ; compare below (MATH_COMPARE16 never
-                                   ; writes DE, only reads it)
-    ld   hl, (GFX_LINE_E2)
-    call MATH_COMPARE16            ; A: 0 if equal, 1 if e2>DE, $FF if
-                                   ; e2<DE
-    cp   $FF
-    jr   z, .skip_x_step           ; e2 < -dy_abs -> condition false
-    ld   hl, (GFX_LINE_ERR)
-    add  hl, de                    ; DE still = -dy_abs
-    ld   (GFX_LINE_ERR), hl
-    ld   a, (GFX_LINE_X0)
-    ld   b, a
-    ld   a, (GFX_LINE_SX)
-    add  a, b
-    ld   (GFX_LINE_X0), a
-.skip_x_step:
-
-    ; ---- if e2 <= dx: err += dx; y0 += sy ----
-    ld   a, (GFX_LINE_DX)
-    ld   e, a
-    ld   d, 0
-    ld   hl, (GFX_LINE_E2)
-    call MATH_COMPARE16             ; A: 0 if equal, 1 if e2>dx, $FF if
-                                    ; e2<dx
-    cp   1
-    jr   z, .skip_y_step            ; e2 > dx -> condition false
-    ld   hl, (GFX_LINE_ERR)
-    ld   a, (GFX_LINE_DX)
-    ld   e, a
-    ld   d, 0
-    add  hl, de
-    ld   (GFX_LINE_ERR), hl
-    ld   a, (GFX_LINE_Y0)
-    ld   b, a
-    ld   a, (GFX_LINE_SY)
-    add  a, b
-    ld   (GFX_LINE_Y0), a
-.skip_y_step:
-
-    jr   .loop
-
+GFX_WRITE_PIXEL:
+    ld   l, b
+    ld   h, 0                       ; HL = x
+    ld   e, c
+    ld   b, d                       ; B = over
+    ld   d, h                       ; DE = y
+                                    ; (falls into GFX_PLOT_CLIPPED with A = the attribute)
 ; ============================================================================
-; GFX_PLOT_CLIPPED (internal — not in kernel_api.inc)
-; Wraps GFX_WRITE_PIXEL with an off-screen bounds check — for callers
-; like GFX_CIRCLE whose computed points (center +/- radius) can
-; legitimately land outside the visible 256x192 area. Silently skips
-; out-of-range points rather than truncating a negative or >255/>191
-; coordinate into a byte and plotting it on the wrong edge of the
-; screen — that silent-wraparound failure mode is exactly why this
-; takes its x/y as full signed 16-bit values instead of GFX_WRITE_
-; PIXEL's own bytes.
-; In:  HL = signed 16-bit x, DE = signed 16-bit y, A = attribute byte,
-;      B = OVER flag (0 = set, nonzero = XOR-toggle)
+; GFX_PLOT_CLIPPED -- one pixel, set (or XORed) and coloured; nothing off the screen (service 5)
+; In:  HL = x, DE = y (signed 16-bit), A = the attribute byte, B = over (0: set, else XOR)
 ; Out: none
 ; Destroys: AF, BC, DE, HL
 ; ============================================================================
 GFX_PLOT_CLIPPED:
-    ld   (GFX_CLIP_ATTR), a
-    ld   a, b
-    ld   (GFX_CLIP_OVER), a
-
-    ; valid x is 0-255: for a signed 16-bit value that's exactly "high
-    ; byte is zero" — H=0 rules out both negative (H would have its top
-    ; bit set) and >255 (H would be a nonzero positive value) in one test
+    ld   c, a
     ld   a, h
-    or   a
-    ret  nz
-    ; valid y is 0-191: same high-byte-zero test, plus an explicit
-    ; upper-bound check since 191 isn't a byte's full range
-    ld   a, d
-    or   a
-    ret  nz
+    or   d
+    ret  nz                         ; x or y outside 0-255
     ld   a, e
     cp   192
     ret  nc
+    ld   d, c                       ; D = the attribute
+    ld   a, b
+    or   a
+    ld   b, e                       ; B = y
+    ld   c, l                       ; C = x
+    ld   e, $10                     ; the attribute pending
+    jr   z, .set
+    ld   e, $30                     ; ... and over
+.set:
+    ld   a, (GFX_MODE)
+    add  a, a
+    add  a, a
+    add  a, a
+    or   e
+    ld   e, a                       ; bit 3: mode 1
+    call GFX_PIXEL_AT
+    ld   c, a
+    ld   b, 1                       ; one point: GFX_LINE's loop ends after it
+    jr   GFX_LINE.draw
 
+; ============================================================================
+; GFX_LINE -- the points of Bresenham's line from (X0, Y0) to (X1, Y1), both ends drawn, each set
+; (OR; over: XOR) and giving its cell the attribute. The major axis (the larger of |dx| and |dy|; x
+; on a tie) steps at every point, the minor one when the error r (0 to dmaj - 1, from dmaj / 2)
+; reaches dmaj after adding dmin: the points of V2's e2 form (err = dx - dy).
+; In:  GFX_LINE_X0/Y0/X1/Y1 (bytes, on the screen: OP_LINE puts them there), GFX_LINE_ATTR,
+;      GFX_LINE_OVER
+; Out: none
+; Destroys: AF, BC, DE, HL, BC', DE', HL'
+; ============================================================================
+GFX_LINE:
+    ld   a, (GFX_MODE)
+    ld   c, a                       ; becomes bit 3 after the three shifts below
+    ld   a, (GFX_LINE_Y0)
+    ld   b, a
+    ld   a, (GFX_LINE_Y1)
+    call LINE_DELTA                 ; A = |dy|, carry: up
+    rl   c
+    ld   d, a
+    ld   a, (GFX_LINE_X0)
+    ld   b, a
+    ld   a, (GFX_LINE_X1)
+    call LINE_DELTA                 ; A = |dx|, carry: left
+    rl   c
+    ld   e, a
+    cp   d                          ; carry: |dx| < |dy|
+    rl   c
+    bit  0, c
+    jr   z, .xmaj
+    ld   e, d                       ; E = dmaj = |dy|
+    ld   d, a                       ; D = dmin = |dx|
+.xmaj:
+    ld   b, e                       ; B = dmaj
+    push de
+    exx
+    pop  bc                         ; C = dmaj, B = dmin
+    ld   e, b
+    xor  a
+    ld   d, a                       ; DE' = dmin
+    ld   b, a                       ; BC' = dmaj
+    ld   a, c
+    srl  a
+    ld   l, a
+    ld   h, d                       ; HL' = r = dmaj / 2
+    exx
+    ld   a, (GFX_LINE_OVER)
+    or   a
+    ld   a, c
+    jr   z, .flags
+    or   $20                        ; over
+.flags:
+    or   $10                        ; the first point's attribute
+    ld   e, a                       ; E = the flags
+    ld   a, (GFX_LINE_ATTR)
+    ld   d, a                       ; D = the attribute
+    inc  b                          ; B = the points: dmaj + 1 (0: 256)
+    push bc
+    ld   bc, (GFX_LINE_X0)          ; C = x0, B = y0
+    call GFX_PIXEL_AT
+    pop  bc
+    ld   c, a                       ; C = the mask, HL = the address
+.draw:
+    bit  4, e
+    call nz, LINE_ATTR
+    ld   a, (hl)
+    xor  c
+    bit  5, e
+    jr   nz, .put                   ; over: XOR
+    or   c                          ; else set: (b XOR m) OR m = b OR m
+.put:
+    ld   (hl), a
+    dec  b
+    ret  z                          ; the last point
+    bit  0, e                       ; the major axis
+    call z, LINE_XSTEP
+    bit  0, e
+    call nz, LINE_YSTEP
+    exx                             ; r += dmin; the minor axis steps if r reaches dmaj (r -= dmaj)
+    add  hl, de                     ; (r, dmin, dmaj < 256: no carry out, so SBC subtracts exactly)
+    sbc  hl, bc
+    jr   nc, .minor
+    add  hl, bc
+    exx
+    jr   .draw
+.minor:
+    exx
+    bit  0, e
+    call nz, LINE_XSTEP
+    bit  0, e
+    call z, LINE_YSTEP
+    jr   .draw
+    ASSERT GFX_LINE_Y0 == GFX_LINE_X0 + 1
+
+; ============================================================================
+; LINE_XSTEP, LINE_YSTEP -- the address and mask one pixel on in x (left if E bit 1) or y (up if E
+; bit 2); where the byte (mode 1) or the cell (mode 0) changes, E bit 4: the attribute is written
+; with the next pixel. The line stays on the screen (its ends are on it), except for a step after
+; the last point, which the loop never takes.
+; In:  HL = the address, C = the mask, E = LINE's flags
+; Destroys: AF
+; ============================================================================
+LINE_YSTEP:
+    bit  2, e
+    jr   nz, .up
+    inc  h
+    ld   a, h
+    and  7
+    jr   nz, LINE_PEND_HIRES        ; the same cell row
     ld   a, l
-    ld   b, a                       ; B = x
-    ld   a, e
-    ld   c, a                       ; C = y
-    ld   a, (GFX_CLIP_OVER)
-    ld   d, a                       ; D = OVER flag
-    ld   a, (GFX_CLIP_ATTR)
-    jp GFX_WRITE_PIXEL
+    add  a, 32
+    ld   l, a
+    jr   c, LINE_PEND               ; the next third (H already is)
+    ld   a, h
+    sub  8
+    ld   h, a
+    jr   LINE_PEND
+.up:
+    ld   a, h
+    dec  h
+    and  7
+    jr   nz, LINE_PEND_HIRES
+    ld   a, l
+    sub  32
+    ld   l, a
+    jr   c, LINE_PEND               ; the third above (H already is)
+    ld   a, h
+    add  a, 8
+    ld   h, a
+    jr   LINE_PEND
+LINE_XSTEP:
+    bit  1, e
+    jr   nz, .left
+    rrc  c
+    ret  nc
+    inc  l
+    jr   LINE_PEND
+.left:
+    rlc  c
+    ret  nc
+    dec  l
+    jr   LINE_PEND
+LINE_PEND_HIRES:
+    bit  3, e
+    ret  z
+LINE_PEND:
+    set  4, e                       ; the attribute is written with the next pixel
+    ret
 
-; GFX_FILL/GFX_FILL_PUSH/GFX_FILL_POP/GFX_FILL_TRY_NEIGHBOR/GFX_FILL_
-; VISITED_CHECK_SET and GFX_CIRCLE/GFX_CIRCLE_PLOT_OFFSET/PLOT_POLES/
-; PLOT_GENERAL all removed 2026-09-19 (Phase 0 P0.4): CIRCLE and FILL
-; are now a combined loadable RAM extension (rom/extensions/
-; shapes.asm), a self-contained port of this exact code (SHAPES_-
-; prefixed routines there) -- see that file's own header for the
-; full reasoning, including why BIT_MASK_TABLE below is kept here
-; (still shared with other resident code) while the module carries
-; its own separate copy.
-BIT_MASK_TABLE:
-    DB   %10000000, %01000000, %00100000, %00010000
-    DB   %00001000, %00000100, %00000010, %00000001
+; ============================================================================
+; LINE_ATTR -- colour the bitmap byte at HL with D: mode 0 its cell's attribute, mode 1 (E bit 3)
+; its own attribute byte at HL + $2000 (the second display file is laid out like the bitmap)
+; In:  HL = the bitmap byte, D = the attribute, E = LINE's flags
+; Out: E bit 4 (the attribute pending) clear
+; Destroys: AF
+; ============================================================================
+LINE_ATTR:
+    res  4, e
+    bit  3, e
+    jr   nz, .byte
+    push hl
+    ld   a, h
+    rrca
+    rrca
+    rrca
+    and  3
+    or   HIGH ATTR_ADDR
+    ld   h, a                       ; the cell: ATTR_ADDR + the third * 256 + L
+    ld   (hl), d
+    pop  hl
+    ret
+.byte:
+    set  5, h
+    ld   (hl), d
+    res  5, h
+    ret
+    ASSERT LOW ATTR_ADDR == 0 && SECOND_DISPLAY_ADDR == SCREEN_ADDR + $2000
+
+; LINE_DELTA -- A = |A - B|, carry if A < B. Destroys: F
+LINE_DELTA:
+    sub  b
+    ret  nc
+    neg                             ; (A was not 0: NEG sets the carry)
+    ret
+
+; GFX_FILL and GFX_CIRCLE were removed 2026-09-19 (Phase 0 P0.4): CIRCLE and FILL are the shapes
+; package (rom/ext_v2_shapes_module.asm), which carries its own SHAPES_BIT_MASK_TABLE.
 
 ; ---- screen-row base addresses, computed and verified numerically
 ; (see file header) rather than derived by hand from the bit-shuffle
@@ -1786,8 +1692,8 @@ FONT_TABLE:
     DB   $00, $00, $70, $88, $F8, $80, $70, $00
     ; 'f'
     DB   $30, $40, $F0, $40, $40, $40, $40, $00
-    ; 'g'
-    DB   $00, $78, $88, $88, $78, $08, $70, $00
+    ; 'g'  (v2.1.1, issue #6: the bowl on the x-height, rows 2-5, like Leap-C D24)
+    DB   $00, $00, $78, $88, $88, $78, $08, $70
     ; 'h'
     DB   $80, $80, $B0, $C8, $88, $88, $88, $00
     ; 'i'
@@ -1804,10 +1710,10 @@ FONT_TABLE:
     DB   $00, $00, $B0, $C8, $88, $88, $88, $00
     ; 'o'
     DB   $00, $00, $70, $88, $88, $88, $70, $00
-    ; 'p'
-    DB   $00, $F0, $88, $88, $F0, $80, $80, $80
-    ; 'q'
-    DB   $00, $78, $88, $88, $78, $08, $08, $08
+    ; 'p'  (v2.1.1, issue #6)
+    DB   $00, $00, $F0, $88, $88, $F0, $80, $80
+    ; 'q'  (v2.1.1, issue #6)
+    DB   $00, $00, $78, $88, $88, $78, $08, $08
     ; 'r'
     DB   $00, $00, $B0, $C8, $80, $80, $80, $00
     ; 's'
