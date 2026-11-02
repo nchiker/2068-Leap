@@ -56,6 +56,16 @@ from Leap-C's (`tools/check_provenance.py`, `tools/check_repro.sh`,
 tolerance test `tools/qtapetol.py` and the MIC capture of `tools/qual/qmicsave.py`).
 All of this is in release `v2.1.0-emu.1`.
 
+Release `v2.1.1-emu.1` adds two more parts from Leap-C, each Leap-C's port
+of code from 2068-Forth v2.0 (Leap-C's deltas D25 and D27): the line
+routine of `kernel/graphics/graphics.asm` (`GFX_PIXEL_AT`, `GFX_LINE`, `LINE_XSTEP`, `LINE_YSTEP`, `LINE_ATTR`,
+`LINE_DELTA` and `GFX_PLOT_CLIPPED`: a major-axis Bresenham loop that steps
+the screen address and mask per pixel and writes the attribute once per
+cell; delta D25), and the idle path of the frame interrupt (`KBD_ISR_TICK`
+in `kernel/interrupt/interrupt.asm` and `IO_KEY_SCAN_ALL` in
+`kernel/io/io.asm`: one read of every keyboard row ends a frame with no key
+tracked; delta D27).
+
 Designs and findings taken from Leap-C without its code (written for V2's own
 structures): the package export table and signature byte of ABI 2.1
 (`EXT2_EXPORTS`, from Leap-C's `spec.md` section 7.2), the paging-depth reset

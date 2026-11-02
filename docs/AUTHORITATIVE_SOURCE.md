@@ -15,7 +15,8 @@ that repository; nothing outside it is required or authoritative.
 | Release tag | **`v2.0.0-emu.1`** (annotated, pushed) -> `f4cabad`; a clean export of it builds the accepted hashes |
 | Maintenance release tag | **`v2.0.1-emu.1`** (annotated) on `v2-development`: the sound maintenance release, emulator-qualified, not hardware-qualified (`V2_MAINT_RELEASE_STATUS.md`); `make build EXTRA_DEFS=` on it still builds the `v2.0.0-emu.1` images |
 | Compiler maintenance release tag | **`v2.0.2-emu.1`** (annotated) on `v2-development`: the compiler maintenance release, emulator-qualified, not hardware-qualified (`V2_COMPILER_MAINT_RELEASE_STATUS.md`) |
-| Current release tag | **`v2.1.0-emu.1`** (annotated) on `v2-development`: the speed and package functions release (the back-port of 2068-Leap-C's improvements, developed on branch `backport/leapc`), emulator-qualified, not hardware-qualified (`V2_1_RELEASE_STATUS.md`) |
+| Speed and package functions release tag | **`v2.1.0-emu.1`** (annotated) on `v2-development`: the speed and package functions release (the back-port of 2068-Leap-C's improvements, developed on branch `backport/leapc`), emulator-qualified, not hardware-qualified (`V2_1_RELEASE_STATUS.md`) |
+| Current release tag | **`v2.1.1-emu.1`** (annotated) on `v2-development`: the graphics and joystick maintenance release (developed on branch `maint/v2.1.1`), emulator-qualified, not hardware-qualified (`V2_1_1_RELEASE_STATUS.md`) |
 
 `integration/v2-final-rom` contains, by merge, the qualification and owner-decision study work it
 was built on (`study/proto-enh-shrink2`, `study/decisions-review` and what they contain).

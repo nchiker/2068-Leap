@@ -108,7 +108,7 @@ For the `v2.1.0-emu.1` images (HOME `8c3d6c81...`, EXROM `e46e2065...`, identity
 
 ## 8. Maintenance release v2.1.1-emu.1
 
-For the `v2.1.1-emu.1` images. The release changes `STICK`, the graphics statements (`LINE` and the mode 1 colour byte) and three glyphs; sections 1-7 apply as they stand. The rows below are the behaviour a hardware test should look at in particular (`V2_DEFECT_REGISTER.md`, M-5 to M-9):
+For the `v2.1.1-emu.1` images (HOME `c79ce1cf...`, EXROM `ba7f0869...`, identity CRC `$2A70`; `V2_1_1_RELEASE_STATUS.md`). **Hardware testing was waived by the owner for this release as for v2.1.0**: nothing below has been run; every row stays "not tested" until a machine is available. The release changes `STICK`, the graphics statements (`LINE` and the mode 1 colour byte) and three glyphs; sections 1-7 apply as they stand. The rows below are the behaviour a hardware test should look at in particular (`V2_DEFECT_REGISTER.md`, M-5 to M-9):
 
 | # | Step | Expected | Result |
 |---|---|---|---|
