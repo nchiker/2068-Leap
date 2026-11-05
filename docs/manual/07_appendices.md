@@ -411,7 +411,7 @@ Everything in this manual was verified in the **ZEsarUX emulator**, on the ROMs 
 
 * the sound (`BEEP`, `SOUND`, `CBEEP`) was measured by reading the sound chip's registers back, counting instructions and port writes, and from the emulator's recorded audio; it was never listened to on a TS2068 (the startup chime included);
 * `BEEP` and `PAUSE` count display frames: 1/60 second on a TS2068 is the design figure, the emulator interrupts 50 times a second (not measured on hardware);
-* the tape block routines (receiver and sender) are new in v2.1, written from scratch: tape timing was exercised only through the emulator's tape input; the identity-check pause of about 2.4 seconds on `SAVE ... ALL`, `LOAD` and `VERIFY` of an ALL tape has not been timed on real hardware;
+* the tape block routines (receiver and sender) are new in v2.1, written from scratch: tape timing was exercised only through the emulator's tape input; the identity-check pause of about 2.4 seconds on `SAVE ... ALL`, `LOAD` and `VERIFY` of an ALL tape, and the 4.5 seconds of silence between its two blocks, have not been timed on real hardware;
 * the speed figures (T-states, lines a second) are emulator counts of uncontended T-states at 3.5 MHz, not timed on a TS2068;
 * the printer package, the joysticks (`STICK`'s choice of joystick 1 or 2 and its fire bit were checked only on the model of the two connectors in the TSRun emulator, not with a real joystick), `MODE 1`, ULAplus and the keyboard-matrix details are as the source states, not as seen on a machine;
 * the hardware checklist for the release is `docs/V2_HARDWARE_CHECKLIST.md`.

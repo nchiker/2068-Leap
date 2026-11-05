@@ -164,7 +164,7 @@ BREAK works in tight loops, in `PAUSE` and during a `BEEP`. It does **not** work
 | `ELSEIF` | -- | none: `ELSE` and a nested `IF` |
 | `FOR` | integer or float | same; also `EXIT FOR`; a bare `NEXT` |
 | names | one letter for numbers | up to 31 letters and digits; no underscore |
-| strings | `a$(2 TO 4)`, any length | `MID$`; at most 31 characters |
+| strings | `a$(2 TO 4)`, any length | `MID$`; at most 31 characters (a longer string constant is `SYNTAX ERROR 70`) |
 | arrays | many dimensions, any size by variable | one dimension; fixed size; whole numbers only (numeric) |
 | `READ`/`DATA`/`RESTORE` | yes | none |
 | `PRINT AT`, `PRINT INK` | items inside `PRINT` | separate statements `AT`, `TAB`, `INK`... |
@@ -827,7 +827,7 @@ A string is a piece of text of **0 to 31 characters**. String variables end in `
 
 * `+` joins strings. A result longer than 31 characters is **cut to 31**: no error.
 * All six comparisons work on strings (`=` `<>` `<` `>` `<=` `>=`), character by character, using the character codes; capital letters come before small ones (`"B" < "a"`), and a string that is the start of another comes first (`"ab" < "abc"`).
-* The functions: `LEN`, `CODE`, `VAL`, `CHR$`, `STR$`, `UPPER$`, `LOWER$`, `LEFT$`, `RIGHT$`, `MID$`. A string constant longer than 31 characters is a compile error.
+* The functions: `LEN`, `CODE`, `VAL`, `CHR$`, `STR$`, `UPPER$`, `LOWER$`, `LEFT$`, `RIGHT$`, `MID$`. A string constant longer than 31 characters is a compile error (`SYNTAX ERROR 70`). When converting a Sinclair BASIC program, check its text constants: a longer one has to be shortened or split into several strings, because a string cannot hold more than 31 characters.
 * A string and a number cannot be mixed in an expression: `"a" + 1` is a compile error; use `STR$`.
 * There is no `a$(2 TO 4)` slicing: use `MID$`.
 
@@ -938,12 +938,12 @@ store: PRINT "hello" ;; x = 8
 VERIFY "prog"                          [VERIFY FAILED]
 ```
 
-**The `ALL` tape.** `SAVE ... ALL`, `LOAD` and `VERIFY` of an ALL tape take **about 2.4 seconds** to start (the machine first works out a check number that identifies this ROM and the loaded package). The variables of an ALL tape come back only
+**The `ALL` tape.** `SAVE ... ALL`, `LOAD` and `VERIFY` of an ALL tape take **about 2.4 seconds** to start (the machine first works out a check number that identifies this ROM and the loaded package). An ALL tape has **two blocks**: the program with its variables, then the array segment, after about **4.5 seconds of silence** that `LOAD` uses to check the first block; keep the tape running through it. The variables of an ALL tape come back only
 
 * on the **same ROM version** that wrote it, and
 * with the **same package** loaded (or none), loaded **before** the ALL tape.
 
-Otherwise the program loads but the variables do not, and the message is `NO VARIABLES`. A damaged tape gives `LOAD FAILED`. If a very large program plus its overflow arrays cannot be laid out for saving, `SAVE ... ALL` says `OUT OF MEMORY` -- `SAVE "name"` still works.
+Otherwise the program loads but the variables do not, and the message is `NO VARIABLES`. A damaged first block gives `LOAD FAILED`; a missing or damaged second block gives `NO VARIABLES` (the program is kept and the Array Store is emptied). If a very large program and its variables cannot be laid out for saving (the array segment is sent separately and does not count), `SAVE ... ALL` says `OUT OF MEMORY` -- `SAVE "name"` still works.
 
 **The `CODE` tape.** `SAVE "name" CODE start,length` writes raw memory, as in stock Sinclair BASIC; *start* and *length* are decimal whole numbers (digits only), *length* is not 0 and *start* + *length* does not pass 65536. `LOAD "name" CODE` puts the bytes back where they came from (the tape records the address), `LOAD "name" CODE start` puts them at *start*, and `VERIFY "name" CODE` compares them with memory without writing anything. A length given to `LOAD` or `VERIFY` is a **maximum**: a longer tape is `LOAD FAILED` and nothing is stored, a shorter one loads (or verifies) its own length. The details are under SAVE, LOAD and VERIFY in [Part 3](03_keywords.md).
 
@@ -953,7 +953,7 @@ Otherwise the program loads but the variables do not, and the message is `NO VAR
 * There is **no range checking**. The safe range for your own machine code and data is `$7800`-`$7FFF` (30720 to 32767, 2048 bytes); the screen, `$4000`-`$5AFF`, is safe too. Do not save or load `$C000`-`$DFFF` (the EXROM window: a `SAVE` sends ROM bytes and loaded bytes are lost), the stack (below `$FF00`) or the fixed area `$B600`-`$BFFF` (loading over them crashes the machine), the program area `$825A`-`$B5FF` (a load there overwrites the program), the array segment `$5B00`-`$77FF` or the ROM `$0000`-`$3FFF`. See [Appendix E](07_appendices.md#appendix-e-memory-map).
 * `CODE 0` with no length means "the address on the tape"; `CODE 0,n` targets address 0 itself, which is ROM, so a load there is `LOAD FAILED`.
 
-**Tape compatibility.** A tape written by this version cannot be loaded by earlier V2 ROMs, and V1 and stock Spectrum tapes are refused with `BAD TAPE VERSION`.
+**Tape compatibility.** The tape format version is the one of the previous V2 Enhanced release, so a program tape loads on either; the variables of an ALL tape come back only on the ROM build that wrote it. V1 and stock Spectrum tapes are refused with `BAD TAPE VERSION`.
 
 **Messages:** `SAVED`, `LOADED`, `VERIFIED`, `VERIFY FAILED`, `LOAD FAILED` (also a `CODE` block longer than the room), `SYNTAX ERROR` (bad `CODE` arguments), `NO VARIABLES`, `BAD TAPE VERSION`, `ABORTED` (SPACE pressed during a tape operation), `NO PACKAGE` (`SAVE ... EXT` with no package loaded), `OUT OF MEMORY`, and the array messages under [Array Store](#array-store).
 

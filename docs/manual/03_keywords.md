@@ -2380,9 +2380,9 @@ The safe range for your own machine code and data is `$7800`-`$7FFF` (30720 to 3
 
 **Notes.**
 
-* `SAVE ... ALL`, `LOAD` and `VERIFY` of an ALL tape pause for **about 2.4 seconds** before the tones start (the program's identity check is calculated first).
-* If a very large program plus its overflow arrays cannot be laid out for saving, `SAVE ... ALL` says `OUT OF MEMORY`; `SAVE "name"` still works.
-* A tape written by this version cannot be loaded by earlier V2 ROMs; V1 and stock Spectrum tapes are refused with `BAD TAPE VERSION`.
+* `SAVE ... ALL`, `LOAD` and `VERIFY` of an ALL tape pause for **about 2.4 seconds** before the tones start (the program's identity check is calculated first). An ALL tape has **two blocks**: the program with its variables, then the array segment. `SAVE` leaves about **4.5 seconds of silence** between them, in which `LOAD` checks the first block; let the tape run through it.
+* If a very large program and its variables cannot be laid out for saving (the array segment is the second block and does not count), `SAVE ... ALL` says `OUT OF MEMORY`; `SAVE "name"` still works.
+* The tape format version is the one of the previous V2 Enhanced release: a program tape loads on either, and the variables of an ALL tape come back only on the ROM build that wrote it (`NO VARIABLES` otherwise). V1 and stock Spectrum tapes are refused with `BAD TAPE VERSION`.
 * `SAVE ... CODE` takes the bytes at the speed and with the pilot tone of every other tape, and SPACE aborts it (`ABORTED`).
 
 ```basic ex=kw.save.1
