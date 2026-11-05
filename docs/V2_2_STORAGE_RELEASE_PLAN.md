@@ -487,3 +487,16 @@ register and flag claims of each change I took against the code and measured the
   flags), `SA_SIZES` using `sub` (HOME -1). Also not taken: moving `V2_RECV_S`'s SPACE test into HOME (EXROM -5, HOME +10; it
   hides the test hook `press_space` uses).
 - **Running totals** (free bytes): after A HOME 403 / EXROM 89; after B and the shrink **HOME 325 / EXROM 120**.
+
+### Shrink pass 2 (2026-11-05; owner: "also do the older save code and the small HOME edits"; Opus implemented, I reviewed the diff; all [M])
+
+Commit `fe4342c`. Applied, in the reviewer's numbering: **C1** `V2_SAVE .program` without the dead reloads of the name and a shorter
+length computation (-11 EXROM); **C2** `.all` joins a new label `.prog_ix` on `.program`'s `ld ix,PROG_AREA_START` (-4); **C3** `SA_SEAL`
+returns the block length in DE (EXROM -2, HOME -1); **C4** entry `V2_PAD_NAME_V` (loads the parsed name) used by `V2_LOAD` and
+`V2_LOAD_ARRAY` (-4); **H2** `SA_CRC_S` (CRC of segment 2) in the old KTAB hole, 7 of its 12 free bytes (HOME -14); **H3** `SA_FINISH.empty`
+shares `SA_RESTORE.set_pas` (HOME -4); **H4** `SA_FINISH` ends `jp VM_INIT_REGS`, which returns A = 0 because it ends with `xor a` and only
+stores (documented in a comment; HOME -2); **H5** `SA_SIZES` subtracts the base's high byte (ASSERT: low byte 0; HOME -1). Not applied:
+R2 (the SPACE test of `V2_RECV_S` into HOME: it hides the hook `press_space` uses).
+- **Bytes** (`make budget`): HOME 325 -> **347** free (+22), EXROM 120 -> **141** free (+21). KTAB hole: 5 B left.
+- **Tests** (`make test`, 30 min, exit 0): prod-regress 127, prod-arrays 105, known-defects 15, saveall 23, qmicsave 0 failures (5 checks),
+  lifecycle 23, qvmedge 221/221, qual 670 PASS + 1 XFAIL + 2 N/A, maint-qual all; `make doc-examples` 327/327.
