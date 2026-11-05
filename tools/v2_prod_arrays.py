@@ -65,6 +65,12 @@ def tape(files):
     return t
 
 
+def filler(total):
+    """A well-formed store entry of `total` bytes (key "z", body zeros), so a hand-built store is walkable
+    (ARR_FIND steps by the length field; the v2.2 loader looks the key up before it receives anything)."""
+    return u16(total) + bytes([2, 1]) + b"z" + bytes(total - 5)
+
+
 def pas_end():
     return P.w16(P.sym("PAS_END"))
 
@@ -901,7 +907,7 @@ def full_header():
         P.boot(tape([("ARR", A5, {})]), lead=LEAD)
         guard = bytes([0xC3]) * 64
         P.poke(LIMIT, guard)                              # sprite-buffer side of the boundary
-        P.poke16(P.sym("PAS_END"), end)
+        set_store([filler(end - BASE)])
         m = typed('load "ARR" ARRAY a')
         res.append((hex(end), m, pas_end() == end and P.read(LIMIT, 64) == guard))
         P.shutdown()
@@ -913,7 +919,7 @@ def full_name31():
     P.boot(tape([("ARR", A5, {})]), lead=LEAD)
     guard = bytes([0xC3]) * 64
     P.poke(LIMIT, guard)
-    P.poke16(P.sym("PAS_END"), LIMIT - 8)
+    set_store([filler(LIMIT - 8 - BASE)])
     m = typed('load "ARR" ARRAY %s' % LONG31)
     return m == "STORE_FULL" and pas_end() == LIMIT - 8 and P.read(LIMIT, 64) == guard, \
         "msg=%s guard_intact=%s" % (m, P.read(LIMIT, 64) == guard)
@@ -924,10 +930,9 @@ def full_body():
     P.boot(tape([("ARR", num([1] * 40), {})]), lead=LEAD)
     guard = bytes([0xC3]) * 64
     P.poke(LIMIT, guard)
-    P.poke16(P.sym("PAS_END"), LIMIT - 60)               # 60 free: header 5 + 55 for a 83-byte body
-    P.poke(LIMIT - 60, bytes(60))
+    set_store([filler(LIMIT - 60 - BASE)])               # 60 free: header 5 + 55 for a 83-byte body
     m = typed('load "ARR" ARRAY a')
-    return m in ("LOAD_FAILED", "STORE_FULL") and pas_end() == LIMIT - 60 and P.read(LIMIT, 64) == guard, \
+    return m == "STORE_FULL" and pas_end() == LIMIT - 60 and P.read(LIMIT, 64) == guard, \
         "msg=%s PAS_END=%04X guard_intact=%s" % (m, pas_end(), P.read(LIMIT, 64) == guard)
 
 
@@ -941,19 +946,93 @@ def exact_fit():
     full = pas_end()
     P.poke16(P.sym("PAS_END"), BASE)
     m2 = typed('load "TOO" ARRAY a')
-    return m1 == "LOADED" and full == LIMIT and m2 in ("LOAD_FAILED", "STORE_FULL") and pas_end() == BASE \
+    return m1 == "LOADED" and full == LIMIT and m2 == "STORE_FULL" and pas_end() == BASE \
         and P.read(LIMIT, 64) == guard, "fit=%s end=%04X over=%s PAS_END=%04X" % (m1, full, m2, pas_end())
 
 
-@case("arr-store-replace-peak", "replacement needs room for old+new together (atomicity): a same-size replace in a full store is refused")
-def replace_peak():
-    n = (2048 - 8) // 2
-    big = num([i & 0xFF for i in range(n)])
-    P.boot(tape([("A", big, {}), ("A", big, {})]), lead=LEAD)
+def _nums(n, seed=0):
+    return num([(i * 7 + seed) & 0xFFFF for i in range(n)])
+
+
+# v2.2 (item A): a replacement needs room for the NEW array only (it is received in the pool and the old
+# entry is removed after validation); an array longer than the room is ARRAY STORE FULL, not LOAD FAILED.
+@case("arr-store-replace-full", "v2.2: a same-size replace in a completely full store LOADs (it needed room for both copies before)")
+def replace_full():
+    n = (2048 - 8) // 2                                  # entry = 8 + 2n: n = 1020 fills the store exactly
+    A1, A2 = _nums(n, 0), _nums(n, 5)
+    P.boot(tape([("A", A1, {}), ("A", A2, {})]), lead=LEAD)
+    P.put_store(["k = 1"])
     m1 = typed('load "A" ARRAY a')
-    before = store_state()
+    full = pas_end()
     m2 = typed('load "A" ARRAY a')
-    return m1 == "LOADED" and m2 in ("LOAD_FAILED", "STORE_FULL") and store_state() == before, "m1=%s m2=%s same=%s" % (m1, m2, store_state() == before)
+    end, st = store_state()
+    ok = m1 == "LOADED" and m2 == "LOADED" and full == LIMIT and end == LIMIT and st == entry("a", 2, A2) \
+        and P.store() == ["k = 1"]
+    return ok, "m1=%s m2=%s full=%04X end=%04X replaced=%s program=%s" % (m1, m2, full, end, st == entry("a", 2, A2), P.store())
+
+
+@case("arr-replace-larger-fits", "v2.2: a larger replacement that fits once the old entry is gone LOADs, first or last in the store")
+def replace_larger_fits():
+    out = []
+    small, big, bigger = _nums(100, 1), _nums(800, 2), _nums(900, 3)    # 208 + 1608 + 232 free; 208 + 1808 fits
+    for label, order, repl in (("last", ("A", "B"), "B"), ("first", ("B", "A"), "B")):
+        bodies = {"A": small, "B": big}
+        files = [(k, bodies[k], {}) for k in order] + [("B", bigger, {})]
+        msgs = _loaded_store(files, ['load "%s" ARRAY %s' % (k, k.lower()) for k in order] + ['load "B" ARRAY b'])
+        end, st = store_state()
+        want = entry("a", 2, small) + entry("b", 2, bigger)
+        out.append((label, msgs == ["LOADED"] * 3 and st == want and end == BASE + len(want), msgs))
+        P.shutdown()
+    return all(g for _, g, _ in out), str(out)
+
+
+@case("arr-store-full-oversize", "v2.2: an array that cannot fit even after the old entry goes is ARRAY STORE FULL, store unchanged")
+def oversize():
+    out = []
+    small, big = _nums(100, 1), _nums(800, 2)
+    for label, repl, files in (
+            ("replace", _nums(1000, 3), [("A", small, {}), ("B", big, {}), ("B", _nums(1000, 3), {})]),   # 208 + 2008 > 2048
+            ("add", _nums(1000, 4), [("A", small, {}), ("C", _nums(1000, 4), {})]),                       # 208 + 2008 > 2048
+            ("huge", _nums(3000, 5), [("A", small, {}), ("H", _nums(3000, 5), {})])):                     # longer than the segment
+        cmds = ['load "A" ARRAY a'] + (['load "B" ARRAY b'] if label == "replace" else [])
+        P.boot(tape(files), lead=LEAD)
+        for c in cmds:
+            typed(c)
+        before = store_state()
+        last = files[-1][0]
+        m = typed('load "%s" ARRAY %s' % (last, "b" if label == "replace" else last.lower()))
+        out.append((label, m, store_state() == before))
+        P.shutdown()
+    return all(m == "STORE_FULL" and same for _, m, same in out), str(out)
+
+
+@case("arr-replace-full-damaged", "v2.2: a damaged replacement at a full store leaves it intact: bad checksum LOAD FAILED, malformed BAD ARRAY TAPE")
+def replace_full_damaged():
+    n = (2048 - 8) // 2
+    A1 = _nums(n, 0)
+    out = []
+    for label, kw, body, want in (("checksum", {"bad_checksum": True}, _nums(n, 9), "LOAD_FAILED"),
+                                  ("malformed", {}, bytes([1, 0, 0]), "BAD_ARRAY")):
+        msgs = _loaded_store([("A", A1, {}), ("A", body, kw)], ['load "A" ARRAY a'])
+        before = store_state()
+        m = typed('load "A" ARRAY a')
+        out.append((label, m, m == want and store_state() == before and before[1] == entry("a", 2, A1)))
+        P.shutdown()
+    return all(g for _, _, g in out), str(out)
+
+
+@case("arr-load-near-full-program", "v2.2: the loader stages in the pool: a near-full program, its text and the symbol-table terminator survive a LOAD ARRAY")
+def load_near_full_program():
+    lines = ["REM " + "x" * 100] * 85                    # ~9.1 KB of the 9211-byte pool
+    A1 = _nums(1000, 0)                                  # NL = 2008 ($07D8): its low byte is not the terminator 0
+    P.boot(tape([("A", A1, {})]), lead=LEAD)
+    P.put_store(lines)
+    pe = P.w16(P.sym("PROG_END"))
+    m = typed('load "A" ARRAY a')
+    end, st = store_state()
+    ok = m == "LOADED" and st == entry("a", 2, A1) and P.store() == lines and P.w16(P.sym("PROG_END")) == pe \
+        and P.read(pe, 1) == b"\0"
+    return ok, "msg=%s PROG_END=%04X terminator=%02X program_same=%s" % (m, pe, P.read(pe, 1)[0], P.store() == lines)
 
 
 # ==================================================================== banking

@@ -32,14 +32,14 @@ What the status line (the bottom row of the screen) can say. The program or comm
 | `PROGRAM FULL` | the line you just entered does not fit in the memory for programs; it was not stored |
 | `SAVED`, `LOADED`, `VERIFIED` | the tape command worked |
 | `VERIFY FAILED` | the tape and memory differ (or the tape could not be read) |
-| `LOAD FAILED` | no matching tape was found, it was damaged, or the data does not fit |
+| `LOAD FAILED` | no matching tape was found, or it was damaged (for a program, also a tape too long for the program area) |
 | `NO VARIABLES` | a `SAVE ... ALL` tape was loaded but its variables could not be used (different ROM version or different package) |
 | `BAD TAPE VERSION` | the tape is from V1, a stock Spectrum or a ROM with an incompatible format |
 | `ABORTED` | SPACE was pressed during a tape operation |
 | `NO PACKAGE` | `SAVE "name" EXT` with no package loaded |
 | `ARRAY NOT DIMD` | `SAVE ... ARRAY a` for an array the program does not declare |
 | `BAD ARRAY TAPE` | the tape block is not a valid array |
-| `ARRAY STORE FULL` | no room is left in the Array Store |
+| `ARRAY STORE FULL` | `LOAD ... ARRAY`: the tape's array is longer than the room available in the Array Store; the store is unchanged |
 | `LINE n/m` | not an error: the editor's status line (cursor line *n* of *m*) |
 | `2068 LEAP V2.1.1` | not an error: the ROM's version, shown after switching on until the first key |
 

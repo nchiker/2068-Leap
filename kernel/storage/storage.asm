@@ -27,6 +27,9 @@ STORAGE_LOAD_BAD_VERSION     EQU $FE     ; R10.9 failure return marker: the head
                                          ; written (a clean failure, like A = 0)
 STORAGE_LOAD_DATA_TOUCHED    EQU $FF     ; failure return marker: at least
                                          ; one destination byte was written
+STORAGE_LOAD_TOO_LONG        EQU $FD     ; v2.2 failure return marker: the header's
+                                         ; length exceeds the caller's DE; nothing was
+                                         ; written (a clean failure, like A = 0)
 STORAGE_NO_AUTOSTART         EQU $8000
 
     ASSERT STORAGE_HEADER_NAME_OFF + STORAGE_HEADER_FILENAME_LEN = STORAGE_HEADER_LENGTH_OFF
@@ -232,7 +235,8 @@ STORAGE_SAVE:
 ;          claimed length exceeds the caller's bound, or the data block
 ;          failed). A distinguishes whether destination bytes were written
 ;          (0 clean / STORAGE_LOAD_DATA_TOUCHED) or an unsupported version
-;          (STORAGE_LOAD_BAD_VERSION).  R10.9: B is nonzero on a failure
+;          (STORAGE_LOAD_BAD_VERSION), or the header's length exceeding the
+;          caller's DE (STORAGE_LOAD_TOO_LONG, v2.2; clean).  R10.9: B is nonzero on a failure
 ;          if SPACE (the tape-abort key) was held; B = 0 on success.
 ;          In VERIFY mode (STORAGE_VERIFY_MODE != 0) nothing is ever stored
 ;          to IX, so a failure is always clean (A = 0).
@@ -384,8 +388,8 @@ STORAGE_LOAD:
     ld   a, h
     or   l
     jr   z, .length_ok                    ; header length == max — fine
-    jr   .total_failure                   ; JP not JR — out of range;
-                                         ; header length > max
+    ld   a, STORAGE_LOAD_TOO_LONG         ; header length > max: a clean failure,
+    jr   .abort_check                     ; told apart from "no tape" (A = 0)
 
 .length_ok:
     ld   de, (STORAGE_HEADER_BUF + STORAGE_HEADER_LENGTH_OFF)

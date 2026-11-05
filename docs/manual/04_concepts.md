@@ -39,6 +39,8 @@ store: DIM a(5) ;; PRINT a(2)
 RUN  [ve:65]
 ```
 
+Loading an array whose name is already in the store **replaces** it, and the new array only has to fit on its own (not alongside the old copy), so a same-size replacement works even when the store is completely full.
+
 When the store is nearly full, another array cannot be loaded: here an array of 1018 numbers (2036 bytes) leaves no room for even a one-element array:
 
 ```basic ex=con.store.3
@@ -60,9 +62,11 @@ Messages specific to arrays and tapes:
 |---|---|
 | `ARRAY NOT DIMD` | `SAVE ... ARRAY a` for an array the program has not declared |
 | `BAD ARRAY TAPE` | the tape block is not a well-formed array (wrong shape, or damaged) |
-| `ARRAY STORE FULL` | the store is full: no room is left for another entry |
-| `LOAD FAILED` | the data does not fit in what is left of the store, or the tape is damaged |
+| `ARRAY STORE FULL` | the array on the tape is longer than the room available (the store's size minus the other entries); nothing in the store changes |
+| `LOAD FAILED` | no matching tape was found, or the tape is damaged |
 | `ARRAY SIZE MISMATCH` | a `DIM` disagrees with the stored array of that name |
+
+Whatever the message, if the `LOAD` does not succeed the store is exactly as it was before it.
 
 The store shares its 2 KB with ordinary arrays that did not fit in the main memory: `FREE(1)` reports what is left.
 

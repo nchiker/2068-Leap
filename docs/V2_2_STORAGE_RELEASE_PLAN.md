@@ -281,4 +281,95 @@ the owner's voice, no headings needed, under 400 words.
 
 ## 6. Ledger (append per item)
 
-_(empty)_
+### Baseline (2026-11-05, `release/v2.2-storage` at `7c5505b`, tree = `v2-development` `4891681`; all [M])
+
+- `make budget`: **HOME 403 free, EXROM 111 free** (the plan's HOME 313 was measured on `backport/leapc`; v2.1.1
+  returned 90 B to HOME). Pool `$825A-$A654` 9211, bytecode `$A655-$B5FF` 4011.
+- `make test` (headless, 2,350 s wall, exit 0): all PASS. smoke 9/9, standalone 40/40, prod-regress 127,
+  prod-arrays 101, known-defects 15, saveall 13, qmicsave 0 failures, lifecycle 23, qvmedge 221/221,
+  qual **670 PASS + 1 XFAIL + 2 N/A**, maint-qual ay_beep 59, cbeep 27, di_wait 14, cbeep_tape 3.
+- Plan line references into `kernel/graphics/graphics.asm` and `rom/exrom_v2_vm_core.asm` predate v2.1.1 and
+  may have moved; re-read before using them in item C.
+
+### Item A design note (2026-11-05, before any code)
+
+Read: `V2_LOAD_ARRAY` and `ARR_VALIDATE` (`rom/exrom_v2_arrstore.asm`), `STORAGE_LOAD` (`kernel/storage/storage.asm`),
+`V2_CLEAR_ARRAYS`, `SYM_RESET`, `V2_LOAD`'s failure classes, `docs/V2_SESSION_VARIABLES.md`.
+
+**Today.** The new entry is built at `PAS_END` and the body is received there, so `DE` (max length) =
+`ARR2_LIMIT - descriptor address`: a replacement needs room for both copies. A header longer than `DE` is
+`.total_failure` (A = 0), the same code as "no tape", so the shell says `LOAD FAILED`. The old entry is removed
+afterwards by one `ldir` that also slides the new entry down.
+
+**Premise check (the plan's "the pool is free").** `V2_LOAD_ARRAY` starts with `V2_CLEAR_ARRAYS`, which calls
+`SYM_RESET` (clears `SESS_VALID`: `LOAD ... ARRAY` ends the session, `V2_SESSION_VARIABLES.md` table) and drops
+`ARRAYS_END` to just past the empty symbol table. Everything from there to `V2_CODE_LIMIT` is dead, and
+`V2_LOAD` already receives program blocks over that range. Confirmed.
+
+**New room calculation.** Stage the entry in the dead pool at `ARRAYS_END` (not at `PROG_END`: `SYM_RESET`
+wrote the table terminator there, and `SAVE ... ARRAY` reads the table afterwards). Entry image = `[len:2][kind][namelen][name][descriptor]`,
+the key name copied in before `STORAGE_LOAD` as today. Before anything changes:
+
+    EL   = length of the same-name entry (ARR_FIND), 0 if none
+    room = ARR2_LIMIT + EL - PAS_END - (namelen + 4)         ; descriptor bytes that fit after replacement
+    room < 0  ->  ARRAY STORE FULL, nothing touched
+    DE   = room, IX = staged descriptor
+
+Receive into the pool, `ARR_VALIDATE` (it reads `ASV_DESC`, now in the pool), set the entry's length field,
+then commit: (1) find the old entry again (the staged name is the key); if present, `ldir` the store tail down
+over it, **guarding a zero count** (the old entry was last: `ldir` with BC = 0 would copy 64 KB; today's code
+never hit it because the new entry rode along in the move); (2) `PAS_END := PAS_END - EL`, copy the staged entry
+there, `PAS_END` := the end of the copy. The store is not written on any failure path; same-size replacement of
+a store-filling array now fits (`room = descriptor of the old entry`).
+
+**Pool limit.** The pool room is `V2_CODE_LIMIT - descriptor address` >= about 3.9 KB for any program the
+shell accepts (`V2_SOURCE_END` = `$A655`, name <= 31 B). With the 2048-byte segment the store room is always the
+smaller, so the plan's `min(room, pool room)` is not needed and is replaced by a build `ASSERT` that fails if a
+layout change (item C) makes the segment larger than that pool room. **For gate G1:** at 7424 B the pool room
+would bind, so a 7 KB array could load only while the program text is under about 6.6 KB, unless C adds the
+`min` (about 7 B) or receives straight into the store when there is room.
+
+**New return code.** `STORAGE_LOAD_TOO_LONG EQU $FD` (nothing written). The length check at `.name_ok`
+(`storage.asm`, "header length > max") loads it and joins `.abort_check` (which keeps A and computes the SPACE
+flag in B), 2 B. Callers: `V2_LOAD_ARRAY` maps it to `ARRAY STORE FULL`; `V2_LOAD` and `V2_VERIFY` already treat any
+code other than `$FF`/`$FE` as a clean failure, so they behave exactly as before for `$FD` (program: `LOAD FAILED`;
+VERIFY: `VERIFY FAILED`). The optional `PROGRAM FULL` mapping in the program loader is **left out**: it needs a
+VERIFY-mode guard and bytes for a case the report did not hit.
+
+### Item A outcome (2026-11-05; on `release/v2.2-storage` off `v2-development` `4891681`; all [M])
+
+- **What:** `LOAD "n" ARRAY a` no longer needs room for the old and the new copy together, and an array longer
+  than the room is `ARRAY STORE FULL`, not `LOAD FAILED`. Design as in the note above, built as written.
+  - `kernel/storage/storage.asm`: new return code `STORAGE_LOAD_TOO_LONG` (`$FD`, nothing written) for a header
+    longer than the caller's DE; it joins `.abort_check`, so B still reports SPACE.
+  - `rom/exrom_v2_arrstore.asm` `V2_LOAD_ARRAY`: the entry is staged at `ARRAYS_END` in the pool; the room is
+    `ARR2_LIMIT + EL - PAS_END - (namelen + 4)`, computed before anything changes; the old entry is removed and
+    the staged entry copied only after `ARR_VALIDATE`; the move is skipped when the old entry was the last
+    (a count of 0 would make `LDIR` copy 64 KB). A local `.find` serves both lookups. A build `ASSERT` ties the
+    staging room to the segment size (fails if item C makes the segment larger than the pool room).
+  - `V2_LOAD` and `V2_VERIFY` are untouched: they treat `$FD` as the clean failure they already know.
+- **Bytes** (`make budget`, `4891681` -> working tree): **HOME 403 -> 403 (0); EXROM 111 -> 89 free (-22):**
+  storage 2, loader 20 (the loader got shorter than the estimate of 40-50 because the new code replaces
+  the old removal logic). Above the 32 B EXROM reserve by 57. RAM 0.
+- **Tests** (on the working tree, headless): `make test` exit 0, 1,889 s: smoke 9/9, standalone 40/40,
+  prod-regress 127, **prod-arrays 105** (was 101), known-defects 15, saveall 13, qmicsave 0 failures,
+  lifecycle 23, qvmedge 221/221, qual **670 PASS + 1 XFAIL + 2 N/A** (unchanged), maint-qual all;
+  `check_docs`, `check_storage_contract`, `check_package_abi` pass. `make doc-examples` 327/327.
+  - New cases in `tools/v2_prod_arrays.py`: `arr-store-replace-full` (same-size replace in an exactly full
+    store; replaces the old `arr-store-replace-peak`, which asserted the defect), `arr-replace-larger-fits`
+    (first and last position), `arr-store-full-oversize` (replace, add, 3000 elements: `STORE_FULL`, store
+    unchanged), `arr-replace-full-damaged` (bad checksum `LOAD FAILED`, malformed `BAD ARRAY TAPE`, store
+    intact), `arr-load-near-full-program` (85-line program, text and the symbol-table terminator survive).
+    `arr-store-full-body` and `arr-store-exact-fit` now require `STORE_FULL` (they accepted either message).
+  - **Test finding:** three existing cases (`arr-store-full-header`, `-name31`, `-body`) hung the emulated machine
+    (a 1,000-3,400 s timeout each) because they poked `PAS_END` over a store of zeros. A zero entry length never
+    advances `ARR_NEXT`, so `ARR_FIND` loops; the old loader never looked the key up before receiving, the
+    new one does. The ROM never writes such a store, so the cases were fixed (`filler()` builds a walkable
+    entry), not the loader. Noted for item B/C tests: hand-built stores must be well-formed.
+- **Manual** (Sonnet draft, reviewed against the code): `03_keywords.md` (LOAD table and results line),
+  `04_concepts.md` (replacement sentence; message table; store unchanged on failure), `07_appendices.md`
+  (Appendix A: `LOAD FAILED`, `ARRAY STORE FULL`). Items left to E: the defect-register entry for the
+  `LOAD FAILED` ambiguity, the release record, `V2_LANGUAGE_REFERENCE.md` needed no change.
+- **Left out:** the optional `PROGRAM FULL` mapping in the program loader (a too-long program tape still says
+  `LOAD FAILED`; it needs a VERIFY-mode guard and bytes); the `min(room, pool room)` (replaced by the ASSERT; see
+  the pool-limit paragraph and gate G1); a hardware test (not possible here).

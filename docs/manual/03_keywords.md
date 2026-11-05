@@ -1494,7 +1494,7 @@ Reads from tape what `SAVE` wrote:
 |---|---|
 | `LOAD "name"` | the program called *name* -- and, if it was saved with `ALL`, the variables and arrays that went with it |
 | `LOAD ""` | the next program on the tape, whatever its name |
-| `LOAD "name" ARRAY a` | one array, into the Array Store (the program is not touched) |
+| `LOAD "name" ARRAY a` | one array, into the Array Store (the program is not touched); an array of that name already in the store is replaced |
 | `LOAD "name" EXT` | a package (see [Part 5](05_packages.md)) |
 
 ```basic ex=kw.load.1
@@ -1506,7 +1506,7 @@ power on
 LOAD ""                                [LOADED]
 ```
 
-The result is shown on the status line: `LOADED`, or `LOAD FAILED`, `BAD TAPE VERSION`, `NO VARIABLES`, `ABORTED`. Details are under SAVE and in the concept [Tapes](04_concepts.md#tapes).
+The result is shown on the status line: `LOADED`, or `LOAD FAILED`, `BAD TAPE VERSION`, `NO VARIABLES`, `ABORTED`; for `LOAD ... ARRAY` also `ARRAY STORE FULL` (the array is longer than the room available in the store) and `BAD ARRAY TAPE`. Details are under SAVE and in the concept [Tapes](04_concepts.md#tapes).
 
 **See also** SAVE, VERIFY.
 
