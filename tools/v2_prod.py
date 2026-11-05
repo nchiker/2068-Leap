@@ -292,10 +292,11 @@ def press_space(maxi=400_000_000):
         D("set-register", "A", hex((regs()["AF"] >> 8) & 0xFE))
 
 
-def capture_save(cmdline, maxi=60_000_000):
+def capture_save(cmdline, maxi=60_000_000, on_block=None):
     """Run a typed SAVE command through the real V2_DISPATCH; STORAGE_SEND_BLOCK is
     intercepted at its call site (arguments recorded, call skipped).  Returns
-    ([(flag, bytes)...], message-or-None)."""
+    ([(flag, bytes)...], message-or-None).  `on_block(n)` (optional) runs after the n-th block was taken, with
+    the machine stopped at the sender's return address (a test may time the gap or press SPACE there)."""
     poke(sym("EDIT_LINE_BUF"), cmdline.encode() + b"\0")
     D("mem-write", "0xFF00", struct.pack("<H", RET).hex())
     D("set-register", "SP", "0xFF00")
@@ -317,6 +318,8 @@ def capture_save(cmdline, maxi=60_000_000):
                 D("set-register", "SP", hex(sp + 2))
                 D("set-register", "AF", hex(r["AF"] | 1))  # the real sender's success: carry set (STORAGE_SAVE stops on carry clear)
                 D("set-register", "PC", hex(ret[0] | ret[1] << 8))
+                if on_block:
+                    on_block(len(blocks))
             elif p == show:
                 msg = msg_name(regs()["HL"])
                 D("clear-break", "--index", "2")

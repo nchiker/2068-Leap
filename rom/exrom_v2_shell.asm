@@ -775,7 +775,7 @@ V2_COMPILE_AT_BASE:
 ; V2_SESSION_START -- the program just compiled becomes the session: fresh variables (VM_INIT, the Array
 ; Store bound), its code ends at SESS_CODE_END (immediate statements are compiled after it).
 ; SA_BUILD -- RC (rom/v2_saveall.asm): lay the session out as a SAVE ... ALL block (a session existing): the span moves down to
-; ARRAYS_END, segment 2, the cells and the CRCs follow it. SA_BUILT is set: V2_SHOW_MESSAGE calls
+; ARRAYS_END, the cells and the CRCs follow it (segment 2 is block 2, sent in place). SA_BUILT is set: V2_SHOW_MESSAGE calls
 ; SA_UNBUILD before the next message, so every SAVE / VERIFY outcome puts the span back.
 ; Out: CF = the image would pass V2_CODE_LIMIT (nothing moved); else BC = its length from
 ; PROG_AREA_START. Destroys everything else.
@@ -796,15 +796,41 @@ SA_BUILD:
         ld hl,(RT_SYMTAB_PTR)
         ld bc,(SA_W)
         ldir                              ; tables, zone, bytecode: down to ARRAYS_END
-        ld hl,ARR2_BASE
-        ld bc,(SA_S)
-        call SA_COPY                      ; segment 2
         ld hl,SYM_COUNTS
         ld bc,SA_K_LEN
         ldir                              ; the session cells
         ld a,1
         ld (SA_BUILT),a
         jp SA_SEAL
+
+    ASSERT SA_FLAG_DATA = STORAGE_TYPE_DATA && SA_HDR_LEN_OFF = STORAGE_HEADER_LENGTH_OFF && SA_HDR_PROGLEN_OFF = STORAGE_HEADER_PROGLEN_OFF
+; SA_SEND_S -- v2.2: block 1 of a SAVE ... ALL tape is out (STORAGE_SAVE said SAVED): the status goes back to
+; SAVING, SA_GAP leaves block 1's checks their time, then segment 2 goes out in place as block 2.
+; Out: CF = SPACE stopped it.
+SA_SEND_S:
+        ld a,1
+        ld (STORAGE_OP_STATE),a
+        call STORAGE_REPORT_PROGRESS
+        call SA_GAP
+        ret c
+        call SA_S_SETUP
+        call STORAGE_SEND_BLOCK           ; CF = whole, NC = SPACE
+        ccf
+        ret
+
+; V2_RECV_S -- v2.2: block 2 of a SAVE ... ALL tape: CF set = receive it into segment 2 (LOAD), CF clear =
+; compare it with segment 2 (VERIFY). SA_S bytes. Out: CF = failed; B nonzero = SPACE was held (ABORTED).
+V2_RECV_S:
+        call SA_S_SETUP
+        call STORAGE_RECEIVE_BLOCK
+        ei
+        ret nc
+        call STORAGE_LOAD.space_held
+        sbc a,a
+        cpl
+        ld b,a
+        scf
+        ret
 
 ; V2_ENSURE_SESSION -- RC: the session of the last RUN, or a new one (fresh variables) for the stored
 ; program. NZ = the program does not compile: no session.
@@ -1219,6 +1245,10 @@ V2_SAVE:
     ld b,a
     ld hl,(V2_NAME_PTR)
     call STORAGE_SAVE
+    jr c,.saved_or_aborted
+    ld a,(SA_BUILT)
+    or a                        ; (CF clear)
+    call nz,SA_SEND_S           ; SAVE ... ALL: the gap, then segment 2 as the second block
 .saved_or_aborted:              ; carry set: SPACE stopped the SAVE (plan item 2.1)
     ei
     ld hl,V2_MSG_SAVED
@@ -1387,7 +1417,7 @@ V2_LOAD:
 .load_call:
     call STORAGE_LOAD
     ei
-    jr c,.failed
+    jp c,.failed
     ld a,(STORAGE_VERIFY_MODE)
     or a
     jp nz,.verified          ; VERIFY never touches PROG_END/VARS_START/
@@ -1434,6 +1464,12 @@ V2_LOAD:
     ld (PROG_END),hl
     pop hl
     call SA_RESTORE
+    or a
+    jr nz,.state_done            ; 1: program only, 2: block 1's CRC failed
+    scf
+    call V2_RECV_S               ; block 2: segment 2, straight from the tape (CF = it failed)
+    call SA_FINISH               ; its CRC; A = 0 restored, 1 program only (the store emptied if it failed)
+.state_done:
     cp 2
     jr z,.state_crc_bad
 .loaded:
@@ -1518,6 +1554,12 @@ V2_LOAD:
     or a
     sbc hl,de
     jr nz,.clean_failure
+    call SA_IS_ALL               ; v2.2: a SAVE ... ALL tape has a second block: compare it too
+    jr nc,.v_done
+    or a
+    call V2_RECV_S               ; verify mode: B = abort flag
+    jr c,.clean_failure
+.v_done:
     xor a
     ld (STORAGE_VERIFY_MODE),a
     ld hl,V2_MSG_VERIFIED

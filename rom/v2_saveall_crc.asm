@@ -51,13 +51,7 @@ SA_ROM_CRC:
         ld hl,EXT2_TABLE
         ld bc,EXT2_MAX*EXT2_REC_LEN
         jr SA_CRC_GO
-; (the two small helpers of rom/v2_saveall.asm, here for space)
-SA_COPY:                                  ; BC bytes HL -> DE (BC may be 0)
-        ld a,b
-        or c
-        ret z
-        ldir
-        ret
+; (a small helper of rom/v2_saveall.asm, here for space)
 SA_PUT_DE:                                ; (HL) = DE, HL += 2
         ld (hl),e
         inc hl

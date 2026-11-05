@@ -134,6 +134,11 @@ SESS_GAP          equ 80      ; bytes kept free after the symbol table for symbo
 CSTK_BASE:        equ SESS_SAVE + 23   ; 2: where the compile stack starts (empty position):
                                        ; V2_SOURCE_END, or SESS_ARENA_BASE in a session compile
 ASV_CHECK:        equ CSTK_BASE + 2        ; 1: nonzero = ARR_RUN_CHECK (compare only)
+; v2.2: HOME's SAVE ... ALL helpers (rom/v2_saveall.asm) read the tape header the storage layer (EXROM,
+; kernel/storage/storage.asm) fills; their copies of its constants, ASSERTed equal in rom/exrom_v2_shell.asm.
+SA_FLAG_DATA:     equ $FF     ; STORAGE_TYPE_DATA
+SA_HDR_LEN_OFF:   equ 11      ; STORAGE_HEADER_LENGTH_OFF
+SA_HDR_PROGLEN_OFF: equ 15    ; STORAGE_HEADER_PROGLEN_OFF
 SA_BUILT:         equ ASV_CHECK + 1        ; 1: nonzero while SAVE/VERIFY has the session laid out as a
                                            ; SAVE ... ALL image (V2_SHOW_MESSAGE undoes it); zeroed by
                                            ; MEM_COLD_INIT ($8000 .. PROG_AREA_MAX)

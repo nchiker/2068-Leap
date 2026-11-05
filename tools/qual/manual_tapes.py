@@ -81,8 +81,13 @@ def capture_save(m, command, maxi=60_000_000):
 
 def boot_with_tape(root, port, glyphs, blocks, lead=BOOT_T + 2_000_000):
     t = TS.Tape()
+    prev = None
     for flag, payload in blocks:
+        if flag == 0xFF and prev == 0xFF:
+            t.silence(4.5)                   # SAVE ... ALL: the gap (SA_GAP) the real tape has before block 2,
+                                             # in which LOAD checks block 1 before it listens for block 2
         t.block(TS.framed(flag, payload))
+        prev = flag
     path = os.path.join(tempfile.mkdtemp(prefix="doctape-"), "t.rwa")
     t.write_rwa(path, lead)
     m = Machine(root, port, label="tape%d" % port)

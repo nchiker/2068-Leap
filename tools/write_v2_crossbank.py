@@ -104,7 +104,10 @@ NAMES = (
     "SA_RESTORE",
     "SA_SEAL",
     "SA_SIZES",
-    "SA_COPY",
+    "SA_FINISH",                # v2.2: block 2 (segment 2) of a SAVE ... ALL tape
+    "SA_GAP",
+    "SA_S_SETUP",
+    "SA_IS_ALL",
     "SA_W",
     "SA_S",
     "SA_TAIL",

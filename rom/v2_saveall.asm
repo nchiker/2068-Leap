@@ -3,53 +3,63 @@
 ; HOME-resident; the shell (rom/exrom_v2_shell.asm) drives it. Format, checks and lifecycle:
 ; docs/V2_SAVE_ALL_FORMAT.md.
 ;
-; A SAVE ... ALL tape is ONE ordinary program block (header type 0) whose header PROGLEN (the
-; Spectrum "program part" length) is shorter than its data length. After the program comes the
-; variable session -- the memory a stopped program's session occupies, as an exact image:
+; A SAVE ... ALL tape is a program block (header type 0) whose header PROGLEN (the Spectrum "program
+; part" length) is shorter than its data length, FOLLOWED (format minor 2, v2.2) by a second data block:
+; segment 2, sent straight from its own address after a silent gap long enough for LOAD's checks of the
+; first block (SA_GAP). Block 1 holds the program and then the variable session -- the memory a stopped
+; program's session occupies, as an exact image:
 ;   PROG_END .. ARRAYS_END   symbol table, session gap and array arena (they load in place)
 ;   W bytes                  VARS_START .. SESS_CODE_END: the run-time tables, the compile zone and
 ;                            the session's bytecode -- MOVED down to ARRAYS_END for the SAVE (and
 ;                            back afterwards, SA_UNBUILD), so no copy of it needs free memory
-;   S bytes                  segment 2 (ARR2_BASE .. ARR2_END: Array Store + overflow arrays)
 ;   SA_K_LEN bytes           the session cells $B800 .. SA_AE (counts, table bases, ends, ...)
+;   2                        the CRC-16/CCITT of segment 2 (block 2's bytes)
 ;   2                        the identity CRC (SA_ROM_CRC: HOME + EXROM + the package registry): the
 ;                            image is only valid with exactly the ROM and packages that wrote it
-;   2                        the CRC-16/CCITT of every byte before it (program included)
-; The image must end at or below V2_CODE_LIMIT (it may run past the pool into the zone and the free
-; code space). LOAD (SA_RESTORE) changes nothing until the block CRC and the identity CRC match; then
+;   2                        the CRC-16/CCITT of every byte of block 1 before it (program included)
+; Block 2 is segment 2 (ARR2_BASE .. ARR2_END: Array Store + overflow arrays), S bytes, no copy.
+; Block 1 must end at or below V2_CODE_LIMIT (it may run past the pool into the zone and the free
+; code space). LOAD (SA_RESTORE) changes nothing until block 1's CRC and the identity CRC match; then
 ; installs the cells, requires the addresses in them to form one nondecreasing chain (SA_CHAIN)
-; and the block to be partitioned exactly as they describe, requires every array pointer (read in
-; the image) to lie in the arena or segment 2, and only then installs segment 2 and moves the
-; tables/zone/bytecode span up into place.
-; Any failure after the CRCs restores the Array Store's end and reports the state unusable: the
-; caller keeps the program and discards the variables.
+; and block 1 to be partitioned exactly as they describe, and requires every array pointer (read in
+; the image) to lie in the arena or segment 2. The shell then receives block 2 into segment 2
+; (V2_RECV_S) and SA_FINISH checks its CRC and moves the tables/zone/bytecode span up into place.
+; A failure before block 2 restores the Array Store's end and reports the state unusable (the caller
+; keeps the program and discards the variables); a failure of block 2 or its CRC also empties the
+; Array Store (segment 2 was written), with the same report.
 ; ============================================================================
-SA_TAIL         equ SA_K_LEN + 4            ; the cells + the two CRCs
+SA_TAIL         equ SA_K_LEN + 6            ; the cells + the three CRCs (segment 2, identity, block 1)
+SA_GAP_N        equ 4650                    ; SA_GAP: 4650 passes of 3,389 T = about 4.5 s at 3.5 MHz
 SA_END          equ SESS_SAVE               ; scratch (SESS_SAVE only serves an immediate statement):
 SA_W            equ SESS_SAVE + 2           ;   the block end; W; S; the Array Store's end before the
 SA_S            equ SESS_SAVE + 4           ;   load
 SA_OLD_PAS      equ SESS_SAVE + 6
 
-; SA_SIZES -- from the live cells: SA_W, SA_S; HL = W + S. Destroys AF, BC, DE.
+; SA_SIZES -- from the live cells: SA_W, SA_S; HL = W (block 1 holds W; segment 2, S bytes, is block 2).
+; Destroys AF, BC, DE.
 SA_SIZES:
+        ld hl,(ARR2_END)
+        ld bc,-ARR2_BASE
+        add hl,bc
+        ld (SA_S),hl
         ld hl,(SESS_CODE_END)
         ld de,(RT_SYMTAB_PTR)
         or a
         sbc hl,de
         ld (SA_W),hl
-        ex de,hl
-        ld hl,(ARR2_END)
-        ld bc,-ARR2_BASE
-        add hl,bc
-        ld (SA_S),hl
-        add hl,de
         ret
 
 ; SA_SEAL -- the end of SA_BUILD (rom/exrom_v2_shell.asm): DE = the end of the laid-out image (after
-; the cells). Appends the identity CRC and the block CRC. Out: BC = the block length from PROG_AREA_START,
-; CF clear.
+; the cells). Appends the segment-2 CRC, the identity CRC and the block CRC. Out: BC = block 1's length
+; from PROG_AREA_START, CF clear.
 SA_SEAL:
         push de
+        ld hl,ARR2_BASE
+        ld de,(ARR2_END)
+        call SA_CRC_RANGE                 ; DE = the CRC of block 2
+        pop hl
+        call SA_PUT_DE
+        push hl
         call SA_ROM_CRC
         pop hl
         call SA_PUT_DE
@@ -64,6 +74,28 @@ SA_SEAL:
         ld b,h
         ld c,l
         or a
+        ret
+
+; SA_GAP -- the silence between the two blocks of a SAVE ... ALL tape, long enough for LOAD's checks of
+; block 1 (the block CRC and the identity CRC, about 3-4 s) to finish before the receiver listens for
+; block 2's pilot (it then has its own 8.6 s of patience). Interrupts stay off. Out: CF = SPACE pressed.
+SA_GAP:
+        ld hl,SA_GAP_N
+.big:
+        ld b,0
+.in:
+        djnz .in                          ; 3,323 T
+        ld a,$7F
+        in a,(PORT_ULA)
+        rra
+        jr nc,.stop                       ; SPACE down
+        dec hl
+        ld a,h
+        or l
+        jr nz,.big
+        ret                               ; (CF clear)
+.stop:
+        scf
         ret
 
 ; SA_UNBUILD -- the span [ARRAYS_END, +W) moves up to [SESS_CODE_END - W, SESS_CODE_END) (= its home
@@ -103,7 +135,8 @@ SA_K_ARR2_LIM:  dw ARR2_LIMIT
 
 ; SA_RESTORE -- a program block was loaded whose header PROGLEN (HL) is below its length (DE);
 ; PROG_END is already PROG_AREA_START + PROGLEN.
-; Out: A = 0  restored: the saved session is the current one;
+; Out: A = 0  block 1 is good (the cells are installed, the span is still down at ARRAYS_END): the caller
+;              receives block 2 and calls SA_FINISH;
 ;      A = 1  the state cannot be used (another ROM, or inconsistent): keep the program only;
 ;      A = 2  the block CRC failed: nothing in the block can be trusted.
 SA_RESTORE:
@@ -231,19 +264,8 @@ SA_RESTORE:
         pop hl
         jr .ptr
 .ptrs_ok:
-        ld hl,(ARRAYS_END)
-        ld bc,(SA_W)
-        add hl,bc
-        ld de,ARR2_BASE
-        ld bc,(SA_S)
-        call SA_COPY                      ; the Array Store and the overflow arrays
-        call SA_UNBUILD                   ; tables, zone and bytecode up into place
-        ld hl,(RT_SYMTAB_PTR)
-        ld (VARS_START),hl
-        ld (VM_CSP),hl
-        call VM_INIT_REGS
-        xor a
-        ret
+        xor a                             ; block 1 is good; segment 2 (SA_S bytes) is block 2: the shell
+        ret                               ; receives it (V2_RECV_S) and calls SA_FINISH
 .word:                                    ; HL -> a chain entry: DE = the word it names, HL += 2
         ld e,(hl)
         inc hl
@@ -255,4 +277,52 @@ SA_RESTORE:
         ld h,(hl)
         ld l,a
         ex de,hl
+        ret
+
+; SA_FINISH -- after SA_RESTORE returned 0 and the shell received block 2 straight into segment 2.
+; In: CF = block 2 was not received whole (no tape, SPACE, a dropout, the transport checksum).
+; Out: A = 0 restored (the span moved up, the session is the current one); A = 1 the state is unusable:
+; segment 2 was written (or partly), so the Array Store is emptied; the caller keeps the program only.
+SA_FINISH:
+        jr c,.empty
+        ld hl,ARR2_BASE
+        ld de,(ARR2_END)
+        call SA_CRC_RANGE                 ; DE = the CRC of what arrived
+        ld hl,(SA_END)
+        ld bc,-6                          ; [segment-2 CRC][identity CRC][block CRC] end the block
+        add hl,bc
+        ld a,(hl)
+        inc hl
+        ld h,(hl)
+        ld l,a
+        or a
+        sbc hl,de
+        jr nz,.empty
+        call SA_UNBUILD                   ; tables, zone and bytecode up into place
+        ld hl,(RT_SYMTAB_PTR)
+        ld (VARS_START),hl
+        ld (VM_CSP),hl
+        call VM_INIT_REGS
+        xor a
+        ret
+.empty:
+        ld hl,ARR2_BASE
+        ld (PAS_END),hl
+        ld a,1
+        ret
+
+; SA_S_SETUP -- the registers for block 2 (segment 2, in place), for the shell's send, receive and verify:
+; IX = ARR2_BASE, DE = SA_S bytes, A = the data block's flag. Keeps the flags.
+SA_S_SETUP:
+        ld ix,ARR2_BASE
+        ld de,(SA_S)
+        ld a,SA_FLAG_DATA
+        ret
+
+; SA_IS_ALL -- CF = the header just read (STORAGE_HEADER_BUF) is a SAVE ... ALL tape: PROGLEN below its length.
+SA_IS_ALL:
+        ld hl,(STORAGE_HEADER_BUF + SA_HDR_PROGLEN_OFF)
+        ld de,(STORAGE_HEADER_BUF + SA_HDR_LEN_OFF)
+        or a
+        sbc hl,de
         ret

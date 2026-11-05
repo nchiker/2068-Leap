@@ -399,3 +399,58 @@ segment is larger than the pool room for a program over about 6.6 KB. Options: a
 `min(store room, pool room)` to the loader (about 7 B EXROM; a big array then reports `ARRAY STORE FULL` for a
 large program); or receive straight into the store when the name is new or there is room (more code). Range
 (`$5B00-$7800` as recommended, or `$6000-$7800`): the owner's choice.
+
+### Item B outcome (2026-11-05; owner decision on the open question: option 1, the silent gap; all [M])
+
+- **What:** `SAVE "n" ALL` is now a header, block 1 (program + session, **no segment 2**) and block 2 = segment 2
+  sent straight from `ARR2_BASE`, after a silent gap of about 4.5 s. The old partition rule (bytecode + segment 2 +
+  53 <= code area + free pool) is gone; the rule is now bytecode + 55 <= code area + free pool.
+  - Tail of block 1 (55 B): the 49 session cells, the **segment-2 CRC**, the identity CRC, the block-1 CRC. The
+    identity CRC stays next to the block CRC, so `SA_RESTORE` reads it where it always did.
+  - `V2_FORMAT_MINOR` 1 -> 2 (`include/v2_package_abi.inc`).
+  - HOME (`rom/v2_saveall.asm`): `SA_TAIL` 55; `SA_SIZES` returns W only; `SA_SEAL` adds the segment-2 CRC;
+    new `SA_GAP` (4650 passes of 3,389 T, SPACE tested every pass, interrupts off), `SA_FINISH` (block 2's CRC, then
+    the span moves up and the session installs; any failure empties the store), `SA_S_SETUP` and `SA_IS_ALL`
+    (small leaf helpers kept in HOME so EXROM stays smaller); `SA_COPY` removed; `SA_RESTORE` now stops after the
+    pointer checks and returns 0 meaning "block 1 good, block 2 pending". The three header constants HOME needs are
+    `SA_FLAG_DATA`, `SA_HDR_LEN_OFF`, `SA_HDR_PROGLEN_OFF` in `include/v2_layout.inc`, ASSERTed equal to the
+    storage layer's in the shell. Cross-bank export list updated (`tools/write_v2_crossbank.py`).
+  - EXROM (`rom/exrom_v2_shell.asm`): `SA_BUILD` no longer copies segment 2; `SA_SEND_S` (status back to SAVING, the gap,
+    block 2); `V2_RECV_S` (receive or verify block 2; B = SPACE held); V2_SAVE sends block 2 when `SA_BUILT`; V2_LOAD
+    receives it after `SA_RESTORE` and calls `SA_FINISH`; `.verified` compares block 2 for an ALL tape.
+- **Failure semantics.** Before block 2 is read nothing changes: a tape from another ROM, or any failed check of
+  block 1, **keeps the Array Store** (as before). Any failure of block 2 (no pilot within 8.6 s, SPACE, a dropout, the
+  transport checksum, the segment-2 CRC) happens after segment 2 was written, so it also **empties the store**
+  (`PAS_END = ARR2_BASE`); the report is `NO VARIABLES` with the program kept. VERIFY: a missing, damaged or different
+  block 2 is `VERIFY FAILED` (SPACE: `ABORTED`).
+- **Departures from the plan, stated.** (1) The plan's "this ROM still loads minor-1 tapes (single block)" needs no
+  code: a minor-1 ALL tape was written by another ROM build, so its identity CRC cannot match; it loads its program and
+  says `NO VARIABLES` (test `sa-minor-rules`), its layout is never interpreted. (2) `V2_FORMAT_MINOR` 2 means older (v2.1.x)
+  ROMs refuse **every** tape this ROM writes, plain program tapes included, because the version word is shared. The
+  identity CRC already protects an older ROM from misreading an ALL tape, so the bump is not needed for safety;
+  **for G3**: keeping minor 1 for plain tapes would keep v2.2-saved programs loadable on v2.1.x (cost: a few bytes
+  in `STORAGE_VERSION_WORD`).
+- **Bytes** (`make budget`, working tree after A -> after B): **HOME 403 -> 325 free (-78)**, **EXROM 89 -> 32 free (-57)**.
+  HOME: `SA_FINISH` ~42, `SA_GAP` 22, `SA_SEAL` +~12, `SA_S_SETUP`+`SA_IS_ALL` ~26, `SA_COPY` -7, `SA_SIZES` -2, `SA_RESTORE` tail
+  -~10. EXROM: `SA_SEND_S` ~21, `V2_RECV_S` ~16, glue ~28, `SA_BUILD` -10. EXROM is exactly at its 32 B reserve (above the
+  plan's estimate of 80-120 B for HOME+EXROM: measured 135). Not hardware-measured.
+- **Tests** (`make test`, headless, 3,185 s, exit 0): smoke 9/9, standalone 40/40, prod-regress 127, prod-arrays 105,
+  known-defects 15, **saveall 23** (was 13), **qmicsave 0 failures** (5 checks: program, package, **all**, program playback,
+  **all playback**), lifecycle 23, qvmedge 221/221, qual 670 PASS + 1 XFAIL + 2 N/A (unchanged), maint-qual all;
+  `check_docs`, `check_storage_contract`, `check_package_abi` pass.
+  - New saveall cases: `sa-two-blocks` (block 2 = memory, CRCs, header, minor 2), `sa-gap` (4.5 s, measured in
+    T-states), `sa-gap-space` (ABORTED, block 2 not sent), `sa-big-store` (replaces `sa-no-room`: the old OUT OF MEMORY
+    program now saves and loads), `sa-minor-rules`, `sa-other-rom-keeps-store`, `sa-block2-crc`, `sa-block2-parity`,
+    `sa-block2-missing`, `sa-verify-block2` (damaged, missing), `sa-verify-block2-ok`. The 12 older cases pass unchanged
+    except for the tail size and the tape builder (three blocks).
+  - `qmicsave`: the real sender's MIC edges for `SAVE ... ALL` decode to header + two data blocks, pilots 8,063 / 3,222 /
+    3,222, every pulse within the stock widths, the gap between block 1 and block 2 inside 4.3-4.7 s; the captured signal
+    played back into the real `LOAD` restores the program, i.e. block 2 is found after the real gap and the checks.
+- **Finding (doc examples).** `make doc-examples` first failed 4 of 327: the four `SAVE ... ALL` / `power on` / `LOAD`
+  examples said `NO VARIABLES`. The runner (`tools/qual/manual_tapes.py`) replays the captured blocks with its default
+  short silence, so block 2 was no longer there when LOAD finished checking block 1. The same failure is what a tape
+  without the 4.5 s gap would do on hardware. The runner now inserts the gap before block 2 (327/327). Anything else that
+  replays a captured ALL save must do the same.
+- **Left out:** a case with block 1 alone too big (`OUT OF MEMORY` still exists but needs a nearly full bytecode area and
+  pool at once; the old test relied on segment 2 to reach it); a hardware run (the gap length is a hardware figure:
+  `V2_HARDWARE_CHECKLIST.md` gets the section in item E); the defect-register entry RC-O2 and the release record (item E).

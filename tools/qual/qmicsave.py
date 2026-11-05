@@ -7,7 +7,8 @@ breakpoint whose action prints TSTATESP * 16 + (A & 8) on ZEsarUX's standard out
 so the transfer runs undisturbed; the edges are then decoded back into blocks. After 2068-Leap-C's
 lcharness.tape_capture / tapes.decode / tapetest.py "roundtrip".
 
-Checked per case: two blocks, each checksum valid; the header (type, name, length = the data block's,
+Checked per case: two blocks (three for SAVE ... ALL: v2.2 sends segment 2 as block 2 after a gap of about
+4.5 s, measured here from the edges), each checksum valid; the header (type, name, length = the data block's,
 the format word in the autostart field); the data block = the bytes SAVE was asked to send; pilot
 counts (8,063 header, 3,223 data, within one); every pulse the stock ROM's width -2..+16 T. Program
 SAVE also plays the captured signal back as EAR input to the real LOAD (tools/v2_prod.tape_op), which
@@ -101,6 +102,7 @@ def decode(edges):
         while i < len(w) and not 1900 <= w[i] <= 2500:
             i += 1
         n, widths = 0, {}
+        t_start = edges[i][0]
         while i < len(w) and 1900 <= w[i] <= 2500:
             span("pilot", w[i], widths)
             n += 1
@@ -119,7 +121,7 @@ def decode(edges):
             i += 2
         data = bytes(int("".join(map(str, bits[k:k + 8])), 2) for k in range(0, len(bits) - len(bits) % 8, 8))
         blocks.append(dict(data=data, ok=bool(data) and reduce(xor, data, 0) == 0, pilot=n, widths=widths,
-                           extra_bits=len(bits) % 8))
+                           extra_bits=len(bits) % 8, t_start=t_start, t_end=edges[i][0]))
     return blocks
 
 
@@ -142,7 +144,7 @@ def widths_bad(bl):
             if not want[k] - 2 <= lo <= hi <= want[k] + 16]
 
 
-def save_captured(m, command, prepare):
+def save_captured(m, command, prepare, nblocks=2):
     """Run `command` on the real dispatcher with the MIC captured: (message, decoded blocks, edges,
     [(flag, bytes)] the sender was asked for)."""
     m.restore()
@@ -157,7 +159,7 @@ def save_captured(m, command, prepare):
                                                   m.sym("V2_COMMAND_LOOP.loop") >> 8]))
         m.setreg("SP", qharness.HARNESS_RET_SLOT)
         m.setreg("PC", m.sym("V2_DISPATCH"))
-        for _ in range(2):
+        for _ in range(nblocks):
             m.set_bps([send])
             m.run(40_000_000)
             r = m.regs()
@@ -185,8 +187,8 @@ def save_captured(m, command, prepare):
 
 def check_blocks(bl, asked, htype, name, word):
     bad = []
-    if len(bl) != 2:
-        return ["%d blocks decoded" % len(bl)]
+    if len(bl) != len(asked):
+        return ["%d blocks decoded, %d sent" % (len(bl), len(asked))]
     for b, (flag, data) in zip(bl, asked):
         want = bytes([flag]) + data
         want += bytes([reduce(xor, want, 0)])
@@ -194,7 +196,7 @@ def check_blocks(bl, asked, htype, name, word):
             bad.append("block flag %02X: decoded %s.. ok=%s extra=%d, sent %s.." %
                        (flag, b["data"][:20].hex(), b["ok"], b["extra_bits"], want[:20].hex()))
     hdr = bl[0]["data"][1:-1]
-    if bl[0]["data"][:1] != b"\x00" or bl[1]["data"][:1] != b"\xff":
+    if bl[0]["data"][:1] != b"\x00" or any(b["data"][:1] != b"\xff" for b in bl[1:]):
         bad.append("flags %r" % [b["data"][:1].hex() for b in bl])
     if len(hdr) == 17:
         if hdr[0] != htype or hdr[1:11].rstrip(b" ") != name.encode() or \
@@ -204,8 +206,12 @@ def check_blocks(bl, asked, htype, name, word):
     else:
         bad.append("header length %d" % len(hdr))
     pilots = [b["pilot"] for b in bl]
-    if not (abs(pilots[0] - 8063) <= 1 and abs(pilots[1] - 3223) <= 1):
+    if not (abs(pilots[0] - 8063) <= 1 and all(abs(p - 3223) <= 1 for p in pilots[1:])):
         bad.append("pilots %r" % pilots)
+    if len(bl) == 3:                                  # SAVE ... ALL: the silence between block 1 and block 2
+        gap = bl[2]["t_start"] - bl[1]["t_end"]
+        if not 14_900_000 <= gap <= 16_600_000:
+            bad.append("gap %d T (%.2f s), want 4.3-4.7 s" % (gap, gap / 3_500_000))
     bad += widths_bad(bl)
     return bad
 
@@ -221,13 +227,14 @@ def main():
     qharness.ZEsarUXProcess = StdoutProcess
     m = Machine(a.tree, a.port, label="micsave")
     failed = 0
-    edges_prog = store = None
+    edges_prog = store = edges_all = all_prog = None
     try:
         m.start()
         cases = [("program", 'save "PROG"', lambda mm: mm.put_store(PROG), 0, "PROG", abi.fmt_word),
-                 ("package", 'save "SH" EXT', lambda mm: mm.install_package("shapes"), 4, "SH", abi.pkg_word)]
+                 ("package", 'save "SH" EXT', lambda mm: mm.install_package("shapes"), 4, "SH", abi.pkg_word),
+                 ("all", 'save "ALLT" ALL', lambda mm: mm.put_store(PROG), 0, "ALLT", abi.fmt_word)]
         for label, command, prep, htype, name, word in cases:
-            msg, bl, edges, asked = save_captured(m, command, prep)
+            msg, bl, edges, asked = save_captured(m, command, prep, 3 if label == "all" else 2)
             bad = ([] if msg == "SAVED" else ["message %r" % msg]) + check_blocks(bl, asked, htype, name, word)
             failed += bool(bad)
             print("%-5s save-mic-%-8s %s" % ("FAIL" if bad else "PASS", label,
@@ -235,6 +242,8 @@ def main():
                                               ([b["pilot"] for b in bl], spans(bl))), flush=True)
             if label == "program" and not bad:
                 edges_prog, store = edges, asked[1][1]
+            if label == "all" and not bad:
+                edges_all, all_prog = edges, asked[1][1][:int.from_bytes(asked[0][1][15:17], "little")]
     finally:
         m.stop()
     if edges_prog is None:
@@ -250,6 +259,19 @@ def main():
         failed += not ok
         print("%-5s save-mic-playback  LOAD of the captured signal: msg=%s, program %s" %
               ("PASS" if ok else "FAIL", r["msg"], "restored" if r["after"] == store else "differs"))
+    if edges_all is None:
+        print("SKIP  save-mic-all-playback (no clean ALL capture)")
+        failed += 1
+    else:
+        import v2_prod as P
+        try:
+            r = P.tape_op(tape_from_edges(edges_all), existing=["k = 9"], name="ALLT")
+        finally:
+            P.shutdown()
+        ok = r["msg"] == "LOADED" and r["after"] == all_prog
+        failed += not ok
+        print("%-5s save-mic-all-playback  LOAD of the captured three-block signal (block 2 found after the real gap): "
+              "msg=%s, program %s" % ("PASS" if ok else "FAIL", r["msg"], "restored" if r["after"] == all_prog else "differs"))
     print("qmicsave: %d failures" % failed)
     return 1 if failed else 0
 

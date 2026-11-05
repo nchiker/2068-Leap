@@ -39,7 +39,7 @@ PKG_ABI_MINOR           EQU 1          ; 6.1: 2.1 = package functions (EXT2_EXPO
                                        ; 6.3: + VM_RAISE_ERROR, the error range (unreleased, so still 2.1)
 PKG_ABI_WORD            EQU V2_TAPE_TAG | (PKG_ABI_MAJOR << 8) | PKG_ABI_MINOR
 V2_FORMAT_MAJOR         EQU 1          ; program (type 0) and array (type 8) tapes
-V2_FORMAT_MINOR         EQU 1          ; RC: 1 = a program tape may carry its variables (SAVE ... ALL)
+V2_FORMAT_MINOR         EQU 2          ; RC: 1 = a program tape may carry its variables (SAVE ... ALL); v2.2: 2 = ... in two blocks
 V2_FORMAT_WORD          EQU V2_TAPE_TAG | (V2_FORMAT_MAJOR << 8) | V2_FORMAT_MINOR
 
 ; ---- service jump table (HOME ROM padding after the KTAB) -------------------------
