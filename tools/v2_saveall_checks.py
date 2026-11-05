@@ -331,7 +331,7 @@ def sa_gap_space():
         if n == 2:                                                 # block 1 just went out: now inside the gap
             a = P.sym("SA_GAP")
             code = P.read(a, 32)
-            i = code.find(bytes([0xDB, 0xFE, 0x1F, 0x30]))
+            i = code.find(bytes([0xDB, 0xFE, 0x1F, 0xD0]))               # in a,($FE) / rra / ret nc
             assert i >= 0, "SA_GAP's SPACE test not found"
             P._space_down_at(a + i + 2, 60_000_000)
     blocks, msg = P.capture_save('SAVE "ALLT" ALL', on_block=press)

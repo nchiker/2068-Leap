@@ -804,22 +804,9 @@ SA_BUILD:
         jp SA_SEAL
 
     ASSERT SA_FLAG_DATA = STORAGE_TYPE_DATA && SA_HDR_LEN_OFF = STORAGE_HEADER_LENGTH_OFF && SA_HDR_PROGLEN_OFF = STORAGE_HEADER_PROGLEN_OFF
-; SA_SEND_S -- v2.2: block 1 of a SAVE ... ALL tape is out (STORAGE_SAVE said SAVED): the status goes back to
-; SAVING, SA_GAP leaves block 1's checks their time, then segment 2 goes out in place as block 2.
-; Out: CF = SPACE stopped it.
-SA_SEND_S:
-        ld a,1
-        ld (STORAGE_OP_STATE),a
-        call STORAGE_REPORT_PROGRESS
-        call SA_GAP
-        ret c
-        call SA_S_SETUP
-        call STORAGE_SEND_BLOCK           ; CF = whole, NC = SPACE
-        ccf
-        ret
-
-; V2_RECV_S -- v2.2: block 2 of a SAVE ... ALL tape: CF set = receive it into segment 2 (LOAD), CF clear =
-; compare it with segment 2 (VERIFY). SA_S bytes. Out: CF = failed; B nonzero = SPACE was held (ABORTED).
+; V2_RECV_S -- v2.2: block 2 of a SAVE ... ALL tape: entry CF clear = receive it into segment 2 (LOAD), CF set =
+; compare it with segment 2 (VERIFY) (SA_S_SETUP complements the carry for the receiver). SA_S bytes.
+; Out: CF = failed; B nonzero = SPACE was held (ABORTED).
 V2_RECV_S:
         call SA_S_SETUP
         call STORAGE_RECEIVE_BLOCK
@@ -1248,7 +1235,12 @@ V2_SAVE:
     jr c,.saved_or_aborted
     ld a,(SA_BUILT)
     or a                        ; (CF clear)
-    call nz,SA_SEND_S           ; SAVE ... ALL: the gap, then segment 2 as the second block
+    jr z,.saved_or_aborted
+    ld (STORAGE_OP_STATE),a     ; SAVE ... ALL: STORAGE_SAVE said SAVED; back to SAVING (A = SA_BUILT = 1)
+    call STORAGE_REPORT_PROGRESS
+    call SA_GAP                 ; block 1's checks need their time before block 2's pilot; NC = SPACE
+    call c,STORAGE_SEND_BLOCK   ; (SA_GAP set IX, DE, A) segment 2 in place, as the second block: CF = whole
+    ccf                         ; CF = SPACE stopped it
 .saved_or_aborted:              ; carry set: SPACE stopped the SAVE (plan item 2.1)
     ei
     ld hl,V2_MSG_SAVED
@@ -1417,7 +1409,7 @@ V2_LOAD:
 .load_call:
     call STORAGE_LOAD
     ei
-    jp c,.failed
+    jr c,.failed
     ld a,(STORAGE_VERIFY_MODE)
     or a
     jp nz,.verified          ; VERIFY never touches PROG_END/VARS_START/
@@ -1435,17 +1427,13 @@ V2_LOAD:
     ld hl,V2_MSG_LOADED
     jp V2_SHOW_MESSAGE
 .invalid_package:
-    call KTAB_EXT2_CLEAR_ALL
-    ld hl,0
-    ld (V2_PACKAGE_LEN),hl
-    ld hl,V2_MSG_LOAD_FAILED
-    jp V2_SHOW_MESSAGE
+    xor a                        ; the clean failure of a package: .failed clears the registry and says LOAD FAILED
+    ld b,a
+    jr .failed
 .program_loaded:
     ; RC: a SAVE ... ALL block has a header PROGLEN below its length (DE); the rest is the
     ; variable session (SA_RESTORE: A = 0 restored, 1 unusable -- program only, 2 block CRC bad)
-    ld hl,(STORAGE_HEADER_BUF + STORAGE_HEADER_PROGLEN_OFF)
-    or a
-    sbc hl,de
+    call SA_IS_ALL               ; (DE = the header's length, as STORAGE_LOAD left it)
     add hl,de                    ; HL = PROGLEN
     ld bc,PROG_AREA_START
     jr c,.with_state
@@ -1458,16 +1446,10 @@ V2_LOAD:
     jr c,.state_crc_bad
     ld a,3
     jr .loaded
-.with_state:
-    push hl
-    add hl,bc
-    ld (PROG_END),hl
-    pop hl
-    call SA_RESTORE
-    or a
-    jr nz,.state_done            ; 1: program only, 2: block 1's CRC failed
-    scf
-    call V2_RECV_S               ; block 2: segment 2, straight from the tape (CF = it failed)
+.with_state:                    ; (SA_RESTORE sets PROG_END: BC = PROG_AREA_START, HL = PROGLEN, DE = the length)
+    call SA_RESTORE              ; NZ: 1 = program only, 2 = block 1's CRC failed
+    jr nz,.state_done
+    call V2_RECV_S               ; block 2: segment 2, straight from the tape (NC on entry; CF = it failed)
     call SA_FINISH               ; its CRC; A = 0 restored, 1 program only (the store emptied if it failed)
 .state_done:
     cp 2
@@ -1554,12 +1536,9 @@ V2_LOAD:
     or a
     sbc hl,de
     jr nz,.clean_failure
-    call SA_IS_ALL               ; v2.2: a SAVE ... ALL tape has a second block: compare it too
-    jr nc,.v_done
-    or a
-    call V2_RECV_S               ; verify mode: B = abort flag
+    call SA_IS_ALL               ; v2.2: a SAVE ... ALL tape (CF) has a second block: compare it too
+    call c,V2_RECV_S             ; (CF set on entry = verify; out: B = abort flag)
     jr c,.clean_failure
-.v_done:
     xor a
     ld (STORAGE_VERIFY_MODE),a
     ld hl,V2_MSG_VERIFIED

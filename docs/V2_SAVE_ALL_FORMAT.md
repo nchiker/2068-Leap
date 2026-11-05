@@ -3,8 +3,8 @@
 Status: implemented in the V2 Enhanced release (`integration/v2-final-rom`, commit `07616e7`; the
 identity CRC covers the package registry from `ef81f49`). **Format minor 2 (v2.2): segment 2 is a second
 data block** (section "The block"). Code: `rom/v2_saveall.asm` (HOME: layout, CRC, LOAD checks, the gap),
-`rom/v2_saveall_crc.asm` (HOME, in the old KTAB space), `SA_BUILD`, `SA_SEND_S` and `V2_RECV_S` in
-`rom/exrom_v2_shell.asm` (EXROM). Tests: `tools/v2_saveall_checks.py` (part of
+`rom/v2_saveall_crc.asm` (HOME, in the old KTAB space), `SA_BUILD`, the block-2 send in `V2_SAVE` and
+`V2_RECV_S` in `rom/exrom_v2_shell.asm` (EXROM). Tests: `tools/v2_saveall_checks.py` (part of
 `tools/run_v2_prod_tests.sh` and so of `make test`).
 
 ## Commands

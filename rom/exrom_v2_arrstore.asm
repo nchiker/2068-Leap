@@ -350,43 +350,37 @@ ARR_VALIDATE:
 ; LEN/IS_STR (target array) set by V2_PARSE_NAME / V2_SCAN_ARRAY_NAME.
 V2_LOAD_ARRAY:
     call V2_CLEAR_ARRAYS         ; live arrays and symbols go (the session ends); the store stays
-    ld hl,(ARRAYS_END)           ; v2.2: the new entry is staged in the pool the LOAD has just emptied,
-    ld (ASV_ENT),hl              ; past the empty symbol table, so a replacement needs room for
-    inc hl                       ; only ONE copy and the store is untouched until the body is valid
-    inc hl                       ; (the length field is filled after validation)
-    ld a,(V2_ARRAY_IS_STR)
-    add a,2
-    ld (hl),a                    ; kind
+    ld hl,(ARRAYS_END)           ; v2.2: the new entry is staged here, in the pool the LOAD has just emptied,
+    inc hl                       ; past the empty symbol table, so a replacement needs room for only ONE
+    inc hl                       ; copy and the store is untouched until the body is valid (the length
+    ld bc,(V2_ARRAY_NAME_LEN)    ; field is filled after validation).  C = name length, B = IS_STR
+    inc b
+    inc b
+    ld (hl),b                    ; kind
     inc hl
-    ld a,(V2_ARRAY_NAME_LEN)
-    ld (hl),a
+    ld (hl),c                    ; name length
     inc hl
-    ld c,a
     ld b,0
     ex de,hl
     ld hl,(V2_ARRAY_NAME_PTR)
     ldir                         ; key name copied before EDIT_LINE_BUF is reused
-    ld (ASV_DESC),de             ; the descriptor follows the name
+    ld (ASV_DESC),de             ; the descriptor follows the name (ARR_VALIDATE reads it)
+    push de                      ; -> IX
     ld a,(V2_NAME_LEN)
     ld b,a
     ld hl,(V2_NAME_PTR)
     call V2_PAD_NAME
     ld a,STORAGE_ARRAY_TYPE
     ld (STORAGE_REQUEST_TYPE),a
-    call .find                   ; DE = length of the entry this load replaces (0: none)
-    ld hl,ARR2_LIMIT
-    add hl,de
-    ld de,(PAS_END)
-    or a
-    sbc hl,de                    ; ARR2_LIMIT + EL - PAS_END: never negative (PAS_END <= ARR2_LIMIT)
-    ld a,(V2_ARRAY_NAME_LEN)
-    add a,4                      ; (no carry: a name is <= 31 characters)
-    ld e,a
-    ld d,0
-    sbc hl,de                    ; room for the descriptor once the old entry is gone
+    call .find                   ; DE = where the entry goes once a same-name one is gone (PAS_END - EL); B = name length
+    ld a,(ARR2_LIMIT - 4) & $FF
+    sub b                        ; (never borrows: ASSERT below)
+    ld l,a
+    ld h,(ARR2_LIMIT - 4) >> 8   ; HL = ARR2_LIMIT - 4 - namelen
+    sbc hl,de                    ; = ARR2_LIMIT + EL - PAS_END - (namelen + 4): the room for the descriptor
+    pop ix                       ; (flags kept)
     jr c,.full                   ; not even the key fits: nothing has been touched
     ex de,hl                     ; DE = max body length
-    ld ix,(ASV_DESC)
     ld hl,STORAGE_LOAD_NAME_BUF
     ld b,10
     call STORAGE_LOAD
@@ -402,38 +396,29 @@ V2_LOAD_ARRAY:
     ld l,a
     ld h,0
     add hl,de                    ; NL = L + 4 + namelen
-    ld (ASV_NL),hl
+    push hl                      ; (for the final copy)
     ex de,hl
-    ld hl,(ASV_ENT)
+    ld hl,(ARRAYS_END)
     ld (hl),e
     inc hl
     ld (hl),d                    ; the staged entry's length field
     ; commit: nothing in the store has changed up to here
-    call .find                   ; NC: HL = old entry, DE = EL
-    push de                      ; EL
-    jr c,.add
-    push hl                      ; destination: the old entry
-    add hl,de                    ; source: the end of the old entry
-    ex de,hl
-    ld hl,(PAS_END)
-    or a
-    sbc hl,de                    ; HL = bytes after the old entry
+    call .find                   ; DE = X; NC: HL = the old entry
+    jr c,.add                    ; none: X = PAS_END
+    ex de,hl                     ; HL = X, DE = the old entry (the destination)
+    push hl
+    sbc hl,de                    ; (NC) the bytes after the old entry; Z = it was the last
+    jr z,.nomove                 ; (LDIR with BC = 0 would copy 64 KB)
     ld b,h
     ld c,l
-    ex de,hl                     ; HL = source
-    pop de                       ; DE = destination
-    ld a,b
-    or c
-    jr z,.add                    ; the old entry was the last: nothing to move (LDIR with BC = 0 is 64 KB)
-    ldir
-.add:
-    pop de                       ; DE = EL
     ld hl,(PAS_END)
-    or a
-    sbc hl,de
-    ex de,hl                     ; DE = where the new entry goes
-    ld hl,(ASV_ENT)
-    ld bc,(ASV_NL)
+    sbc hl,bc                    ; (NC) the source: the end of the old entry
+    ldir
+.nomove:
+    pop de                       ; DE = X
+.add:
+    ld hl,(ARRAYS_END)           ; the staged entry
+    pop bc                       ; NL
     ldir
     ld (PAS_END),de              ; DE = the end of the store
     ld hl,V2_MSG_LOADED
@@ -447,11 +432,11 @@ V2_LOAD_ARRAY:
     jr .show
 .failed:                         ; clean: the store has not been touched
     ld hl,V2_MSG_BAD_VERSION
-    cp STORAGE_LOAD_BAD_VERSION
+    inc a
+    inc a                        ; $FE (STORAGE_LOAD_BAD_VERSION) -> 0
     jr z,.show
-    ld hl,V2_MSG_STORE_FULL      ; v2.2: the tape's array is longer than the room (was LOAD FAILED)
-    cp STORAGE_LOAD_TOO_LONG
-    jr z,.show
+    inc a                        ; $FD (STORAGE_LOAD_TOO_LONG: the array is longer than the room) -> 0
+    jr z,.full
     ld hl,V2_MSG_ABORTED
     inc b
     dec b
@@ -459,28 +444,33 @@ V2_LOAD_ARRAY:
     ld hl,V2_MSG_LOAD_FAILED
     jr .show
 
-; .find -- the staged name (ASV_ENT + 4), kind and length: DE = the length of the store entry of
-; that name, 0 if there is none; NC: HL = that entry.
+; .find -- the staged entry's kind, name length and name (ARRAYS_END + 2 ...): DE = X = PAS_END - the length of
+; the store entry of that name (PAS_END if there is none; ARR_AT_END leaves it in DE); NC: HL = that entry.
+; Keeps B = the name length.
 .find:
-    ld a,(V2_ARRAY_IS_STR)
-    add a,2
-    ld c,a
-    ld a,(V2_ARRAY_NAME_LEN)
-    ld b,a
-    ld hl,(ASV_ENT)
+    ld hl,(ARRAYS_END)
     inc hl
     inc hl
+    ld c,(hl)                    ; kind
     inc hl
+    ld b,(hl)                    ; name length
     inc hl
-    call ARR_FIND
-    ld de,0
-    ret c
+    call ARR_FIND                ; keeps B and C
+    ret c                        ; none: DE = (PAS_END)
     ld e,(hl)
     inc hl
     ld d,(hl)
-    dec hl
+    dec hl                       ; DE = EL
+    push hl
+    ld hl,(PAS_END)
+    sbc hl,de                    ; (NC from ARR_FIND)
+    ex de,hl                     ; DE = X
+    pop hl
     ret
 
+    ASSERT V2_ARRAY_IS_STR = V2_ARRAY_NAME_LEN + 1
+    ASSERT ((ARR2_LIMIT - 4) & $FF) >= IDENT_MAX_LEN
+    ASSERT STORAGE_LOAD_BAD_VERSION = $FE && STORAGE_LOAD_TOO_LONG = $FD
     ; The staging area is the pool from the end of the empty symbol table to V2_CODE_LIMIT; the loader
     ; passes only the store's room to STORAGE_LOAD, which is valid while the pool is not the smaller.
     ASSERT V2_CODE_LIMIT - V2_SOURCE_END - IDENT_MAX_LEN - 8 >= ARR2_LIMIT - ARR2_BASE

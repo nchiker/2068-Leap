@@ -454,3 +454,36 @@ large program); or receive straight into the store when the name is new or there
 - **Left out:** a case with block 1 alone too big (`OUT OF MEMORY` still exists but needs a nearly full bytecode area and
   pool at once; the old test relied on segment 2 to reach it); a hardware run (the gap length is a hardware figure:
   `V2_HARDWARE_CHECKLIST.md` gets the section in item E); the defect-register entry RC-O2 and the release record (item E).
+
+### Shrink pass over A and B (2026-11-05; owner asked for a review by a larger agent; Opus, read-only; all [M])
+
+Reviewer: an Opus subagent, briefed with the files, the call conventions to keep and no hypothesis; I checked the
+register and flag claims of each change I took against the code and measured the result.
+
+- **Applied** (`make budget`: HOME 325 -> 325, **EXROM 32 -> 120 free, 88 B**):
+  - item A loader: `V2_LOAD_ARRAY` 239 -> about 194 B. `.find` returns X = `PAS_END - EL` (where the entry goes), the
+    room and the move use X, the staged entry's kind and name length are read back from the staging area, NL is kept on
+    the stack, `.failed` classifies by `inc a`; three ASSERTs pin what it relies on (IS_STR follows the name length; the
+    low byte of `ARR2_LIMIT - 4` is at least 31; the two failure codes);
+  - `STORAGE_LOAD` length check: `max - len` with one `jr c` (24 -> 14 B; it also keeps DE = the header's length);
+  - item B: `SA_GAP` falls into `SA_S_SETUP`, which complements the carry (so `call c,STORAGE_SEND_BLOCK` and `call c,V2_RECV_S`
+    need no extra tests; LOAD enters `V2_RECV_S` with carry clear, VERIFY with carry set); `SA_SEND_S` is gone (its three
+    steps are inline in `V2_SAVE`); `SA_RESTORE` returns NZ for every result but 0 and sets `PROG_END` itself (BC =
+    `PROG_AREA_START`), `.with_state` shrinks to a call; `V2_LOAD` uses `SA_IS_ALL`; `.invalid_package` reuses `.failed`
+    (same message, same registry clear), which also lets `jp c,.failed` become `jr c`.
+  - Test edit: `sa-gap-space` looks for `in a,($FE) / rra / ret nc` in `SA_GAP`. The gap is 2 T shorter a pass: measured 4.50 s
+    (15,734,347 T), still inside the 4.3-4.7 s windows of `sa-gap` and `qmicsave`.
+- **Tests on the shrunk ROM:** `make test` exit 0 (1,867 s): prod-regress 127, prod-arrays 105, known-defects 15,
+  saveall 23, qmicsave 0 failures (5 checks), lifecycle 23, qvmedge 221/221, qual 670 PASS + 1 XFAIL + 2 N/A, maint-qual all;
+  `make doc-examples` 327/327. (An earlier run stopped at `sa-gap-space`: my patch script had aborted before updating that
+  test; a test-side miss, the ROM was right.)
+- **Not applied, offered for gate G2** (older shell code next to the new code, outside A and B; sizes are the reviewer's
+  hand counts, EXROM bytes): `V2_SAVE` `.program` dead reloads of the name and a shorter length computation -11;
+  `.all` jumping to a new label on `.program`'s `ld ix,PROG_AREA_START` -4; an entry that loads the name pointer and length and
+  falls into `V2_PAD_NAME` -4 (saves 7 in the array loader, 4 in `V2_LOAD`); `SA_SEAL` returning the length in DE -2 (HOME -1).
+  About **21 B EXROM** in all, each testable by the existing suites.
+- **Not applied, by choice** (HOME has room, so risk outweighs bytes): a shared CRC-of-segment-2 helper in the old KTAB hole
+  (HOME -7), `SA_FINISH` jumping to `.set_pas` / tail-calling `VM_INIT_REGS` (HOME -6, the latter relies on the callee's
+  flags), `SA_SIZES` using `sub` (HOME -1). Also not taken: moving `V2_RECV_S`'s SPACE test into HOME (EXROM -5, HOME +10; it
+  hides the test hook `press_space` uses).
+- **Running totals** (free bytes): after A HOME 403 / EXROM 89; after B and the shrink **HOME 325 / EXROM 120**.

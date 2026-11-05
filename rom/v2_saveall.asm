@@ -78,7 +78,8 @@ SA_SEAL:
 
 ; SA_GAP -- the silence between the two blocks of a SAVE ... ALL tape, long enough for LOAD's checks of
 ; block 1 (the block CRC and the identity CRC, about 3-4 s) to finish before the receiver listens for
-; block 2's pilot (it then has its own 8.6 s of patience). Interrupts stay off. Out: CF = SPACE pressed.
+; block 2's pilot (it then has its own 8.6 s of patience). Interrupts stay off. SPACE pressed: returns NC.
+; Otherwise it falls into SA_S_SETUP: CF set, and IX, DE, A are block 2's.
 SA_GAP:
         ld hl,SA_GAP_N
 .big:
@@ -88,14 +89,18 @@ SA_GAP:
         ld a,$7F
         in a,(PORT_ULA)
         rra
-        jr nc,.stop                       ; SPACE down
+        ret nc                            ; SPACE down
         dec hl
         ld a,h
         or l
-        jr nz,.big
-        ret                               ; (CF clear)
-.stop:
-        scf
+        jr nz,.big                        ; (falls through with CF clear)
+; SA_S_SETUP -- the registers for block 2 (segment 2, in place), for the shell's send, receive and verify:
+; IX = ARR2_BASE, DE = SA_S bytes, A = the data block's flag. Complements the carry.
+SA_S_SETUP:
+        ccf
+        ld ix,ARR2_BASE
+        ld de,(SA_S)
+        ld a,SA_FLAG_DATA
         ret
 
 ; SA_UNBUILD -- the span [ARRAYS_END, +W) moves up to [SESS_CODE_END - W, SESS_CODE_END) (= its home
@@ -133,15 +138,19 @@ SA_K_CODE_LIM:  dw V2_CODE_LIMIT
 SA_K_ARR2_BASE: dw ARR2_BASE
 SA_K_ARR2_LIM:  dw ARR2_LIMIT
 
-; SA_RESTORE -- a program block was loaded whose header PROGLEN (HL) is below its length (DE);
-; PROG_END is already PROG_AREA_START + PROGLEN.
-; Out: A = 0  block 1 is good (the cells are installed, the span is still down at ARRAYS_END): the caller
+; SA_RESTORE -- a program block was loaded whose header PROGLEN (HL) is below its length (DE); BC =
+; PROG_AREA_START. Sets PROG_END = PROG_AREA_START + PROGLEN.
+; Out: flags NZ for every A but 0:
+;      A = 0  block 1 is good (the cells are installed, the span is still down at ARRAYS_END; Z, NC): the caller
 ;              receives block 2 and calls SA_FINISH;
 ;      A = 1  the state cannot be used (another ROM, or inconsistent): keep the program only;
 ;      A = 2  the block CRC failed: nothing in the block can be trusted.
 SA_RESTORE:
         push hl                           ; PROGLEN
-        ld hl,PROG_AREA_START
+        add hl,bc
+        ld (PROG_END),hl                  ; the program part ends here
+        ld h,b
+        ld l,c                            ; (BC = PROG_AREA_START on entry)
         add hl,de
         ld (SA_END),hl
         ex de,hl                          ; DE = the end, HL = the length
@@ -258,7 +267,8 @@ SA_RESTORE:
 .bad:
         ld hl,(SA_OLD_PAS)
         ld (PAS_END),hl                   ; the Array Store is untouched: keep its end
-        ld a,1
+        xor a
+        inc a                             ; A = 1, and NZ: every return but "block 1 is good" is NZ
         ret
 .ptr_ok:
         pop hl
@@ -309,14 +319,6 @@ SA_FINISH:
         ld hl,ARR2_BASE
         ld (PAS_END),hl
         ld a,1
-        ret
-
-; SA_S_SETUP -- the registers for block 2 (segment 2, in place), for the shell's send, receive and verify:
-; IX = ARR2_BASE, DE = SA_S bytes, A = the data block's flag. Keeps the flags.
-SA_S_SETUP:
-        ld ix,ARR2_BASE
-        ld de,(SA_S)
-        ld a,SA_FLAG_DATA
         ret
 
 ; SA_IS_ALL -- CF = the header just read (STORAGE_HEADER_BUF) is a SAVE ... ALL tape: PROGLEN below its length.

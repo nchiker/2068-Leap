@@ -380,19 +380,14 @@ STORAGE_LOAD:
     cp   l                                ; carry if our minor < the tape's
     jr   c, .bad_version
     ENDIF
-    ld   hl, (STORAGE_HEADER_BUF + STORAGE_HEADER_LENGTH_OFF)
-    ld   de, (STORAGE_MAX_LEN)
-    or   a
-    sbc  hl, de
-    jr   c, .length_ok                    ; header length < max — fine
-    ld   a, h
-    or   l
-    jr   z, .length_ok                    ; header length == max — fine
-    ld   a, STORAGE_LOAD_TOO_LONG         ; header length > max: a clean failure,
-    jr   .abort_check                     ; told apart from "no tape" (A = 0)
-
-.length_ok:
+    ld   hl, (STORAGE_MAX_LEN)
     ld   de, (STORAGE_HEADER_BUF + STORAGE_HEADER_LENGTH_OFF)
+    or   a
+    sbc  hl, de                           ; carry: the header's length exceeds the caller's DE
+    ld   a, STORAGE_LOAD_TOO_LONG         ; a clean failure, told apart from "no tape" (A = 0)
+    jr   c, .abort_check
+
+.length_ok:                               ; DE = the header's length
     ld   a, 10
     ld   (STORAGE_PROGRESS_PCT), a
     ld   a, 7
