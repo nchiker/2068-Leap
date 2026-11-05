@@ -373,3 +373,29 @@ VERIFY-mode guard and bytes for a case the report did not hit.
 - **Left out:** the optional `PROGRAM FULL` mapping in the program loader (a too-long program tape still says
   `LOAD FAILED`; it needs a VERIFY-mode guard and bytes); the `min(room, pool room)` (replaced by the ASSERT; see
   the pool-limit paragraph and gate G1); a hardware test (not possible here).
+
+### Open questions for the owner (2026-11-05, after item A; nothing built for B yet)
+
+**B: timing between the two blocks on a real tape (not answered by section 2.2).** The plan's LOAD order is
+block 1, then checks 1-7, then receive block 2. Those checks include the block CRC and the identity CRC
+(about 2.4 s alone, `V2_HARDWARE_CHECKLIST.md` 3.3), roughly 3-4 s in all. The receiver waits at most 8.6 s for a
+pilot (`TR_TICKS`), but a data block's pilot lasts about 1.8 s, so on a cassette block 2's pilot would be over
+before the receiver listens. VERIFY and SAVE have no such window (their CRCs are computed before any tape I/O).
+Options (recommendation first):
+
+1. **A long silent gap between the blocks on SAVE** (about 4.5 s, so the checks finish inside it and the
+   receiver's 8.6 s budget catches the pilot). Keeps the plan's order and the current failure semantics (a
+   foreign-ROM tape keeps the Array Store). Costs about 4.5 s of tape per ALL save; the number is a hardware
+   figure, tuned only in emulation until the checklist is run.
+2. **Receive block 2 straight after block 1, before any check**, into segment 2 (its length read from the
+   unchecked cells, bounded by `ARR2_LIMIT - ARR2_BASE`). No gap, but the Array Store is overwritten before
+   the checks: every failure after that point (other ROM, damaged tape) empties the store, where today it is kept.
+3. **Check only block 1's CRC before block 2, the identity CRC after it**: shorter window (about 1 s, still
+   more than a pilot-free gap of a few hundred ms), and a foreign-ROM tape empties the store as in 2.
+
+**G1 (needed before item C) and a finding for it.** Item A stages an array in the pool above the program, so
+the largest array a `LOAD ... ARRAY` can take is `V2_CODE_LIMIT - (end of the program text)`. At 7424 B the
+segment is larger than the pool room for a program over about 6.6 KB. Options: accept it and document; add
+`min(store room, pool room)` to the loader (about 7 B EXROM; a big array then reports `ARRAY STORE FULL` for a
+large program); or receive straight into the store when the name is new or there is room (more code). Range
+(`$5B00-$7800` as recommended, or `$6000-$7800`): the owner's choice.
