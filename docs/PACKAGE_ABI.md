@@ -348,7 +348,8 @@ scratch block, not add pinned HOME cells.
    currently is — including any private variables the package has dirtied.
 4. **Sprite store (`$E800–$F0FF`) is persistent and chunk-7**, owned by the SPRITE package; HOME
    only clears its metadata (§4).
-5. **Segment 2 arrays (`$E000–$E7FF`) survive package calls** [M, R10.8 `t25`]; packages must not
+5. **Segment 2 arrays (`$5B00–$77FF`) survive package calls** [M, R10.8 `t25`]; packages must keep out
+   of `$5B00–$77FF` (array segment 2) and out of `$E000–$E7FF` (reserved, idle), and must not
    write below `SPRITE_SLOT_IMG_BUF` in chunk 7.
 6. A package must not modify `EXT2_*`, the compile/run tables, the line store or any HOME variable
    not listed in §4. It may read the line store only through services 8–9.
@@ -435,13 +436,13 @@ Array tapes keep header type 8 and the `$8100` format word; **the format did not
 version words are unchanged. Phase 2C repaired the writer (`SAVE ... ARRAY` wrote a type-0 header before, D13) and
 specified the body, which `LOAD ... ARRAY` now validates before anything is stored (`docs/R10_9_PHASE2C_REPORT.md` §3):
 
-* numeric: `[1][count:2][count x 2]`, `1 <= count < 2048`, length exactly `3 + 2*count`;
+* numeric: `[1][count:2][count x 2]`, `1 <= count < 4096` (and the body must fit the array segment), length exactly `3 + 2*count`;
 * string: `[1][count:2][width:1][count x width]`, `width >= 2`, every element's length byte `<= 31` and `< width`,
   length exactly `4 + count*width`.
 
-A loaded array lives in the **Array Store**: segment 2 (`$E000` up to `PAS_END`), outside the edit-volatile pool. The
+A loaded array lives in the **Array Store**: segment 2 (`$5B00` up to `PAS_END`), outside the edit-volatile pool. The
 store is private to the Leap ROM (`PAS_END` is not a pinned package cell, no service slot touches it); packages must keep
-treating `$E000-$E7FF` as off limits, as in §5.5. `NEW` clears it; `RUN`, `CLEAR`, edits, immediate statements and program
+treating `$5B00-$77FF` and `$E000-$E7FF` as off limits, as in §5.5. `NEW` clears it; `RUN`, `CLEAR`, edits, immediate statements and program
 `LOAD` (successful or failed) keep it.
 
 ## 8. Automated guard rails

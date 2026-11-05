@@ -62,7 +62,8 @@ def areas(m, sp):
             # edit buffer, segment 2 (PAS_END marks the store empty at cold start), the sprite store
             # (slot DEFINED/SHOWN zeroed by MEM_INIT), V1 leftover and line-drawing cells, the window.
             ("edit buffer, LOAD-name / detokeniser half", S("EDIT_LINE_BUF") + 128, 128, False),
-            ("segment 2 (Array Store)", 0xE000, 0x0800, False),
+            ("segment 2 (Array Store; v2.2: $5B00-$77FF)", S("ARR2_BASE"), S("ARR2_LIMIT") - S("ARR2_BASE"), False),
+            ("$E000-$E7FF (segment 2 before v2.2, idle)", 0xE000, 0x0800, False),
             ("sprite store", 0xE800, 0x0900, False),
             ("misc cells $F328-$F3FF", 0xF328, 0x00D8, False),
             ("package window", 0xF400, 0x0400, False)]

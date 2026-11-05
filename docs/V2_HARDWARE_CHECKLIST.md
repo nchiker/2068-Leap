@@ -46,7 +46,7 @@ ROMs (EPROMs or a ROM-replacement board).
 | 2.7 | `BEEP 1,12`; `SOUND 8,15 : SOUND 0,100 : SOUND 7,62` | beeper tone; AY tone | NOT TESTED — PHYSICAL HARDWARE UNAVAILABLE |
 | 2.8 | `PRINT STICK(1)` with a joystick moved | changing values | NOT TESTED — PHYSICAL HARDWARE UNAVAILABLE |
 | 2.9 | `PLOT`, `LINE`, `INK`/`PAPER`/`FLASH`/`BRIGHT` | as in the emulator | NOT TESTED — PHYSICAL HARDWARE UNAVAILABLE |
-| 2.10 | `DIM a(3600)` `DIM b(900)` `b(899) = 9` `PRINT b(899)` | 9 (segment 2 RAM at `$E000`) | NOT TESTED — PHYSICAL HARDWARE UNAVAILABLE |
+| 2.10 | `DIM a(3600)` `DIM b(900)` `b(899) = 9` `PRINT b(899)` | 9 (segment 2 RAM at `$5B00`) | NOT TESTED — PHYSICAL HARDWARE UNAVAILABLE |
 
 ## 3. Tape (stock speed, a real cassette recorder)
 

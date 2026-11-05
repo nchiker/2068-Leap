@@ -1113,8 +1113,25 @@ GFX_SET_ATTR:
 ;      calling)
 ; Out: none
 ; Destroys: AF, BC, DE, HL
+; v2.2 (V2 production, item C): MODE 1's attribute file ($6000-$77FF) lies in array segment 2
+; ($5B00-$77FF). Entering MODE 1 while the segment reaches above $6000 (ARR2_END > $6000; ARR2_END >=
+; PAS_END, so the Array Store is covered) raises run-time error 64 (OUT OF MEMORY) through
+; VM_ERR_ARRAY_SPACE before anything changes -- here, not in the MODE package, so every MODE package
+; (old tapes included) is held to it. MODE 0 (also the editor's reset) is never refused.
 ; ============================================================================
 GFX_SET_MODE:
+    IFDEF V2_PRODUCTION
+    dec  a
+    jr   nz, .mode_ok               ; not MODE 1 (A is put back below)
+    ld   hl, (ARR2_END)
+    dec  hl
+    ld   a, h
+    cp   SECOND_DISPLAY_ADDR >> 8   ; ARR2_END - 1 >= $6000: the segment reaches into the attributes
+    jp   nc, VM_ERR_ARRAY_SPACE     ; (unwinds to VM_RUN's caller)
+    xor  a
+.mode_ok:
+    inc  a
+    ENDIF
     push af
     call GFX_SPRITE_INVALIDATE
     pop  af

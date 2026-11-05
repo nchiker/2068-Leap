@@ -20,6 +20,7 @@ import v2_prod as P              # noqa: E402
 import tape_synth as TS          # noqa: E402
 
 K_LEN = 0x31                     # the session cells $B800..$B830 (SA_K_LEN)
+SEG2 = P.sym("ARR2_BASE")        # v2.2 (item C): segment 2 is $5B00-$77FF (was $E000-$E7FF)
 TAIL = K_LEN + 6                 # v2.2: cells, segment-2 CRC, identity CRC, block CRC
 
 
@@ -213,7 +214,7 @@ def sa_bad_chain():
     bad[o], bad[o + 1] = 0x00, 0xF0
     r = load(hdr, refresh_crc(bad))
     pas = P.w16(P.sym("PAS_END"))
-    return r["msg"] == "NO_VARS" and pas == 0xE000, "load=%s PAS_END=%04X" % (r["msg"], pas)
+    return r["msg"] == "NO_VARS" and pas == SEG2, "load=%s PAS_END=%04X" % (r["msg"], pas)
 
 
 @case("sa-bad-pointer", "an array pointer outside the arena and segment 2 is refused (no trusted pointers)")
@@ -270,6 +271,21 @@ def sa_big_store():
         "save=%s seg2=%d after=%s load=%s loaded=%s" % (msg, seg, x, r["msg"], y)
 
 
+@case("sa-seg2-7k", "v2.2 (item C): a SAVE ALL whose segment 2 holds a 7 KB string array (block 2 over 7,000 bytes, past $6000) round trips")
+def sa_seg2_7k():
+    prog = ["DIM p(4000)", "DIM s$(100,70)", 's$(1) = "first"', 's$(99) = "last one"', "p(3999) = 9"]
+    hdr, data, msg = session_save(prog)
+    seg = _seg[0]
+    if hdr is None:
+        return False, "save failed: %s" % msg
+    r = load(hdr, data)
+    v = {k: num_of(k) for k in ("LEN(s$(1))", "LEN(s$(99))", "p(3999)")}
+    end = P.w16(P.sym("ARR2_END"))
+    return msg == "SAVED" and len(seg) >= 7000 and end > P.sym("SECOND_DISPLAY_ADDR") and r["msg"] == "LOADED" \
+        and v == {"LEN(s$(1))": 5, "LEN(s$(99))": 8, "p(3999)": 9}, \
+        "save=%s seg2=%d ARR2_END=%04X load=%s v=%s" % (msg, len(seg), end, r["msg"], v)
+
+
 def _prep_entry():
     """A one-entry Array Store poked into the machine before the LOAD: (prepare, entry bytes)."""
     def u16(v):
@@ -277,8 +293,8 @@ def _prep_entry():
     desc = bytes([1]) + u16(2) + u16(5) + u16(6)
     ent = u16(4 + 1 + len(desc)) + bytes([2, 1]) + b"Q" + desc
     def prep():
-        P.poke(0xE000, ent)
-        P.poke16(P.sym("PAS_END"), 0xE000 + len(ent))
+        P.poke(SEG2, ent)
+        P.poke16(P.sym("PAS_END"), SEG2 + len(ent))
     return prep, ent
 
 
@@ -290,8 +306,8 @@ def sa_two_blocks():
     P.boot()
     P.put_store(BIGPROG)
     run()
-    n = P.w16(P.sym("ARR2_END")) - 0xE000
-    mem = P.read(0xE000, n)
+    n = P.w16(P.sym("ARR2_END")) - SEG2
+    mem = P.read(SEG2, n)
     blocks, msg = P.capture_save('SAVE "ALLT" ALL')
     if len(blocks) != 3:
         return False, "msg=%s blocks=%d" % (msg, len(blocks))
@@ -362,7 +378,7 @@ def sa_other_rom_keeps_store():
     prep, ent = _prep_entry()
     r = load(hdr, refresh_crc(bad), prepare=prep)
     pas = P.w16(P.sym("PAS_END"))
-    return r["msg"] == "NO_VARS" and pas == 0xE000 + len(ent) and P.read(0xE000, len(ent)) == ent, \
+    return r["msg"] == "NO_VARS" and pas == SEG2 + len(ent) and P.read(SEG2, len(ent)) == ent, \
         "load=%s PAS_END=%04X" % (r["msg"], pas)
 
 
@@ -380,21 +396,21 @@ def _block2_failure(label, **kw):
 @case("sa-block2-crc", "v2.2: segment 2 damaged on the tape (valid transport parity): NO VARIABLES, the program kept, the Array Store emptied")
 def sa_block2_crc():
     r, pas = _block2_failure("crc", flip=True)
-    return r["msg"] == "NO_VARS" and r["after"] == TS.source_records(BIGPROG) and pas == 0xE000, \
+    return r["msg"] == "NO_VARS" and r["after"] == TS.source_records(BIGPROG) and pas == SEG2, \
         "load=%s PAS_END=%04X" % (r["msg"], pas)
 
 
 @case("sa-block2-parity", "v2.2: block 2 with a bad transport checksum: NO VARIABLES, the program kept, the Array Store emptied")
 def sa_block2_parity():
     r, pas = _block2_failure("parity", bad_parity=True)
-    return r["msg"] == "NO_VARS" and r["after"] == TS.source_records(BIGPROG) and pas == 0xE000, \
+    return r["msg"] == "NO_VARS" and r["after"] == TS.source_records(BIGPROG) and pas == SEG2, \
         "load=%s PAS_END=%04X" % (r["msg"], pas)
 
 
 @case("sa-block2-missing", "v2.2: the tape ends after block 1: NO VARIABLES after the receiver's 8.6 s, the program kept, the Array Store emptied")
 def sa_block2_missing():
     r, pas = _block2_failure("missing", missing=True)
-    return r["msg"] == "NO_VARS" and r["after"] == TS.source_records(BIGPROG) and pas == 0xE000, \
+    return r["msg"] == "NO_VARS" and r["after"] == TS.source_records(BIGPROG) and pas == SEG2, \
         "load=%s PAS_END=%04X" % (r["msg"], pas)
 
 
@@ -438,14 +454,14 @@ def sa_store_entries():
     desc = bytes([1]) + u16(3) + u16(10) + u16(20) + u16(30)
     ent = u16(4 + 1 + len(desc)) + bytes([2, 1]) + b"S" + desc
     def prep():
-        P.poke(0xE000, ent)
-        P.poke16(P.sym("PAS_END"), 0xE000 + len(ent))
+        P.poke(SEG2, ent)
+        P.poke16(P.sym("PAS_END"), SEG2 + len(ent))
     hdr, data, msg = session_save(["DIM s(3)", "s(2) = s(1) + 69"], prepare=prep)
     r = load(hdr, data)
     pas = P.w16(P.sym("PAS_END"))
     v = num_of("s(2)")
-    stored = P.read(0xE000 + 2 + 1 + 1 + 1 + 3 + 2 * 2, 2)          # [len][kind][namelen][S][1][count] then s(2)
-    return r["msg"] == "LOADED" and pas == 0xE000 + len(ent) and v == 89 and stored == u16(89), \
+    stored = P.read(SEG2 + 2 + 1 + 1 + 1 + 3 + 2 * 2, 2)          # [len][kind][namelen][S][1][count] then s(2)
+    return r["msg"] == "LOADED" and pas == SEG2 + len(ent) and v == 89 and stored == u16(89), \
         "load=%s PAS_END=%04X s(2)=%s stored=%s" % (r["msg"], pas, v, stored.hex())
 
 

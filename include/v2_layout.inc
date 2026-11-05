@@ -98,12 +98,16 @@ RT_NUM_COUNT:     equ $B817   ; 1: numeric symbols (float temp slots follow them
 RT_STR_COUNT:     equ $B818   ; 1: string symbols (string temp slots follow them)
 VM_CSP:           equ $B819   ; 2: control stack pointer (lowest used byte); R10.7 P4
 ; R10.7 P5.4 -- second array segment. When an array does not fit in the main pool
-; (ARRAYS_END .. VM_CSP), OP_DIM / array LOAD place it in $E000-$E7FF, which is
-; always-visible RAM that FILL (ends $DC00) and the sprite buffers ($E800) leave free.
-; The array pointer tables already hold absolute descriptor addresses, so element
-; access is unchanged. FREE(1) reports ARR2_LIMIT - ARR2_END.
-ARR2_BASE:        equ $E000
-ARR2_LIMIT:       equ $E800
+; (ARRAYS_END .. VM_CSP), OP_DIM / array LOAD place it in segment 2. v2.2 (item C, owner
+; decision G1): $5B00-$77FF (7424 bytes; was $E000-$E7FF, 2048 bytes, now idle), the RAM between
+; the screen and $7800 that nothing else in the ROM uses; $7800-$7FFF stays free for machine code.
+; MODE 1's attribute file is $6000-$77FF (SECOND_DISPLAY_ADDR): GFX_SET_MODE refuses MODE 1
+; (error 64) while segment 2 reaches above $6000, and while MODE 1 is on, ARR2_TOP gives $6000 as
+; the segment's top (VM_ARENA_FIT, FREE(1)). The segment lies BELOW the program pool (the
+; SAVE ... ALL chain and pointer checks rely on it). The array pointer tables hold absolute
+; descriptor addresses, so element access is unchanged. FREE(1) reports ARR2_TOP - ARR2_END.
+ARR2_BASE:        equ $5B00
+ARR2_LIMIT:       equ $7800
 ARR2_END:         equ $B81B   ; 2: next free byte of segment 2 (reset by VM_INIT)
 ARR2_SWAPPED:     equ $B81D   ; 1: nonzero while ARRAYS_END/ARR2_END are exchanged
 ; R10.9 Phase 2C -- persistent Array Store (rom/exrom_v2_arrstore.asm). The store occupies
@@ -143,8 +147,10 @@ SA_BUILT:         equ ASV_CHECK + 1        ; 1: nonzero while SAVE/VERIFY has th
                                            ; SAVE ... ALL image (V2_SHOW_MESSAGE undoes it); zeroed by
                                            ; MEM_COLD_INIT ($8000 .. PROG_AREA_MAX)
     ASSERT SA_BUILT + 1 <= V2_ZONE_BASE
-    ASSERT GFX_FILL_STACK_END <= ARR2_BASE
-    ASSERT ARR2_LIMIT <= SPRITE_SLOT_IMG_BUF
+    ASSERT ARR2_BASE >= $5B00 && ARR2_LIMIT <= $7800   ; past the screen; $7800-$7FFF is the users'
+    ASSERT ARR2_LIMIT <= PROG_AREA_START              ; below the pool (SA_CHAIN, SA_RESTORE's pointer check)
+    ASSERT (ARR2_BASE & $FF) = 0 && (ARR2_LIMIT & $FF) = 0 && (SECOND_DISPLAY_ADDR & $FF) = 0
+    ASSERT ARR2_BASE < SECOND_DISPLAY_ADDR && SECOND_DISPLAY_ADDR < ARR2_LIMIT
 CSYM_COUNT:     equ SYM_COUNTS + SYM_K_NUM
 STRSYM_COUNT:   equ SYM_COUNTS + SYM_K_STR
 ARRSYM_COUNT:   equ SYM_COUNTS + SYM_K_ARR

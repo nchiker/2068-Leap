@@ -55,30 +55,36 @@ def arr_intact():
 case("stack-into-arrays", ["proc f(n)", "call f(n + 1)", "endp", "dim a(2000)", "a(1999) = 9", "call f(0)"],
      ve=6, extra=arr_intact)
 # 7. arrays into stack: fits alone, refused when 200 frames deep
-dimprog = lambda d: ["proc f(n)", "if n > 0 then call f(n - 1)", "endif", "if n = 0 then dim a(3300)",
+# v2.2 (item C): a(3800) is 7603 bytes, more than array segment 2 holds (7424), so it can only live in the main
+# pool: fits alone, refused (64) when 200 stack levels have taken part of the pool.  (a(3300) fits segment 2 now.)
+dimprog = lambda d: ["proc f(n)", "if n > 0 then call f(n - 1)", "endif", "if n = 0 then dim a(3800)",
                      "endif", "endp", f"call f({d})"]
 case("dim-alone", dimprog(0))
 case("dim-under-recursion", dimprog(200), ve=64)
-# 7b. second array segment ($E000-$E7FF): used only when the main pool is full
+# 7b. second array segment (v2.2: $5B00-$77FF, 7424 bytes; was $E000-$E7FF): used only when the main
+# pool is full.  Its range comes from the build's symbols.
+SEG2, SEG2_LIMIT = HSYM["ARR2_BASE"], HSYM["ARR2_LIMIT"]
+SEG2_SIZE = SEG2_LIMIT - SEG2
 def seg2(idx, want_seg2, end_after=None):
     def f():
         p = w16(HSYM["RT_ARRPTR_PTR"]) if idx[0] == "n" else w16(HSYM["RT_STRARRPTR_PTR"])
         ptr = w16(p + 2 * idx[1])
-        ok = (0xE000 <= ptr < 0xE800) == want_seg2
+        ok = (SEG2 <= ptr < SEG2_LIMIT) == want_seg2
         if end_after is not None: ok &= w16(HSYM["ARR2_END"]) == end_after
         ok &= w16(HSYM["ARRAYS_END"]) < w16(HSYM["VM_CSP"])        # swapped back
         return ok, f"ptr={ptr:04X} ARR2_END={w16(HSYM['ARR2_END']):04X}"
     return f
 case("seg2-numeric", ["dim a(3600)", "dim b(900)", "a(3599) = 7", "b(899) = 9", "b(0) = 3",
-                      "x = b(899) + a(3599) + b(0)"], vals={0: 19}, extra=seg2(("n", 1), True, 0xE000 + 1803))
-case("seg2-main-first", ["dim a(100)", "a(99) = 5", "x = a(99)"], vals={0: 5}, extra=seg2(("n", 0), False, 0xE000))
+                      "x = b(899) + a(3599) + b(0)"], vals={0: 19}, extra=seg2(("n", 1), True, SEG2 + 1803))
+case("seg2-main-first", ["dim a(100)", "a(99) = 5", "x = a(99)"], vals={0: 5}, extra=seg2(("n", 0), False, SEG2))
 # RAM efficiency: the pool grew by 814 bytes, so a(3600) no longer leaves too little room for s$(10,100);
 # a(4000) (still in the main pool, whose limit is now 4443 elements) keeps the string array overflowing.
 case("seg2-string", ["dim a(4000)", "dim s$(10,100)", "s$(9) = \"hello\"", "t$ = s$(9)", "n = len(t$)"],
      vals={0: 5}, extra=seg2(("s", 0), True))
-case("seg2-exhausted", ["dim a(3600)", "dim b(900)", "dim c(900)"], ve=64)
+# b (1803 bytes) goes to segment 2; c needs 5803, more than the main pool or the 5621 left in segment 2
+case("seg2-exhausted", ["dim a(3600)", "dim b(900)", "dim c(2900)"], ve=64)
 case("seg2-reset-on-rerun", ["dim a(3600)", "dim b(900)", "b(899) = 4", "x = b(899)"], vals={0: 4},
-     extra=seg2(("n", 1), True, 0xE000 + 1803), times=2)
+     extra=seg2(("n", 1), True, SEG2 + 1803), times=2)
 # RC: the main pool is 154 bytes smaller than in R10.7 (this program: 967 -> 813 free), both measured:
 # 74 = two more string temps (2 x 32) and two more float temps (2 x 5) -- QUAL Q-02, temporaries are
 # never reused while referenced (817667f); 80 = SESS_GAP, room for the symbols that immediate statements
@@ -86,9 +92,9 @@ case("seg2-reset-on-rerun", ["dim a(3600)", "dim b(900)", "b(899) = 4", "x = b(8
 # RAM efficiency (docs/RAM_EFFICIENCY_RESULTS.md): the pool is 814 bytes larger (813 -> 1627 free,
 # measured); the bounds move up by exactly that.
 case("free-1", ["x = free(1)", "dim a(3600)", "dim b(900)", "y = free(1)", "z = free()", "w = free(0)"],
-     vals={0: 2048, 1: 2048 - 1803},
+     vals={0: SEG2_SIZE, 1: SEG2_SIZE - 1803},
      extra=lambda v: (v(2) == v(3) and 900 - 154 + 814 < v(2) < 1100 - 154 + 814, f"free()={v(2)} free(0)={v(3)}"))
-case("free-expr-arg", ["n = 1", "x = free(n)"], vals={1: 2048})
+case("free-expr-arg", ["n = 1", "x = free(n)"], vals={1: SEG2_SIZE})
 # RAM efficiency (docs/RAM_EFFICIENCY_RESULTS.md): the pool runs straight into the bytecode area and
 # the compile zone moved to the fixed V2 area. pool-814-program: 38 units of procedures, loops, strings and
 # IFs (6,472 source bytes) compile and run; the v2.0.1 release ran out of memory (error 64) above 34.
@@ -100,7 +106,7 @@ case("pool-814-program", ["c = 0"] + [l.format(k=k) for k in range(38) for l in 
 # pool-top-array: the largest numeric array the main pool holds (4,443 elements, was 4,036); its last
 # element ends a few bytes below the run-time tables, which end at the first bytecode byte.
 case("pool-top-array", ["dim a(4443)", "a(4442) = 5", "a(0) = 2", "x = a(4442) + a(0)"], vals={0: 7},
-     extra=seg2(("n", 0), False, 0xE000))
+     extra=seg2(("n", 0), False, SEG2))
 # the compile zone (chunk buffer, LEX_LINE, identifier buffer) lies outside the pool and the bytecode
 case("zone-outside-pool", ["x = 1"], vals={0: 1},
      extra=lambda: (HSYM["V2_SOURCE_END"] == HSYM["VM_CODE_BASE"]

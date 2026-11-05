@@ -88,7 +88,7 @@ Precedence, highest first: function calls and brackets; unary `-`; `*` `/`; `+` 
 | `USR(a)` | calls machine code at `a` with `CALL`; **the result is HL on return**, 0..65535 (a result of 32768 or more is a float); the ROM saves and restores `IY`; everything else may be destroyed; interrupts must stay enabled; the routine must `RET` |
 | `IN(port)`, `STICK(n)` | port read (full 16-bit address); joystick 1 or 2, 0..31 (directions bits 0-3, fire adds 16); other n: error 15 |
 | `POINT(x,y)`, `ATTR(row,col)` | pixel (0/1); attribute (ink + 8 paper + 64 bright + 128 flash; 0 off-screen) |
-| `FREE()`, `FREE(1)` | free bytes of the main pool / of segment 2 |
+| `FREE()`, `FREE(1)` | free bytes of the main pool / of segment 2 (7424 on an empty machine; while `MODE 1` is on, segment 2 ends at `$6000` and `FREE(1)` counts to there) |
 | `DIMN(a)` | the declared size of a **numeric** array (a string array: compile error 47) |
 
 Functions are always written with brackets, even without an argument.
@@ -150,7 +150,7 @@ Internal codes (as used by the tests and the source). **Compile errors**, each w
 | 10, 11 | array index out of range (10); non-integer or out-of-range value stored in, or used as an index of, a numeric array (11) | `RUNTIME ERROR n` |
 | 8 | `SOUND` register 17 or more | `RUNTIME ERROR n` |
 | 15 | argument out of range (`CHR$`, `STICK`, `SQR` of a negative number, an address of 65536 or more, `BEEP` out of range) | `RUNTIME ERROR n` |
-| 64, 65 | out of array memory (64); `DIM` differs from the stored array (65) | `OUT OF MEMORY`, `ARRAY SIZE MISMATCH` |
+| 64, 65 | out of array memory (64; also `MODE 1` while arrays occupy memory above `$6000`); `DIM` differs from the stored array (65) | `OUT OF MEMORY`, `ARRAY SIZE MISMATCH` |
 | 66 | BREAK | `BREAK` |
 | 67 | a float result beyond about 1.7E38 | `RUNTIME ERROR n` |
 | 12, 13, 14 | mode package: bad `MODE`, `ULAPLUS`, `PALETTE` | `RUNTIME ERROR n` |
@@ -167,7 +167,7 @@ Codes 12-31 belong to packages (a package may also raise 5, 15 and 67); `docs/PA
 
 * **Storage model.** The program is kept as source text: each line is stored as a 2-byte length, the text and an end mark (length + 3 bytes) in the main pool, and stays as typed (`LIST`, `SAVE`, `LLIST` use it; no decompiler is in the release). `RUN` and immediate statements compile it to bytecode in a separate 4011-byte code area (`$A655-$B5FF`) that is rebuilt every time, is not part of the pool, not counted by `FREE()` and never saved.
 * **The pool** is 9211 bytes (`$825A-$A654`): program text, the table of names (a 4-byte header + the name + any extra for every name), an 81-byte gap kept for immediate statements, the arrays (growing up), the control stack (growing down from the top of the free space) and, at the top, the run-time tables carved exactly for the compiler's counts (3 + 5 bytes per number name, 32 per string name, 2 per array, plus 4 spare number and 4 spare string slots = 148 bytes on an empty program).
-* `FREE()` = the gap between the top of the arrays and the control stack (8967 on an empty machine with a one-line program); it excludes the code area, segment 2 and the run-time tables, and falls by 12 for every active procedure call or `FOR` loop. `FREE(1)` = free bytes of segment 2 (2 KB at `$E000`: arrays that do not fit in the pool, and the Array Store). Packages load into their own 1 KB window (`$F400`) and do not change `FREE()`.
+* `FREE()` = the gap between the top of the arrays and the control stack (8967 on an empty machine with a one-line program); it excludes the code area, segment 2 and the run-time tables, and falls by 12 for every active procedure call or `FOR` loop. `FREE(1)` = free bytes of segment 2 (7424 bytes at `$5B00`-`$77FF`: arrays that do not fit in the pool, and the Array Store; `MODE 1`'s attribute file occupies `$6000`-`$77FF`, so `MODE 1` is refused with error 64 while arrays occupy memory above `$6000`, and while it is on, segment 2 ends at `$6000`, at most 1280 bytes on an empty machine). `$7800`-`$7FFF` stays free for the user's own machine code and data. Packages load into their own 1 KB window (`$F400`) and do not change `FREE()`.
 * Costs: text length + 3 per line; first use of a number name 12 + length; string name 36 + length; label / `PROC` / `DEF FN` name 7 + length; numeric array 2 per element + about 11 + length; string array width (default 16) per element + about 13 + length. Numbers and string constants are in the code, not the pool.
 * Limits: 251 number and 251 string names (strings are limited by memory long before: about 170 one-character strings); 255 array names; code area 4011 bytes (1000 lines of `x = 1`); recursion about 740 levels (12 bytes a level); nesting: brackets 105, `IF` 211, `FOR` 141. See manual Appendix D and the concept *Memory*.
 

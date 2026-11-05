@@ -300,8 +300,9 @@ ARR_VALIDATE:
     ld b,(hl)                   ; BC = count
     inc hl
     ld a,b
-    cp 8
-    jr nc,.bad                  ; count < 2048 (the store is 2 KB)
+    cp 16
+    jr nc,.bad                  ; count < 4096: every count that fits the store (ASSERT below);
+                                ; 3 + 2*count and the string walk cannot pass $FFFF
     or c
     jr z,.bad                   ; count >= 1
     ld a,(V2_ARRAY_IS_STR)
@@ -380,9 +381,18 @@ V2_LOAD_ARRAY:
     ld l,a
     ld h,(ARR2_LIMIT - 4) >> 8   ; HL = ARR2_LIMIT - 4 - namelen
     sbc hl,de                    ; = ARR2_LIMIT + EL - PAS_END - (namelen + 4): the room for the descriptor
-    pop ix                       ; (flags kept)
+    pop bc                       ; BC = the staged descriptor (flags kept)
     jr c,.full                   ; not even the key fits: nothing has been touched
-    ex de,hl                     ; DE = max body length
+    push bc
+    pop ix
+    ex de,hl                     ; DE = the store's room
+    ld hl,V2_CODE_LIMIT          ; v2.2 (item C): the body is staged in the pool, which can be smaller than
+    sbc hl,bc                    ; (NC) the store (7424 B): HL = the pool's room
+    sbc hl,de
+    add hl,de                    ; (CF as the sbc) CF: the pool's room is the smaller
+    jr nc,.room
+    ex de,hl
+.room:                           ; DE = max body length: a longer tape is ARRAY STORE FULL (STORAGE_LOAD_TOO_LONG)
     ld hl,STORAGE_LOAD_NAME_BUF
     ld b,10
     call STORAGE_LOAD
@@ -473,9 +483,9 @@ V2_LOAD_ARRAY:
     ASSERT V2_ARRAY_IS_STR = V2_ARRAY_NAME_LEN + 1
     ASSERT ((ARR2_LIMIT - 4) & $FF) >= IDENT_MAX_LEN
     ASSERT STORAGE_LOAD_BAD_VERSION = $FE && STORAGE_LOAD_TOO_LONG = $FD
-    ; The staging area is the pool from the end of the empty symbol table to V2_CODE_LIMIT; the loader
-    ; passes only the store's room to STORAGE_LOAD, which is valid while the pool is not the smaller.
-    ASSERT V2_CODE_LIMIT - V2_SOURCE_END - IDENT_MAX_LEN - 8 >= ARR2_LIMIT - ARR2_BASE
+    ; ARR_VALIDATE's count guard (high byte < 16) passes every count whose body fits the store
+    ; (a numeric element is 2 bytes, a string element at least 2).
+    ASSERT (ARR2_LIMIT - ARR2_BASE) / 2 < 16 * 256
 
 ; ARR_SAVE_STORE -- SAVE ... ARRAY of a name that is not a live array of the last
 ; compile: serve it from the store if it is there.  Finishes through V2_SAVE_ARRAY's own

@@ -643,7 +643,7 @@ PRINT LEN(w$(0))
 
 **Notes.**
 
-* An array lives in the main memory, or -- if it does not fit there -- in the 2 KB overflow area (segment 2). A single array must fit entirely in one of them: with an empty program the largest numeric array has 4063 elements, the largest string array 508 elements of 15 characters (254 of 31). See [Limits](07_appendices.md#appendix-d-limits).
+* An array lives in the main memory, or -- if it does not fit there -- in the 7424-byte overflow area (segment 2). A single array must fit entirely in one of them: with an empty program the largest numeric array has 4063 elements, the largest string array 508 elements of 15 characters (254 of 31). See [Limits](07_appendices.md#appendix-d-limits).
 * An array has **one** dimension.
 * A numeric array and a scalar variable can share a name: `x` and `x(1)` are different things.
 * An array saved with `SAVE ... ARRAY` and loaded with `LOAD ... ARRAY` is kept in the **Array Store**; a `DIM` of the same name and size in the program then uses it (see [Array Store](04_concepts.md#array-store)).
@@ -988,7 +988,7 @@ NEXT i
 
 `FREE()`, `FREE(1)` -- **function**
 
-`FREE()` is the number of bytes still free in the main memory pool, which the program text, the variables and the arrays share. `FREE(1)` is the number of bytes free in the 2 KB overflow area (segment 2) that arrays use when they do not fit in the main pool, and where the Array Store lives.
+`FREE()` is the number of bytes still free in the main memory pool, which the program text, the variables and the arrays share. `FREE(1)` is the number of bytes free in the 7424-byte overflow area (segment 2) that arrays use when they do not fit in the main pool, and where the Array Store lives. It is 7424 on an empty machine. While `MODE 1` is on, the segment ends at `$6000` and `FREE(1)` counts only to there (at most 1280 on an empty machine); see [MODE](05_packages.md#mode).
 
 ```basic ex=kw.free.1
 PRINT FREE(1)
@@ -996,8 +996,8 @@ DIM a(100)
 PRINT FREE(1)
 ```
 ```output ex=kw.free.1
-2048
-2048
+7424
+7424
 ```
 
 (`FREE()` itself depends on the program: a short program on an empty machine leaves about 8100 bytes, and a numeric array costs two bytes per element.)
@@ -1608,7 +1608,7 @@ PRINT MOD(20, 4)
 
 `MODE m` -- **statement**
 
-Selects the video mode: `MODE 0` is the normal mode and `MODE 1` the TS2068's extended-colour mode (every row of eight pixels can have its own colours; the ROM's own source calls it "High Resolution Graphics", which it is not). Any other value is a run-time error. Needs the **mode** package. See [Part 5](05_packages.md#the-mode-package).
+Selects the video mode: `MODE 0` is the normal mode and `MODE 1` the TS2068's extended-colour mode (every row of eight pixels can have its own colours; the ROM's own source calls it "High Resolution Graphics", which it is not). Any other value is a run-time error. `MODE 1` is also refused, with `OUT OF MEMORY` (error 64) and nothing changed, while arrays or the Array Store occupy memory above `$6000`; while it is on, arrays that need more room than the segment below `$6000` say `OUT OF MEMORY`. Needs the **mode** package. See [Part 5](05_packages.md#the-mode-package).
 
 *With the mode package loaded (`LOAD "MODE" EXT`):*
 
@@ -1873,8 +1873,8 @@ The first frame may be partly over when the pause starts, so `PAUSE n` lasts bet
 The byte (0 to 255) stored at an address (0 to 65535). Reading the ROM works; writing it (with `POKE`) does nothing.
 
 ```basic ex=kw.peek.1
-POKE 23296, 65
-PRINT PEEK(23296)
+POKE 30720, 65
+PRINT PEEK(30720)
 PRINT PEEK(0)
 ```
 ```output ex=kw.peek.1
@@ -1992,10 +1992,10 @@ NEXT y
 Stores a byte in memory: the **low byte** of *value*, so `POKE a, 300` stores 44 and `POKE a, -1` stores 255. A fraction is cut off. *address* is 0 to 65535; above that is a run-time error. Writing to the ROM does nothing.
 
 ```basic ex=kw.poke.1
-POKE 23296, 300
-PRINT PEEK(23296)
-POKE 23296, -1
-PRINT PEEK(23296)
+POKE 30720, 300
+PRINT PEEK(30720)
+POKE 30720, -1
+PRINT PEEK(30720)
 ```
 ```output ex=kw.poke.1
 44
@@ -2703,12 +2703,12 @@ The routine's contract:
 * It must not touch memory that the system uses: see the [memory map](07_appendices.md#appendix-e-memory-map).
 
 ```basic ex=kw.usr.1
-REM machine code at 23296: LD HL,777 / RET
-POKE 23296, 33
-POKE 23297, 9
-POKE 23298, 3
-POKE 23299, 201
-PRINT USR(23296)
+REM machine code at 30720: LD HL,777 / RET
+POKE 30720, 33
+POKE 30721, 9
+POKE 30722, 3
+POKE 30723, 201
+PRINT USR(30720)
 ```
 ```output ex=kw.usr.1
 777
@@ -2718,26 +2718,26 @@ The next routine uses `IX`, `IY`, `BC`, `DE` and the alternate registers freely 
 
 ```basic ex=kw.usr.2
 REM LD IY,0 / LD IX,0 / EXX / LD BC,515 / LD DE,1029 / LD HL,7 / RET
-POKE 23296, 253
-POKE 23297, 33
-POKE 23298, 0
-POKE 23299, 0
-POKE 23300, 221
-POKE 23301, 33
-POKE 23302, 0
-POKE 23303, 0
-POKE 23304, 217
-POKE 23305, 1
-POKE 23306, 3
-POKE 23307, 2
-POKE 23308, 17
-POKE 23309, 5
-POKE 23310, 4
-POKE 23311, 33
-POKE 23312, 7
-POKE 23313, 0
-POKE 23314, 201
-x = USR(23296)
+POKE 30720, 253
+POKE 30721, 33
+POKE 30722, 0
+POKE 30723, 0
+POKE 30724, 221
+POKE 30725, 33
+POKE 30726, 0
+POKE 30727, 0
+POKE 30728, 217
+POKE 30729, 1
+POKE 30730, 3
+POKE 30731, 2
+POKE 30732, 17
+POKE 30733, 5
+POKE 30734, 4
+POKE 30735, 33
+POKE 30736, 7
+POKE 30737, 0
+POKE 30738, 201
+x = USR(30720)
 PRINT x
 PRINT "alive"
 FOR i = 1 TO 3

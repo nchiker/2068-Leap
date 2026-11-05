@@ -123,12 +123,13 @@ SA_UNBUILD:
         ret
 
 ; The addresses a session's cells hold, in the order they must lie in memory (each <= the next).
+; v2.2 (item C): segment 2 ($5B00-$77FF) lies below the program pool, so its four come first.
 SA_CHAIN:
+        dw SA_K_ARR2_BASE, PAS_END, ARR2_END, SA_K_ARR2_LIM
         dw PROG_END, SYM_BASE_V, PROG_END ; the symbol table starts at the program's end
         dw SYM_END_V, SESS_ARENA_BASE, ARRAYS_END
         dw RT_SYMTAB_PTR, RT_FLOATTAB_PTR, RT_STRTAB_PTR, RT_ARRPTR_PTR, RT_STRARRPTR_PTR
         dw SA_K_SRC_END, SA_K_CODE_BASE, SESS_CODE_END, SA_K_CODE_LIM
-        dw SA_K_ARR2_BASE, PAS_END, ARR2_END, SA_K_ARR2_LIM
 SA_CHAIN_N equ ($ - SA_CHAIN) / 2
 SA_K_SRC_END:   dw V2_SOURCE_END
 SA_K_CODE_BASE: dw VM_CODE_BASE
@@ -244,7 +245,15 @@ SA_RESTORE:
         or e
         jr z,.ptr
         push hl
-        ex de,hl
+        ex de,hl                          ; v2.2: segment 2 first -- it lies below the arena
+        ld de,ARR2_BASE                   ; (ASSERT ARR2_LIMIT <= PROG_AREA_START, include/v2_layout.inc)
+        sbc hl,de
+        jr c,.ptr_bad                     ; below segment 2, so below the arena too
+        add hl,de
+        ld de,(ARR2_END)
+        sbc hl,de
+        jr c,.ptr_ok                      ; in segment 2
+        add hl,de
         ld de,(SESS_ARENA_BASE)
         sbc hl,de
         jr c,.ptr_bad
@@ -252,14 +261,6 @@ SA_RESTORE:
         ld de,(ARRAYS_END)
         sbc hl,de
         jr c,.ptr_ok                      ; in the arena
-        add hl,de
-        ld de,ARR2_BASE
-        sbc hl,de
-        jr c,.ptr_bad
-        add hl,de
-        ld de,(ARR2_END)
-        sbc hl,de
-        jr c,.ptr_ok                      ; in segment 2
 .ptr_bad:
         pop hl
 .bad:

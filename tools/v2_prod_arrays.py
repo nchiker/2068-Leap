@@ -8,7 +8,8 @@ synthesised EAR line) and what is substituted.  These are GATE cases: each must 
 former known defects D6, D8, D12, D13, D14, D15 and D16 live here now, as the fixed
 behaviour, together with the lifecycle / boundary / banking cases of the Phase 2B proposal.
 
-Store layout under test (rom/exrom_v2_arrstore.asm): segment 2 from $E000 to PAS_END,
+Store layout under test (rom/exrom_v2_arrstore.asm): segment 2 from ARR2_BASE ($5B00 since v2.2,
+item C; was $E000) to PAS_END,
 entry = [len:2][kind:1 (2 numeric | 3 string)][namelen:1][name][descriptor], descriptor = the
 tape body verbatim.  "Hand-built" stores are written straight into RAM with PAS_END set.
 
@@ -23,7 +24,14 @@ from v2_prod import *            # noqa: E402,F401,F403
 import v2_prod as P              # noqa: E402
 import tape_synth as TS          # noqa: E402
 
-BASE, LIMIT = 0xE000, 0xE800
+BASE, LIMIT = P.sym("ARR2_BASE"), P.sym("ARR2_LIMIT")    # v2.2: $5B00, $7800 (was $E000, $E800)
+SIZE = LIMIT - BASE                                         # 7424 (was 2048)
+MODE1_TOP = P.sym("SECOND_DISPLAY_ADDR")                    # $6000: MODE 1's attribute file starts here
+
+
+def in_seg2(addr):
+    """Segment 2 now lies BELOW the main pool: `addr >= BASE` no longer means segment 2."""
+    return BASE <= addr < LIMIT
 ARRAY_TYPE = 8
 FMT_WORD = TS._abi().fmt_word
 LEAD = P.CPU_BOOT_T + 3_000_000
@@ -128,7 +136,7 @@ def d6():
     return m == "LOADED" and ce == 0 and ve == 0 and vals(1)[0] == 33, "load=%s compile_err=%d vm_err=%d y=%d" % (m, ce, ve, vals(1)[0])
 
 
-@case("arr-coldboot-empty", "a cold boot starts with an empty Array Store (PAS_END = $E000)")
+@case("arr-coldboot-empty", "a cold boot starts with an empty Array Store (PAS_END = ARR2_BASE)")
 def coldboot():
     P.boot()
     return pas_end() == BASE, "PAS_END=%04X" % pas_end()
@@ -308,9 +316,9 @@ def overflow_coexist():
         P.call_prompt("V2_RUN_STORED")
         ve = P.read(P.sym("VM_ERROR_CODE"), 1)[0]
         q = P.w16(P.w16(P.sym("RT_ARRPTR_PTR")) + 2)
-        if q >= BASE or ve == 64:
+        if in_seg2(q) or ve == 64:
             break
-    ok = ve == 0 and q >= BASE + len(blob) and vals(1)[0] == 9 and P.read(BASE, len(blob)) == blob \
+    ok = ve == 0 and in_seg2(q) and q >= BASE + len(blob) and vals(1)[0] == 9 and P.read(BASE, len(blob)) == blob \
         and P.w16(P.sym("ARR2_END")) >= pas_end()
     return ok, "p=%d vm_err=%d q=%04X y=%d ARR2_END=%04X PAS_END=%04X" % (
         pn, ve, q, vals(1)[0], P.w16(P.sym("ARR2_END")), pas_end())
@@ -318,7 +326,7 @@ def overflow_coexist():
 
 @case("arr-overflow-exhaustion", "an overflow DIM that no longer fits next to a nearly full store fails cleanly, store intact")
 def overflow_exhaustion():
-    big = entry("big", 2, num([0] * 985))                 # 1,980 B of data: ~58 B of segment 2 left
+    big = entry("big", 2, num([0] * ((SIZE - 68) // 2)))  # entry = 10 + 2n: ~58 B of segment 2 left
     blob = boot_store([big], ["DIM p(3900)", "DIM q(600)", "q(1) = 9", "y = 1"])
     P.call_prompt("V2_RUN_STORED")
     ve = P.read(P.sym("VM_ERROR_CODE"), 1)[0]
@@ -538,9 +546,9 @@ def d12_overflow():
         P.call_prompt("V2_RUN_STORED")
         q = P.w16(P.w16(P.sym("RT_ARRPTR_PTR")) + 2)
         ve = P.read(P.sym("VM_ERROR_CODE"), 1)[0]
-        if q >= BASE or ve == 64:
+        if in_seg2(q) or ve == 64:
             break
-    return ve == 0 and q >= BASE and vals(2)[:2] == [0, 0], "p=%d vm_err=%d q=%04X y,z=%s" % (pn, ve, q, vals(2))
+    return ve == 0 and in_seg2(q) and vals(2)[:2] == [0, 0], "p=%d vm_err=%d q=%04X y,z=%s" % (pn, ve, q, vals(2))
 
 
 # ================================================================ D13 SAVE ... ARRAY
@@ -906,7 +914,7 @@ def full_header():
     for end in (LIMIT - 5, LIMIT - 4, LIMIT - 1):        # name "a": the descriptor would start at end+5
         P.boot(tape([("ARR", A5, {})]), lead=LEAD)
         guard = bytes([0xC3]) * 64
-        P.poke(LIMIT, guard)                              # sprite-buffer side of the boundary
+        P.poke(LIMIT, guard)                              # the users' $7800 side of the boundary
         set_store([filler(end - BASE)])
         m = typed('load "ARR" ARRAY a')
         res.append((hex(end), m, pas_end() == end and P.read(LIMIT, 64) == guard))
@@ -914,7 +922,7 @@ def full_header():
     return all(m == "STORE_FULL" and g for _, m, g in res), str(res)
 
 
-@case("arr-store-full-name31", "a 31-character key name at the end of the store cannot spill past $E800")
+@case("arr-store-full-name31", "a 31-character key name at the end of the store cannot spill past ARR2_LIMIT")
 def full_name31():
     P.boot(tape([("ARR", A5, {})]), lead=LEAD)
     guard = bytes([0xC3]) * 64
@@ -925,7 +933,7 @@ def full_name31():
         "msg=%s guard_intact=%s" % (m, P.read(LIMIT, 64) == guard)
 
 
-@case("arr-store-full-body", "a tape larger than the free store is refused cleanly, store and sprite buffers untouched")
+@case("arr-store-full-body", "a tape larger than the free store is refused cleanly, store and the RAM past it untouched")
 def full_body():
     P.boot(tape([("ARR", num([1] * 40), {})]), lead=LEAD)
     guard = bytes([0xC3]) * 64
@@ -938,7 +946,7 @@ def full_body():
 
 @case("arr-store-exact-fit", "an entry that exactly fills the store is accepted; one more element is refused")
 def exact_fit():
-    n_ok = (2048 - 8) // 2                               # entry = 8 + 2n with a 1-character name
+    n_ok = (SIZE - 8) // 2                               # entry = 8 + 2n with a 1-character name (3708)
     P.boot(tape([("FIT", num([i & 0xFF for i in range(n_ok)]), {}), ("TOO", num([1] * (n_ok + 1)), {})]), lead=LEAD)
     guard = bytes([0xC3]) * 64
     P.poke(LIMIT, guard)
@@ -958,7 +966,7 @@ def _nums(n, seed=0):
 # entry is removed after validation); an array longer than the room is ARRAY STORE FULL, not LOAD FAILED.
 @case("arr-store-replace-full", "v2.2: a same-size replace in a completely full store LOADs (it needed room for both copies before)")
 def replace_full():
-    n = (2048 - 8) // 2                                  # entry = 8 + 2n: n = 1020 fills the store exactly
+    n = (SIZE - 8) // 2                                  # entry = 8 + 2n: n = 3708 fills the store exactly
     A1, A2 = _nums(n, 0), _nums(n, 5)
     P.boot(tape([("A", A1, {}), ("A", A2, {})]), lead=LEAD)
     P.put_store(["k = 1"])
@@ -974,7 +982,9 @@ def replace_full():
 @case("arr-replace-larger-fits", "v2.2: a larger replacement that fits once the old entry is gone LOADs, first or last in the store")
 def replace_larger_fits():
     out = []
-    small, big, bigger = _nums(100, 1), _nums(800, 2), _nums(900, 3)    # 208 + 1608 + 232 free; 208 + 1808 fits
+    nb = (SIZE - 1400) // 2                                             # 208 + (8 + 2nb) fit; + the bigger does not;
+    small, big, bigger = _nums(100, 1), _nums(nb, 2), _nums(nb + 300, 3)  # 208 + (8 + 2(nb + 300)) fits alone
+    assert 208 + 8 + 2 * nb <= SIZE < 208 + 8 + 2 * nb + 8 + 2 * (nb + 300) and 208 + 8 + 2 * (nb + 300) <= SIZE
     for label, order, repl in (("last", ("A", "B"), "B"), ("first", ("B", "A"), "B")):
         bodies = {"A": small, "B": big}
         files = [(k, bodies[k], {}) for k in order] + [("B", bigger, {})]
@@ -990,10 +1000,12 @@ def replace_larger_fits():
 def oversize():
     out = []
     small, big = _nums(100, 1), _nums(800, 2)
+    nr = (SIZE - 216) // 2 + 46                          # 208 + (8 + 2nr) > SIZE (3650 for 7424)
+    nh = SIZE // 2 + 300                                 # 3 + 2nh > SIZE: longer than the segment
     for label, repl, files in (
-            ("replace", _nums(1000, 3), [("A", small, {}), ("B", big, {}), ("B", _nums(1000, 3), {})]),   # 208 + 2008 > 2048
-            ("add", _nums(1000, 4), [("A", small, {}), ("C", _nums(1000, 4), {})]),                       # 208 + 2008 > 2048
-            ("huge", _nums(3000, 5), [("A", small, {}), ("H", _nums(3000, 5), {})])):                     # longer than the segment
+            ("replace", _nums(nr, 3), [("A", small, {}), ("B", big, {}), ("B", _nums(nr, 3), {})]),
+            ("add", _nums(nr, 4), [("A", small, {}), ("C", _nums(nr, 4), {})]),
+            ("huge", _nums(nh, 5), [("A", small, {}), ("H", _nums(nh, 5), {})])):
         cmds = ['load "A" ARRAY a'] + (['load "B" ARRAY b'] if label == "replace" else [])
         P.boot(tape(files), lead=LEAD)
         for c in cmds:
@@ -1008,7 +1020,7 @@ def oversize():
 
 @case("arr-replace-full-damaged", "v2.2: a damaged replacement at a full store leaves it intact: bad checksum LOAD FAILED, malformed BAD ARRAY TAPE")
 def replace_full_damaged():
-    n = (2048 - 8) // 2
+    n = (SIZE - 8) // 2
     A1 = _nums(n, 0)
     out = []
     for label, kw, body, want in (("checksum", {"bad_checksum": True}, _nums(n, 9), "LOAD_FAILED"),
@@ -1033,6 +1045,114 @@ def load_near_full_program():
     ok = m == "LOADED" and st == entry("a", 2, A1) and P.store() == lines and P.w16(P.sym("PROG_END")) == pe \
         and P.read(pe, 1) == b"\0"
     return ok, "msg=%s PROG_END=%04X terminator=%02X program_same=%s" % (m, pe, P.read(pe, 1)[0], P.store() == lines)
+
+
+# ======================================================= v2.2 item C: segment 2 at $5B00-$77FF
+# 7424 bytes below the program pool; MODE 1's attribute file ($6000-$77FF) is inside it, so MODE 1 is
+# refused (error 64) while the segment reaches above $6000, and $6000 is its top while MODE 1 is on.
+BIG_PROG = ["DIM p(4000)", "DIM s$(100,70)", 's$(1) = "first"', 's$(99) = "last one"']   # p fills the pool,
+                                                                                       # s$ (7004 B) overflows
+
+
+@case("arr-seg2-7k-string-roundtrip", "v2.2: a 7 KB string array in segment 2 SAVEs with SAVE ... ARRAY, and after NEW LOADs back and reads back")
+def seg2_7k_roundtrip():
+    blocks, msg = _save_live(BIG_PROG, 'save "BIG" ARRAY s$')
+    if msg != "SAVED" or len(blocks) != 2:
+        return False, "save=%s blocks=%d" % (msg, len(blocks))
+    body = blocks[1][1]
+    P.boot(_replay(blocks), lead=LEAD)
+    mn = typed("new")
+    m = typed('load "BIG" ARRAY s$')
+    end, st = store_state()
+    ce, ve = run_prog(["DIM s$(100,70)", "a = LEN(s$(1))", "b = LEN(s$(99))", "c = LEN(s$(50))"])
+    ok = len(body) == 4 + 100 * 70 and m == "LOADED" and st[4 + 1:] == body and end == BASE + 4 + 1 + len(body) \
+        and end > MODE1_TOP and (ce, ve) == (0, 0) and vals(3) == [5, 8, 0]
+    return ok, "body=%d new=%s load=%s PAS_END=%04X compile_err=%d vm_err=%d a,b,c=%s" % (
+        len(body), mn, m, end, ce, ve, vals(3))
+
+
+@case("arr-load-longer-than-pool", "v2.2: a tape that fits the store but not the pool the loader stages it in (a large program) is ARRAY STORE FULL; one that fits LOADs")
+def load_longer_than_pool():
+    lines = ["REM " + "x" * 100] * 85                    # ~9.1 KB of the 9211-byte pool
+    P.boot()
+    P.put_store(lines)
+    pool_room = P.sym("V2_CODE_LIMIT") - (P.w16(P.sym("PROG_END")) + 1 + 4 + 1)   # staged descriptor of "a"
+    P.shutdown()
+    n_over, n_fit = pool_room // 2 + 10, pool_room // 2 - 10            # body = 3 + 2n: ~20 B either side
+    assert 3 + 2 * n_over > pool_room >= 3 + 2 * n_fit and 3 + 2 * n_over < SIZE - 5
+    over, fit = _nums(n_over, 1), _nums(n_fit, 2)
+    P.boot(tape([("A", over, {}), ("A", fit, {})]), lead=LEAD)
+    P.put_store(lines)
+    m1 = typed('load "A" ARRAY a')
+    end1 = pas_end()
+    m2 = typed('load "A" ARRAY a')
+    end, st = store_state()
+    ok = m1 == "STORE_FULL" and end1 == BASE and m2 == "LOADED" and st == entry("a", 2, fit) and P.store() == lines
+    return ok, "pool_room=%d over=%s fit=%s program_same=%s" % (pool_room, m1, m2, P.store() == lines)
+
+
+def _mode_run(prog, store=None):
+    P.boot()
+    assert P.install_package("mode")
+    if store:
+        set_store(store)
+    P.put_store(prog)
+    P.call_prompt("V2_RUN_STORED")
+    return P.read(P.sym("COMPILE_ERROR_CODE"), 1)[0], P.read(P.sym("VM_ERROR_CODE"), 1)[0]
+
+
+@case("arr-mode1-interlock", "v2.2: MODE 1 is refused (error 64) while segment 2 reaches above $6000 (an overflow array or the store), allowed up to $6000 exactly")
+def mode1_interlock():
+    out = []
+    prog = ["y = 0", "MODE 1", "y = 1"]
+    ce, ve = _mode_run(BIG_PROG + prog)                   # s$ ends at $767F
+    out.append(("overflow-array", (ce, ve, vals(1)[0]) == (0, 64, 0)))
+    for label, size, want in (("store-to-6000", MODE1_TOP - BASE, (0, 0, 1)),
+                              ("store-to-6001", MODE1_TOP - BASE + 1, (0, 64, 0))):
+        ce, ve = _mode_run(prog, [filler(size)])
+        out.append((label, (ce, ve, vals(1)[0]) == want and pas_end() == BASE + size))
+    ce, ve = _mode_run(["DIM p(4000)", "DIM q(500)", "MODE 1", "q(499) = 7", "y = q(499)"])   # q ends $5EEB
+    q = slot(idx=1)
+    out.append(("overflow-below-6000", (ce, ve, vals(1)[0]) == (0, 0, 7) and in_seg2(q) and q < MODE1_TOP))
+    return all(g for _, g in out), str(out)
+
+
+@case("arr-mode1-dim-limit", "v2.2: in MODE 1 segment 2 ends at $6000: a DIM past it is OUT OF MEMORY (the same DIM works in MODE 0); FREE(1) counts to $6000")
+def mode1_dim_limit():
+    ce1, ve1 = _mode_run(["x = 0", "DIM p(4000)", "MODE 1", "x = FREE(1)", "DIM q(1000)", "y = 1"])
+    v1 = vals(2)
+    ce0, ve0 = _mode_run(["x = 0", "DIM p(4000)", "x = FREE(1)", "DIM q(1000)", "q(999) = 5", "y = q(999)"])
+    v0 = vals(2)
+    ok = (ce1, ve1) == (0, 64) and v1 == [MODE1_TOP - BASE, 0] and (ce0, ve0) == (0, 0) and v0 == [SIZE, 5]
+    return ok, "MODE 1: err=%d x,y=%s; MODE 0: err=%d x,y=%s" % (ve1, v1, ve0, v0)
+
+
+@case("arr-free1-seg2-size", "v2.2: FREE(1) is 7424 with an empty store and drops by each overflow array's and the store's size")
+def free1_size():
+    P.boot()
+    ce, ve = run_prog(["x = FREE(1)", "DIM p(4000)", "DIM q(500)", "y = FREE(1)"])
+    v = vals(2)
+    boot_store([filler(100)], ["x = FREE(1)"])
+    P.call_prompt("V2_RUN_STORED")
+    w = vals(1)[0]
+    return (ce, ve) == (0, 0) and v == [SIZE, SIZE - 1003] and w == SIZE - 100, \
+        "empty: x,y=%s (want %d,%d); store of 100: %d" % (v, SIZE, SIZE - 1003, w)
+
+
+@case("arr-store-ends-at-limit", "v2.2: a store ending exactly at ARR2_LIMIT binds, FREE(1) = 0, an overflow DIM is OUT OF MEMORY, LOAD ... ARRAY is ARRAY STORE FULL")
+def store_at_limit():
+    a = entry("a", 2, A5)
+    blob = boot_store([a, filler(SIZE - len(a))], ["DIM a(5)", "y = a(2)", "x = FREE(1)", "DIM p(4000)", "DIM q(600)"])
+    P.call_prompt("V2_RUN_STORED")
+    ve = P.read(P.sym("VM_ERROR_CODE"), 1)[0]
+    v = vals(2)
+    intact = P.read(BASE, len(blob)) == blob
+    P.shutdown()
+    P.boot(tape([("B", A5, {})]), lead=LEAD)
+    set_store([a, filler(SIZE - len(a))])
+    m = typed('load "B" ARRAY b')
+    return pas_end() == LIMIT and ve == 64 and v == [33, 0] and intact and m == "STORE_FULL", \
+        "vm_err=%d y,x=%s store_intact=%s load=%s" % (ve, v, intact, m)
 
 
 # ==================================================================== banking

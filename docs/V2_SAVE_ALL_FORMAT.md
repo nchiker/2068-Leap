@@ -49,7 +49,9 @@ the tail is written after it, the block is sent, and the span is moved back; seg
 is. So SAVE ALL needs no free memory for a copy; its one limit is that block 1 must end at or below
 `V2_CODE_LIMIT` (`$B600`): bytecode + 55 bytes must not exceed the bytecode area (~4.0 KB) plus the free
 main memory, which holds in practice. Otherwise `OUT OF MEMORY` and nothing is sent. (Before v2.2 segment
-2 was part of this image, which is what limited a program with a large Array Store.)
+2 was part of this image, which is what limited a program with a large Array Store.) Block 2 itself can
+be up to 7,424 bytes (all of segment 2, `$5B00 .. $77FF`); the SAVE spends about 0.7 s more on its CRC for
+a full segment.
 
 The tape format word's minor version stays **1** in v2.2 (`V2_FORMAT_MINOR`; owner decision: practically no
 ALL tapes exist yet, and no new stamp is needed). The identity CRC already separates ROM builds: a v2.1.x ROM
@@ -80,15 +82,17 @@ longer than the main pool is refused (`LOAD FAILED`). For an ALL block (`SA_REST
    wrote it (the bytecode, the layout and the package-statement references depend on them);
    mismatch: the program is kept, the variables are not loaded (`NO VARIABLES`);
 4. the session cells are installed (the Array Store's end is remembered first);
-5. **address chain** -- these words must be nondecreasing: `PROG_END`, `SYM_BASE_V`, `PROG_END`,
-   `SYM_END_V`, `SESS_ARENA_BASE`, `ARRAYS_END`, the five table bases, `V2_SOURCE_END`,
-   `VM_CODE_BASE`, `SESS_CODE_END`, `V2_CODE_LIMIT`, `ARR2_BASE`, `PAS_END`, `ARR2_END`,
-   `ARR2_LIMIT` -- every region boundary lies where the layout allows;
+5. **address chain** -- these words must be nondecreasing: segment 2 first, because it lies below
+   the program pool (`ARR2_BASE`, `PAS_END`, `ARR2_END`, `ARR2_LIMIT`), then `PROG_END`, `SYM_BASE_V`,
+   `PROG_END`, `SYM_END_V`, `SESS_ARENA_BASE`, `ARRAYS_END`, the five table bases, `V2_SOURCE_END`,
+   `VM_CODE_BASE`, `SESS_CODE_END`, `V2_CODE_LIMIT` -- every region boundary lies where the layout
+   allows;
 6. **partition** -- `ARRAYS_END + W + 55` must equal block 1's end exactly;
 7. **pointers** -- every array pointer in the saved tables (read in the image) must be 0, inside
-   the arena or inside segment 2: no pointer from the tape is used unchecked;
+   segment 2 or inside the arena (segment 2 is tested first, as its addresses are the lower): no pointer
+   from the tape is used unchecked;
 8. **block 2** (`V2_RECV_S`, then `SA_FINISH`) -- segment 2 (S bytes, from the cells; it cannot pass
-   `ARR2_LIMIT`: step 5) is received straight into `$E000`, and its CRC must equal the one in the tail;
+   `ARR2_LIMIT`: step 5) is received straight into `$5B00`, and its CRC must equal the one in the tail;
 9. only then: the W span is moved up into place, `VARS_START` and the VM registers are set, and the
    session is current.
 

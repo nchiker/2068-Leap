@@ -6,7 +6,7 @@ The ideas behind the language, in alphabetical order. Where a keyword is the nat
 
 ## Array Store
 
-The **Array Store** is a 2 KB region of memory (the "overflow" segment, `$E000` to `$E7FF`) that holds arrays **outside the life of the program**. An array in the store survives `RUN`, `CLEAR`, and every edit of the program; only `NEW` (or switching off) empties it.
+The **Array Store** is a region of memory of 7424 bytes (the "overflow" segment, `$5B00` to `$77FF`) that holds arrays **outside the life of the program**. An array in the store survives `RUN`, `CLEAR`, and every edit of the program; only `NEW` (or switching off) empties it.
 
 How an array gets there: `LOAD "name" ARRAY a` reads one array from tape into the store (and `SAVE "name" ARRAY a` writes one from the running program's session). The next time a program does `DIM a(n)` with the **same name and the same size**, that array is not created empty: it **adopts the stored one**, with its contents.
 
@@ -41,10 +41,10 @@ RUN  [ve:65]
 
 Loading an array whose name is already in the store **replaces** it, and the new array only has to fit on its own (not alongside the old copy), so a same-size replacement works even when the store is completely full.
 
-When the store is nearly full, another array cannot be loaded: here an array of 1018 numbers (2036 bytes) leaves no room for even a one-element array:
+When the store is nearly full, another array cannot be loaded: here an array of 3706 numbers (7412 bytes) leaves no room for even a one-element array:
 
 ```basic ex=con.store.3
-DIM big(1018)
+DIM big(3706)
 DIM s(1)
 ```
 ```tape ex=con.store.3
@@ -62,13 +62,17 @@ Messages specific to arrays and tapes:
 |---|---|
 | `ARRAY NOT DIMD` | `SAVE ... ARRAY a` for an array the program has not declared |
 | `BAD ARRAY TAPE` | the tape block is not a well-formed array (wrong shape, or damaged) |
-| `ARRAY STORE FULL` | the array on the tape is longer than the room available (the store's size minus the other entries); nothing in the store changes |
+| `ARRAY STORE FULL` | the array on the tape is longer than the room available (the store's size minus the other entries, or the free memory above the program text, into which the array is received first); nothing in the store changes |
 | `LOAD FAILED` | no matching tape was found, or the tape is damaged |
 | `ARRAY SIZE MISMATCH` | a `DIM` disagrees with the stored array of that name |
 
 Whatever the message, if the `LOAD` does not succeed the store is exactly as it was before it.
 
-The store shares its 2 KB with ordinary arrays that did not fit in the main memory: `FREE(1)` reports what is left.
+The store shares its 7424 bytes with ordinary arrays that did not fit in the main memory: `FREE(1)` reports what is left.
+
+The array is received into the free memory above the program text first, so a `LOAD` of a very large array into a machine with a very large program can say `ARRAY STORE FULL` even if the store has room: a very large program text leaves less room than the store.
+
+The upper part of the segment, from `$6000`, is also the attribute file of `MODE 1`. `MODE 1` is refused with `OUT OF MEMORY` (nothing changes) while arrays or the Array Store occupy memory above `$6000`, and while `MODE 1` is on the segment ends at `$6000`: `FREE(1)` then counts to `$6000` (at most 1280 bytes on an empty machine), and an array that needs more says `OUT OF MEMORY`. Back in `MODE 0` (which is also what the display returns to at the prompt) the whole 7424 bytes are available again.
 
 **See also** DIM, SAVE, LOAD, [Arrays](#arrays), [Memory](#memory).
 
@@ -108,7 +112,7 @@ GRACE has the top score, 99
 
 Elements of a new array are 0 (or ""). A numeric array and an ordinary variable may share a name (`x` and `x(1)` are different things).
 
-**Capacity.** Arrays are kept in the main memory, or, if that is too full, in the 2 KB overflow segment; one array has to fit in one or the other. On an empty program the largest numeric array has 4063 elements, the largest 15-character string array 508 elements, and the largest 31-character one 254. Each array also costs a little overhead. See [Limits](07_appendices.md#appendix-d-limits).
+**Capacity.** Arrays are kept in the main memory, or, if that is too full, in the 7424-byte overflow segment; one array has to fit in one or the other. On an empty program the largest numeric array has 4063 elements, the largest 15-character string array 508 elements, and the largest 31-character one 254. Each array also costs a little overhead. See [Limits](07_appendices.md#appendix-d-limits).
 
 **See also** DIM, DIMN, [Array Store](#array-store).
 
@@ -363,7 +367,7 @@ From the bottom of the pool upward: the program text, then the table of names, t
 
 ### What `FREE()` measures
 
-`FREE()` is the size of that free gap in bytes: the room left for **arrays** and for **procedure calls and loops** to come. It does not include the code area, the overflow segment (`FREE(1)`, 2048 bytes at its own address; see [Arrays](#arrays) and the [Array Store](#array-store)), or the variables' tables, which were already taken out when the program started. Because the tables are sized when the program starts, **a variable costs memory from the beginning of the run**, even if the program has not got to the line that uses it. What changes while the program runs is:
+`FREE()` is the size of that free gap in bytes: the room left for **arrays** and for **procedure calls and loops** to come. It does not include the code area, the overflow segment (`FREE(1)`, 7424 bytes at its own address; see [Arrays](#arrays) and the [Array Store](#array-store)), or the variables' tables, which were already taken out when the program started. Because the tables are sized when the program starts, **a variable costs memory from the beginning of the run**, even if the program has not got to the line that uses it. What changes while the program runs is:
 
 * `DIM` takes the space for the array, and `CLEAR` gives it back;
 * every procedure call and every `FOR` loop that is still going takes **12 bytes** of the same space until it ends: a program that calls itself 600 times deep uses over 7000 bytes. This is why recursion has a limit.
@@ -445,7 +449,7 @@ PRINT FREE()
 * **Give back arrays you have finished with** with `CLEAR` (it also clears the variables, so keep what you need elsewhere first), and keep arrays as small as they need to be: string arrays are 16 bytes an element even when the strings are short; a width of 8 (`DIM a$(n, 8)`) makes them half the size.
 * **Remember what runs out first.** The pool (about 9 KB of text, names and data) normally runs out before the 4 KB code area; a program of about 900 short `PRINT` lines does not run, because its text fills the pool. If the pool is the problem the message is `OUT OF MEMORY` when you `RUN`; if the code area is, it is `OUT OF MEMORY` when the compiler runs out of room.
 * **Recursion is limited by the 12 bytes a level**: a procedure that calls itself needs 12 bytes of free space for every level.
-* If a program needs more space for **arrays**, remember the 2 KB overflow segment: a numeric array that does not fit in the pool is placed there if it fits there (see [Arrays](#arrays)).
+* If a program needs more space for **arrays**, remember the 7424-byte overflow segment: a numeric array that does not fit in the pool is placed there if it fits there (see [Arrays](#arrays)).
 
 For the figures of every limit see [Appendix D](07_appendices.md#appendix-d-limits), and for the address map of the whole machine [Appendix E](07_appendices.md#appendix-e-memory-map). `FREE()` and `FREE(1)` are described under [FREE](03_keywords.md#free).
 
@@ -629,7 +633,7 @@ LINE 128, 60 TO 128, 140
 
 **Character cells and sprites.** `AT row, col` addresses cells (row 0 to 22 for text); the sprite package uses cells too.
 
-**Other modes.** The TS2068 has an extended-colour video mode (the mode package's `MODE 1`), in which each row of eight pixels has its own colours and the colour clash above disappears vertically, and the ULAplus palette; see [Part 5](05_packages.md#the-mode-package).
+**Other modes.** The TS2068 has an extended-colour video mode (the mode package's `MODE 1`), in which each row of eight pixels has its own colours and the colour clash above disappears vertically, and the ULAplus palette; see [Part 5](05_packages.md#the-mode-package). `MODE 1` keeps its attributes in `$6000`-`$77FF`, so it is refused (`OUT OF MEMORY`) while arrays occupy memory above `$6000`.
 
 **See also** PRINT, AT, TAB, CLS, INK, PAPER, PLOT, LINE, POINT, ATTR, BORDER.
 

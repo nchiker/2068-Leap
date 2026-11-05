@@ -1936,16 +1936,26 @@ VM_ARENA_FIT:
         ret c
         ld de,(ARR2_END)
         add hl,de
-        ccf                     ; QUAL (Q-04): segment 2 sits at $E000, so any request over
-        ret nc                  ; ~8 KB wrapped past $FFFF and was zero-filled over the stack
-        ld de,ARR2_LIMIT
-        or a
+        ccf                     ; QUAL (Q-04): a request that wraps past $FFFF does not fit (a string
+        ret nc                  ; array of over ~40 KB from $5B00; it used to be zero-filled over the stack)
+        call ARR2_TOP           ; DE = the segment's top ($6000 in MODE 1), CF clear
         sbc hl,de               ; (end of segment is exclusive: equal is full)
         ret nc
         ld a,1
         ld (ARR2_SWAPPED),a
         call VM_ARENA_SWAP
         scf
+        ret
+
+; ARR2_TOP -- v2.2: DE = the effective top of segment 2: ARR2_LIMIT, or SECOND_DISPLAY_ADDR ($6000)
+; while MODE 1 shows its attribute file there (GFX_MODE: 0 at cold start, 1 only after GFX_SET_MODE
+; let MODE 1 in). CF clear. Destroys A.
+ARR2_TOP:
+        ld de,ARR2_LIMIT
+        ld a,(GFX_MODE)
+        or a
+        ret z
+        ld d,SECOND_DISPLAY_ADDR >> 8     ; (both low bytes are 0: include/v2_layout.inc)
         ret
 
 VM_ARENA_DONE:
@@ -5420,17 +5430,18 @@ BUILTIN_FN_FREE:
         sbc hl,de
         jp VM_PUSH_INT          ; RC shrink: TAG_INT + VM_PUSH
 
-; FREE(n) -- R10.7 P5.5. FREE(1) = bytes free in array segment 2 ($E000-$E7FF);
-; any other argument behaves as FREE() (the main pool, up to the control stack).
+; FREE(n) -- R10.7 P5.5. FREE(1) = bytes free in array segment 2 ($5B00-$77FF; v2.2: up to $6000
+; while MODE 1 is on, ARR2_TOP); any other argument behaves as FREE() (the main pool, up to the
+; control stack).
 BUILTIN_FN_FREE_N:
         rst $18                  ; HL = n
         dec hl
         ld a,h
         or l
         jr nz,BUILTIN_FN_FREE
-        ld hl,ARR2_LIMIT
-        ld de,(ARR2_END)
-        or a
+        call ARR2_TOP            ; DE = the top, CF clear
+        ld hl,(ARR2_END)
+        ex de,hl
         sbc hl,de
         jp VM_PUSH_INT          ; RC shrink: TAG_INT + VM_PUSH
 

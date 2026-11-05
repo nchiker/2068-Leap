@@ -999,7 +999,7 @@ V2_CLEAR_ARRAYS:
     ld hl,V2_SOURCE_END          ; R10.7 P3: a RUN carves its run-time tables from
     ld (VARS_START),hl           ; the pool top (lowering VARS_START); any edit
     ld hl,(PAS_END)              ; R10.7 P5.4: segment 2 (always-visible RAM at
-    ld (ARR2_END),hl             ; $E000) is emptied with the main pool, but the
+    ld (ARR2_END),hl             ; $5B00, v2.2) is emptied with the main pool, but the
                                    ; Array Store below PAS_END survives
     ret                          ; discards them, so the source may grow again
 

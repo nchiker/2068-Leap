@@ -91,7 +91,7 @@ known-defect suite, on its own ZEsarUX port/state dir). All its cases are **gate
 former known defects D6, D8, D12, D13, D14, D15 and D16 as fixed behaviour, plus the lifecycle, boundary, replacement and
 banking cases of the Phase 2B proposal (`docs/R10_9_PHASE2B_REPORT.md` §3, §11). It exercises the **real** EXROM Array Store
 service (`rom/exrom_v2_arrstore.asm`): bind at `RUN`, the EXROM `DIM`/`DIM$` handlers, the validating loader, the saver and the
-repaired `CLEAR`. Stores are either hand-built in RAM (`PAS_END` + entries at `$E000`) or created by `LOAD ... ARRAY` from a
+repaired `CLEAR`. Stores are either hand-built in RAM (`PAS_END` + entries at `$5B00`) or created by `LOAD ... ARRAY` from a
 synthesised tape; run one case with `TS2068_DEBUG_STATE_DIR=<dir> TS2068_V2_PORT=<port> python3 tools/v2_prod_arrays.py <substring>`.
 
 **Component tests vs production DIM.** The standalone component tests (`tools/run_v2_standalone_tests.sh`) assemble a

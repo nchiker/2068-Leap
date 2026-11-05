@@ -33,10 +33,19 @@ PROGS = {
               "IF g(i) = 0 THEN GOTO skip", "r = i + i + 3", "k = i + r", "IF k > s THEN GOTO noclear",
               "clearloop:", "g(k) = 0", "k = k + r", "IF k <= s THEN GOTO clearloop", "noclear:", "c = c + 1",
               "skip:", "NEXT i"],
+    # v2.2 (item C): the same array loop with the array in segment 2 (p fills the main pool, q overflows;
+    # $5B00+ is contended RAM since item C, $E000+ before) and in the main pool (control)
+    "seg2_array": ["DIM p(4000)", "DIM q(600)", "FOR k = 1 TO 4", "FOR i = 0 TO 599", "q(i) = i", "x = q(i)",
+                   "NEXT i", "NEXT k"],
+    "pool_array": ["DIM q(600)", "DIM p(3000)", "FOR k = 1 TO 4", "FOR i = 0 TO 599", "q(i) = i", "x = q(i)",
+                   "NEXT i", "NEXT k"],
 }
 ap = argparse.ArgumentParser(); ap.add_argument("cfgs", nargs="+"); ap.add_argument("--port", type=int, default=10580)
+ap.add_argument("--only", nargs="*", help="run only the programs whose names contain one of these")
 ap.add_argument("--root", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "build", "qual-builds"))
 a = ap.parse_args()
+if a.only:
+    PROGS = {k: v for k, v in PROGS.items() if any(s in k for s in a.only)}
 res = {}
 for i, cfg in enumerate(a.cfgs):
     m = Machine(os.path.join(a.root, cfg), a.port + i, label=cfg).start()

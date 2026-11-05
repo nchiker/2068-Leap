@@ -11,8 +11,9 @@
 ;      return address).
 ;   3. Stack grows into the arrays: DIM A(2000) then unbounded recursion ->
 ;      error 6, CSP >= ARRAYS_END, and the array's last element is intact.
-;   4. Arrays grow into the stack: DIM A(3300) alone fits (no error), the
-;      same DIM from 200 levels deep is refused with error 64.
+;   4. Arrays grow into the stack: DIM A(3800) (7,603 bytes: more than array segment 2 holds,
+;      7,424, so it can only live in the main pool; v2.2 item C: it was A(3300) while segment 2
+;      was 2 KB) alone fits (no error), the same DIM from 200 levels deep is refused with error 64.
 ; ============================================================================
     DEFINE TEST_V2_CUSTOM_CHECKS
     INCLUDE "rom/test_v2_harness_home_head.inc"
@@ -127,10 +128,10 @@ SRC2:
 SRC3:
     db "PROC F(N):CALL F(N+1):ENDP:DIM A(2000):A(1999)=9:CALL F(0)", 0
 SRC4A:
-    db "PROC F(N):IF N>0 THEN CALL F(N-1) ENDIF:IF N=0 THEN DIM A(3300) ENDIF:ENDP:"
+    db "PROC F(N):IF N>0 THEN CALL F(N-1) ENDIF:IF N=0 THEN DIM A(3800) ENDIF:ENDP:"
     db "CALL F(0)", 0
 SRC4B:
-    db "PROC F(N):IF N>0 THEN CALL F(N-1) ENDIF:IF N=0 THEN DIM A(3300) ENDIF:ENDP:"
+    db "PROC F(N):IF N>0 THEN CALL F(N-1) ENDIF:IF N=0 THEN DIM A(3800) ENDIF:ENDP:"
     db "CALL F(200)", 0
 
 ; Test-only stubs (same discipline as rom/test_v2_scalar_capacity32.asm).

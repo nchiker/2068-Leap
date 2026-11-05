@@ -7,6 +7,11 @@ breakpoint whose action prints TSTATESP * 16 + (A & 8) on ZEsarUX's standard out
 so the transfer runs undisturbed; the edges are then decoded back into blocks. After 2068-Leap-C's
 lcharness.tape_capture / tapes.decode / tapetest.py "roundtrip".
 
+v2.2 (item C): segment 2 is $5B00-$77FF, contended RAM. The cases all-seg2 and array-seg2 put an 808-byte
+Array Store entry there (SEG_ENTRY), so the real sender reads block 2's payload (SAVE ... ALL) and a stored
+array's descriptor (SAVE ... ARRAY) from $5B00+; their captured signals are played back into the real LOAD,
+which must give back the bytes at $5B00.. (LOAD ... ALL receives block 2 straight into $5B00+).
+
 Checked per case: two blocks (three for SAVE ... ALL: v2.2 sends segment 2 as block 2 after a gap of about
 4.5 s, measured here from the edges), each checksum valid; the header (type, name, length = the data block's,
 the format word in the autostart field); the data block = the bytes SAVE was asked to send; pilot
@@ -35,6 +40,18 @@ import tape_synth as TS               # noqa: E402
 TAPE_SLOTS = (14, 15, 16, 17, 18)     # breakpoint slots (set_bps uses 1-8, qcanary 9-11)
 PILOT_T, SYNC1_T, SYNC2_T, ZERO_T, ONE_T = 2168, 667, 735, 855, 1710     # the stock ROM's half-pulses
 PROG = ["x = 1", "y = 2", "z = x + y", "w = z * 2", "q = w + 1"]
+SEG_N = 400                           # elements of the segment-2 array: an 808-byte store entry
+SEG_DESC = bytes([1]) + SEG_N.to_bytes(2, "little") + b"".join(((i * 37 + 11) & 0xFFFF).to_bytes(2, "little")
+                                                                for i in range(SEG_N))
+SEG_ENTRY = (4 + 1 + len(SEG_DESC)).to_bytes(2, "little") + bytes([2, 1]) + b"a" + SEG_DESC   # [len][kind][1]"a"
+
+
+def put_seg(mm):
+    """An Array Store holding SEG_ENTRY at ARR2_BASE (segment 2 is bound to it by the session SAVE ... ALL
+    starts, or served by SAVE ... ARRAY from the store)."""
+    base = mm.sym("ARR2_BASE")
+    mm.write(base, SEG_ENTRY)
+    mm.poke16(mm.sym("PAS_END"), base + len(SEG_ENTRY))
 
 
 class StdoutProcess(qharness.ZEsarUXProcess):
@@ -220,6 +237,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--tree", default=".")
     ap.add_argument("--port", type=int, default=10880)
+    ap.add_argument("--only", nargs="*", help="run only these cases (program package all all-seg2 array-seg2); "
+                    "their playbacks follow, the others' do not")
     a = ap.parse_args()
     import v2_abi
     abi = v2_abi.load()
@@ -228,14 +247,23 @@ def main():
     m = Machine(a.tree, a.port, label="micsave")
     failed = 0
     edges_prog = store = edges_all = all_prog = None
+    seg_caps = {}
     try:
         m.start()
         cases = [("program", 'save "PROG"', lambda mm: mm.put_store(PROG), 0, "PROG", abi.fmt_word),
                  ("package", 'save "SH" EXT', lambda mm: mm.install_package("shapes"), 4, "SH", abi.pkg_word),
-                 ("all", 'save "ALLT" ALL', lambda mm: mm.put_store(PROG), 0, "ALLT", abi.fmt_word)]
+                 ("all", 'save "ALLT" ALL', lambda mm: mm.put_store(PROG), 0, "ALLT", abi.fmt_word),
+                 ("all-seg2", 'save "ALLS" ALL', lambda mm: (mm.put_store(PROG), put_seg(mm)), 0, "ALLS", abi.fmt_word),
+                 ("array-seg2", 'save "ARR" ARRAY a', put_seg, 8, "ARR", abi.fmt_word)]
+        if a.only:
+            cases = [c for c in cases if c[0] in a.only]
         for label, command, prep, htype, name, word in cases:
-            msg, bl, edges, asked = save_captured(m, command, prep, 3 if label == "all" else 2)
+            msg, bl, edges, asked = save_captured(m, command, prep, 3 if label.startswith("all") else 2)
             bad = ([] if msg == "SAVED" else ["message %r" % msg]) + check_blocks(bl, asked, htype, name, word)
+            if label == "all-seg2" and not bad and asked[2][1] != SEG_ENTRY:
+                bad.append("block 2 is %d bytes, not the %d-byte segment 2" % (len(asked[2][1]), len(SEG_ENTRY)))
+            if label == "array-seg2" and not bad and asked[1][1] != SEG_DESC:
+                bad.append("data block is not the stored descriptor (%d bytes)" % len(asked[1][1]))
             failed += bool(bad)
             print("%-5s save-mic-%-8s %s" % ("FAIL" if bad else "PASS", label,
                                               "; ".join(bad) or "pilots %r, widths %r" %
@@ -244,8 +272,15 @@ def main():
                 edges_prog, store = edges, asked[1][1]
             if label == "all" and not bad:
                 edges_all, all_prog = edges, asked[1][1][:int.from_bytes(asked[0][1][15:17], "little")]
+            if label in ("all-seg2", "array-seg2"):
+                seg_caps[label] = (edges, asked) if not bad else None
     finally:
         m.stop()
+    for label, cap in seg_caps.items():
+        failed += seg_playback(label, cap)
+    if a.only:
+        print("qmicsave: %d failures" % failed)
+        return 1 if failed else 0
     if edges_prog is None:
         print("SKIP  save-mic-playback (no clean program capture)")
         failed += 1
@@ -274,6 +309,37 @@ def main():
               "msg=%s, program %s" % ("PASS" if ok else "FAIL", r["msg"], "restored" if r["after"] == all_prog else "differs"))
     print("qmicsave: %d failures" % failed)
     return 1 if failed else 0
+
+
+def seg_playback(label, cap):
+    """Play a captured segment-2 signal back into the real LOAD. all-seg2: LOAD (V2_LOAD) receives block 2
+    straight into $5B00+, which must then hold exactly what was sent, with the program and PAS_END back.
+    array-seg2: LOAD ... ARRAY of the signal stores the same entry. Returns 1 on failure."""
+    if cap is None:
+        print("SKIP  save-mic-%s-playback (no clean capture)" % label)
+        return 1
+    import v2_prod as P
+    edges, asked = cap
+    base = P.sym("ARR2_BASE")
+    try:
+        if label == "all-seg2":
+            prog = asked[1][1][:int.from_bytes(asked[0][1][15:17], "little")]
+            r = P.tape_op(tape_from_edges(edges), existing=["k = 9"], name="ALLS")
+            got, pas = P.read(base, len(SEG_ENTRY)), P.w16(P.sym("PAS_END"))
+            ok = r["msg"] == "LOADED" and r["after"] == prog and got == asked[2][1] and pas == base + len(SEG_ENTRY)
+            note = "msg=%s, program %s, segment 2 %s, PAS_END=%04X" % (
+                r["msg"], "restored" if r["after"] == prog else "differs", "restored" if got == asked[2][1] else "differs", pas)
+        else:
+            P.boot(tape_from_edges(edges))
+            P.poke(P.sym("EDIT_LINE_BUF"), b'load "ARR" ARRAY a\0')
+            msg = P.call_prompt("V2_DISPATCH", maxi=900_000_000)
+            got, pas = P.read(base, len(SEG_ENTRY)), P.w16(P.sym("PAS_END"))
+            ok = msg == "LOADED" and got == SEG_ENTRY and pas == base + len(SEG_ENTRY)
+            note = "msg=%s, store entry %s, PAS_END=%04X" % (msg, "identical" if got == SEG_ENTRY else "differs", pas)
+    finally:
+        P.shutdown()
+    print("%-5s save-mic-%s-playback  %s" % ("PASS" if ok else "FAIL", label, note), flush=True)
+    return 0 if ok else 1
 
 
 def spans(bl):

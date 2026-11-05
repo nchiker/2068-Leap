@@ -9,7 +9,10 @@ later in the wrong place fails `make check` instead of corrupting a program at r
 * no RAM cell referenced by emitted HOME or EXROM code lies inside the pool + bytecode range
   (PROG_AREA_START .. V2_CODE_LIMIT) other than the region boundaries themselves;
 * no such cell lies inside the compile zone other than the zone's own cells;
-* the zone does not overlap the bytecode area, the package scratch or a pinned package cell.
+* the zone does not overlap the bytecode area, the package scratch or a pinned package cell;
+* v2.2 (item C): array segment 2 (ARR2_BASE .. ARR2_LIMIT, $5B00-$77FF) lies between the screen and
+  $7800 and below the pool, and no referenced RAM cell (other than its own bounds and MODE 1's
+  attribute-file address) lies inside it.
 
 A cell counts as "referenced" when its name appears in an emitted (not conditionally skipped) code
 line of build/test_basic.lst or build/exrom.lst, or in the definition of such a name (EQU closure).
@@ -94,6 +97,14 @@ def main():
         if zone_lo <= a < zone_hi and n not in ZONE_CELLS:
             errors.append("%s ($%04X) is inside the compile zone" % (n, a))
 
+    seg_lo, seg_hi = S["ARR2_BASE"], S["ARR2_LIMIT"]
+    if not (0x5B00 <= seg_lo < seg_hi <= 0x7800 and seg_hi <= pool_lo):
+        errors.append("segment 2 $%04X-$%04X is not inside $5B00-$77FF below the pool" % (seg_lo, seg_hi - 1))
+    seg_ok = {"ARR2_BASE", "ARR2_LIMIT", "SECOND_DISPLAY_ADDR"}
+    for n, a in sorted(S.items(), key=lambda x: x[1]):
+        if n in used and seg_lo <= a < seg_hi and n not in seg_ok:
+            errors.append("%s ($%04X) is inside array segment 2" % (n, a))
+
     reserved = [(n, a, s) for n, a, s in pins()]
     reserved.append(("PKG_SCRATCH", S.get("PKG_SCRATCH_BASE", 0xBFB0), 11))
     for n, a, s in reserved:
@@ -107,8 +118,9 @@ def main():
             print("check_ram_layout.py: " + e, file=sys.stderr)
         return 1
     print("check_ram_layout.py: pool $%04X-$%04X (%d B) -> bytecode $%04X-$%04X (%d B); zone $%04X-$%04X; "
-          "%d referenced RAM cells outside both" % (pool_lo, code - 1, code - pool_lo, code, limit - 1,
-                                                    limit - code, zone_lo, zone_hi - 1, len(ram)))
+          "segment 2 $%04X-$%04X (%d B); %d referenced RAM cells outside them"
+          % (pool_lo, code - 1, code - pool_lo, code, limit - 1, limit - code, zone_lo, zone_hi - 1,
+             seg_lo, seg_hi - 1, seg_hi - seg_lo, len(ram)))
     return 0
 
 

@@ -39,7 +39,7 @@ What the status line (the bottom row of the screen) can say. The program or comm
 | `NO PACKAGE` | `SAVE "name" EXT` with no package loaded |
 | `ARRAY NOT DIMD` | `SAVE ... ARRAY a` for an array the program does not declare |
 | `BAD ARRAY TAPE` | the tape block is not a valid array |
-| `ARRAY STORE FULL` | `LOAD ... ARRAY`: the tape's array is longer than the room available in the Array Store; the store is unchanged |
+| `ARRAY STORE FULL` | `LOAD ... ARRAY`: the tape's array is longer than the room available in the Array Store, or than the free memory above the program text, into which it is received first (a very large program text leaves less room than the store); the store is unchanged |
 | `LINE n/m` | not an error: the editor's status line (cursor line *n* of *m*) |
 | `2068 LEAP V2.1.1` | not an error: the ROM's version, shown after switching on until the first key |
 
@@ -181,7 +181,7 @@ The screen shows the message with the code from the first column in place of `n`
 | 10 | `RUNTIME ERROR n` | array index outside the array |
 | 11 | `RUNTIME ERROR n` | a fraction or out-of-range number stored in a numeric array, or used as an index |
 | 15 | `RUNTIME ERROR n` | argument out of range: `CHR$`, `STICK`, `SQR` of a negative number, an address of 65536 or more, `BEEP` seconds negative or over 273 or semitones outside -60 to 69 |
-| 64 | `OUT OF MEMORY` | an array does not fit |
+| 64 | `OUT OF MEMORY` | an array does not fit; also `MODE 1` while arrays occupy memory above `$6000` |
 | 65 | `ARRAY SIZE MISMATCH` | `DIM` differs from a stored array |
 | 66 | `BREAK` | CAPS SHIFT + SPACE |
 | 67 | `RUNTIME ERROR n` | a result beyond about 1.7 x 10^38 |
@@ -323,7 +323,7 @@ All figures were measured on the release with an otherwise empty program, unless
 | `EXIT FOR` statements in one loop | at least 261 |
 | depth of recursion of a one-parameter procedure | 739 |
 | program text | about 8.9 KB: the pool is 9211 bytes, shared with names, variables and arrays; 896 lines of `PRINT n` is the most that runs (897 lines fill the pool: `OUT OF MEMORY` at `RUN`) |
-| free main memory on an empty machine | 8967 bytes (`FREE()`); 2048 in the overflow segment (`FREE(1)`) |
+| free main memory on an empty machine | 8967 bytes (`FREE()`); 7424 in the overflow segment (`FREE(1)`) |
 | bytes of compiled program (the code area, separate from the pool) | 4011; 1000 lines of `x = 1` fit, 1010 do not (`OUT OF MEMORY` while compiling) |
 | procedure calls and `FOR` loops active at once | 12 bytes of the free gap each (739 deep recursion with an empty program) |
 | session variables created by immediate statements | about ten short names |
@@ -351,15 +351,15 @@ For `PEEK`, `POKE`, `USR`, `IN` and `OUT`. Addresses are decimal with hexadecima
 | 0 - 16383 (`$0000`-`$3FFF`) | 16 KB | the HOME ROM |
 | 16384 - 22527 (`$4000`-`$57FF`) | 6144 | the display: pixels |
 | 22528 - 23295 (`$5800`-`$5AFF`) | 768 | the display: colour attributes (one per 8 x 8 cell) |
-| **23296 - 24575** (`$5B00`-`$5FFF`) | **1280** | **not used by V2 -- free for your own data and machine code** |
-| 24576 - 30719 (`$6000`-`$77FF`) | 6144 | the second display file: used by `MODE 1` (extended-colour mode) as 8 x 1 colour attributes, one byte for every eight pixels of every scan line; free otherwise |
-| **30720 - 32767** (`$7800`-`$7FFF`) | **2048** | **not used by V2 -- free** |
+| 23296 - 24575 (`$5B00`-`$5FFF`) | 1280 | the start of the overflow segment (array segment 2, which runs to `$77FF`): the Array Store and arrays that did not fit in the main pool |
+| 24576 - 30719 (`$6000`-`$77FF`) | 6144 | the rest of the overflow segment; also the second display file used by `MODE 1` (extended-colour mode) as 8 x 1 colour attributes, one byte for every eight pixels of every scan line. `MODE 1` is refused (`OUT OF MEMORY`) while arrays occupy memory above `$6000`, and while it is on the segment ends at `$6000` |
+| **30720 - 32767** (`$7800`-`$7FFF`) | **2048** | **not used by V2 -- free for your own data and machine code** |
 | 32768 - 33369 (`$8000`-`$8259`) | 602 | system variables (editor, tape, calculator, graphics): do not touch |
 | 33370 - 42580 (`$825A`-`$A654`) | 9211 | the **main memory pool**: program text, variables, arrays (`FREE()`) |
 | 42581 - 46591 (`$A655`-`$B5FF`) | 4011 | the compiled program |
 | 46592 - 49151 (`$B600`-`$BFFF`) | 2560 | the system's fixed tables and registers, and the compiler's workspace |
 | 49152 - 57343 (`$C000`-`$DFFF`) | 8 KB | RAM under the EXROM: while a program runs the EXROM is switched in and this RAM is **not visible**; the FILL work area lives here; do not use |
-| 57344 - 59391 (`$E000`-`$E7FF`) | 2048 | the overflow segment: the Array Store and arrays that did not fit |
+| 57344 - 59391 (`$E000`-`$E7FF`) | 2048 | reserved and idle: do not use |
 | 59392 - 61695 (`$E800`-`$F0FF`) | 2304 | sprite images and saved backgrounds (the sprite package) |
 | 61696 - 61823 (`$F100`-`$F17F`) | 128 | reserved by the system (unused by this release): do not touch |
 | **61824 - 61991** (`$F180`-`$F227`) | **168** | **the user-defined characters**: 8 bytes for each of the codes 144 to 164; yours to `POKE` (see [User-defined characters](04_concepts.md#user-defined-characters)) |
@@ -371,7 +371,7 @@ For `PEEK`, `POKE`, `USR`, `IN` and `OUT`. Addresses are decimal with hexadecima
 
 Rules for your own machine code (`USR`):
 
-* Put it in `$5B00`-`$5FFF` (23296 to 24575), or `$7800`-`$7FFF`. Those are the two blocks that no part of the V2 system uses. Do not place it in the main pool, which belongs to the program.
+* Put it in `$7800`-`$7FFF` (30720 to 32767), the block that no part of the V2 system uses. Do not place it in the main pool, which belongs to the program, or in `$5B00`-`$77FF`, which holds the arrays of the overflow segment.
 * Enter with the address in HL; return with `RET` and the result in HL; any register may be destroyed; leave interrupts enabled; do not use more than a few dozen bytes of stack.
 
 Ports used by the system (`IN`/`OUT`): `$FE` (254) keyboard, speaker, border and tape; `$F5`/`$F6` (245/246) the AY sound chip's register and data ports; `$F4` (244) the memory bank select; `$FF` (255) the video mode and EXROM select; `$FB` (251) the printer. Changing a port the system keeps a copy of (`$FE`, `$FF`) with `OUT` can confuse the system.
