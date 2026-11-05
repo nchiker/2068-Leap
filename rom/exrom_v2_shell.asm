@@ -777,7 +777,7 @@ V2_COMPILE_AT_BASE:
 ; SA_BUILD -- RC (rom/v2_saveall.asm): lay the session out as a SAVE ... ALL block (a session existing): the span moves down to
 ; ARRAYS_END, the cells and the CRCs follow it (segment 2 is block 2, sent in place). SA_BUILT is set: V2_SHOW_MESSAGE calls
 ; SA_UNBUILD before the next message, so every SAVE / VERIFY outcome puts the span back.
-; Out: CF = the image would pass V2_CODE_LIMIT (nothing moved); else BC = its length from
+; Out: CF = the image would pass V2_CODE_LIMIT (nothing moved); else DE = its length from
 ; PROG_AREA_START. Destroys everything else.
 SA_BUILD:
         ld hl,(ARRAYS_END)
@@ -1217,17 +1217,13 @@ V2_SAVE:
     ld ix,EXTENSION_MODULE_BASE
     jr .call
 .program:
-    ld a,(V2_NAME_LEN)
-    ld b,a
-    ld de,(PROG_END)
-    ld hl,PROG_AREA_START
-    ex de,hl
-    or a
-    sbc hl,de
-    ex de,hl
-    ld hl,(V2_NAME_PTR)
+    ld hl,(PROG_END)
+    ld de,-PROG_AREA_START
+    add hl,de
+    ex de,hl                    ; DE = the program's length
+.prog_ix:                       ; (SAVE ... ALL joins here: DE = the block length)
     ld ix,PROG_AREA_START
-.call:
+.call:                          ; (B and HL, the name, are loaded here for every kind)
     ld a,(V2_NAME_LEN)
     ld b,a
     ld hl,(V2_NAME_PTR)
@@ -1256,15 +1252,12 @@ V2_SAVE:
 .all:
     call V2_ENSURE_SESSION
     jp nz,V2_COMPILE_RUN.error   ; the program does not compile: its message
-    call SA_BUILD                ; BC = the block length; CF = no room for it
+    call SA_BUILD                ; DE = the block length; CF = no room for it
     ld hl,V2_MSG_NOMEM
     jp c,V2_SHOW_MESSAGE
-    ld d,b
-    ld e,c
     xor a
     ld (STORAGE_REQUEST_TYPE),a
-    ld ix,PROG_AREA_START
-    jr .call
+    jr .prog_ix
 
 ; ============================================================================
 ; Dynamic Data Phase 2 -- array persistence. SAVE "name" ARRAY arrname /
@@ -1382,9 +1375,7 @@ V2_LOAD:
     ld a,(V2_NAME_LEN)
     or a
     jr z,.wildcard
-    ld b,a
-    ld hl,(V2_NAME_PTR)
-    call V2_PAD_NAME
+    call V2_PAD_NAME_V
     ld hl,STORAGE_LOAD_NAME_BUF
     ld b,10
     jr .receive

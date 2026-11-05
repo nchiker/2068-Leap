@@ -1,7 +1,11 @@
 ; rom/v2_saveall_crc.asm -- RC: the CRC routines of SAVE ... ALL (rom/v2_saveall.asm), placed in the
 ; HOME low-ROM space the production build no longer spends on the KTAB jump table.
 ; SA_CRC -- DE = CRC-16/CCITT (poly $1021, init $FFFF) of BC bytes at HL; SA_CRC_GO continues a CRC
-; in DE; SA_CRC_RANGE: of [HL, DE). Destroys AF, BC, HL.
+; in DE; SA_CRC_RANGE: of [HL, DE); SA_CRC_S: of segment 2 (ARR2_BASE .. ARR2_END, block 2 of a
+; SAVE ... ALL tape). Destroys AF, BC, HL.
+SA_CRC_S:
+        ld hl,ARR2_BASE
+        ld de,(ARR2_END)
 SA_CRC_RANGE:
         ex de,hl
         or a

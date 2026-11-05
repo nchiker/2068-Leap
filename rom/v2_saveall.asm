@@ -36,27 +36,26 @@ SA_S            equ SESS_SAVE + 4           ;   load
 SA_OLD_PAS      equ SESS_SAVE + 6
 
 ; SA_SIZES -- from the live cells: SA_W, SA_S; HL = W (block 1 holds W; segment 2, S bytes, is block 2).
-; Destroys AF, BC, DE.
+; Destroys AF, DE.
 SA_SIZES:
         ld hl,(ARR2_END)
-        ld bc,-ARR2_BASE
-        add hl,bc
+        ld a,h
+        sub ARR2_BASE >> 8                ; (ARR2_BASE's low byte is 0: ASSERT below; ARR2_END >= ARR2_BASE,
+        ld h,a                            ; so no borrow: CF clear for the sbc)
         ld (SA_S),hl
         ld hl,(SESS_CODE_END)
         ld de,(RT_SYMTAB_PTR)
-        or a
         sbc hl,de
         ld (SA_W),hl
         ret
+    ASSERT (ARR2_BASE & $FF) = 0
 
 ; SA_SEAL -- the end of SA_BUILD (rom/exrom_v2_shell.asm): DE = the end of the laid-out image (after
-; the cells). Appends the segment-2 CRC, the identity CRC and the block CRC. Out: BC = block 1's length
+; the cells). Appends the segment-2 CRC, the identity CRC and the block CRC. Out: DE = block 1's length
 ; from PROG_AREA_START, CF clear.
 SA_SEAL:
         push de
-        ld hl,ARR2_BASE
-        ld de,(ARR2_END)
-        call SA_CRC_RANGE                 ; DE = the CRC of block 2
+        call SA_CRC_S                     ; DE = the CRC of block 2
         pop hl
         call SA_PUT_DE
         push hl
@@ -71,8 +70,7 @@ SA_SEAL:
         call SA_PUT_DE
         ld bc,-PROG_AREA_START
         add hl,bc
-        ld b,h
-        ld c,l
+        ex de,hl
         or a
         ret
 
@@ -265,8 +263,9 @@ SA_RESTORE:
 .ptr_bad:
         pop hl
 .bad:
-        ld hl,(SA_OLD_PAS)
-        ld (PAS_END),hl                   ; the Array Store is untouched: keep its end
+        ld hl,(SA_OLD_PAS)                ; the Array Store is untouched: keep its end
+.set_pas:                                 ; (also SA_FINISH.empty: HL = ARR2_BASE)
+        ld (PAS_END),hl
         xor a
         inc a                             ; A = 1, and NZ: every return but "block 1 is good" is NZ
         ret
@@ -295,9 +294,7 @@ SA_RESTORE:
 ; segment 2 was written (or partly), so the Array Store is emptied; the caller keeps the program only.
 SA_FINISH:
         jr c,.empty
-        ld hl,ARR2_BASE
-        ld de,(ARR2_END)
-        call SA_CRC_RANGE                 ; DE = the CRC of what arrived
+        call SA_CRC_S                     ; DE = the CRC of what arrived
         ld hl,(SA_END)
         ld bc,-6                          ; [segment-2 CRC][identity CRC][block CRC] end the block
         add hl,bc
@@ -312,14 +309,10 @@ SA_FINISH:
         ld hl,(RT_SYMTAB_PTR)
         ld (VARS_START),hl
         ld (VM_CSP),hl
-        call VM_INIT_REGS
-        xor a
-        ret
+        jp VM_INIT_REGS                   ; returns A = 0 (it ends with xor a and stores only)
 .empty:
         ld hl,ARR2_BASE
-        ld (PAS_END),hl
-        ld a,1
-        ret
+        jr SA_RESTORE.set_pas             ; the Array Store emptied; A = 1
 
 ; SA_IS_ALL -- CF = the header just read (STORAGE_HEADER_BUF) is a SAVE ... ALL tape: PROGLEN below its length.
 SA_IS_ALL:

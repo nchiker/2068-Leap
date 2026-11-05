@@ -228,7 +228,12 @@ ARR_DIM:                        ; C = kind
 ; ---- tape side: name padding, lookup, validator, loader, saver ---------------
 
 ; V2_PAD_NAME -- B = filename length, HL = filename -> STORAGE_LOAD_NAME_BUF
-; padded with spaces to 10 characters (shared by V2_LOAD and V2_LOAD_ARRAY).
+; padded with spaces to 10 characters. V2_PAD_NAME_V: of the parsed name (V2_NAME_PTR/LEN),
+; shared by V2_LOAD and V2_LOAD_ARRAY. Destroys AF, BC, DE, HL.
+V2_PAD_NAME_V:
+    ld a,(V2_NAME_LEN)
+    ld b,a
+    ld hl,(V2_NAME_PTR)
 V2_PAD_NAME:
     ld de,STORAGE_LOAD_NAME_BUF
     ld c,10
@@ -366,10 +371,7 @@ V2_LOAD_ARRAY:
     ldir                         ; key name copied before EDIT_LINE_BUF is reused
     ld (ASV_DESC),de             ; the descriptor follows the name (ARR_VALIDATE reads it)
     push de                      ; -> IX
-    ld a,(V2_NAME_LEN)
-    ld b,a
-    ld hl,(V2_NAME_PTR)
-    call V2_PAD_NAME
+    call V2_PAD_NAME_V
     ld a,STORAGE_ARRAY_TYPE
     ld (STORAGE_REQUEST_TYPE),a
     call .find                   ; DE = where the entry goes once a same-name one is gone (PAS_END - EL); B = name length
