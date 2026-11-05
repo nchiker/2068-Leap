@@ -509,3 +509,40 @@ identity CRC separates the ROM builds (a v2.1.x ROM loads the program of a v2.2 
 program tapes are unchanged and load on v2.1.x. `docs/V2_SAVE_ALL_FORMAT.md`, the comment in `include/v2_package_abi.inc` and the tests
 (`sa-two-blocks` compares the header word with the ABI's, `sa-minor-rules` uses minor - 1 and minor + 1) follow. The earlier departure
 note in the item B outcome ("V2_FORMAT_MINOR 2 means older ROMs refuse every tape") is superseded by this entry.
+
+### Item C outcome (2026-11-05; owner decision G1: `$5B00-$7800`, the pool-room minimum, the MODE 1 interlock; built by an Opus agent in a worktree, reviewed by me; all [M])
+
+Commit `65f9947` (cherry-picked from `wt/item-c` `3df4f83`, tested on `fe4342c` + the item). 
+
+- **What:** array segment 2 is `$5B00-$77FF`, **7,424 bytes** (3.6 x the old 2,048 at `$E000`); `$E000-$E7FF` is idle and reserved; `$7800-$7FFF` stays free for user
+  machine code; `$5B00-$5FFF` is no longer a user area. `FREE(1)` is 7424 on an empty machine.
+  - `include/v2_layout.inc`: the two EQUs and new ASSERTs (within `$5B00-$7800`, below the program pool, low bytes 0, `$6000` inside the segment).
+  - **MODE 1 interlock** (`kernel/graphics/graphics.asm`, `GFX_SET_MODE`, V2 production only, 15 B HOME): entering MODE 1 while `ARR2_END > $6000` raises error
+    64 (`OUT OF MEMORY`) through `VM_ERR_ARRAY_SPACE` before anything changes, so old MODE package tapes are held to it too (the check is in the ROM, not
+    the package). **`ARR2_TOP`** (HOME, 11 B): the effective top, `$6000` while `GFX_MODE` is 1; used by `VM_ARENA_FIT` and `FREE(1)`. The shell commands always run in
+    MODE 0 (`V2_COMMAND_LOOP` resets the display first), so the loader and the SAVE ALL chain keep the constant limit.
+  - **Loader** (`V2_LOAD_ARRAY`): passes `min(store room, pool room)` to `STORAGE_LOAD` (13 B EXROM), where the pool room is `V2_CODE_LIMIT` minus the staged
+    descriptor; an array longer than that is `ARRAY STORE FULL`. `ARR_VALIDATE`'s count guard is `< 4096` (an ASSERT ties it to the store size).
+  - **Two places that would have broken `LOAD ... ALL` with the new range, found and fixed:** the SA_CHAIN order (segment 2 now lies BELOW the program pool, so its
+    four words come first) and SA_RESTORE's array-pointer check (segment 2 is tested before the arena).
+  - The Q-04 overflow check in `VM_ARENA_FIT` stays (a string array over ~40 KB still wraps from `$5B00`); only its comment changed.
+- **Bytes** (`make budget`, `fe4342c` -> with the item): HOME 347 -> **326** free (-21), EXROM 141 -> **128** free (-13). RAM 0.
+- **Tests** (`make test` in the worktree, 1,986 s, exit 0; after three runs that stopped at test-side mistakes): prod-regress 127, **prod-arrays 111** (was 105),
+  known-defects 15, **saveall 24**, qmicsave 9 checks, lifecycle 23, qvmedge 221/221, qual 670 PASS + 1 XFAIL + 2 N/A, maint-qual all; `make doc-examples` 327/327;
+  `tools/qtapetol.py all-seg2` 10 of 10 (block 2 received into `$5B00+` at speed 0.8-1.2, bit widths 0.9/1.1, jitter 20%, pilot 1000, a 50 ms dropout).
+  - Tests that encoded the old size and were rescaled or replaced (the ROM was right each time): `control_stack` (standalone: `DIM A(3300)` now fits segment 2, so the
+    "deep recursion refuses" case uses `A(3800)`, 7,603 B, more than the segment holds), `dim-under-recursion` (production checks, same), and three new cases written
+    without being run that used index 100 on a 100-element array (error 10 stopped the program before the interesting statement).
+  - New cases: `arr-seg2-7k-string-roundtrip`, `arr-load-longer-than-pool`, `arr-mode1-interlock`, `arr-mode1-dim-limit`, `arr-free1-seg2-size`, `arr-store-ends-at-limit`,
+    `sa-seg2-7k`, and in `qmicsave` `all-seg2` and `array-seg2` (the REAL sender reading its payload from `$5B00+`, with playback), in `qtapetol` ten `all-seg2` cases.
+- **Speed (`tools/qual/qbench.py`, T-states around the real `V2_RUN_STORED`):** an array loop in segment 2: 11,889,982 T at `$E000` vs 11,905,559 T at `$5B00` (**+0.13 %**);
+  the same loop on a main-pool array: 11,846,554 both. **Caution:** ZEsarUX may not model the TS2068 video-RAM contention that the plan quotes (15-23 % slower array access in
+  `$4000-$7FFF` on Leap-C), so this figure is the emulator's and not the machine's. The manual states no speed claim; the contended-RAM timing goes to the hardware checklist
+  (item E). The contended-RAM tape I/O (the real sender and receiver on `$5B00+` payloads) is measured above and passes.
+- **Manual and docs** (Sonnet draft, reviewed against the code; examples recalibrated by me): the memory map, Arrays/Array Store/Memory concepts, `FREE(1)`, the MODE keyword and
+  the package MODE section, error 64's row, the USR rules and every example that used `23296` (now `30720`, `$7800`), `con.store.3` (`DIM big(3706)` leaves the same 2 spare bytes),
+  `V2_LANGUAGE_REFERENCE.md`, `V2_SAVE_ALL_FORMAT.md`, `PACKAGE_ABI.md` (packages keep out of `$5B00-$77FF` and `$E000-$E7FF`; the array-tape count limit is `< 4096`),
+  `TESTING.md`, `V2_HARDWARE_CHECKLIST.md`. Left alone as historical: `RAM_BUDGET.md:35`, `V2_ROM_RAM_BUDGET.md:63`, R10_*/R8_* reports, `V2_DOCUMENTATION_FINDINGS.md`.
+- **Risks noted:** a third-party package using `$5B00-$77FF` as scratch now corrupts arrays (no shipped package does; the ABI document says so); the manual's earlier promise of
+  `$5B00-$5FFF` for user machine code is withdrawn (it moves to `$7800-$7FFF`).
+- **With D:** item D costs 137 B of EXROM (see its entry); C + D together do not fit above the 32 B reserve without moving code to HOME (gate G2).
