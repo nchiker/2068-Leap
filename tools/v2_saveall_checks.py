@@ -285,7 +285,7 @@ def _prep_entry():
 BIGPROG = ["DIM big(3600)", "DIM o(900)", "o(899) = 31", "DIM b(5)", "b(3) = 12"]
 
 
-@case("sa-two-blocks", "v2.2: SAVE ALL sends the header, block 1 (no segment 2) and block 2 = segment 2 as it is in memory; its CRC is in the tail; minor 2")
+@case("sa-two-blocks", "v2.2: SAVE ALL sends the header, block 1 (no segment 2) and block 2 = segment 2 as it is in memory; its CRC is in the tail; the format word is unchanged")
 def sa_two_blocks():
     P.boot()
     P.put_store(BIGPROG)
@@ -301,7 +301,7 @@ def sa_two_blocks():
     c2 = b1[len(b1) - 6] | b1[len(b1) - 5] << 8
     c1 = b1[-2] | b1[-1] << 8
     ok = msg == "SAVED" and [f for f, _ in blocks] == [0, 0xFF, 0xFF] and b2 == mem and n > 0 and hlen == len(b1) \
-        and c2 == crc16(mem) and c1 == crc16(b1[:-2]) and (word & 0xFF) == 2 and proglen(hdr) < len(b1)
+        and c2 == crc16(mem) and c1 == crc16(b1[:-2]) and word == TS._abi().fmt_word and proglen(hdr) < len(b1)
     return ok, "msg=%s seg2=%d b2==mem:%s hdr.len=%d b1=%d crc2:%s crc1:%s word=%04X" % (
         msg, n, b2 == mem, hlen, len(b1), c2 == crc16(mem), c1 == crc16(b1[:-2]), word)
 
@@ -339,16 +339,16 @@ def sa_gap_space():
     return msg == "ABORTED" and len(blocks) == 2 and x == 6, "msg=%s blocks=%d x+1=%s" % (msg, len(blocks), x)
 
 
-@case("sa-minor-rules", "v2.2: a minor-1 tape (older ROM) loads its program only; a minor-3 tape is BAD TAPE VERSION")
+@case("sa-minor-rules", "v2.2: an older-minor ALL tape from another ROM loads its program only; a newer-minor tape is BAD TAPE VERSION")
 def sa_minor_rules():
     hdr, data, msg = session_save(PROG, IMM)
     old = bytearray(hdr)
-    old[13] = 1                                                     # the version word's low byte = the minor
+    old[13] = TS._abi().fmt_minor - 1                               # the version word's low byte = the minor: an older one
     bad = bytearray(data)
     bad[-4] ^= 0x01                                                 # an older ROM's identity CRC cannot match
     r1 = load(bytes(old), refresh_crc(bad), seg=False)
     new = bytearray(hdr)
-    new[13] = 3
+    new[13] = TS._abi().fmt_minor + 1                               # a newer one: refused before any byte is received
     r3 = load(bytes(new), data, seg=False)
     return r1["msg"] == "NO_VARS" and r1["after"] == TS.source_records(PROG) and r3["msg"] == "BAD_VERSION", \
         "minor1=%s minor3=%s" % (r1["msg"], r3["msg"])

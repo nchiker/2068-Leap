@@ -1,8 +1,8 @@
 # SAVE "name" ALL -- tape format, checks and lifecycle
 
 Status: implemented in the V2 Enhanced release (`integration/v2-final-rom`, commit `07616e7`; the
-identity CRC covers the package registry from `ef81f49`). **Format minor 2 (v2.2): segment 2 is a second
-data block** (section "The block"). Code: `rom/v2_saveall.asm` (HOME: layout, CRC, LOAD checks, the gap),
+identity CRC covers the package registry from `ef81f49`). **From v2.2 segment 2 is a second
+data block** (section "The block"); the format minor stays 1. Code: `rom/v2_saveall.asm` (HOME: layout, CRC, LOAD checks, the gap),
 `rom/v2_saveall_crc.asm` (HOME, in the old KTAB space), `SA_BUILD`, the block-2 send in `V2_SAVE` and
 `V2_RECV_S` in `rom/exrom_v2_shell.asm` (EXROM). Tests: `tools/v2_saveall_checks.py` (part of
 `tools/run_v2_prod_tests.sh` and so of `make test`).
@@ -23,7 +23,7 @@ program does not compile, its compile error is shown and nothing is written.
 ## The block
 
 A 17-byte header (type 0, name, length, the V2 format word in the autostart field, PROGLEN), a data
-block 1 and, from format minor 2, a data block 2. PROGLEN -- the Spectrum "program part" length -- is
+block 1 and, from v2.2, a data block 2. PROGLEN -- the Spectrum "program part" length -- is
 the program's own length; a plain `SAVE` has PROGLEN = data length (and no block 2); in a
 `SAVE ... ALL` tape block 1 is longer than PROGLEN and the rest is the session. The header's length is
 block 1's. **Block 2 is segment 2, sent from its own address** (`ARR2_BASE .. ARR2_END`, S bytes, no
@@ -39,7 +39,7 @@ copy), after a silent gap of about 4.5 s (`SA_GAP`; see "The gap"). Block 1:
 | ... | 2 | the **identity CRC**: CRC-16 of HOME `$0000-$3FFF`, then EXROM `$C000-$DFFF`, then the package registry `EXT2_TABLE` (168 bytes: each slot's generation, name, entry) |
 | ... | 2 | CRC-16 of every preceding byte of block 1 (program included) |
 
-The tail is 55 bytes (it was 53 in minor 1, where segment 2 was part of this block).
+The tail is 55 bytes (it was 53 before v2.2, when segment 2 was part of this block).
 
 CRC-16/CCITT-FALSE: polynomial `$1021`, initial value `$FFFF`, MSB first, no final XOR, stored low
 byte first. `tools/v2_saveall_checks.py` has a Python reference (`crc16`).
@@ -48,14 +48,16 @@ Block 1 is laid out *in place*: for the SAVE the W span is moved down to `ARRAYS
 the tail is written after it, the block is sent, and the span is moved back; segment 2 is sent where it
 is. So SAVE ALL needs no free memory for a copy; its one limit is that block 1 must end at or below
 `V2_CODE_LIMIT` (`$B600`): bytecode + 55 bytes must not exceed the bytecode area (~4.0 KB) plus the free
-main memory, which holds in practice. Otherwise `OUT OF MEMORY` and nothing is sent. (In minor 1 segment
+main memory, which holds in practice. Otherwise `OUT OF MEMORY` and nothing is sent. (Before v2.2 segment
 2 was part of this image, which is what limited a program with a large Array Store.)
 
-The tape format word's minor version is 2 from v2.2 (`V2_FORMAT_MINOR`; it was 1 for the first ALL tapes).
-The version rule is unchanged: a tape's minor may not exceed the ROM's, so older V2 ROMs refuse every
-tape this ROM writes (instead of misreading a session), and this ROM loads minor-1 and minor-0 tapes.
-A minor-1 ALL tape comes from another ROM build, so its identity CRC cannot match: it loads its program
-and says `NO VARIABLES`, as any other-ROM tape does (its single-block layout is never interpreted).
+The tape format word's minor version stays **1** in v2.2 (`V2_FORMAT_MINOR`; owner decision: practically no
+ALL tapes exist yet, and no new stamp is needed). The identity CRC already separates ROM builds: a v2.1.x ROM
+that meets a v2.2 ALL tape fails the identity check, loads the program and says `NO VARIABLES` (it never
+interprets the new layout), and a v2.2 ROM does the same with a v2.1.x ALL tape (whose single-block layout is
+never interpreted either). Plain program tapes are unchanged, so v2.2 program tapes load on v2.1.x. The version
+rule is unchanged: a tape's minor may not exceed the ROM's. (The v2.1.x behaviour follows from the order of its LOAD
+checks, which stop at the identity CRC before they use anything else; it has not been run on a v2.1.x ROM.)
 
 ## The gap between the blocks
 

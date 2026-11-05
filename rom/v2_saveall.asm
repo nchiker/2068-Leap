@@ -4,7 +4,7 @@
 ; docs/V2_SAVE_ALL_FORMAT.md.
 ;
 ; A SAVE ... ALL tape is a program block (header type 0) whose header PROGLEN (the Spectrum "program
-; part" length) is shorter than its data length, FOLLOWED (format minor 2, v2.2) by a second data block:
+; part" length) is shorter than its data length, FOLLOWED (v2.2; the format minor stays 1) by a second data block:
 ; segment 2, sent straight from its own address after a silent gap long enough for LOAD's checks of the
 ; first block (SA_GAP). Block 1 holds the program and then the variable session -- the memory a stopped
 ; program's session occupies, as an exact image:

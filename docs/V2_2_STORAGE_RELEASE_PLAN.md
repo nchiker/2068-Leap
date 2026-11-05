@@ -500,3 +500,12 @@ R2 (the SPACE test of `V2_RECV_S` into HOME: it hides the hook `press_space` use
 - **Bytes** (`make budget`): HOME 325 -> **347** free (+22), EXROM 120 -> **141** free (+21). KTAB hole: 5 B left.
 - **Tests** (`make test`, 30 min, exit 0): prod-regress 127, prod-arrays 105, known-defects 15, saveall 23, qmicsave 0 failures (5 checks),
   lifecycle 23, qvmedge 221/221, qual 670 PASS + 1 XFAIL + 2 N/A, maint-qual all; `make doc-examples` 327/327.
+
+### G3 decision on the tape version stamp (2026-11-05; owner: "practically no tapes have been created ... option 2, whatever has the smallest ROM impact")
+
+`V2_FORMAT_MINOR` goes back to **1** (the item B bump to 2 is withdrawn). No ROM size change (a constant; HOME and EXROM free bytes
+as before), so the smallest impact of the three options. A v2.2 `SAVE ... ALL` tape carries the same version word as a v2.1.x one; the
+identity CRC separates the ROM builds (a v2.1.x ROM loads the program of a v2.2 ALL tape and says `NO VARIABLES`, and the reverse), plain
+program tapes are unchanged and load on v2.1.x. `docs/V2_SAVE_ALL_FORMAT.md`, the comment in `include/v2_package_abi.inc` and the tests
+(`sa-two-blocks` compares the header word with the ABI's, `sa-minor-rules` uses minor - 1 and minor + 1) follow. The earlier departure
+note in the item B outcome ("V2_FORMAT_MINOR 2 means older ROMs refuse every tape") is superseded by this entry.
