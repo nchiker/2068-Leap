@@ -455,6 +455,8 @@ fresh
 
 The character code of the first character of *a$*, or 0 if *a$* is empty.
 
+(`CODE` is also a word of the tape commands: `SAVE "name" CODE start,length` and `LOAD "name" CODE` save and load raw memory. See SAVE, LOAD and VERIFY.)
+
 ```basic ex=kw.code.1
 PRINT CODE("A")
 PRINT CODE("abc")
@@ -1486,7 +1488,7 @@ LLIST
 
 ## LOAD
 
-`LOAD "name"` `LOAD ""` `LOAD "name" ARRAY array` `LOAD "name" EXT` -- **command**
+`LOAD "name"` `LOAD ""` `LOAD "name" ARRAY array` `LOAD "name" EXT` `LOAD "name" CODE` `LOAD "name" CODE start` `LOAD "name" CODE start,length` -- **command**
 
 Reads from tape what `SAVE` wrote:
 
@@ -1496,6 +1498,9 @@ Reads from tape what `SAVE` wrote:
 | `LOAD ""` | the next program on the tape, whatever its name |
 | `LOAD "name" ARRAY a` | one array, into the Array Store (the program is not touched); an array of that name already in the store is replaced |
 | `LOAD "name" EXT` | a package (see [Part 5](05_packages.md)) |
+| `LOAD "name" CODE` | a block of raw memory, back to the address it was saved from (the tape records it) |
+| `LOAD "name" CODE start` | the same block, at *start* instead |
+| `LOAD "name" CODE start,length` | as the previous, with *length* as a **maximum**: see below |
 
 ```basic ex=kw.load.1
 PRINT "from tape"
@@ -1506,7 +1511,30 @@ power on
 LOAD ""                                [LOADED]
 ```
 
-The result is shown on the status line: `LOADED`, or `LOAD FAILED`, `BAD TAPE VERSION`, `NO VARIABLES`, `ABORTED`; for `LOAD ... ARRAY` also `ARRAY STORE FULL` (the array is longer than the room available in the store) and `BAD ARRAY TAPE`. Details are under SAVE and in the concept [Tapes](04_concepts.md#tapes).
+**`LOAD ... CODE`.** *start* and *length* are decimal whole numbers from 0 to 65535, digits only (no expressions, no variables). `LOAD "" CODE` (no name) is a `SYNTAX ERROR`. The length is a maximum, as in stock BASIC: a tape longer than the room (*length*, or 65536 - *start* when none is given) is `LOAD FAILED` and nothing is stored; a shorter tape loads its own length and says `LOADED`. `CODE 0` with no length means "the address on the tape"; `CODE 0,n` with a length really means address 0, which is ROM, so nothing can be stored there and the result is `LOAD FAILED`. `LOAD ... CODE` skips a program tape and goes on to the next header on the tape; likewise a `CODE` tape is skipped by a plain `LOAD "name"`, by `LOAD ... ARRAY` and by `LOAD ... EXT`.
+
+`LOAD ... CODE` ends the variable session (the variables of a stopped program are gone, as after every `LOAD`), even if the load then fails; the program, the Array Store and loaded packages are not touched.
+
+There is **no range checking**: see SAVE for the addresses that are safe.
+
+The result is shown on the status line: `LOADED`, or `LOAD FAILED`, `BAD TAPE VERSION`, `NO VARIABLES`, `ABORTED`, and `SYNTAX ERROR` for bad `CODE` arguments; for `LOAD ... ARRAY` also `ARRAY STORE FULL` (the array is longer than the room available in the store) and `BAD ARRAY TAPE`. Details are under SAVE and in the concept [Tapes](04_concepts.md#tapes).
+
+The program is not changed by loading a code block, so a code tape is shown with a trivial program:
+
+```basic ex=kw.codetape.1
+PRINT "code"
+```
+```tape ex=kw.codetape.1
+: POKE 30720, 65
+: POKE 30721, 66
+SAVE "blob" CODE 30720,2               [SAVED]
+power on
+LOAD "blob" CODE                       [LOADED]
+: PRINT PEEK(30720)
+65
+: PRINT PEEK(30721)
+66
+```
 
 **See also** SAVE, VERIFY.
 
@@ -2323,7 +2351,7 @@ SYNTAX ERROR 3
 
 ## SAVE
 
-`SAVE "name"` `SAVE "name" ALL` `SAVE "name" ARRAY array` `SAVE "name" EXT` -- **command**
+`SAVE "name"` `SAVE "name" ALL` `SAVE "name" ARRAY array` `SAVE "name" EXT` `SAVE "name" CODE start,length` -- **command**
 
 Writes to tape (or the emulator's tape output). *name* is up to 10 characters.
 
@@ -2333,14 +2361,29 @@ Writes to tape (or the emulator's tape output). *name* is up to 10 characters.
 | `SAVE "name" ALL` | the program **and** the variables and arrays it has now, and the Array Store |
 | `SAVE "name" ARRAY a` | one array |
 | `SAVE "name" EXT` | the package currently loaded (`NO PACKAGE` if none) |
+| `SAVE "name" CODE start,length` | *length* bytes of memory, starting at address *start* |
 
 Each ends by showing `SAVED` on the status line. `SAVE ... ALL` lets you stop work and carry on later: after the `LOAD`, `: PRINT x`, `: GOTO label` and the rest see the saved values. The variables come back only on the same ROM version, with the same package (if any) loaded first; otherwise the program loads and the message says `NO VARIABLES`.
+
+**`SAVE ... CODE`** writes raw memory, as in stock Sinclair BASIC. *start* and *length* are decimal whole numbers from 0 to 65535, digits only (no expressions, no variables), and *start* + *length* must not pass 65536. A *length* of 0, a missing or malformed number, or an empty name (`SAVE "" CODE ...`) is a `SYNTAX ERROR`; for `CODE` the name is required. `LOAD "name" CODE` brings the bytes back (see LOAD) and `VERIFY "name" CODE` compares them with memory (see VERIFY).
+
+The tape is Leap's own: its header is of type 3 and carries Leap's format word. It is **not** interchangeable with a stock Spectrum or TS2068 `CODE` tape, and a stock `CODE` tape is refused with `BAD TAPE VERSION`. There is one rare exception: a stock tape saved from address 33024 or 33025 can pass the version check, so never `LOAD` a stock `CODE` tape without a start address.
+
+There is **no range checking**. These ranges are unsafe:
+
+* `$C000`-`$DFFF` (49152 to 57343) is the EXROM window: a `SAVE` there sends ROM bytes, and loaded bytes are lost.
+* The machine stack lies below `$FF00`, and the system's fixed area is `$B600`-`$BFFF`: loading over either crashes the machine.
+* The program area (the program text, the tables and the compiled program, `$825A`-`$B5FF`) is overwritten by a load there.
+* `$5B00`-`$77FF` is the array segment (arrays and the Array Store; see the [memory map](07_appendices.md#appendix-e-memory-map)), and `$0000`-`$3FFF` is ROM.
+
+The safe range for your own machine code and data is `$7800`-`$7FFF` (30720 to 32767, 2048 bytes). The screen, `$4000`-`$5AFF`, is safe too (it is the display).
 
 **Notes.**
 
 * `SAVE ... ALL`, `LOAD` and `VERIFY` of an ALL tape pause for **about 2.4 seconds** before the tones start (the program's identity check is calculated first).
 * If a very large program plus its overflow arrays cannot be laid out for saving, `SAVE ... ALL` says `OUT OF MEMORY`; `SAVE "name"` still works.
 * A tape written by this version cannot be loaded by earlier V2 ROMs; V1 and stock Spectrum tapes are refused with `BAD TAPE VERSION`.
+* `SAVE ... CODE` takes the bytes at the speed and with the pilot tone of every other tape, and SPACE aborts it (`ABORTED`).
 
 ```basic ex=kw.save.1
 x = 5
@@ -2691,7 +2734,7 @@ HELLO, WORLD 1
 
 `USR(address)` -- **function**
 
-Runs the machine-code routine that starts at *address*, and gives its result as a number from 0 to 65535.
+Runs the machine-code routine that starts at *address*, and gives its result as a number from 0 to 65535. A routine can be saved and loaded back with `SAVE "name" CODE start,length` and `LOAD "name" CODE` (see SAVE and LOAD).
 
 The routine's contract:
 
@@ -2787,9 +2830,11 @@ PRINT VAL("")
 
 ## VERIFY
 
-`VERIFY "name"` -- **command**
+`VERIFY "name"` `VERIFY "name" CODE` `VERIFY "name" CODE start` `VERIFY "name" CODE start,length` -- **command**
 
 Compares the tape with what is in memory, without changing memory, and reports `VERIFIED` or `VERIFY FAILED`. `VERIFY` of a program saved with `ALL` also checks the saved variables, and, like `SAVE ... ALL`, takes about 2.4 seconds to get ready.
+
+`VERIFY "name" CODE` compares a code tape with the memory at the address it was saved from; `VERIFY "name" CODE start` compares it with the memory at *start*. It writes nothing, and it leaves everything as it was, the variable session included (a `LOAD ... CODE` ends the session, a `VERIFY ... CODE` does not). A *length* given after *start* is a maximum, as for LOAD, so a shorter tape verifies its own length.
 
 With the same program in memory, the tape verifies; change one character of the program and it does not:
 
@@ -2828,6 +2873,19 @@ power on
 store: x = 5 ;; y$ = "hi"
 RUN
 VERIFY "demo"                          [VERIFIED]
+```
+
+A code tape verifies against the bytes in memory:
+
+```basic ex=kw.codetape.2
+PRINT "code"
+```
+```tape ex=kw.codetape.2
+: POKE 30720, 65
+SAVE "blob" CODE 30720,1               [SAVED]
+power on
+: POKE 30720, 65
+VERIFY "blob" CODE                     [VERIFIED]
 ```
 
 **See also** SAVE, LOAD.

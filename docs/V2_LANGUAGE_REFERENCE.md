@@ -107,6 +107,7 @@ Functions are always written with brackets, even without an argument.
 | `SAVE "name" ALL` | program + variable session + Array Store in one tape block (`V2_SAVE_ALL_FORMAT.md`); about 2.4 s identity check before the tones, also on `LOAD` and `VERIFY` of an ALL tape |
 | `SAVE "name" ARRAY a` / `LOAD "name" ARRAY a` | one array to / from tape; `LOAD ... ARRAY` puts it in the Array Store, where it survives `RUN`, `CLEAR` and edits, and a matching `DIM` adopts it |
 | `SAVE "name" EXT` / `LOAD "name" EXT` | a loadable package (`PACKAGE_ABI.md`); `NO PACKAGE` if `SAVE` has none |
+| `SAVE "name" CODE start,length` / `LOAD "name" CODE [start[,length]]` / `VERIFY "name" CODE [start[,length]]` | raw memory, as in stock BASIC. `start`, `length`: decimal whole numbers 0 to 65535 (no expressions); `start` + `length` at most 65536; a length of 0, a bad number or an empty name is `SYNTAX ERROR`. `LOAD` goes to the address on the tape unless `start` is given (`CODE 0` = the tape's address; `CODE 0,n` = address 0, ROM, `LOAD FAILED`); a given length is a maximum (a longer tape is `LOAD FAILED`, nothing stored; a shorter one loads its own length). Leap's own type-3 tape: not a stock CODE tape (`BAD TAPE VERSION`; never `LOAD` one without a start address). `LOAD ... CODE` ends the variable session; `VERIFY ... CODE` does not. No range checking; safe: `$7800`-`$7FFF` and the screen |
 
 ## 8. Errors
 

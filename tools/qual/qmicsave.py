@@ -17,9 +17,12 @@ Checked per case: two blocks (three for SAVE ... ALL: v2.2 sends segment 2 as bl
 the format word in the autostart field); the data block = the bytes SAVE was asked to send; pilot
 counts (8,063 header, 3,223 data, within one); every pulse the stock ROM's width -2..+16 T. Program
 SAVE also plays the captured signal back as EAR input to the real LOAD (tools/v2_prod.tape_op), which
-must restore the program.
+must restore the program. v2.2 (item D): `code` saves CODE_N bytes from CODE_START (header type 3, PROGLEN
+= the start); its data block must be the memory range byte for byte, and its playback through
+LOAD "BLOB" CODE must put the range back after it was wiped.
 
 Usage: TS2068_DEBUG_STATE_DIR=<dir> TS2068_V2_PORT=<port> python3 tools/qual/qmicsave.py [--tree DIR] [--port N]
+       [--only CASE ...]   (program package all all-seg2 array-seg2 code; only their playbacks follow)
 """
 import argparse
 import os
@@ -52,6 +55,8 @@ def put_seg(mm):
     base = mm.sym("ARR2_BASE")
     mm.write(base, SEG_ENTRY)
     mm.poke16(mm.sym("PAS_END"), base + len(SEG_ENTRY))
+CODE_START, CODE_N = 30720, 300                      # $7800: the users' machine-code RAM
+CODE_DATA = bytes((i * 29 + 7) & 0xFF for i in range(CODE_N))
 
 
 class StdoutProcess(qharness.ZEsarUXProcess):
@@ -237,7 +242,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--tree", default=".")
     ap.add_argument("--port", type=int, default=10880)
-    ap.add_argument("--only", nargs="*", help="run only these cases (program package all all-seg2 array-seg2); "
+    ap.add_argument("--only", nargs="*", help="run only these cases (program package all all-seg2 array-seg2 code); "
                     "their playbacks follow, the others' do not")
     a = ap.parse_args()
     import v2_abi
@@ -247,14 +252,16 @@ def main():
     m = Machine(a.tree, a.port, label="micsave")
     failed = 0
     edges_prog = store = edges_all = all_prog = None
-    seg_caps = {}
+    seg_caps = {}                     # all-seg2, array-seg2, code: their captures, played back below
     try:
         m.start()
         cases = [("program", 'save "PROG"', lambda mm: mm.put_store(PROG), 0, "PROG", abi.fmt_word),
                  ("package", 'save "SH" EXT', lambda mm: mm.install_package("shapes"), 4, "SH", abi.pkg_word),
                  ("all", 'save "ALLT" ALL', lambda mm: mm.put_store(PROG), 0, "ALLT", abi.fmt_word),
                  ("all-seg2", 'save "ALLS" ALL', lambda mm: (mm.put_store(PROG), put_seg(mm)), 0, "ALLS", abi.fmt_word),
-                 ("array-seg2", 'save "ARR" ARRAY a', put_seg, 8, "ARR", abi.fmt_word)]
+                 ("array-seg2", 'save "ARR" ARRAY a', put_seg, 8, "ARR", abi.fmt_word),
+                 ("code", 'save "BLOB" CODE %d,%d' % (CODE_START, CODE_N),
+                  lambda mm: mm.write(CODE_START, CODE_DATA), 3, "BLOB", abi.fmt_word)]
         if a.only:
             cases = [c for c in cases if c[0] in a.only]
         for label, command, prep, htype, name, word in cases:
@@ -264,6 +271,9 @@ def main():
                 bad.append("block 2 is %d bytes, not the %d-byte segment 2" % (len(asked[2][1]), len(SEG_ENTRY)))
             if label == "array-seg2" and not bad and asked[1][1] != SEG_DESC:
                 bad.append("data block is not the stored descriptor (%d bytes)" % len(asked[1][1]))
+            if label == "code" and not bad and (asked[1][1] != CODE_DATA or
+                                                int.from_bytes(asked[0][1][15:17], "little") != CODE_START):
+                bad.append("CODE: data block is not the range, or PROGLEN is not the start")
             failed += bool(bad)
             print("%-5s save-mic-%-8s %s" % ("FAIL" if bad else "PASS", label,
                                               "; ".join(bad) or "pilots %r, widths %r" %
@@ -272,7 +282,7 @@ def main():
                 edges_prog, store = edges, asked[1][1]
             if label == "all" and not bad:
                 edges_all, all_prog = edges, asked[1][1][:int.from_bytes(asked[0][1][15:17], "little")]
-            if label in ("all-seg2", "array-seg2"):
+            if label in ("all-seg2", "array-seg2", "code"):
                 seg_caps[label] = (edges, asked) if not bad else None
     finally:
         m.stop()
@@ -312,9 +322,10 @@ def main():
 
 
 def seg_playback(label, cap):
-    """Play a captured segment-2 signal back into the real LOAD. all-seg2: LOAD (V2_LOAD) receives block 2
-    straight into $5B00+, which must then hold exactly what was sent, with the program and PAS_END back.
-    array-seg2: LOAD ... ARRAY of the signal stores the same entry. Returns 1 on failure."""
+    """Play a captured signal back into the real LOAD. all-seg2: LOAD (V2_LOAD) receives block 2 straight
+    into $5B00+, which must then hold exactly what was sent, with the program and PAS_END back.
+    array-seg2: LOAD ... ARRAY of the signal stores the same entry. code (item D): LOAD "BLOB" CODE puts
+    the range back at CODE_START after it was wiped. Returns 1 on failure."""
     if cap is None:
         print("SKIP  save-mic-%s-playback (no clean capture)" % label)
         return 1
@@ -322,7 +333,16 @@ def seg_playback(label, cap):
     edges, asked = cap
     base = P.sym("ARR2_BASE")
     try:
-        if label == "all-seg2":
+        if label == "code":
+            P.boot(tape_from_edges(edges))
+            P.poke(CODE_START, bytes(CODE_N))                  # wipe the range first
+            P.poke(P.sym("EDIT_LINE_BUF"), b'load "BLOB" CODE\0')
+            msg = P.call_prompt("V2_DISPATCH", maxi=900_000_000)
+            got = P.read(CODE_START, CODE_N)
+            ok = msg == "LOADED" and got == CODE_DATA
+            note = "LOAD \"BLOB\" CODE of the captured signal: msg=%s, range %s" % (
+                msg, "restored" if got == CODE_DATA else "differs")
+        elif label == "all-seg2":
             prog = asked[1][1][:int.from_bytes(asked[0][1][15:17], "little")]
             r = P.tape_op(tape_from_edges(edges), existing=["k = 9"], name="ALLS")
             got, pas = P.read(base, len(SEG_ENTRY)), P.w16(P.sym("PAS_END"))

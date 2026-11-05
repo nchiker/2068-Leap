@@ -32,9 +32,10 @@ What the status line (the bottom row of the screen) can say. The program or comm
 | `PROGRAM FULL` | the line you just entered does not fit in the memory for programs; it was not stored |
 | `SAVED`, `LOADED`, `VERIFIED` | the tape command worked |
 | `VERIFY FAILED` | the tape and memory differ (or the tape could not be read) |
-| `LOAD FAILED` | no matching tape was found, or it was damaged (for a program, also a tape too long for the program area) |
+| `LOAD FAILED` | no matching tape was found, or it was damaged (for a program, also a tape too long for the program area; for `LOAD ... CODE`, a block longer than the room, or a target in ROM) |
+| `SYNTAX ERROR` | (in a tape command) bad `CODE` arguments: a missing or malformed number, a length of 0, a start + length past 65536, or an empty name with `CODE` |
 | `NO VARIABLES` | a `SAVE ... ALL` tape was loaded but its variables could not be used (different ROM version or different package) |
-| `BAD TAPE VERSION` | the tape is from V1, a stock Spectrum or a ROM with an incompatible format |
+| `BAD TAPE VERSION` | the tape is from V1, a stock Spectrum (a stock `CODE` tape too) or a ROM with an incompatible format |
 | `ABORTED` | SPACE was pressed during a tape operation |
 | `NO PACKAGE` | `SAVE "name" EXT` with no package loaded |
 | `ARRAY NOT DIMD` | `SAVE ... ARRAY a` for an array the program does not declare |
@@ -372,6 +373,7 @@ For `PEEK`, `POKE`, `USR`, `IN` and `OUT`. Addresses are decimal with hexadecima
 Rules for your own machine code (`USR`):
 
 * Put it in `$7800`-`$7FFF` (30720 to 32767), the block that no part of the V2 system uses. Do not place it in the main pool, which belongs to the program, or in `$5B00`-`$77FF`, which holds the arrays of the overflow segment.
+* To keep a routine on tape, use `SAVE "name" CODE start,length` and `LOAD "name" CODE` (see [SAVE](03_keywords.md#save) and [LOAD](03_keywords.md#load)). There is no range checking, so only use `$7800`-`$7FFF` for your own code and data (the screen, `$4000`-`$5AFF`, is safe too, as it is the display). Do not save or load `$C000`-`$DFFF` (the EXROM window: a `SAVE` sends ROM bytes and loaded bytes are lost), the stack (below `$FF00`) or the fixed area `$B600`-`$BFFF` (loading over them crashes the machine), the program area `$825A`-`$B5FF` (a load there overwrites the program), the array segment `$5B00`-`$77FF` (arrays and the Array Store) or the ROM `$0000`-`$3FFF`.
 * Enter with the address in HL; return with `RET` and the result in HL; any register may be destroyed; leave interrupts enabled; do not use more than a few dozen bytes of stack.
 
 Ports used by the system (`IN`/`OUT`): `$FE` (254) keyboard, speaker, border and tape; `$F5`/`$F6` (245/246) the AY sound chip's register and data ports; `$F4` (244) the memory bank select; `$FF` (255) the video mode and EXROM select; `$FB` (251) the printer. Changing a port the system keeps a copy of (`$FE`, `$FF`) with `OUT` can confuse the system.

@@ -162,6 +162,13 @@ STORAGE_SAVE:
     ; SAVE ... ALL makes shorter than the data (the variable session follows);
     ; array and package tapes keep the data length.
     ld   a, (STORAGE_REQUEST_TYPE)
+    IFDEF STORAGE_VERSIONED
+    cp   STORAGE_CODE_TYPE                ; v2.2 (item D): a CODE tape names its start address (IX)
+    jr   nz, .not_code                    ; here (Leap's versioned header: not a stock CODE tape)
+    push ix
+    pop  hl
+.not_code:
+    ENDIF
     or   a
     jr   nz, .proglen
     ld   hl, (PROG_END)
@@ -228,6 +235,8 @@ STORAGE_SAVE:
 ; STORAGE_LOAD
 ; In:  IX = destination pointer, HL = filename pointer, B = filename
 ;      length (0 = wildcard, LOAD ""), DE = max allowed data length
+;      (v2.2, V2 builds, request type STORAGE_CODE_TYPE: DE = 0 = no bound given: start + length
+;      must not pass 65536; IX = 0 = take the destination from the header's PROGLEN field)
 ; Out: DE = actual data length received (only meaningful if carry
 ;          clear), A = 0 on success or a clean failure,
 ;          STORAGE_LOAD_DATA_TOUCHED on failure after destination writes
@@ -343,10 +352,7 @@ STORAGE_LOAD:
     ld   a, (STORAGE_CHECKSUM)
     ld   b, a
     djnz .header_search
-    pop  ix
-    pop  bc
-    pop  hl
-    jp   .total_failure
+    jr   .header_giveup                   ; v2.2: the same rebalance-and-fail tail
 
 .header_rejected:
     ; A valid standard header for another file type is not corruption;
@@ -360,10 +366,7 @@ STORAGE_LOAD:
     ld   a, (STORAGE_CHECKSUM)
     ld   b, a
     djnz .header_search
-    pop  ix
-    pop  bc
-    pop  hl
-    jr   .total_failure
+    jr   .header_giveup                   ; v2.2: the same rebalance-and-fail tail
 
 .name_ok:
     IFDEF STORAGE_VERSIONED
@@ -381,6 +384,28 @@ STORAGE_LOAD:
     jr   c, .bad_version
     ENDIF
     ld   hl, (STORAGE_MAX_LEN)
+    IFDEF STORAGE_VERSIONED
+    ; v2.2 (item D) LOAD / VERIFY ... CODE: DE = 0 on entry (no length given) means "start + the
+    ; header's length must not pass 65536", with start = IX, or (IX = 0, no start given) the address
+    ; the header names, which then becomes the destination. Refused here, before any byte is stored.
+    ld   a, (STORAGE_REQUEST_TYPE)
+    cp   STORAGE_CODE_TYPE
+    jr   nz, .have_max
+    ld   a, h
+    or   l
+    jr   nz, .have_max                    ; CODE start,length: at most that (the shell checked the sum)
+    ld   a, ixh
+    or   ixl
+    jr   nz, .code_room
+    ld   ix, (STORAGE_HEADER_BUF + STORAGE_HEADER_PROGLEN_OFF)
+.code_room:
+    push ix
+    pop  de
+    sbc  hl, de                           ; (HL = 0, CF clear) = 65536 - start
+    jr   nz, .have_max
+    dec  hl                               ; start 0: $FFFF
+.have_max:
+    ENDIF
     ld   de, (STORAGE_HEADER_BUF + STORAGE_HEADER_LENGTH_OFF)
     or   a
     sbc  hl, de                           ; carry: the header's length exceeds the caller's DE

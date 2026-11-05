@@ -108,6 +108,7 @@ NAMES = (
     "SA_GAP",
     "SA_S_SETUP",
     "SA_IS_ALL",
+    "LEX_ACCUM_DIGIT",          # v2.2 (item D): the shell's CODE start,length reader (V2_NUM)
     "SA_W",
     "SA_S",
     "SA_TAIL",
@@ -134,8 +135,9 @@ NAMES = (
     "V2_VER_STATUS",        # VER: the version on the status row at power-on (rom/v2_version.asm)
     "V2_VER_SCOPE",
 )
-# MAINT (AY BEEP): exported only when the HOME build has them (rom/v2_ay_beep.asm placement).
-OPTIONAL = ("AY_BEEP_PERIOD", "AY_BEEP_PLAY", "AY_WAIT_FRAMES")
+# MAINT (AY BEEP): exported only when the HOME build has them as HOME code (rom/v2_ay_beep.asm placement;
+# v2.2 G2: SOUND_EXROM is HOME code in the V2_MAINT_AY_HOME build, else an EQU of its EXROM slot).
+OPTIONAL = ("AY_BEEP_PERIOD", "AY_BEEP_PLAY", "AY_WAIT_FRAMES", "SOUND_EXROM")
 
 
 def main() -> None:
@@ -149,7 +151,8 @@ def main() -> None:
         raise SystemExit(f"missing HOME exports: {sorted(missing)}")
     out = Path(sys.argv[2])
     out.write_text("; Generated from assembled V2 HOME symbols. Do not edit.\n" + "".join(
-        f"{name} EQU ${symbols[name]:04X}\n" for name in NAMES + tuple(n for n in OPTIONAL if n in symbols)
+        f"{name} EQU ${symbols[name]:04X}\n" for name in NAMES + tuple(n for n in OPTIONAL
+                                                                    if n in symbols and symbols[n] < 0x4000)
     ))
 
 

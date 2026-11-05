@@ -122,6 +122,17 @@ record) were strict expected failures in Phase 1 and are **repaired in Phase 2D*
 * `rom/test_v2_chunk_refill_boundary.asm` (standalone) TEST3/TEST4 were rewritten for the new mechanism (`LEX_LINE` instead of `CHUNK_CUR_REC_PTR`).
 
 
+## CODE tapes (`SAVE` / `LOAD` / `VERIFY ... CODE`)
+
+`SAVE "name" CODE start,length`, `LOAD "name" CODE [start[,length]]` and `VERIFY "name" CODE [start]` are covered by:
+
+* `tools/v2_prod_code.py`, a production-image suite run by `tools/run_v2_prod_tests.sh` (on its own ZEsarUX port and state dir, next to the gate, the known-defect, Array Store, SAVE ALL and micsave suites). It covers the CODE tape header, the round trip, `VERIFY`, type isolation (a CODE tape is skipped by a program load and a program tape by a CODE load), syntax errors, a tape that is too long for the room, a bad tape version, `VERIFY` keeping the variable session, and an empty name.
+* the `code` case of `tools/qual/qmicsave.py`: `SAVE ... CODE` through the real sender, captured at the MIC line and decoded byte-exact.
+* the ten `code ...` cases of `tools/qtapetol.py` (`code nominal` and nine distortions: speed, bit length, jitter, pilot length and a dropout): a CODE tape loaded through the real `LOAD ... CODE` path must arrive intact. Run only these with `python3 tools/qtapetol.py code`.
+
+As elsewhere in this file, the tape signal is synthesised (or captured) in the emulator; nothing was tried on a real cassette recorder.
+
+
 ## Proving a compiler change leaves its output unchanged (shrinks and refactors)
 
 A HOME-budget shrink or refactor of the compiler must not change what the compiler produces. The VM is

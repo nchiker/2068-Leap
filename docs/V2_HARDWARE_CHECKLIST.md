@@ -63,6 +63,8 @@ ROMs (EPROMs or a ROM-replacement board).
 | 3.9 | `SAVE "A" ARRAY a` / `LOAD "A" ARRAY a` | array round trip; `DIM a(...)` adopts it | NOT TESTED — PHYSICAL HARDWARE UNAVAILABLE |
 | 3.10 | `LOAD "shapes" EXT` from a package tape; `CIRCLE 128,96,40`; `FILL 128,96` | circle drawn, filled | NOT TESTED — PHYSICAL HARDWARE UNAVAILABLE |
 | 3.11 | a V1 / stock BASIC tape | `BAD TAPE VERSION`, program intact | NOT TESTED — PHYSICAL HARDWARE UNAVAILABLE |
+| 3.12 | `SAVE "C" CODE 30720,64` after `POKE`-ing a pattern into `$7800`-`$783F`; clear the bytes; `LOAD "C" CODE`; `PEEK` the pattern | `SAVED`, `LOADED`, the pattern is back | NOT TESTED — PHYSICAL HARDWARE UNAVAILABLE |
+| 3.13 | `VERIFY "C" CODE` with the pattern in place, then after changing one byte | `VERIFIED`, then `VERIFY FAILED`; memory unchanged | NOT TESTED — PHYSICAL HARDWARE UNAVAILABLE |
 
 ## 5. Maintenance release v2.0.1-emu.1: sound
 

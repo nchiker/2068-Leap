@@ -870,11 +870,14 @@ HELLO WORLD AND HELLO WORLD AND
 | `SAVE "name" ALL` | writes the program **and** its session (variables, arrays) **and** the Array Store |
 | `SAVE "name" ARRAY a` | writes one array |
 | `SAVE "name" EXT` | writes the loaded package |
+| `SAVE "name" CODE start,length` | writes *length* bytes of memory from address *start* |
 | `LOAD "name"` | reads a program (and the session, if it was saved with `ALL`) |
 | `LOAD ""` | reads the next program on the tape, whatever its name |
 | `LOAD "name" ARRAY a` | reads an array into the Array Store |
 | `LOAD "name" EXT` | reads a package |
+| `LOAD "name" CODE` / `LOAD "name" CODE start` | reads a block of memory, to the address it was saved from / to *start* |
 | `VERIFY "name"` | compares the tape with memory |
+| `VERIFY "name" CODE` / `VERIFY "name" CODE start` | compares a code tape with memory at the saved address / at *start* |
 
 A program saved with `SAVE "name"` comes back **without** variables; one saved with `ALL` comes back with them, so you can stop work and carry on:
 
@@ -942,9 +945,17 @@ VERIFY "prog"                          [VERIFY FAILED]
 
 Otherwise the program loads but the variables do not, and the message is `NO VARIABLES`. A damaged tape gives `LOAD FAILED`. If a very large program plus its overflow arrays cannot be laid out for saving, `SAVE ... ALL` says `OUT OF MEMORY` -- `SAVE "name"` still works.
 
+**The `CODE` tape.** `SAVE "name" CODE start,length` writes raw memory, as in stock Sinclair BASIC; *start* and *length* are decimal whole numbers (digits only), *length* is not 0 and *start* + *length* does not pass 65536. `LOAD "name" CODE` puts the bytes back where they came from (the tape records the address), `LOAD "name" CODE start` puts them at *start*, and `VERIFY "name" CODE` compares them with memory without writing anything. A length given to `LOAD` or `VERIFY` is a **maximum**: a longer tape is `LOAD FAILED` and nothing is stored, a shorter one loads (or verifies) its own length. The details are under SAVE, LOAD and VERIFY in [Part 3](03_keywords.md).
+
+* The tape is Leap's own: a header of type 3 with Leap's format word. It is **not** a stock Spectrum or TS2068 `CODE` tape; those are refused with `BAD TAPE VERSION` (one rare exception: a stock tape saved from address 33024 or 33025 can pass the version check, so never `LOAD` a stock `CODE` tape without a start address).
+* A `CODE` tape is skipped by a plain `LOAD "name"` and by `LOAD ... ARRAY` and `LOAD ... EXT`, and a program tape is skipped by `LOAD ... CODE`: the search goes on to the next header on the tape.
+* `LOAD ... CODE` ends the variable session (the variables of a stopped program are gone, as after every `LOAD`), even if the load then fails. The program, the Array Store and loaded packages are not touched. `VERIFY ... CODE` leaves everything as it was, the session included.
+* There is **no range checking**. The safe range for your own machine code and data is `$7800`-`$7FFF` (30720 to 32767, 2048 bytes); the screen, `$4000`-`$5AFF`, is safe too. Do not save or load `$C000`-`$DFFF` (the EXROM window: a `SAVE` sends ROM bytes and loaded bytes are lost), the stack (below `$FF00`) or the fixed area `$B600`-`$BFFF` (loading over them crashes the machine), the program area `$825A`-`$B5FF` (a load there overwrites the program), the array segment `$5B00`-`$77FF` or the ROM `$0000`-`$3FFF`. See [Appendix E](07_appendices.md#appendix-e-memory-map).
+* `CODE 0` with no length means "the address on the tape"; `CODE 0,n` targets address 0 itself, which is ROM, so a load there is `LOAD FAILED`.
+
 **Tape compatibility.** A tape written by this version cannot be loaded by earlier V2 ROMs, and V1 and stock Spectrum tapes are refused with `BAD TAPE VERSION`.
 
-**Messages:** `SAVED`, `LOADED`, `VERIFIED`, `VERIFY FAILED`, `LOAD FAILED`, `NO VARIABLES`, `BAD TAPE VERSION`, `ABORTED` (SPACE pressed during a tape operation), `NO PACKAGE` (`SAVE ... EXT` with no package loaded), `OUT OF MEMORY`, and the array messages under [Array Store](#array-store).
+**Messages:** `SAVED`, `LOADED`, `VERIFIED`, `VERIFY FAILED`, `LOAD FAILED` (also a `CODE` block longer than the room), `SYNTAX ERROR` (bad `CODE` arguments), `NO VARIABLES`, `BAD TAPE VERSION`, `ABORTED` (SPACE pressed during a tape operation), `NO PACKAGE` (`SAVE ... EXT` with no package loaded), `OUT OF MEMORY`, and the array messages under [Array Store](#array-store).
 
 Tapes are read and written through the ordinary tape port. All tape tests were run on the emulator, through its real tape input; nothing was tried on a real cassette recorder.
 

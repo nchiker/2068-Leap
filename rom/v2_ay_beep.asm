@@ -8,12 +8,20 @@
 ; same): V2_MAINT_AYB_PERIOD_HOME puts AY_BEEP_PERIOD and its table in HOME, V2_MAINT_AYB_PLAY_HOME
 ; puts AY_BEEP_PLAY in HOME, V2_MAINT_AYB_WAIT_HOME puts AY_WAIT_FRAMES in HOME. EXROM code calls
 ; HOME pieces directly (build/v2_crossbank.inc); HOME reaches EXROM only through the slot.
+; v2.2 (owner decision G2): with both the period and the play loop in HOME (V2_MAINT_AY_HOME, include/
+; v2_ktab.inc) AY_BEEP itself is HOME code -- the period worked out inline, then on into AY_BEEP_PLAY --
+; and OP_BEEP calls it directly: no EXROM slot, no EXROM piece.
 ;
 ; The startup chime (rom/exrom_v2_shell.asm) shares AY_BEEP_PLAY / AY_WAIT_FRAMES.
 ; ============================================================================
 
 AY_BEEP_VOLUME EQU 15           ; channel A's fixed level while a BEEP sounds (no envelope)
 
+    IFDEF V2_MAINT_AYB_PLAY_HOME    ; AY_BEEP_PLAY (HOME) calls the wait: it is HOME code too
+    IFNDEF V2_MAINT_AYB_WAIT_HOME
+    DEFINE V2_MAINT_AYB_WAIT_HOME
+    ENDIF
+    ENDIF
     IFDEF V2_MAINT_SHARED_WAIT      ; MAINT (shared wait): PAUSE, BEEP and the chime share one wait,
     IFNDEF V2_MAINT_AYB_WAIT_HOME   ; which must then be in HOME (OP_PAUSE is HOME code)
     DEFINE V2_MAINT_AYB_WAIT_HOME
@@ -177,14 +185,26 @@ AY_WAIT_FRAMES:
 ; ------------------------------------------------------------------ HOME pieces
     IFDEF V2_MAINT_AYB_PERIOD_HOME
     AY_BEEP_PERIOD_TABLE
+    IFDEF V2_MAINT_AY_HOME
+; AY_BEEP -- OP_BEEP's entry (HOME): HL = semitones, DE = frames. The period, then the note.
+AY_BEEP:
+    AY_BEEP_PERIOD_HEAD
+    jr   nc, .rounded
+    inc  hl                           ; rounded to the nearest
+.rounded:
+    AY_BEEP_PLAY_BODY                 ; (AY_BEEP falls into it)
+    ELSE
 AY_BEEP_PERIOD:
     AY_BEEP_PERIOD_HEAD
     ret  nc
     inc  hl                           ; rounded to the nearest
     ret
     ENDIF
+    ENDIF
     IFDEF V2_MAINT_AYB_PLAY_HOME
+    IFNDEF V2_MAINT_AY_HOME
     AY_BEEP_PLAY_BODY
+    ENDIF
     ENDIF
     IFDEF V2_MAINT_AYB_WAIT_HOME
     AY_WAIT_FRAMES_BODY
@@ -194,11 +214,13 @@ AY_BEEP_PERIOD:
 ; ------------------------------------------------------------------ EXROM pieces
 ; AY_BEEP -- the slot target: HL = semitones, DE = frames.
     IFDEF V2_MAINT_AYB_PERIOD_HOME
+    IFNDEF V2_MAINT_AY_HOME             ; (with V2_MAINT_AY_HOME, AY_BEEP is HOME code)
 AY_BEEP:
     call AY_BEEP_PERIOD
         IFDEF V2_MAINT_AYB_PLAY_HOME
     jp   AY_BEEP_PLAY
         ENDIF
+    ENDIF
     ELSE
     AY_BEEP_PERIOD_TABLE
 AY_BEEP:

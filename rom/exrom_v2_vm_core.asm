@@ -3460,6 +3460,7 @@ LEX_ACCUM_DIGIT:
 .ovf:
         scf
         ret
+
 ; ---------------------------------------------------------------------------
 ; RC: the shared number parser (literals beyond the 16-bit forms, every decimal literal, VAL, INPUT).
 ; NUM_PARSE_CALC -- HL -> text, B = its length (or 255). Reads [spaces][-|+]digits[.digits] and stops
@@ -3952,7 +3953,7 @@ OP_BEEP:
         rr l                    ; HL = frames, rounded to the nearest
         ex de,hl                ; DE = frames
         pop hl                  ; HL = semitones
-        call AY_BEEP            ; EXROM slot (rom/v2_ay_beep.asm)
+        call AY_BEEP            ; rom/v2_ay_beep.asm (HOME code with V2_MAINT_AY_HOME, else an EXROM slot)
         jp VM_RUN.loop          ; 5.2: a wait polls BREAK (AY_WAIT_FRAMES ends early on it)
     ELSE
 OP_BEEP:

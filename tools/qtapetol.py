@@ -19,8 +19,13 @@ call site, tools/v2_prod.capture_save) re-synthesised with the distortion, the 4
 block 2 kept as the SAVE makes it (not scaled by `speed`). A case passes when the program, segment 2's bytes
 and PAS_END come back (LOADED).
 
+v2.2 (item D): the "code ..." cases load a CODE tape (header type 3, PROGLEN = the start, 512 bytes for
+$7800) through the real LOAD "TCODE" CODE path (V2_LOAD with request type 3, no start given: the address
+comes from the header) under a subset of the same distortions; a case passes when the range arrives
+intact (LOADED). Filter "code" runs only these.
+
 Usage: TS2068_DEBUG_STATE_DIR=<dir> TS2068_V2_PORT=<port> python3 tools/qtapetol.py [--out FILE] [substr]
-       (substr "all-seg2" runs only the segment-2 cases, "speed" only the speed cases, and so on)
+       (substr "all-seg2" runs only the segment-2 cases, "code" only the CODE cases, "speed" every speed case)
 Exit status: 0 always (a report, not a gate); --out writes {case: passed} as JSON.
 """
 import argparse
@@ -115,6 +120,26 @@ def all_check():
     return P.read(base, len(SEG_ENTRY)) == SEG_ENTRY and P.w16(P.sym("PAS_END")) == base + len(SEG_ENTRY)
 
 
+CODE_START, CODE_DATA = 30720, bytes((i * 29 + 7) & 0xFF for i in range(512))
+CODE_CASES = [("code nominal", {})] + [("code " + n, o) for n, o in CASES if n in (
+    "speed 0.80", "speed 0.90", "speed 1.10", "speed 1.20", "bits 0.90", "bits 1.10", "jitter 20%", "pilot 1000",
+    "gap 50ms")]
+
+
+def code_tape_for(opts):
+    t = DistortedTape(**opts)
+    t.block(TS.framed(0x00, TS.header_payload(3, "TCODE", len(CODE_DATA), autostart=P_ABI_WORD, proglen=CODE_START)))
+    t.block(TS.framed(0xFF, CODE_DATA), gap_here=True)
+    return t
+
+
+def code_prepare():
+    """As V2_PARSE_NAME leaves LOAD "TCODE" CODE: no start, no length (tape_op sets the name and type 3)."""
+    P.poke16(P.sym("V2_CODE_START"), 0)
+    P.poke16(P.sym("V2_CODE_LEN"), 0)
+    P.poke(CODE_START, bytes(len(CODE_DATA)))
+
+
 def tape_for(opts):
     t = DistortedTape(**opts)
     t.block(TS.framed(0x00, TS.header_payload(0, "TEST", len(SRC), autostart=P_ABI_WORD)))
@@ -132,7 +157,7 @@ def main():
     P_ABI_WORD = v2_abi.load().fmt_word
     res = {}
     try:
-        for name, opts in CASES + ALL_CASES:
+        for name, opts in CASES + ALL_CASES + CODE_CASES:
             if a.filter not in name:
                 continue
             t0 = time.time()
@@ -140,6 +165,9 @@ def main():
                 tape = all_tape_for(opts)
                 r = P.tape_op(tape, existing=["k = 9"], name="ALLT")
                 ok = r["msg"] == "LOADED" and r["after"] == _all["src"] and all_check()
+            elif name.startswith("code"):
+                r = P.tape_op(code_tape_for(opts), existing=["k = 9"], name="TCODE", request_type=3, prepare=code_prepare)
+                ok = r["msg"] == "LOADED" and P.read(CODE_START, len(CODE_DATA)) == CODE_DATA and r["after"] == r["before"]
             else:
                 r = P.tape_op(tape_for(opts), existing=["k = 9"])
                 ok = r["msg"] == "LOADED" and r["after"] == SRC

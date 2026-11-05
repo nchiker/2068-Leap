@@ -71,6 +71,9 @@ V2_LINE_COUNT EQU $BEA6
 V2_ARRAY_NAME_PTR EQU $BEBC
 V2_ARRAY_NAME_LEN EQU $BEBE
 V2_ARRAY_IS_STR   EQU $BEBF
+; v2.2 (item D): SAVE/LOAD/VERIFY "name" CODE [start [,length]], set by V2_PARSE_NAME (0 = not given).
+V2_CODE_START     EQU $BEC7
+V2_CODE_LEN       EQU $BEC9
 ; ($BEC0-$BECA were V2_ARRAY_INDEX / V2_RECEIVE_DEST / V2_ARRAY_NAME_CANON, used only by the
 ; pre-R10.9 pool-path V2_LOAD_ARRAY and its 8-character name fold; free again in Phase 2C.)
 
@@ -1078,17 +1081,42 @@ V2_MATCH_PREFIX:
     scf
     ret
 
+; V2_SKIP_SP -- HL -> text: steps over spaces. Out: A = (HL), the first other character.
+V2_SKIP_SP:
+    ld a,(hl)
+    cp ' '
+    ret nz
+    inc hl
+    jr V2_SKIP_SP
+
+; V2_NUM -- v2.2 (item D): HL -> text: spaces, then a decimal number 0-65535 into DE (the range-checked
+; accumulate of HOME's lexer, LEX_ACCUM_DIGIT). Out: CF = no digit (DE = 0) or more than 65535 (HL then
+; still points at a digit, which the caller's end-of-line test refuses); HL -> after the number.
+; Destroys AF, BC.
+V2_NUM:
+    call V2_SKIP_SP
+    ld de,0
+    sub '0'
+    cp 10
+    ccf
+    ret c                        ; not a digit
+.digit:
+    push hl
+    call LEX_ACCUM_DIGIT         ; DE = DE * 10 + A; CF = past 65535
+    pop hl
+    ret c
+    inc hl
+    ld a,(hl)
+    sub '0'
+    cp 10
+    jr c,.digit
+    ret                          ; (NC)
+
 ; HL follows SAVE or LOAD. Return filename pointer and length.
 V2_PARSE_NAME:
     xor a
     ld (V2_REQUEST_TYPE),a
-.spaces:
-    ld a,(hl)
-    cp ' '
-    jr nz,.quote
-    inc hl
-    jr .spaces
-.quote:
+    call V2_SKIP_SP
     cp '"'
     jr nz,.bad
     inc hl
@@ -1110,14 +1138,9 @@ V2_PARSE_NAME:
     ld a,b
     ld (V2_NAME_LEN),a
     inc hl
-.tail:
-    ld a,(hl)
+    call V2_SKIP_SP
     or a
     ret z
-    cp ' '
-    jr nz,.qualifier
-    inc hl
-    jr .tail
 .qualifier:
     ld de,V2_KW_EXT
     call V2_MATCH_EXACT
@@ -1129,6 +1152,9 @@ V2_PARSE_NAME:
     pop hl
     ld a,$80
     jr nc,.set_type
+    ld de,V2_KW_CODE
+    call V2_MATCH_PREFIX         ; (on a partial match it moves HL; CODE and ARRAY share no first letter)
+    jr nc,.code
     ld de,V2_KW_ARRAY
     call V2_MATCH_PREFIX      ; leaves HL right after "ARRAY" (its own
                                 ; comparison loop advances HL per
@@ -1145,6 +1171,33 @@ V2_PARSE_NAME:
 .bad:
     scf
     ret
+; v2.2 (item D): CODE [start [,length]] -- V2_CODE_START, V2_CODE_LEN (0 = not given). start + length
+; past 65536 is refused; a length of 0 is refused too (SAVE refuses an absent one) except in CODE 0,0.
+.code:
+    call V2_NUM                  ; DE = start (0: none)
+    ld (V2_CODE_START),de
+    jr c,.code_len               ; none (DE = 0), or too big (the end test refuses it)
+    call V2_SKIP_SP
+    cp ','
+    ld de,0                      ; (flags kept) no length
+    jr nz,.code_len
+    inc hl
+    call V2_NUM                  ; DE = length
+    jr c,.bad
+    push hl
+    ld hl,(V2_CODE_START)
+    dec de
+    add hl,de                    ; start + length - 1 past $FFFF: too long
+    inc de
+    pop hl
+    jr c,.bad
+.code_len:
+    ld (V2_CODE_LEN),de
+    call V2_SKIP_SP
+    or a
+    jr nz,.bad                   ; anything else on the line
+    ld a,STORAGE_CODE_TYPE
+    jr .set_type
 
 ; V2_SCAN_ARRAY_NAME -- HL follows "ARRAY" (pointing at the space
 ; before the array name). Scans a bare array identifier: letters/
@@ -1158,12 +1211,7 @@ V2_PARSE_NAME:
 V2_SCAN_ARRAY_NAME:
     xor a
     ld (V2_ARRAY_IS_STR),a
-.spaces:
-    ld a,(hl)
-    cp ' '
-    jr nz,.have_char
-    inc hl
-    jr .spaces
+    call V2_SKIP_SP
 .have_char:
     cp 'A'
     jr c,.bad
@@ -1210,6 +1258,8 @@ V2_SAVE:
     ld (STORAGE_REQUEST_TYPE),a
     or a
     jr z,.program
+    cp STORAGE_CODE_TYPE
+    jr z,.code
     ld de,(V2_PACKAGE_LEN)
     ld a,d
     or e
@@ -1246,6 +1296,15 @@ V2_SAVE:
 .missing_package:
     ld hl,V2_MSG_NO_PACKAGE
     jp V2_SHOW_MESSAGE
+; v2.2 (item D): SAVE "name" CODE start,length -- the range as it is (the length checked by V2_PARSE_NAME;
+; an absent or zero one is a SYNTAX error). The header's PROGLEN carries the start (STORAGE_SAVE).
+.code:
+    ld ix,(V2_CODE_START)
+    ld de,(V2_CODE_LEN)
+    ld a,d
+    or e
+    jr nz,.call
+    jp V2_LOAD.missing_name      ; SYNTAX
 ; RC: SAVE "name" ALL -- the program, its variable session and the Array Store in one program
 ; block (rom/v2_saveall.asm, docs/V2_SAVE_ALL_FORMAT.md). Without a session since the last
 ; edit, a new one (fresh variables) is started first.
@@ -1352,13 +1411,17 @@ V2_SAVE_ARRAY:
 ; success/failure message branches above) distinguishes this from a
 ; real LOAD.
 V2_VERIFY:
+    ld a,(V2_REQUEST_TYPE)
+    and STORAGE_CODE_TYPE        ; v2.2 (item D): VERIFY ... CODE (3) compares the range; EXT, ARRAY and
+    ld (V2_REQUEST_TYPE),a       ; ALL ($80) verify the program (0), as before
+    jr nz,.verify_mode           ; (the range as it is: no SAVE ... ALL layout)
     ld a,(SESS_VALID)
     or a
     call nz,SA_BUILD             ; RC: memory as a SAVE ... ALL tape of the session holds it (no room: as is)
-    xor a
-    ld (V2_REQUEST_TYPE),a
+.verify_mode:
     ld a,1
     ld (STORAGE_VERIFY_MODE),a
+    ASSERT STORAGE_CODE_TYPE = 3 && (STORAGE_EXTENSION_TYPE & 3) = 0 && (STORAGE_ARRAY_TYPE & 3) = 0 && ($80 & 3) = 0
     ; RC shrink: falls through to V2_LOAD (was jp)
 
 V2_LOAD:
@@ -1371,6 +1434,10 @@ V2_LOAD:
     ld a,(V2_NAME_LEN)
     or a
     jp z,.missing_name
+    ld hl,SESS_VALID             ; EXT and CODE end the session (the session's code may call the package
+    ld a,(STORAGE_VERIFY_MODE)   ; being replaced; v2.2: LOAD ... CODE ends it too -- program, store and
+    and (hl)                     ; packages stay); VERIFY ... CODE writes nothing and keeps it: SESS_VALID
+    ld (hl),a                    ; AND STORAGE_VERIFY_MODE (both 0 or 1)
 .name:
     ld a,(V2_NAME_LEN)
     or a
@@ -1386,13 +1453,17 @@ V2_LOAD:
     ld a,(V2_REQUEST_TYPE)
     or a
     jr z,.program_receive
-    xor a
-    ld (SESS_VALID),a            ; RC: the session's code may call the package being replaced
-    call KTAB_EXT2_CLEAR_ALL
+    cp STORAGE_CODE_TYPE
+    jr z,.code_receive
+    call KTAB_EXT2_CLEAR_ALL     ; (the session was ended above)
     ld hl,STORAGE_LOAD_NAME_BUF
     ld b,10
     ld de,EXTENSION_MODULE_LIMIT-EXTENSION_MODULE_BASE
     ld ix,EXTENSION_MODULE_BASE
+    jr .load_call
+.code_receive:                  ; v2.2 (item D): IX = start, DE = length (0 = not given: STORAGE_LOAD
+    ld ix,(V2_CODE_START)        ; bounds it by 65536 - start; start 0 = the address the tape names)
+    ld de,(V2_CODE_LEN)
     jr .load_call
 .program_receive:
     ld de,V2_CODE_LIMIT-PROG_AREA_START   ; RC: a SAVE ... ALL image may run past the pool
@@ -1410,11 +1481,14 @@ V2_LOAD:
     ld a,(V2_REQUEST_TYPE)
     or a
     jr z,.program_loaded
+    cp STORAGE_CODE_TYPE
+    jr z,.loaded_msg             ; v2.2: CODE -- the bytes are where they belong
     ld (V2_PACKAGE_LEN),de
     call EXTENSION_MODULE_BASE   ; R10.9: the ABI version word was already checked by
                                    ; STORAGE_LOAD against the header, before any byte of
                                    ; the package reached the window (docs/PACKAGE_ABI.md s6)
     jr c,.invalid_package
+.loaded_msg:
     ld hl,V2_MSG_LOADED
     jp V2_SHOW_MESSAGE
 .invalid_package:
@@ -1476,9 +1550,12 @@ V2_LOAD:
     ld a,(V2_REQUEST_TYPE)
     or a
     jr z,.program_failed
+    cp STORAGE_CODE_TYPE
+    jr z,.pop_classify           ; v2.2: CODE -- nothing to undo (a partly loaded range stays as it is)
     call KTAB_EXT2_CLEAR_ALL
     ld hl,0
     ld (V2_PACKAGE_LEN),hl
+.pop_classify:
     pop af
     jr .classify
 .program_failed:
@@ -1507,15 +1584,19 @@ V2_LOAD:
     ld hl,V2_MSG_ABORTED
 .show_msg:
     jp V2_SHOW_MESSAGE
-.missing_name:
+.missing_name:                  ; (VERIFY "" CODE gets here with STORAGE_VERIFY_MODE set: cleared below)
     ld hl,V2_MSG_SYNTAX
-    jp V2_SHOW_MESSAGE
+    jr .verify_off
 .bad_version:                ; R10.9: header version word not ours; nothing was touched
+    ld hl,V2_MSG_BAD_VERSION
+.verify_off:
     xor a
     ld (STORAGE_VERIFY_MODE),a
-    ld hl,V2_MSG_BAD_VERSION
     jp V2_SHOW_MESSAGE
 .verified:
+    ld a,(V2_REQUEST_TYPE)
+    cp STORAGE_CODE_TYPE
+    jr z,.verified_ok            ; v2.2: CODE -- the range matched
     ; R10.9 (D2): the transport compared the first <tape length> bytes; the
     ; programs are only equal if the tape ALSO ends where the program does
     ; (DE = tape length).  A shorter or longer tape would otherwise verify
@@ -1530,6 +1611,7 @@ V2_LOAD:
     call SA_IS_ALL               ; v2.2: a SAVE ... ALL tape (CF) has a second block: compare it too
     call c,V2_RECV_S             ; (CF set on entry = verify; out: B = abort flag)
     jr c,.clean_failure
+.verified_ok:
     xor a
     ld (STORAGE_VERIFY_MODE),a
     ld hl,V2_MSG_VERIFIED
@@ -2466,6 +2548,7 @@ V2_KW_VERIFY: DB "VERIFY",0
 V2_KW_EXT: DB "EXT",0
 V2_KW_ARRAY: DB "ARRAY",0
 V2_KW_ALL: DB "ALL",0
+V2_KW_CODE: DB "CODE",0
 V2_MSG_SYNTAX: DB "SYNTAX ERROR ",0    ; trailing space: V2_COMPILE_MSG appends the code after it
 V2_MSG_RUNTIME: DB "RUNTIME ERROR ",0   ; trailing space: V2_RUNTIME_MSG appends the code
 V2_MSG_BREAK: DB "BREAK",0
