@@ -80,7 +80,7 @@ Built by `make rc-assets` from commit `2609b12` (designation in `tools/make_rc_a
 | `roms/leap_v2_exrom.bin` (8192) | `c52f966998a6af48851819a8b738c8c0585c8523c64e9ca3ec7e491bc91b4e75` |
 | `roms/leap_v2_zesarux.bin` (24576, ZEsarUX only) | `295dfe2621ec98301449844b49a93c703f071eb4900f5f18ea8a20eaacf5429a` |
 | `roms/leap_v2_exrom.dck` (8201, EightyOne) | `e491bd29982d22e3812cac0210ef96caae4077167fc31ac8557886691df4c0eb` |
-| packages (six), images and `.tzx` tapes | TODO(owner): compare with `v2.1.1-emu.1`'s (the packages are expected to be byte-identical; nothing in the ledger changes them) |
+| packages (six, `.tzx` tapes and binaries) | byte-identical to `v2.1.1-emu.1`'s (compared against its `SHA256SUMS`, 2026-11-06) |
 
 Bundle: TODO(owner).
 
