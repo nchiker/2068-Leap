@@ -71,7 +71,7 @@ V2_LINE_COUNT EQU $BEA6
 V2_ARRAY_NAME_PTR EQU $BEBC
 V2_ARRAY_NAME_LEN EQU $BEBE
 V2_ARRAY_IS_STR   EQU $BEBF
-; v2.2 (item D): SAVE/LOAD/VERIFY "name" CODE [start [,length]], set by V2_PARSE_NAME (0 = not given).
+; v2.1.2 (item D): SAVE/LOAD/VERIFY "name" CODE [start [,length]], set by V2_PARSE_NAME (0 = not given).
 V2_CODE_START     EQU $BEC7
 V2_CODE_LEN       EQU $BEC9
 ; ($BEC0-$BECA were V2_ARRAY_INDEX / V2_RECEIVE_DEST / V2_ARRAY_NAME_CANON, used only by the
@@ -807,7 +807,7 @@ SA_BUILD:
         jp SA_SEAL
 
     ASSERT SA_FLAG_DATA = STORAGE_TYPE_DATA && SA_HDR_LEN_OFF = STORAGE_HEADER_LENGTH_OFF && SA_HDR_PROGLEN_OFF = STORAGE_HEADER_PROGLEN_OFF
-; V2_RECV_S -- v2.2: block 2 of a SAVE ... ALL tape: entry CF clear = receive it into segment 2 (LOAD), CF set =
+; V2_RECV_S -- v2.1.2: block 2 of a SAVE ... ALL tape: entry CF clear = receive it into segment 2 (LOAD), CF set =
 ; compare it with segment 2 (VERIFY) (SA_S_SETUP complements the carry for the receiver). SA_S bytes.
 ; Out: CF = failed; B nonzero = SPACE was held (ABORTED).
 V2_RECV_S:
@@ -1002,7 +1002,7 @@ V2_CLEAR_ARRAYS:
     ld hl,V2_SOURCE_END          ; R10.7 P3: a RUN carves its run-time tables from
     ld (VARS_START),hl           ; the pool top (lowering VARS_START); any edit
     ld hl,(PAS_END)              ; R10.7 P5.4: segment 2 (always-visible RAM at
-    ld (ARR2_END),hl             ; $5B00, v2.2) is emptied with the main pool, but the
+    ld (ARR2_END),hl             ; $5B00, v2.1.2) is emptied with the main pool, but the
                                    ; Array Store below PAS_END survives
     ret                          ; discards them, so the source may grow again
 
@@ -1089,7 +1089,7 @@ V2_SKIP_SP:
     inc hl
     jr V2_SKIP_SP
 
-; V2_NUM -- v2.2 (item D): HL -> text: spaces, then a decimal number 0-65535 into DE (the range-checked
+; V2_NUM -- v2.1.2 (item D): HL -> text: spaces, then a decimal number 0-65535 into DE (the range-checked
 ; accumulate of HOME's lexer, LEX_ACCUM_DIGIT). Out: CF = no digit (DE = 0) or more than 65535 (HL then
 ; still points at a digit, which the caller's end-of-line test refuses); HL -> after the number.
 ; Destroys AF, BC.
@@ -1171,7 +1171,7 @@ V2_PARSE_NAME:
 .bad:
     scf
     ret
-; v2.2 (item D): CODE [start [,length]] -- V2_CODE_START, V2_CODE_LEN (0 = not given). start + length
+; v2.1.2 (item D): CODE [start [,length]] -- V2_CODE_START, V2_CODE_LEN (0 = not given). start + length
 ; past 65536 is refused; a length of 0 is refused too (SAVE refuses an absent one) except in CODE 0,0.
 .code:
     call V2_NUM                  ; DE = start (0: none)
@@ -1296,7 +1296,7 @@ V2_SAVE:
 .missing_package:
     ld hl,V2_MSG_NO_PACKAGE
     jp V2_SHOW_MESSAGE
-; v2.2 (item D): SAVE "name" CODE start,length -- the range as it is (the length checked by V2_PARSE_NAME;
+; v2.1.2 (item D): SAVE "name" CODE start,length -- the range as it is (the length checked by V2_PARSE_NAME;
 ; an absent or zero one is a SYNTAX error). The header's PROGLEN carries the start (STORAGE_SAVE).
 .code:
     ld ix,(V2_CODE_START)
@@ -1412,7 +1412,7 @@ V2_SAVE_ARRAY:
 ; real LOAD.
 V2_VERIFY:
     ld a,(V2_REQUEST_TYPE)
-    and STORAGE_CODE_TYPE        ; v2.2 (item D): VERIFY ... CODE (3) compares the range; EXT, ARRAY and
+    and STORAGE_CODE_TYPE        ; v2.1.2 (item D): VERIFY ... CODE (3) compares the range; EXT, ARRAY and
     ld (V2_REQUEST_TYPE),a       ; ALL ($80) verify the program (0), as before
     jr nz,.verify_mode           ; (the range as it is: no SAVE ... ALL layout)
     ld a,(SESS_VALID)
@@ -1435,7 +1435,7 @@ V2_LOAD:
     or a
     jp z,.missing_name
     ld hl,SESS_VALID             ; EXT and CODE end the session (the session's code may call the package
-    ld a,(STORAGE_VERIFY_MODE)   ; being replaced; v2.2: LOAD ... CODE ends it too -- program, store and
+    ld a,(STORAGE_VERIFY_MODE)   ; being replaced; v2.1.2: LOAD ... CODE ends it too -- program, store and
     and (hl)                     ; packages stay); VERIFY ... CODE writes nothing and keeps it: SESS_VALID
     ld (hl),a                    ; AND STORAGE_VERIFY_MODE (both 0 or 1)
 .name:
@@ -1461,7 +1461,7 @@ V2_LOAD:
     ld de,EXTENSION_MODULE_LIMIT-EXTENSION_MODULE_BASE
     ld ix,EXTENSION_MODULE_BASE
     jr .load_call
-.code_receive:                  ; v2.2 (item D): IX = start, DE = length (0 = not given: STORAGE_LOAD
+.code_receive:                  ; v2.1.2 (item D): IX = start, DE = length (0 = not given: STORAGE_LOAD
     ld ix,(V2_CODE_START)        ; bounds it by 65536 - start; start 0 = the address the tape names)
     ld de,(V2_CODE_LEN)
     jr .load_call
@@ -1482,7 +1482,7 @@ V2_LOAD:
     or a
     jr z,.program_loaded
     cp STORAGE_CODE_TYPE
-    jr z,.loaded_msg             ; v2.2: CODE -- the bytes are where they belong
+    jr z,.loaded_msg             ; v2.1.2: CODE -- the bytes are where they belong
     ld (V2_PACKAGE_LEN),de
     call EXTENSION_MODULE_BASE   ; R10.9: the ABI version word was already checked by
                                    ; STORAGE_LOAD against the header, before any byte of
@@ -1551,7 +1551,7 @@ V2_LOAD:
     or a
     jr z,.program_failed
     cp STORAGE_CODE_TYPE
-    jr z,.pop_classify           ; v2.2: CODE -- nothing to undo (a partly loaded range stays as it is)
+    jr z,.pop_classify           ; v2.1.2: CODE -- nothing to undo (a partly loaded range stays as it is)
     call KTAB_EXT2_CLEAR_ALL
     ld hl,0
     ld (V2_PACKAGE_LEN),hl
@@ -1596,7 +1596,7 @@ V2_LOAD:
 .verified:
     ld a,(V2_REQUEST_TYPE)
     cp STORAGE_CODE_TYPE
-    jr z,.verified_ok            ; v2.2: CODE -- the range matched
+    jr z,.verified_ok            ; v2.1.2: CODE -- the range matched
     ; R10.9 (D2): the transport compared the first <tape length> bytes; the
     ; programs are only equal if the tape ALSO ends where the program does
     ; (DE = tape length).  A shorter or longer tape would otherwise verify
@@ -1608,7 +1608,7 @@ V2_LOAD:
     or a
     sbc hl,de
     jr nz,.clean_failure
-    call SA_IS_ALL               ; v2.2: a SAVE ... ALL tape (CF) has a second block: compare it too
+    call SA_IS_ALL               ; v2.1.2: a SAVE ... ALL tape (CF) has a second block: compare it too
     call c,V2_RECV_S             ; (CF set on entry = verify; out: B = abort flag)
     jr c,.clean_failure
 .verified_ok:

@@ -10,7 +10,7 @@ later in the wrong place fails `make check` instead of corrupting a program at r
   (PROG_AREA_START .. V2_CODE_LIMIT) other than the region boundaries themselves;
 * no such cell lies inside the compile zone other than the zone's own cells;
 * the zone does not overlap the bytecode area, the package scratch or a pinned package cell;
-* v2.2 (item C): array segment 2 (ARR2_BASE .. ARR2_LIMIT, $5B00-$77FF) lies between the screen and
+* v2.1.2 (item C): array segment 2 (ARR2_BASE .. ARR2_LIMIT, $5B00-$77FF) lies between the screen and
   $7800 and below the pool, and no referenced RAM cell (other than its own bounds and MODE 1's
   attribute-file address) lies inside it.
 

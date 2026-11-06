@@ -42,7 +42,7 @@ What the status line (the bottom row of the screen) can say. The program or comm
 | `BAD ARRAY TAPE` | the tape block is not a valid array |
 | `ARRAY STORE FULL` | `LOAD ... ARRAY`: the tape's array is longer than the room available in the Array Store, or than the free memory above the program text, into which it is received first (a very large program text leaves less room than the store); the store is unchanged |
 | `LINE n/m` | not an error: the editor's status line (cursor line *n* of *m*) |
-| `2068 LEAP V2.1.1` | not an error: the ROM's version, shown after switching on until the first key |
+| `2068 LEAP V2.1.2` | not an error: the ROM's version, shown after switching on until the first key |
 
 The `PROGRAM FULL` message is covered by the release qualification (defect RC-2), not by an example of this manual: it needs a nearly full program memory.
 

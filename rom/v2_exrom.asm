@@ -73,7 +73,7 @@ V2_VERIFY_KTAB:
     INCLUDE "rom/exrom_format.asm"
     INCLUDE "rom/exrom_calc.asm"
     INCLUDE "rom/exrom_v2_float_fn.asm"    ; 5.9: the float built-ins
-    IFNDEF V2_MAINT_AY_HOME                  ; v2.2 (G2): otherwise SOUND_EXROM is in HOME
+    IFNDEF V2_MAINT_AY_HOME                  ; v2.1.2 (G2): otherwise SOUND_EXROM is in HOME
     INCLUDE "rom/exrom_sound.asm"
     ENDIF
     IFDEF V2_MAINT_AY_BEEP

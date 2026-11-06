@@ -1947,7 +1947,7 @@ VM_ARENA_FIT:
         scf
         ret
 
-; ARR2_TOP -- v2.2: DE = the effective top of segment 2: ARR2_LIMIT, or SECOND_DISPLAY_ADDR ($6000)
+; ARR2_TOP -- v2.1.2: DE = the effective top of segment 2: ARR2_LIMIT, or SECOND_DISPLAY_ADDR ($6000)
 ; while MODE 1 shows its attribute file there (GFX_MODE: 0 at cold start, 1 only after GFX_SET_MODE
 ; let MODE 1 in). CF clear. Destroys A.
 ARR2_TOP:
@@ -5431,7 +5431,7 @@ BUILTIN_FN_FREE:
         sbc hl,de
         jp VM_PUSH_INT          ; RC shrink: TAG_INT + VM_PUSH
 
-; FREE(n) -- R10.7 P5.5. FREE(1) = bytes free in array segment 2 ($5B00-$77FF; v2.2: up to $6000
+; FREE(n) -- R10.7 P5.5. FREE(1) = bytes free in array segment 2 ($5B00-$77FF; v2.1.2: up to $6000
 ; while MODE 1 is on, ARR2_TOP); any other argument behaves as FREE() (the main pool, up to the
 ; control stack).
 BUILTIN_FN_FREE_N:

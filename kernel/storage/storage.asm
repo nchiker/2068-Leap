@@ -27,7 +27,7 @@ STORAGE_LOAD_BAD_VERSION     EQU $FE     ; R10.9 failure return marker: the head
                                          ; written (a clean failure, like A = 0)
 STORAGE_LOAD_DATA_TOUCHED    EQU $FF     ; failure return marker: at least
                                          ; one destination byte was written
-STORAGE_LOAD_TOO_LONG        EQU $FD     ; v2.2 failure return marker: the header's
+STORAGE_LOAD_TOO_LONG        EQU $FD     ; v2.1.2 failure return marker: the header's
                                          ; length exceeds the caller's DE; nothing was
                                          ; written (a clean failure, like A = 0)
 STORAGE_NO_AUTOSTART         EQU $8000
@@ -163,7 +163,7 @@ STORAGE_SAVE:
     ; array and package tapes keep the data length.
     ld   a, (STORAGE_REQUEST_TYPE)
     IFDEF STORAGE_VERSIONED
-    cp   STORAGE_CODE_TYPE                ; v2.2 (item D): a CODE tape names its start address (IX)
+    cp   STORAGE_CODE_TYPE                ; v2.1.2 (item D): a CODE tape names its start address (IX)
     jr   nz, .not_code                    ; here (Leap's versioned header: not a stock CODE tape)
     push ix
     pop  hl
@@ -235,7 +235,7 @@ STORAGE_SAVE:
 ; STORAGE_LOAD
 ; In:  IX = destination pointer, HL = filename pointer, B = filename
 ;      length (0 = wildcard, LOAD ""), DE = max allowed data length
-;      (v2.2, V2 builds, request type STORAGE_CODE_TYPE: DE = 0 = no bound given: start + length
+;      (v2.1.2, V2 builds, request type STORAGE_CODE_TYPE: DE = 0 = no bound given: start + length
 ;      must not pass 65536; IX = 0 = take the destination from the header's PROGLEN field)
 ; Out: DE = actual data length received (only meaningful if carry
 ;          clear), A = 0 on success or a clean failure,
@@ -245,7 +245,7 @@ STORAGE_SAVE:
 ;          failed). A distinguishes whether destination bytes were written
 ;          (0 clean / STORAGE_LOAD_DATA_TOUCHED) or an unsupported version
 ;          (STORAGE_LOAD_BAD_VERSION), or the header's length exceeding the
-;          caller's DE (STORAGE_LOAD_TOO_LONG, v2.2; clean).  R10.9: B is nonzero on a failure
+;          caller's DE (STORAGE_LOAD_TOO_LONG, v2.1.2; clean).  R10.9: B is nonzero on a failure
 ;          if SPACE (the tape-abort key) was held; B = 0 on success.
 ;          In VERIFY mode (STORAGE_VERIFY_MODE != 0) nothing is ever stored
 ;          to IX, so a failure is always clean (A = 0).
@@ -352,7 +352,7 @@ STORAGE_LOAD:
     ld   a, (STORAGE_CHECKSUM)
     ld   b, a
     djnz .header_search
-    jr   .header_giveup                   ; v2.2: the same rebalance-and-fail tail
+    jr   .header_giveup                   ; v2.1.2: the same rebalance-and-fail tail
 
 .header_rejected:
     ; A valid standard header for another file type is not corruption;
@@ -366,7 +366,7 @@ STORAGE_LOAD:
     ld   a, (STORAGE_CHECKSUM)
     ld   b, a
     djnz .header_search
-    jr   .header_giveup                   ; v2.2: the same rebalance-and-fail tail
+    jr   .header_giveup                   ; v2.1.2: the same rebalance-and-fail tail
 
 .name_ok:
     IFDEF STORAGE_VERSIONED
@@ -385,7 +385,7 @@ STORAGE_LOAD:
     ENDIF
     ld   hl, (STORAGE_MAX_LEN)
     IFDEF STORAGE_VERSIONED
-    ; v2.2 (item D) LOAD / VERIFY ... CODE: DE = 0 on entry (no length given) means "start + the
+    ; v2.1.2 (item D) LOAD / VERIFY ... CODE: DE = 0 on entry (no length given) means "start + the
     ; header's length must not pass 65536", with start = IX, or (IX = 0, no start given) the address
     ; the header names, which then becomes the destination. Refused here, before any byte is stored.
     ld   a, (STORAGE_REQUEST_TYPE)

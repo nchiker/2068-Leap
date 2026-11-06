@@ -55,13 +55,13 @@ def arr_intact():
 case("stack-into-arrays", ["proc f(n)", "call f(n + 1)", "endp", "dim a(2000)", "a(1999) = 9", "call f(0)"],
      ve=6, extra=arr_intact)
 # 7. arrays into stack: fits alone, refused when 200 frames deep
-# v2.2 (item C): a(3800) is 7603 bytes, more than array segment 2 holds (7424), so it can only live in the main
+# v2.1.2 (item C): a(3800) is 7603 bytes, more than array segment 2 holds (7424), so it can only live in the main
 # pool: fits alone, refused (64) when 200 stack levels have taken part of the pool.  (a(3300) fits segment 2 now.)
 dimprog = lambda d: ["proc f(n)", "if n > 0 then call f(n - 1)", "endif", "if n = 0 then dim a(3800)",
                      "endif", "endp", f"call f({d})"]
 case("dim-alone", dimprog(0))
 case("dim-under-recursion", dimprog(200), ve=64)
-# 7b. second array segment (v2.2: $5B00-$77FF, 7424 bytes; was $E000-$E7FF): used only when the main
+# 7b. second array segment (v2.1.2: $5B00-$77FF, 7424 bytes; was $E000-$E7FF): used only when the main
 # pool is full.  Its range comes from the build's symbols.
 SEG2, SEG2_LIMIT = HSYM["ARR2_BASE"], HSYM["ARR2_LIMIT"]
 SEG2_SIZE = SEG2_LIMIT - SEG2

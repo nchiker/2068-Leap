@@ -12,7 +12,7 @@
 ;   3. Stack grows into the arrays: DIM A(2000) then unbounded recursion ->
 ;      error 6, CSP >= ARRAYS_END, and the array's last element is intact.
 ;   4. Arrays grow into the stack: DIM A(3800) (7,603 bytes: more than array segment 2 holds,
-;      7,424, so it can only live in the main pool; v2.2 item C: it was A(3300) while segment 2
+;      7,424, so it can only live in the main pool; v2.1.2 item C: it was A(3300) while segment 2
 ;      was 2 KB) alone fits (no error), the same DIM from 200 levels deep is refused with error 64.
 ; ============================================================================
     DEFINE TEST_V2_CUSTOM_CHECKS

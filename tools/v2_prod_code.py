@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""v2.2 item D -- SAVE / LOAD / VERIFY "name" CODE on the production ROM (docs/V2_2_STORAGE_RELEASE_PLAN.md 2.3).
+"""v2.1.2 item D -- SAVE / LOAD / VERIFY "name" CODE on the production ROM (docs/V2_2_STORAGE_RELEASE_PLAN.md 2.3).
 
 Every case runs the real production image through tools/v2_prod.py: commands go through the real
 V2_DISPATCH (and so the real V2_PARSE_NAME), SAVEs are captured at the sender's call site

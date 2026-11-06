@@ -4,7 +4,7 @@
 ; docs/V2_SAVE_ALL_FORMAT.md.
 ;
 ; A SAVE ... ALL tape is a program block (header type 0) whose header PROGLEN (the Spectrum "program
-; part" length) is shorter than its data length, FOLLOWED (v2.2; the format minor stays 1) by a second data block:
+; part" length) is shorter than its data length, FOLLOWED (v2.1.2; the format minor stays 1) by a second data block:
 ; segment 2, sent straight from its own address after a silent gap long enough for LOAD's checks of the
 ; first block (SA_GAP). Block 1 holds the program and then the variable session -- the memory a stopped
 ; program's session occupies, as an exact image:
@@ -123,7 +123,7 @@ SA_UNBUILD:
         ret
 
 ; The addresses a session's cells hold, in the order they must lie in memory (each <= the next).
-; v2.2 (item C): segment 2 ($5B00-$77FF) lies below the program pool, so its four come first.
+; v2.1.2 (item C): segment 2 ($5B00-$77FF) lies below the program pool, so its four come first.
 SA_CHAIN:
         dw SA_K_ARR2_BASE, PAS_END, ARR2_END, SA_K_ARR2_LIM
         dw PROG_END, SYM_BASE_V, PROG_END ; the symbol table starts at the program's end
@@ -245,7 +245,7 @@ SA_RESTORE:
         or e
         jr z,.ptr
         push hl
-        ex de,hl                          ; v2.2: segment 2 first -- it lies below the arena
+        ex de,hl                          ; v2.1.2: segment 2 first -- it lies below the arena
         ld de,ARR2_BASE                   ; (ASSERT ARR2_LIMIT <= PROG_AREA_START, include/v2_layout.inc)
         sbc hl,de
         jr c,.ptr_bad                     ; below segment 2, so below the arena too

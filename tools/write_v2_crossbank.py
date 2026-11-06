@@ -104,11 +104,11 @@ NAMES = (
     "SA_RESTORE",
     "SA_SEAL",
     "SA_SIZES",
-    "SA_FINISH",                # v2.2: block 2 (segment 2) of a SAVE ... ALL tape
+    "SA_FINISH",                # v2.1.2: block 2 (segment 2) of a SAVE ... ALL tape
     "SA_GAP",
     "SA_S_SETUP",
     "SA_IS_ALL",
-    "LEX_ACCUM_DIGIT",          # v2.2 (item D): the shell's CODE start,length reader (V2_NUM)
+    "LEX_ACCUM_DIGIT",          # v2.1.2 (item D): the shell's CODE start,length reader (V2_NUM)
     "SA_W",
     "SA_S",
     "SA_TAIL",
@@ -136,7 +136,7 @@ NAMES = (
     "V2_VER_SCOPE",
 )
 # MAINT (AY BEEP): exported only when the HOME build has them as HOME code (rom/v2_ay_beep.asm placement;
-# v2.2 G2: SOUND_EXROM is HOME code in the V2_MAINT_AY_HOME build, else an EQU of its EXROM slot).
+# v2.1.2 G2: SOUND_EXROM is HOME code in the V2_MAINT_AY_HOME build, else an EQU of its EXROM slot).
 OPTIONAL = ("AY_BEEP_PERIOD", "AY_BEEP_PLAY", "AY_WAIT_FRAMES", "SOUND_EXROM")
 
 

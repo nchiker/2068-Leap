@@ -20,8 +20,8 @@ import v2_prod as P              # noqa: E402
 import tape_synth as TS          # noqa: E402
 
 K_LEN = 0x31                     # the session cells $B800..$B830 (SA_K_LEN)
-SEG2 = P.sym("ARR2_BASE")        # v2.2 (item C): segment 2 is $5B00-$77FF (was $E000-$E7FF)
-TAIL = K_LEN + 6                 # v2.2: cells, segment-2 CRC, identity CRC, block CRC
+SEG2 = P.sym("ARR2_BASE")        # v2.1.2 (item C): segment 2 is $5B00-$77FF (was $E000-$E7FF)
+TAIL = K_LEN + 6                 # v2.1.2: cells, segment-2 CRC, identity CRC, block CRC
 
 
 def crc16(data):
@@ -58,7 +58,7 @@ def session_save(prog, immediates=(), command='SAVE "ALLT" ALL', run_first=True,
     for s in immediates:
         typed(s)
     blocks, msg = P.capture_save(command)
-    _seg[0] = blocks[2][1] if len(blocks) == 3 else b""      # v2.2: SAVE ... ALL sends segment 2 as block 2
+    _seg[0] = blocks[2][1] if len(blocks) == 3 else b""      # v2.1.2: SAVE ... ALL sends segment 2 as block 2
     if len(blocks) not in (2, 3):
         return None, None, msg
     return blocks[0][1], blocks[1][1], msg
@@ -255,7 +255,7 @@ def sa_package_same():
     return r["msg"] == "LOADED" and x == 4 and ve == 0, "load=%s x=%s goto-dot err=%d" % (r["msg"], x, ve)
 
 
-@case("sa-big-store", "v2.2: a store that overflowed segment 2 and a full bytecode area save and load (the old partition rule is gone)")
+@case("sa-big-store", "v2.1.2: a store that overflowed segment 2 and a full bytecode area save and load (the old partition rule is gone)")
 def sa_big_store():
     # ~2.4K of bytecode and ~6.8K of source, a(1000) fills what is left of the main pool, b(1000) goes to
     # segment 2: the old single block (bytecode + segment 2 + 53 > the code area) said OUT OF MEMORY.
@@ -271,7 +271,7 @@ def sa_big_store():
         "save=%s seg2=%d after=%s load=%s loaded=%s" % (msg, seg, x, r["msg"], y)
 
 
-@case("sa-seg2-7k", "v2.2 (item C): a SAVE ALL whose segment 2 holds a 7 KB string array (block 2 over 7,000 bytes, past $6000) round trips")
+@case("sa-seg2-7k", "v2.1.2 (item C): a SAVE ALL whose segment 2 holds a 7 KB string array (block 2 over 7,000 bytes, past $6000) round trips")
 def sa_seg2_7k():
     prog = ["DIM p(4000)", "DIM s$(100,70)", 's$(1) = "first"', 's$(99) = "last one"', "p(3999) = 9"]
     hdr, data, msg = session_save(prog)
@@ -301,7 +301,7 @@ def _prep_entry():
 BIGPROG = ["DIM big(3600)", "DIM o(900)", "o(899) = 31", "DIM b(5)", "b(3) = 12"]
 
 
-@case("sa-two-blocks", "v2.2: SAVE ALL sends the header, block 1 (no segment 2) and block 2 = segment 2 as it is in memory; its CRC is in the tail; the format word is unchanged")
+@case("sa-two-blocks", "v2.1.2: SAVE ALL sends the header, block 1 (no segment 2) and block 2 = segment 2 as it is in memory; its CRC is in the tail; the format word is unchanged")
 def sa_two_blocks():
     P.boot()
     P.put_store(BIGPROG)
@@ -322,7 +322,7 @@ def sa_two_blocks():
         msg, n, b2 == mem, hlen, len(b1), c2 == crc16(mem), c1 == crc16(b1[:-2]), word)
 
 
-@case("sa-gap", "v2.2: the silence between block 1 and block 2 is 4.5 s (14.9-16.6 million T), and the SAVE still ends SAVED")
+@case("sa-gap", "v2.1.2: the silence between block 1 and block 2 is 4.5 s (14.9-16.6 million T), and the SAVE still ends SAVED")
 def sa_gap():
     P.boot()
     P.put_store(["x = 5"])
@@ -338,7 +338,7 @@ def sa_gap():
         "msg=%s blocks=%d gap=%d T (%.2f s)" % (msg, len(blocks), gap, gap / 3_500_000)
 
 
-@case("sa-gap-space", "v2.2: SPACE pressed in the silence between the blocks: ABORTED, block 2 not sent, the session still works")
+@case("sa-gap-space", "v2.1.2: SPACE pressed in the silence between the blocks: ABORTED, block 2 not sent, the session still works")
 def sa_gap_space():
     P.boot()
     P.put_store(PROG)
@@ -355,7 +355,7 @@ def sa_gap_space():
     return msg == "ABORTED" and len(blocks) == 2 and x == 6, "msg=%s blocks=%d x+1=%s" % (msg, len(blocks), x)
 
 
-@case("sa-minor-rules", "v2.2: an older-minor ALL tape from another ROM loads its program only; a newer-minor tape is BAD TAPE VERSION")
+@case("sa-minor-rules", "v2.1.2: an older-minor ALL tape from another ROM loads its program only; a newer-minor tape is BAD TAPE VERSION")
 def sa_minor_rules():
     hdr, data, msg = session_save(PROG, IMM)
     old = bytearray(hdr)
@@ -370,7 +370,7 @@ def sa_minor_rules():
         "minor1=%s minor3=%s" % (r1["msg"], r3["msg"])
 
 
-@case("sa-other-rom-keeps-store", "v2.2: a tape from another ROM loads its program only and the Array Store present is KEPT (block 2 is never read)")
+@case("sa-other-rom-keeps-store", "v2.1.2: a tape from another ROM loads its program only and the Array Store present is KEPT (block 2 is never read)")
 def sa_other_rom_keeps_store():
     hdr, data, msg = session_save(BIGPROG)
     bad = bytearray(data)
@@ -393,21 +393,21 @@ def _block2_failure(label, **kw):
     return r, pas
 
 
-@case("sa-block2-crc", "v2.2: segment 2 damaged on the tape (valid transport parity): NO VARIABLES, the program kept, the Array Store emptied")
+@case("sa-block2-crc", "v2.1.2: segment 2 damaged on the tape (valid transport parity): NO VARIABLES, the program kept, the Array Store emptied")
 def sa_block2_crc():
     r, pas = _block2_failure("crc", flip=True)
     return r["msg"] == "NO_VARS" and r["after"] == TS.source_records(BIGPROG) and pas == SEG2, \
         "load=%s PAS_END=%04X" % (r["msg"], pas)
 
 
-@case("sa-block2-parity", "v2.2: block 2 with a bad transport checksum: NO VARIABLES, the program kept, the Array Store emptied")
+@case("sa-block2-parity", "v2.1.2: block 2 with a bad transport checksum: NO VARIABLES, the program kept, the Array Store emptied")
 def sa_block2_parity():
     r, pas = _block2_failure("parity", bad_parity=True)
     return r["msg"] == "NO_VARS" and r["after"] == TS.source_records(BIGPROG) and pas == SEG2, \
         "load=%s PAS_END=%04X" % (r["msg"], pas)
 
 
-@case("sa-block2-missing", "v2.2: the tape ends after block 1: NO VARIABLES after the receiver's 8.6 s, the program kept, the Array Store emptied")
+@case("sa-block2-missing", "v2.1.2: the tape ends after block 1: NO VARIABLES after the receiver's 8.6 s, the program kept, the Array Store emptied")
 def sa_block2_missing():
     r, pas = _block2_failure("missing", missing=True)
     return r["msg"] == "NO_VARS" and r["after"] == TS.source_records(BIGPROG) and pas == SEG2, \
@@ -428,7 +428,7 @@ def _verify_with(tape, prog=PROG, imm=IMM, probe="x + w"):
     return m, num_of(probe)
 
 
-@case("sa-verify-block2", "v2.2: VERIFY compares block 2 too: a damaged segment 2 or a missing block 2 is VERIFY FAILED, the session intact")
+@case("sa-verify-block2", "v2.1.2: VERIFY compares block 2 too: a damaged segment 2 or a missing block 2 is VERIFY FAILED, the session intact")
 def sa_verify_block2():
     hdr, data, msg = session_save(BIGPROG)
     seg = bytearray(_seg[0])
@@ -440,7 +440,7 @@ def sa_verify_block2():
     return len(seg) > 0 and all(m == "VERIFY_FAILED" and v == 31 for _, m, v in out), str(out)
 
 
-@case("sa-verify-block2-ok", "v2.2: VERIFY of a two-block tape whose segment 2 is not empty succeeds, and the session still works")
+@case("sa-verify-block2-ok", "v2.1.2: VERIFY of a two-block tape whose segment 2 is not empty succeeds, and the session still works")
 def sa_verify_block2_ok():
     hdr, data, msg = session_save(BIGPROG)
     m, v = _verify_with(tape_of(hdr, data), BIGPROG, (), "o(899)")

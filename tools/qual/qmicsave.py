@@ -7,17 +7,17 @@ breakpoint whose action prints TSTATESP * 16 + (A & 8) on ZEsarUX's standard out
 so the transfer runs undisturbed; the edges are then decoded back into blocks. After 2068-Leap-C's
 lcharness.tape_capture / tapes.decode / tapetest.py "roundtrip".
 
-v2.2 (item C): segment 2 is $5B00-$77FF, contended RAM. The cases all-seg2 and array-seg2 put an 808-byte
+v2.1.2 (item C): segment 2 is $5B00-$77FF, contended RAM. The cases all-seg2 and array-seg2 put an 808-byte
 Array Store entry there (SEG_ENTRY), so the real sender reads block 2's payload (SAVE ... ALL) and a stored
 array's descriptor (SAVE ... ARRAY) from $5B00+; their captured signals are played back into the real LOAD,
 which must give back the bytes at $5B00.. (LOAD ... ALL receives block 2 straight into $5B00+).
 
-Checked per case: two blocks (three for SAVE ... ALL: v2.2 sends segment 2 as block 2 after a gap of about
+Checked per case: two blocks (three for SAVE ... ALL: v2.1.2 sends segment 2 as block 2 after a gap of about
 4.5 s, measured here from the edges), each checksum valid; the header (type, name, length = the data block's,
 the format word in the autostart field); the data block = the bytes SAVE was asked to send; pilot
 counts (8,063 header, 3,223 data, within one); every pulse the stock ROM's width -2..+16 T. Program
 SAVE also plays the captured signal back as EAR input to the real LOAD (tools/v2_prod.tape_op), which
-must restore the program. v2.2 (item D): `code` saves CODE_N bytes from CODE_START (header type 3, PROGLEN
+must restore the program. v2.1.2 (item D): `code` saves CODE_N bytes from CODE_START (header type 3, PROGLEN
 = the start); its data block must be the memory range byte for byte, and its playback through
 LOAD "BLOB" CODE must put the range back after it was wiped.
 

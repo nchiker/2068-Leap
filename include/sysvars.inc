@@ -1152,7 +1152,7 @@ STORAGE_HEADER_FILENAME_LEN EQU 10 ; NOT a sysvar address — a plain
                                  ; below.
 STORAGE_PROGRAM_TYPE   EQU 0
 STORAGE_EXTENSION_TYPE EQU 4
-STORAGE_CODE_TYPE      EQU 3      ; v2.2 (item D): SAVE/LOAD/VERIFY "name" CODE; the header's
+STORAGE_CODE_TYPE      EQU 3      ; v2.1.2 (item D): SAVE/LOAD/VERIFY "name" CODE; the header's
                                    ; PROGLEN field holds the start address. Type 3 as stock, but the
                                    ; header is Leap's own (version word): not a stock CODE tape
 STORAGE_ARRAY_TYPE     EQU 8      ; Dynamic Data Phase 2 -- SAVE/LOAD

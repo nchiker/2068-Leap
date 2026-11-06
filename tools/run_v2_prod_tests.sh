@@ -37,7 +37,7 @@ run_suite defects 10242 tools/v2_known_defects.py &
 run_suite arrays 10243 tools/v2_prod_arrays.py &
 run_suite saveall 10244 tools/v2_saveall_checks.py &     # RC: SAVE ... ALL round trips and refusals
 run_suite micsave 10245 tools/qual/qmicsave.py --port 10246 &   # the real tape sender, captured at MIC
-run_suite code 10247 tools/v2_prod_code.py &             # v2.2 (item D): SAVE / LOAD / VERIFY ... CODE
+run_suite code 10247 tools/v2_prod_code.py &             # v2.1.2 (item D): SAVE / LOAD / VERIFY ... CODE
 wait
 
 echo "===== production-ROM regression gate (tools/v2_prod_regress.py) ====="

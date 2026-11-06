@@ -356,7 +356,7 @@ ARR_VALIDATE:
 ; LEN/IS_STR (target array) set by V2_PARSE_NAME / V2_SCAN_ARRAY_NAME.
 V2_LOAD_ARRAY:
     call V2_CLEAR_ARRAYS         ; live arrays and symbols go (the session ends); the store stays
-    ld hl,(ARRAYS_END)           ; v2.2: the new entry is staged here, in the pool the LOAD has just emptied,
+    ld hl,(ARRAYS_END)           ; v2.1.2: the new entry is staged here, in the pool the LOAD has just emptied,
     inc hl                       ; past the empty symbol table, so a replacement needs room for only ONE
     inc hl                       ; copy and the store is untouched until the body is valid (the length
     ld bc,(V2_ARRAY_NAME_LEN)    ; field is filled after validation).  C = name length, B = IS_STR
@@ -386,7 +386,7 @@ V2_LOAD_ARRAY:
     push bc
     pop ix
     ex de,hl                     ; DE = the store's room
-    ld hl,V2_CODE_LIMIT          ; v2.2 (item C): the body is staged in the pool, which can be smaller than
+    ld hl,V2_CODE_LIMIT          ; v2.1.2 (item C): the body is staged in the pool, which can be smaller than
     sbc hl,bc                    ; (NC) the store (7424 B): HL = the pool's room
     sbc hl,de
     add hl,de                    ; (CF as the sbc) CF: the pool's room is the smaller

@@ -1,4 +1,4 @@
-# 2068-Leap V2 v2.2 — Storage Release: plan and brief for the managing agent
+# 2068-Leap V2 v2.1.2 — Storage Release: plan and brief for the managing agent
 
 Status: **proposed, not started** (written 2026-11-05 against `backport/leapc` at `b30ca0c`,
 HOME 313 / EXROM 111 bytes free, `make budget`). Nothing in this plan is implemented. The
@@ -40,7 +40,7 @@ come from (section 2.3); **G3** integration and the release designation.
 
 ## 1. Recommendation
 
-A **v2.2 storage maintenance release** with, in this order:
+A **v2.1.2 storage maintenance release** with, in this order:
 
 | # | Item | Expected gain | Est. ROM cost | ABI |
 |---|---|---|---|---|
@@ -239,7 +239,7 @@ unchanged, damaged tape -> `LOAD FAILED` unchanged.
 * `V2_LANGUAGE_REFERENCE.md` command table (`:105-108`): the CODE forms, the new ALL format line.
 * `docs/V2_DEFECT_REGISTER.md`: RC-O2 closed by B; a new entry for the `LOAD FAILED` ambiguity
   closed by A.
-* Release record `docs/V2_2_RELEASE_STATUS.md` from the v2.1 template; `include/v2_version.inc`;
+* Release record `docs/V2_1_2_RELEASE_STATUS.md` from the v2.1 template; `include/v2_version.inc`;
   `tools/make_rc_assets.py` designation; NOTICE unchanged.
 * Documentation drafts: a Sonnet subagent drafts from the facts here; the managing agent reviews
   against the code before committing.
@@ -269,7 +269,7 @@ in the release notes if done.
 
 The managing agent drafts the reply (via a subagent, then reviews it) and **leaves it for the
 owner to post**; nothing is posted by an agent. Content: thanks and an acknowledgement that the
-documented limits behaved as documented; what v2.2 will do for each of the five recommendations
+documented limits behaved as documented; what v2.1.2 will do for each of the five recommendations
 (CODE: yes; ALL partition rule: yes, by a second block; SAVE/LOAD as statements: CODE and SAVE
 ARRAY forms considered later, LOAD ARRAY cannot run mid-program because it discards the live
 arrays; `LOAD FAILED` on a full store: a defect, fixed, with replacement no longer needing double
@@ -425,10 +425,10 @@ large program); or receive straight into the store when the name is new or there
   block 2 is `VERIFY FAILED` (SPACE: `ABORTED`).
 - **Departures from the plan, stated.** (1) The plan's "this ROM still loads minor-1 tapes (single block)" needs no
   code: a minor-1 ALL tape was written by another ROM build, so its identity CRC cannot match; it loads its program and
-  says `NO VARIABLES` (test `sa-minor-rules`), its layout is never interpreted. (2) `V2_FORMAT_MINOR` 2 means older (v2.1.x)
+  says `NO VARIABLES` (test `sa-minor-rules`), its layout is never interpreted. (2) `V2_FORMAT_MINOR` 2 means older (v2.1.1 or earlier)
   ROMs refuse **every** tape this ROM writes, plain program tapes included, because the version word is shared. The
   identity CRC already protects an older ROM from misreading an ALL tape, so the bump is not needed for safety;
-  **for G3**: keeping minor 1 for plain tapes would keep v2.2-saved programs loadable on v2.1.x (cost: a few bytes
+  **for G3**: keeping minor 1 for plain tapes would keep v2.1.2-saved programs loadable on v2.1.1 or earlier (cost: a few bytes
   in `STORAGE_VERSION_WORD`).
 - **Bytes** (`make budget`, working tree after A -> after B): **HOME 403 -> 325 free (-78)**, **EXROM 89 -> 32 free (-57)**.
   HOME: `SA_FINISH` ~42, `SA_GAP` 22, `SA_SEAL` +~12, `SA_S_SETUP`+`SA_IS_ALL` ~26, `SA_COPY` -7, `SA_SIZES` -2, `SA_RESTORE` tail
@@ -504,9 +504,9 @@ R2 (the SPACE test of `V2_RECV_S` into HOME: it hides the hook `press_space` use
 ### G3 decision on the tape version stamp (2026-11-05; owner: "practically no tapes have been created ... option 2, whatever has the smallest ROM impact")
 
 `V2_FORMAT_MINOR` goes back to **1** (the item B bump to 2 is withdrawn). No ROM size change (a constant; HOME and EXROM free bytes
-as before), so the smallest impact of the three options. A v2.2 `SAVE ... ALL` tape carries the same version word as a v2.1.x one; the
-identity CRC separates the ROM builds (a v2.1.x ROM loads the program of a v2.2 ALL tape and says `NO VARIABLES`, and the reverse), plain
-program tapes are unchanged and load on v2.1.x. `docs/V2_SAVE_ALL_FORMAT.md`, the comment in `include/v2_package_abi.inc` and the tests
+as before), so the smallest impact of the three options. A v2.1.2 `SAVE ... ALL` tape carries the same version word as a v2.1.1 or earlier one; the
+identity CRC separates the ROM builds (a v2.1.1 or earlier ROM loads the program of a v2.1.2 ALL tape and says `NO VARIABLES`, and the reverse), plain
+program tapes are unchanged and load on v2.1.1 or earlier. `docs/V2_SAVE_ALL_FORMAT.md`, the comment in `include/v2_package_abi.inc` and the tests
 (`sa-two-blocks` compares the header word with the ABI's, `sa-minor-rules` uses minor - 1 and minor + 1) follow. The earlier departure
 note in the item B outcome ("V2_FORMAT_MINOR 2 means older ROMs refuse every tape") is superseded by this entry.
 

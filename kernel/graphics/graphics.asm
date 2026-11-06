@@ -1113,7 +1113,7 @@ GFX_SET_ATTR:
 ;      calling)
 ; Out: none
 ; Destroys: AF, BC, DE, HL
-; v2.2 (V2 production, item C): MODE 1's attribute file ($6000-$77FF) lies in array segment 2
+; v2.1.2 (V2 production, item C): MODE 1's attribute file ($6000-$77FF) lies in array segment 2
 ; ($5B00-$77FF). Entering MODE 1 while the segment reaches above $6000 (ARR2_END > $6000; ARR2_END >=
 ; PAS_END, so the Array Store is covered) raises run-time error 64 (OUT OF MEMORY) through
 ; VM_ERR_ARRAY_SPACE before anything changes -- here, not in the MODE package, so every MODE package

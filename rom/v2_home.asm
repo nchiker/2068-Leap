@@ -126,7 +126,7 @@ AY_BEEP EQU V2_EXROM_AY_BEEP_ADDR        ; MAINT (AY BEEP)
     INCLUDE "rom/v2_ay_beep.asm"            ; MAINT (AY BEEP): the HOME pieces
     ENDIF
     IFDEF V2_MAINT_AY_HOME
-    INCLUDE "rom/exrom_sound.asm"           ; v2.2 (G2): SOUND_EXROM is HOME code (the name kept)
+    INCLUDE "rom/exrom_sound.asm"           ; v2.1.2 (G2): SOUND_EXROM is HOME code (the name kept)
     ENDIF
     INCLUDE "rom/exrom_v2_compiler.asm"
     INCLUDE "rom/v2_saveall.asm"            ; RC: SAVE ... ALL (owner decision 2)

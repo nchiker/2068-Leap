@@ -33,7 +33,7 @@ PROGS = {
               "IF g(i) = 0 THEN GOTO skip", "r = i + i + 3", "k = i + r", "IF k > s THEN GOTO noclear",
               "clearloop:", "g(k) = 0", "k = k + r", "IF k <= s THEN GOTO clearloop", "noclear:", "c = c + 1",
               "skip:", "NEXT i"],
-    # v2.2 (item C): the same array loop with the array in segment 2 (p fills the main pool, q overflows;
+    # v2.1.2 (item C): the same array loop with the array in segment 2 (p fills the main pool, q overflows;
     # $5B00+ is contended RAM since item C, $E000+ before) and in the main pool (control)
     "seg2_array": ["DIM p(4000)", "DIM q(600)", "FOR k = 1 TO 4", "FOR i = 0 TO 599", "q(i) = i", "x = q(i)",
                    "NEXT i", "NEXT k"],

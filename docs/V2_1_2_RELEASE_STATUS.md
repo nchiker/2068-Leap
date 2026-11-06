@@ -1,17 +1,17 @@
-# 2068-Leap V2 Enhanced v2.2 (designation pending, owner gate G3) -- Storage Release: status
+# 2068-Leap V2 Enhanced v2.1.2 (designation pending, owner gate G3) -- Storage Release: status
 
 **Start here** for this release. The earlier releases are unchanged: `v2.1.1-emu.1` (graphics and joystick maintenance release, `V2_1_1_RELEASE_STATUS.md`), `v2.1.0-emu.1` (speed and package functions release, `V2_1_RELEASE_STATUS.md`), `v2.0.2-emu.1` (compiler maintenance release, `V2_COMPILER_MAINT_RELEASE_STATUS.md`), `v2.0.1-emu.1` (sound maintenance release, `V2_MAINT_RELEASE_STATUS.md`) and `v2.0.0-emu.1` (`V2_RC_STATUS.md`).
 
 | | |
 |---|---|
-| Designation | **TODO(owner): release designation and tag name (owner gate G3; the designation goes into `tools/make_rc_assets.py`)** |
+| Designation | **v2.1.2-emu.1 — Storage Maintenance Release** (owner decision; boot screen `2068 LEAP V2.1.2`; `tools/make_rc_assets.py`) |
 | Status | **emulator-qualified, not hardware-qualified**: the ROMs passed the emulator qualification below (ZEsarUX); **physical TS2068 compatibility has not been verified**. TODO(owner): confirm the wording once G3 is decided |
 | Approved | TODO(owner): approval date and what was waived (`make test-legacy` (V1, Fuse) and the hardware checklist were waived for `v2.1.0-emu.1` and `v2.1.1-emu.1`) |
 | Release source | TODO(owner): annotated tag and merge commit. The work is on branch `release/v2.2-storage`; the ROM qualified below is commit `46a974a` |
 | Previous release | `v2.1.1-emu.1` (`4891681`), unchanged and reproducible from its tag |
 | Hardware | **NOT TESTED — PHYSICAL HARDWARE UNAVAILABLE**: `V2_HARDWARE_CHECKLIST.md` (rows 2.11 to 2.13 and 3.12 to 3.16 are this release's); nothing was run |
 
-TODO(owner): the boot screen's version text (`include/v2_version.inc`, owner gate G3).
+The boot screen shows `2068 LEAP V2.1.2` (`include/v2_version.inc`, owner decision).
 
 ## 1. What changed from v2.1.1-emu.1
 
@@ -48,7 +48,7 @@ The origin is a GitHub experience report on `v2.1.1-emu.1`: a card-file program 
 
 **Tape format (owner gate G3, option 2)**
 
-* The format minor **stays 1**. A v2.2 `SAVE ... ALL` tape carries the same version word as a v2.1.x one; the identity CRC separates the ROM builds. A v2.2 ALL tape on a v2.1.x ROM loads the program and says `NO VARIABLES`, and a v2.1.x ALL tape on v2.2 does the same. Plain program tapes are unchanged: v2.2 program tapes load on v2.1.x. (The v2.1.x side follows from the order of its checks and has not been run on a v2.1.x ROM.)
+* The format minor **stays 1**. A v2.1.2 `SAVE ... ALL` tape carries the same version word as a v2.1.1 or earlier one; the identity CRC separates the ROM builds. A v2.1.2 ALL tape on a v2.1.1 or earlier ROM loads the program and says `NO VARIABLES`, and a v2.1.1 or earlier ALL tape on v2.1.2 does the same. Plain program tapes are unchanged: v2.1.2 program tapes load on v2.1.1 or earlier. (The v2.1.1 or earlier side follows from the order of its checks and has not been run on a v2.1.1 or earlier ROM.)
 
 **ROM space** (`make budget`; the ledger has each step):
 

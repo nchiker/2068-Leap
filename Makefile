@@ -7,7 +7,7 @@ all: check build
 # in HOME. `make build EXTRA_DEFS=` builds the accepted release images (identical hashes).
 # MAINT (study/classicbeep): plus V2_MAINT_SHARED_WAIT -- PAUSE, BEEP and the chime share one frame
 # wait (HOME), which BREAK ends.
-# v2.2 (owner decision G2): plus V2_MAINT_AYB_PLAY_HOME -- with the period also in HOME, all the AY sound
+# v2.1.2 (owner decision G2): plus V2_MAINT_AYB_PLAY_HOME -- with the period also in HOME, all the AY sound
 # code (BEEP, SOUND) is HOME code and its two EXROM entry slots are gone (V2_MAINT_AY_HOME, include/v2_ktab.inc).
 EXTRA_DEFS ?= -DV2_MAINT_SOUND0 -DV2_MAINT_AY_BEEP -DV2_MAINT_CHIME_C -DV2_MAINT_AYB_PERIOD_HOME -DV2_MAINT_SHARED_WAIT -DV2_MAINT_AYB_PLAY_HOME
 

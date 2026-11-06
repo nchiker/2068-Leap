@@ -8,7 +8,7 @@
 ; same): V2_MAINT_AYB_PERIOD_HOME puts AY_BEEP_PERIOD and its table in HOME, V2_MAINT_AYB_PLAY_HOME
 ; puts AY_BEEP_PLAY in HOME, V2_MAINT_AYB_WAIT_HOME puts AY_WAIT_FRAMES in HOME. EXROM code calls
 ; HOME pieces directly (build/v2_crossbank.inc); HOME reaches EXROM only through the slot.
-; v2.2 (owner decision G2): with both the period and the play loop in HOME (V2_MAINT_AY_HOME, include/
+; v2.1.2 (owner decision G2): with both the period and the play loop in HOME (V2_MAINT_AY_HOME, include/
 ; v2_ktab.inc) AY_BEEP itself is HOME code -- the period worked out inline, then on into AY_BEEP_PLAY --
 ; and OP_BEEP calls it directly: no EXROM slot, no EXROM piece.
 ;

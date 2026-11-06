@@ -12,14 +12,14 @@ below, and the case passes when the program arrives intact (LOADED). The stream 
   pilot N     a pilot of N half-pulses instead of the standard count
   gap MS      a dropout of MS milliseconds in the middle of the data block's pilot
 
-v2.2 (item C): the "all-seg2 ..." cases load a SAVE ... ALL tape whose block 2 (segment 2, an 808-byte
+v2.1.2 (item C): the "all-seg2 ..." cases load a SAVE ... ALL tape whose block 2 (segment 2, an 808-byte
 Array Store entry) the real LOAD receives straight into $5B00+, the contended RAM segment 2 occupies since
 item C, under a subset of the same distortions. The tape is the ROM's own SAVE (captured once at the sender's
 call site, tools/v2_prod.capture_save) re-synthesised with the distortion, the 4.5 s gap between block 1 and
 block 2 kept as the SAVE makes it (not scaled by `speed`). A case passes when the program, segment 2's bytes
 and PAS_END come back (LOADED).
 
-v2.2 (item D): the "code ..." cases load a CODE tape (header type 3, PROGLEN = the start, 512 bytes for
+v2.1.2 (item D): the "code ..." cases load a CODE tape (header type 3, PROGLEN = the start, 512 bytes for
 $7800) through the real LOAD "TCODE" CODE path (V2_LOAD with request type 3, no start given: the address
 comes from the header) under a subset of the same distortions; a case passes when the range arrives
 intact (LOADED). Filter "code" runs only these.

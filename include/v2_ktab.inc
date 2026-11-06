@@ -1,7 +1,7 @@
 ; R9 HOME/EXROM contract. Both images include this list and magic byte.
     IFNDEF V2_KTAB_INC
     DEFINE V2_KTAB_INC
-; v2.2 (owner decision G2): with AY BEEP's period and play loop both in HOME, all the AY sound code is
+; v2.1.2 (owner decision G2): with AY BEEP's period and play loop both in HOME, all the AY sound code is
 ; HOME code (BEEP via AY_BEEP, SOUND via SOUND_EXROM, rom/v2_ay_beep.asm / rom/exrom_sound.asm): their two
 ; EXROM entry slots are gone. V2_MAINT_AY_HOME marks that build.
     IFDEF V2_MAINT_AY_BEEP
@@ -115,7 +115,7 @@ V2_KTAB_COUNT EQU 27
 V2_KTAB_END EQU V2_KTAB_BASE + 3*V2_KTAB_COUNT
 V2_KTAB_MAGIC_ADDR EQU V2_KTAB_END
     IFDEF V2_MAINT_AY_HOME
-V2_KTAB_MAGIC EQU $20           ; v2.2 (G2): the SOUND and AY_BEEP slots gone (was $1E)
+V2_KTAB_MAGIC EQU $20           ; v2.1.2 (G2): the SOUND and AY_BEEP slots gone (was $1E)
     ELSE
     IFDEF V2_MAINT_AY_BEEP
 V2_KTAB_MAGIC EQU $1E           ; 5.9: the float built-ins' slots (was $1C, 5.4; $1B, MAINT AY BEEP)

@@ -98,7 +98,7 @@ RT_NUM_COUNT:     equ $B817   ; 1: numeric symbols (float temp slots follow them
 RT_STR_COUNT:     equ $B818   ; 1: string symbols (string temp slots follow them)
 VM_CSP:           equ $B819   ; 2: control stack pointer (lowest used byte); R10.7 P4
 ; R10.7 P5.4 -- second array segment. When an array does not fit in the main pool
-; (ARRAYS_END .. VM_CSP), OP_DIM / array LOAD place it in segment 2. v2.2 (item C, owner
+; (ARRAYS_END .. VM_CSP), OP_DIM / array LOAD place it in segment 2. v2.1.2 (item C, owner
 ; decision G1): $5B00-$77FF (7424 bytes; was $E000-$E7FF, 2048 bytes, now idle), the RAM between
 ; the screen and $7800 that nothing else in the ROM uses; $7800-$7FFF stays free for machine code.
 ; MODE 1's attribute file is $6000-$77FF (SECOND_DISPLAY_ADDR): GFX_SET_MODE refuses MODE 1
@@ -138,7 +138,7 @@ SESS_GAP          equ 80      ; bytes kept free after the symbol table for symbo
 CSTK_BASE:        equ SESS_SAVE + 23   ; 2: where the compile stack starts (empty position):
                                        ; V2_SOURCE_END, or SESS_ARENA_BASE in a session compile
 ASV_CHECK:        equ CSTK_BASE + 2        ; 1: nonzero = ARR_RUN_CHECK (compare only)
-; v2.2: HOME's SAVE ... ALL helpers (rom/v2_saveall.asm) read the tape header the storage layer (EXROM,
+; v2.1.2: HOME's SAVE ... ALL helpers (rom/v2_saveall.asm) read the tape header the storage layer (EXROM,
 ; kernel/storage/storage.asm) fills; their copies of its constants, ASSERTed equal in rom/exrom_v2_shell.asm.
 SA_FLAG_DATA:     equ $FF     ; STORAGE_TYPE_DATA
 SA_HDR_LEN_OFF:   equ 11      ; STORAGE_HEADER_LENGTH_OFF
