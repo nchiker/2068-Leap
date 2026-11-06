@@ -7,7 +7,7 @@
 | Designation | **v2.1.2-emu.1 — Storage Maintenance Release** (owner decision; boot screen `2068 LEAP V2.1.2`; `tools/make_rc_assets.py`) |
 | Status | **emulator-qualified, not hardware-qualified**: the ROMs passed the emulator qualification below (ZEsarUX); **physical TS2068 compatibility has not been verified**. TODO(owner): confirm the wording once G3 is decided |
 | Approved | TODO(owner): approval date and what was waived (`make test-legacy` (V1, Fuse) and the hardware checklist were waived for `v2.1.0-emu.1` and `v2.1.1-emu.1`) |
-| Release source | TODO(owner): annotated tag and merge commit. The work is on branch `release/v2.2-storage`; the ROM qualified below is commit `46a974a` |
+| Release source | annotated tag `v2.1.2-emu.1` on `v2-development` (fast-forward merge of `release/v2.2-storage`); the ROM qualified below is built from `2609b12`, the last ROM-changing commit |
 | Previous release | `v2.1.1-emu.1` (`4891681`), unchanged and reproducible from its tag |
 | Hardware | **NOT TESTED — PHYSICAL HARDWARE UNAVAILABLE**: `V2_HARDWARE_CHECKLIST.md` (rows 2.11 to 2.13 and 3.12 to 3.16 are this release's); nothing was run |
 
@@ -72,29 +72,29 @@ EXROM is 2 bytes above its 32-byte emergency reserve; HOME is 206 above its 64. 
 
 ## 2. Images (`make rc-assets` -> `build/release-v2-rc/`)
 
-TODO(owner): built by `make rc-assets` after G3 (designation in `tools/make_rc_assets.py`, version text in `include/v2_version.inc`). The table is filled from `build/release-v2-rc/SHA256SUMS` and `BUILD_INFO.txt`:
+Built by `make rc-assets` from commit `2609b12` (designation in `tools/make_rc_assets.py`, version text `2068 LEAP V2.1.2` in `include/v2_version.inc`); later commits change documents only. From `build/release-v2-rc/SHA256SUMS`:
 
 | File | SHA-256 |
 |---|---|
-| `roms/leap_v2_home.bin` (16384) | TODO(owner) |
-| `roms/leap_v2_exrom.bin` (8192) | TODO(owner) |
-| `roms/leap_v2_zesarux.bin` (24576, ZEsarUX only) | TODO(owner) |
-| `roms/leap_v2_exrom.dck` (8201, EightyOne) | TODO(owner) |
+| `roms/leap_v2_home.bin` (16384) | `5d2aa71dfe944811bcf58247952cb601e28a5c5fa2fac48508fed13579aa94f3` |
+| `roms/leap_v2_exrom.bin` (8192) | `c52f966998a6af48851819a8b738c8c0585c8523c64e9ca3ec7e491bc91b4e75` |
+| `roms/leap_v2_zesarux.bin` (24576, ZEsarUX only) | `295dfe2621ec98301449844b49a93c703f071eb4900f5f18ea8a20eaacf5429a` |
+| `roms/leap_v2_exrom.dck` (8201, EightyOne) | `e491bd29982d22e3812cac0210ef96caae4077167fc31ac8557886691df4c0eb` |
 | packages (six), images and `.tzx` tapes | TODO(owner): compare with `v2.1.1-emu.1`'s (the packages are expected to be byte-identical; nothing in the ledger changes them) |
 
 Bundle: TODO(owner).
 
-Identity CRC-16 (what `SAVE ... ALL` stamps with no package loaded): TODO(owner) (`v2.1.1-emu.1`: `$2A70`). As for every ROM change, an ALL tape restores its variables only on the ROM pair that wrote it (RC-O3); program, array and package tapes are unaffected.
+Identity CRC-16 (what `SAVE ... ALL` stamps with no package loaded): `$1E49` (`v2.1.1-emu.1`: `$2A70`). As for every ROM change, an ALL tape restores its variables only on the ROM pair that wrote it (RC-O3); program, array and package tapes are unaffected.
 
 ROM free space: **HOME 270 bytes, EXROM 34 bytes** (`v2.1.1-emu.1`: 403 / 111), measured at `46a974a`.
 
 ## 3. Qualification (all on the emulator)
 
-The runs below are on the ROM at commit `46a974a` (the last full `make test` run, exit 0):
+The runs below are on the ROM at commit `46a974a`. `2609b12` changed only the version string; `make test` (exit 0, the same counts), `make check` and `make doc-examples` (329/329) were re-run on it:
 
 | Suite | Result |
 |---|---|
-| `make check` | TODO(owner): not in the run recorded for this table |
+| `make check` | exit 0 on the tree at `2609b12` |
 | `make test`: smoke ROMs / V2 standalone | 9/9, 40/40 |
 | production regression gate / Array Store gate (`prod-arrays`) / CODE suite (`prod-code`, new) / known-defect suite | 127 / 111 / 10 / 15 PASS |
 | SAVE ALL (`saveall`) | 24 PASS |
