@@ -39,7 +39,7 @@ V2 is the current 2068-Leap system: a complete redesign of the first release (V1
 - **Sessions.** When a program stops, its variables stay: a statement typed after a colon (`: PRINT total`) runs at once and can inspect or change them.
 - **Graphics.** `PLOT`, `LINE`, `POINT`, `INK`, `PAPER`, `BORDER`, `AT` and 21 user-defined characters; from packages, circles and flood fill, rectangles and big pixels, sprites, and the TS2068 video modes (extended-colour mode and ULAplus palettes).
 - **Sound.** `BEEP seconds, semitones` (Sinclair's syntax) and `SOUND register, value` on the AY-3-8912 sound chip, a startup chime, and the original loudspeaker through the optional `CBEEP` package.
-- **Tape storage.** `SAVE`, `LOAD` and `VERIFY` for programs, single arrays, and whole programs with their variables (`SAVE ... ALL`), in V2's own TS2068-framed tape format.
+- **Tape storage.** `SAVE`, `LOAD` and `VERIFY` for programs, single arrays, raw memory (`CODE`), and whole programs with their variables (`SAVE ... ALL`), in V2's own TS2068-framed tape format.
 - **Hardware access.** `PEEK`, `POKE`, `IN`, `OUT` and `USR`.
 - **Loadable packages.** Six optional packages on tape add statements without costing ROM space; since v2.1 a package can also add numeric and string functions and can use floating-point numbers (see [below](#loadable-packages)).
 - **Fast.** v2.1 runs BASIC much faster than v2.0.x: an empty `FOR` pass takes 827 T-states (was 1,107), floating-point multiplication is about five times faster, and scrolling output prints 24 lines a second (was 14); the calculator rounds correctly and `SIN`, `COS` and `TAN` are more accurate.
@@ -91,7 +91,7 @@ Earlier releases: [v2.1.0-emu.1](https://github.com/nchiker/2068-Leap/releases/t
 
 ## User manual
 
-The **2068-Leap V2 User Manual and Language Reference** has seven parts — introduction, a beginner's guide, keywords A–Z, concepts A–Z, the packages, practical programs, and appendices (messages, error codes, character set, limits, memory map, package card, hardware notes). Every one of its 327 examples is an automated test, run on the ROM by `make doc-examples`.
+The **2068-Leap V2 User Manual and Language Reference** has seven parts — introduction, a beginner's guide, keywords A–Z, concepts A–Z, the packages, practical programs, and appendices (messages, error codes, character set, limits, memory map, package card, hardware notes). Every one of its 329 examples is an automated test, run on the ROM by `make doc-examples`.
 
 | Format | Link |
 |---|---|
@@ -193,7 +193,7 @@ Details: manual [Part 5](docs/manual/05_packages.md). Writing a package: [PACKAG
 
 - The program is kept as **plain source text**; `RUN` compiles it into a separate 4011-byte bytecode area that is rebuilt each time. `LIST`, `SAVE` and the editor always work on the text you typed.
 - The HOME ROM holds the compiler, the VM and the hardware kernel; the EXROM holds the editor, the tape routines, the calculator and other code that is not on the hot path, reached through cross-bank calls.
-- Both ROMs are nearly full: the release has 403 bytes free in HOME and 111 in the EXROM. Features that do not fit are packages, loaded from tape into a 1 KB RAM window.
+- Both ROMs are nearly full: the release has 270 bytes free in HOME and 34 in the EXROM. Features that do not fit are packages, loaded from tape into a 1 KB RAM window.
 - Memory map and limits: manual [Appendix E](docs/manual/07_appendices.md#appendix-e-memory-map) and [Appendix D](docs/manual/07_appendices.md#appendix-d-limits); design: [V2_ARCHITECTURE.md](docs/V2_ARCHITECTURE.md), [RAM_EFFICIENCY_RESULTS.md](docs/RAM_EFFICIENCY_RESULTS.md).
 
 ## Status, qualification and limitations
